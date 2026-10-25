@@ -1,518 +1,633 @@
-# Pruebas de Grafito
+# Grafito tests
 
-Registro de la prueba completa con Docker Compose después de la limpieza de
-arquitectura (ver [ARCHITECTURE.md](ARCHITECTURE.md)).
+This is the log of end-to-end testing with Docker Compose, starting after the
+architecture cleanup (see [ARCHITECTURE.md](ARCHITECTURE.md)). The interface is
+in Spanish, so on-screen text is quoted as it appears, with a translation where
+it helps.
 
-- **Fecha:** 2026-10-25
-- **Entorno:** Windows 11, Docker Desktop 29.6.1, Compose v5.3.0, imagen
-  `node:22-bookworm-slim` (npm 10.9.9)
-- **Servicios:** postgres 16, elasticsearch 8.15.3, redis 7, MinIO (Chainguard)
-- **Navegador:** panel de navegador integrado (Chromium), escritorio y móvil 375×812
+- **Date:** 2026-10-25
+- **Environment:** Windows 11, Docker Desktop 29.6.1, Compose v5.3.0, the
+  `node:22-bookworm-slim` image (npm 10.9.9)
+- **Services:** Postgres 16, Elasticsearch 8.15.3, Redis 7, MinIO (Chainguard)
+- **Browser:** built-in browser pane (Chromium), desktop and mobile 375×812
 
-## Cómo se hizo
+## How it was done
 
-1. Se borró la build anterior: `docker compose down`, se eliminó la imagen
-   `grafito-app` y la salida local (`.vercel/`).
-2. `docker compose build --no-cache app`.
-3. Para no tocar los datos existentes (los volúmenes `grafito_*` ya tenían un
-   administrador y 2 usuarios), el e2e corrió en un **proyecto aislado** con
-   volúmenes vacíos:
+1. Removed the previous build: `docker compose down`, then deleted the
+   `grafito-app` image and the local output (`.vercel/`).
+2. Ran `docker compose build --no-cache app`.
+3. Ran the e2e tests in an **isolated project** with empty volumes, so existing
+   data wasn't touched (the `grafito_*` volumes already held an administrator
+   and 2 users):
 
    ```bash
    docker compose -p grafito-e2e up -d --build
    ```
 
-   Al terminar se desmontó con `docker compose -p grafito-e2e down -v` (borra
-   solo los volúmenes de prueba).
-4. Se volvió a levantar el stack normal (`docker compose up -d`) con la imagen
-   nueva: 5 servicios sanos, `GET /` → 200, pantalla de ingreso con los datos
-   existentes intactos.
+   Afterwards the project was torn down with
+   `docker compose -p grafito-e2e down -v`, which deletes only the test volumes.
+4. Started the normal stack again (`docker compose up -d`) with the new image:
+   - 5 healthy services.
+   - `GET /` → 200.
+   - The sign-in screen, with existing data intact.
 
-Credenciales usadas solo en el stack desechable: administrador `admin` (inicial
-`admin`) y un usuario `e2e` con rol Miembro.
+Credentials were used only on the disposable stack: administrator `admin`
+(initial password `admin`) and a user `e2e` with the Member role.
 
-## Resultado general
+## Overall result
 
-| Área | Resultado |
+| Area | Result |
 | --- | --- |
-| Build de la imagen | ✅ (tras corregir el lockfile, ver hallazgo 1) |
-| Arranque de servicios y salud | ✅ |
-| Migraciones en Postgres | ✅ `0001`–`0005` aplicadas |
-| Primer arranque y cambio obligatorio de contraseña | ✅ |
-| Ingreso, errores de ingreso y salida | ✅ |
-| Notas: crear, editar, enlaces, etiquetas, tareas | ✅ |
-| Réplica al servidor (Postgres `doc_index` + Elasticsearch) | ✅ |
-| Paleta de búsqueda | ✅ (busca por título y etiquetas) |
-| Administración: fuentes, espacio, monitor, logs | ✅ (con observaciones) |
-| Usuarios: alta de Miembro y log de auditoría | ✅ |
-| Plazo de sesión (Redis) y cierre de sesiones | ✅ |
-| Permisos: Miembro sin acceso a administración | ✅ UI y servidor |
-| Cuenta: perfil y validación de correo | ✅ |
-| Móvil 375×812 | ✅ sin desbordamiento horizontal |
-| Aislamiento de datos entre usuarios del mismo navegador | ✅ corregido y verificado (hallazgo 2) |
+| Image build | ✅ (after fixing the lockfile, see finding 1) |
+| Service startup and health | ✅ |
+| Migrations on Postgres | ✅ `0001`–`0005` applied |
+| First run and forced password change | ✅ |
+| Sign-in, sign-in errors and sign-out | ✅ |
+| Notes: create, edit, links, tags, tasks | ✅ |
+| Replication to the server (Postgres `doc_index` and Elasticsearch) | ✅ |
+| Search palette | ✅ (searches titles and tags) |
+| Administration: backends, storage, monitor, logs | ✅ (with notes) |
+| Users: creating a Member, and the audit log | ✅ |
+| Session length (Redis) and closing sessions | ✅ |
+| Permissions: a Member can't reach administration | ✅ UI and server |
+| Account: profile and email validation | ✅ |
+| Mobile 375×812 | ✅ no horizontal overflow |
+| Data isolation between users of the same browser | ✅ fixed and verified (finding 2) |
 
-## Casos probados
+## Cases tested
 
-### Infraestructura
+### Infrastructure
 
-| Caso | Esperado | Obtenido |
+| Case | Expected | Got |
 | --- | --- | --- |
-| `docker compose -p grafito-e2e up -d --build` | 5 servicios sanos, `minio-init` termina en 0 | ✅ |
+| `docker compose -p grafito-e2e up -d --build` | 5 healthy services, `minio-init` exits 0 | ✅ |
 | `GET /` | 200 | ✅ 200 |
 | `/manifest.webmanifest`, `/icon-180.png`, `/favicon.svg`, `/og.jpg` | 200 | ✅ |
-| `/api/auth/get-session` sin sesión | 200 (`null`) | ✅ |
-| Rutas retiradas de Grok: `/__grok/manifest.webmanifest`, `/auth/popup`, `/__app-env` | 404 | ✅ |
-| `_migrations` en base vacía | `0001`–`0005` | ✅ |
-| Índice `grafito-docs` en Elasticsearch | creado | ✅ |
+| `/api/auth/get-session` without a session | 200 (`null`) | ✅ |
+| Removed Grok routes: `/__grok/manifest.webmanifest`, `/auth/popup`, `/__app-env` | 404 | ✅ |
+| `_migrations` on an empty database | `0001`–`0005` | ✅ |
+| `grafito-docs` index in Elasticsearch | Created | ✅ |
 
-### Acceso
+### Access
 
-| Caso | Esperado | Obtenido |
+| Case | Expected | Got |
 | --- | --- | --- |
-| Base vacía muestra "Primera vez" con `admin`/`admin` | Sí | ✅ |
-| Crear administrador | Pasa a "Cambia la contraseña" **sin recargar** | ✅ (fallo previo ya corregido) |
-| Nueva contraseña de menos de 8 caracteres | "necesita al menos 8 caracteres" | ✅ |
-| Contraseña actual incorrecta | "No se cambió. Revisa la contraseña actual." | ✅ |
-| Cambio válido | Entra a la bóveda | ✅ |
-| Ingreso con contraseña incorrecta | "Usuario o contraseña incorrectos." | ✅ |
-| Ingreso con usuario inexistente | Mismo mensaje (no revela si existe) | ✅ |
-| Ingreso del Miembro | Entra a la bóveda | ✅ |
-| Salir | Vuelve al ingreso, 0 filas en `session` | ✅ |
+| An empty database shows "Primera vez" (first run) with `admin`/`admin` | Yes | ✅ |
+| Create the administrator | Goes to "Cambia la contraseña" (change password) **without reloading** | ✅ (earlier bug already fixed) |
+| New password shorter than 8 characters | "necesita al menos 8 caracteres" (needs at least 8 characters) | ✅ |
+| Wrong current password | "No se cambió. Revisa la contraseña actual." (not changed, check your current password) | ✅ |
+| Valid change | Enters the vault | ✅ |
+| Sign-in with a wrong password | "Usuario o contraseña incorrectos." (wrong username or password) | ✅ |
+| Sign-in with a nonexistent user | Same message (doesn't reveal whether the user exists) | ✅ |
+| Member signs in | Enters the vault | ✅ |
+| Sign out | Back to sign-in, 0 rows in `session` | ✅ |
 
-### Bóveda
+### Vault
 
-| Caso | Esperado | Obtenido |
+| Case | Expected | Got |
 | --- | --- | --- |
-| "Nueva nota" | Crea "Sin título" | ✅ |
-| Título con teclado + Enter | Se guarda y se replica | ✅ Postgres y Elasticsearch con "Prueba E2E" |
-| Cuerpo con `[[Bienvenida]]`, `#e2e #docker`, `- [ ]` | Enlace, etiquetas, casilla, esquema y "escritos en la nota" | ✅ |
-| Recargar | La nota persiste | ✅ (`localStorage`) |
-| Paleta "Prueba" | Encuentra el documento | ✅ |
-| Paleta "docker" | Encuentra la etiqueta | ✅ |
-| Paleta "end-to-end" (texto del cuerpo) | — | Sin resultados: la paleta no busca en el cuerpo |
-| Grafo | Renderiza | ✅ 14 documentos · 31 vínculos |
+| "Nueva nota" (new note) | Creates "Sin título" (untitled) | ✅ |
+| Title typed on the keyboard, then Enter | Saved and replicated | ✅ "Prueba E2E" in Postgres and Elasticsearch |
+| Body with `[[Bienvenida]]`, `#e2e #docker`, `- [ ]` | Link, tags, checkbox, outline and "links in the text" | ✅ |
+| Reload | The note persists | ✅ (`localStorage`) |
+| Palette "Prueba" | Finds the document | ✅ |
+| Palette "docker" | Finds the tag | ✅ |
+| Palette "end-to-end" (body text) | — | No results: the palette doesn't search note bodies |
+| Graph | Renders | ✅ 14 documents · 31 links |
 
-### Administración
+### Administration
 
-| Caso | Esperado | Obtenido |
+| Case | Expected | Got |
 | --- | --- | --- |
-| Fuentes → Comprobar | Responden los tres motores | ✅ "Elasticsearch 8.15.3", "MinIO listo. Cubo «grafito»", Postgres |
-| Espacio | Tamaños por motor | ✅ con observaciones (hallazgo 6) |
-| Monitor de sistema | CPU, memoria, carga | ✅ |
-| Nuevo usuario (Miembro) | Aparece en la lista | ✅ |
-| Logs de sistema | Registra el alta | ✅ "Crea a e2e · Usuarios · admin" |
-| Sesión → 15 min → "Aplicar y salir" | Guarda el plazo y cierra todas las sesiones | ✅ `session_ttl_seconds=900`, Redis sin `grafito:lease:*`, 0 sesiones |
-| Miembro abre `/admin` | Bloqueado | ✅ "Sin permiso" |
-| Miembro llama a `adminState` en el servidor | Sin datos de administración | ✅ devuelve listas vacías e `isAdmin: false` |
+| Backends → Check | All three engines respond | ✅ "Elasticsearch 8.15.3", "MinIO listo. Cubo «grafito»" (MinIO ready, bucket «grafito»), Postgres |
+| Storage | Size per engine | ✅ with notes (finding 6) |
+| System monitor | CPU, memory, load | ✅ |
+| New user (Member) | Appears in the list | ✅ |
+| System logs | Records the new user | ✅ "Crea a e2e · Usuarios · admin" |
+| Session → 15 min → "Aplicar y salir" (apply and sign out) | Saves the length and closes all sessions | ✅ `session_ttl_seconds=900`, no `grafito:lease:*` in Redis, 0 sessions |
+| A Member opens `/admin` | Blocked | ✅ "Sin permiso" (no permission) |
+| A Member calls `adminState` on the server | No administration data | ✅ returns empty lists and `isAdmin: false` |
 
-Revisión del código de las funciones de servidor sin comprobación de rol:
-`createInitialAdmin` rechaza si ya existe un administrador; `syncDocuments`,
-`searchDocuments`, `sessionPulse`, `revokeOwnLease`, `accountState` y
-`updateAccount` filtran por `context.userId`. El resto comprueba permisos.
+The server functions without a role check were reviewed:
 
-### Cuenta y móvil
+- `createInitialAdmin` refuses if an administrator already exists.
+- `syncDocuments`, `searchDocuments`, `sessionPulse`, `revokeOwnLease`,
+  `accountState` and `updateAccount` filter by `context.userId`.
+- All other functions check permissions.
 
-| Caso | Esperado | Obtenido |
+### Account and mobile
+
+| Case | Expected | Got |
 | --- | --- | --- |
-| Correo inválido | Validación del navegador | ✅ |
-| Guardar nombre y correo | "Guardado" y las iniciales cambian | ✅ "MR" |
-| Móvil 375×812 | Barra inferior, sin scroll horizontal | ✅ `scrollWidth = 375` |
+| Invalid email | Browser validation | ✅ |
+| Save name and email | "Guardado" (saved), and the initials change | ✅ "MR" |
+| Mobile 375×812 | Bottom bar, no horizontal scroll | ✅ `scrollWidth = 375` |
 
-### Consola y logs
+### Console and logs
 
-- Errores de consola esperados: 401 ×2 (los dos ingresos fallidos a propósito)
-  y 400 (cambio con contraseña actual incorrecta).
-- 504 "Outdated Optimize Dep" y un import dinámico fallido en la primera visita:
-  el optimizador de Vite del modo dev recarga la página una vez (hallazgo 4).
-- Logs del contenedor: avisos de Better Auth por el secreto débil (hallazgo 3)
-  y `notFoundError` de TanStack Router (hallazgo 7). Ningún error de aplicación.
+- Expected console errors:
+  - 401 ×2, from the two intentionally failed sign-ins.
+  - 400, from the change with a wrong current password.
+- A 504 "Outdated Optimize Dep" and a failed dynamic import on the first visit:
+  Vite's dev-mode optimizer reloads the page once (finding 4).
+- Container logs show Better Auth warnings about the weak secret (finding 3)
+  and TanStack Router `notFoundError` (finding 7). There were no application
+  errors.
 
-## Hallazgos
+## Findings
 
-### 1. Lockfile incompatible con el npm de la imagen — corregido
+### 1. Lockfile incompatible with the image's npm (fixed)
 
-`docker compose build` fallaba en `npm ci` con "Missing: lru-cache@11.5.3 from
-lock file". El `package-lock.json` se había regenerado con npm 11 (Node 24
-local) al quitar dependencias, y npm 11 no anota el peer opcional `lru-cache@^11`
-de `unstorage` que npm 10 (Node 22, el de la imagen) sí exige.
-**Corrección:** se regeneró con el npm de la imagen:
+- **Symptom:** `docker compose build` failed in `npm ci` with "Missing:
+  lru-cache@11.5.3 from lock file".
+- **Cause:** `package-lock.json` had been regenerated with npm 11 (local Node
+  24) while removing dependencies. npm 11 doesn't record `unstorage`'s optional
+  peer `lru-cache@^11`, which npm 10 (Node 22, the image's npm) requires.
+- **Fix:** regenerated it with the image's npm:
 
 ```bash
 docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --package-lock-only
 ```
 
-El lockfile resultante vale para `npm ci` con npm 10 y con npm 11.
-Recomendación: usar Node 22 también en local (por ejemplo con `.nvmrc`).
+The resulting lockfile works for `npm ci` with both npm 10 and npm 11.
+Recommendation: use Node 22 locally too (for example with `.nvmrc`).
 
-### 2. Los usuarios de un mismo navegador compartían la bóveda — **crítico, corregido**
+### 2. Users of the same browser shared one vault (**critical, fixed**)
 
-**Problema:** la bóveda se guardaba en `localStorage` con una clave global
-(`grafito.v2`), cargada al importar el store, antes de saber quién era el
-usuario. Al salir el administrador y entrar el Miembro en el mismo navegador,
-el Miembro veía las notas del administrador, y `VaultMirror` las replicaba a su
-índice: `doc_index` quedó con 14 documentos (incluida la nota del admin) a
-nombre de cada uno. Venía del diseño original, no de la limpieza.
+**Problem:**
 
-**Corrección:**
+- The vault was saved in `localStorage` under one global key (`grafito.v2`).
+  It was loaded when the store was imported, before the app knew who the user
+  was.
+- When the administrator signed out and the Member signed in on the same
+  browser, the Member saw the administrator's notes.
+- `VaultMirror` then replicated them to the Member's index. `doc_index` ended up
+  with 14 documents (including the admin's note) under each user.
+- This came from the original design, not from the cleanup.
 
-- `src/app/vault/store.ts`: cada usuario guarda en `grafito.v2:<userId>`. El
-  store arranca vacío (`owner: null`) y `openVaultFor(userId)` carga la bóveda
-  de ese usuario, o la de ejemplo si no tiene. `closeVault()` la guarda y la
-  descarga. La clave compartida antigua (`grafito.v2` / `grafito.v1`) solo la
-  hereda el administrador (`heldAdminId() === userId`), una vez, y después se
-  borra.
-- `VaultApp` no pinta nada hasta que la bóveda cargada sea la del usuario con
-  sesión. `AdminScreen` y la búsqueda de la cabecera también la abren.
-- `VaultMirror` solo replica si la bóveda pertenece a la sesión actual.
-- `leaveApp` y `SessionWatch` cierran la bóveda al salir o al vencer la sesión.
+**Fix:**
 
-**Verificación** (stack aislado `grafito-e2e`, base vacía, mismo navegador):
+- `src/app/vault/store.ts`:
+  - Each user saves under `grafito.v2:<userId>`.
+  - The store starts empty (`owner: null`). `openVaultFor(userId)` loads that
+    user's vault, or the sample one if they have none.
+  - `closeVault()` saves and unloads it.
+  - Only the administrator (`heldAdminId() === userId`) inherits the old shared
+    key (`grafito.v2` / `grafito.v1`), once, and the key is then deleted.
+- `VaultApp` renders nothing until the loaded vault belongs to the signed-in
+  user. `AdminScreen` and the header search open it too.
+- `VaultMirror` only replicates when the vault belongs to the current session.
+- `leaveApp` and `SessionWatch` close the vault on sign-out or when the session
+  expires.
 
-| Paso | Esperado | Obtenido |
+**Verification** (isolated `grafito-e2e` stack, empty database, same browser):
+
+| Step | Expected | Got |
 | --- | --- | --- |
-| Navegador con la clave compartida antigua (nota "Nota heredada"); entra el admin | El admin la hereda y la clave compartida se borra | ✅ solo queda `grafito.v2:<adminId>` |
-| El admin escribe `CONTENIDO-SECRETO-ADMIN`, crea un Miembro y sale | — | ✅ |
-| Entra el Miembro | Bóveda de ejemplo, sin notas del admin | ✅ no ve "Nota heredada" ni el contenido secreto |
-| El Miembro escribe `CONTENIDO-MIEMBRO` | Clave propia `grafito.v2:<miembroId>` | ✅ |
-| `doc_index` en el servidor | Cada usuario solo con lo suyo | ✅ admin: 2 docs (heredada + secreto); Miembro: 14 (ejemplo + suya); sin cruces |
-| Sale el Miembro y vuelve el admin | Su bóveda, sin la nota del Miembro | ✅ |
-| Búsqueda de la cabecera en `/cuenta` | Lista las notas del usuario actual | ✅ |
+| A browser holds the old shared key (note "Nota heredada"); the admin signs in | The admin inherits it and the shared key is deleted | ✅ only `grafito.v2:<adminId>` remains |
+| The admin writes `CONTENIDO-SECRETO-ADMIN`, creates a Member and signs out | — | ✅ |
+| The Member signs in | Sample vault, without the admin's notes | ✅ doesn't see "Nota heredada" or the secret content |
+| The Member writes `CONTENIDO-MIEMBRO` | Own key `grafito.v2:<memberId>` | ✅ |
+| `doc_index` on the server | Each user has only their own documents | ✅ admin: 2 docs (inherited and secret); Member: 14 (sample and own); nothing crossed |
+| The Member signs out and the admin returns | The admin's vault, without the Member's note | ✅ |
+| Header search on `/cuenta` | Lists the current user's notes | ✅ |
 
-`npm run typecheck`, `npm test` y `npm run lint` siguen sin errores (los 5
-avisos de lint son anteriores).
+`npm run typecheck`, `npm test` and `npm run lint` still pass. The 5 lint
+warnings predate this work.
 
-**Datos ya contaminados:** si en tu instalación un usuario llegó a replicar
-notas de otro, se corrige solo: `syncDocuments` borra y reescribe el índice de
-cada usuario en su siguiente sincronización (unos 8 s después de abrir su
-bóveda). En el navegador donde entre primero el administrador, este heredará la
-bóveda compartida antigua; las demás cuentas empiezan con la de ejemplo.
+**Data that was already mixed:** an installation where one user replicated
+another's notes repairs itself:
 
-### 3. Secreto de Better Auth débil en `docker-compose.yml`
+- `syncDocuments` deletes and rewrites each user's index on their next sync,
+  about 8 seconds after they open their vault.
+- In the browser where the administrator signs in first, the administrator
+  inherits the old shared vault. Every other account starts with the sample
+  vault.
 
-`BETTER_AUTH_SECRET: grafito-dev-secret-cambia-esto` produce avisos de
-longitud y entropía. Para cualquier uso real hay que generar uno
-(`openssl rand -base64 32`) y sacarlo del compose (por ejemplo a un `.env`).
+### 3. Weak Better Auth secret in `docker-compose.yml`
 
-### 4. La imagen ejecuta el servidor de desarrollo — corregido (ronda 2)
+`BETTER_AUTH_SECRET: grafito-dev-secret-cambia-esto` triggers length and
+entropy warnings. For any real use, generate one (`openssl rand -base64 32`)
+and move it out of the compose file, for example into a `.env`.
 
-El `Dockerfile` arranca `npm run dev`: la primera visita recarga la página
-(optimizador de Vite), el proceso usa ~2,4 GB de memoria y se sirve sin
-minificar. Lo correcto es `npm run build` en la imagen y servir la salida de
-Nitro con el preset `node-server` (hoy es `vercel`).
+### 4. The image ran the development server (fixed in round 2)
 
-### 5. `app` arrancaba sin sus dependencias tras reiniciar Docker — corregido (ronda 2)
+The `Dockerfile` started `npm run dev`. As a result:
 
-Antes de esta prueba, el contenedor `app` (de la build anterior) estaba en
-bucle de reinicio con `getaddrinfo ENOTFOUND postgres`. Docker Desktop se
-reinició y solo `app` tiene `restart: unless-stopped`, así que volvió a
-arrancar sin los demás servicios. Arreglo: `restart: unless-stopped` en
-postgres, elasticsearch, redis y minio.
+- The first visit reloaded the page (Vite's optimizer).
+- The process used about 2.4 GB of memory.
+- Code was served unminified.
 
-### 6. Panel "Espacio" incompleto o con datos raros — en parte corregido (ronda 2)
+The right setup is `npm run build` in the image, serving Nitro's output with
+the `node-server` preset (it was `vercel` at the time).
 
-Para Elasticsearch indicaba "base 59 GB" cuando el índice ocupa ~64 kB: era el
-espacio usado del disco del nodo. **Corregido:** ahora "base" es el tamaño del
-índice (`/_stats/store`). MinIO sigue sin aparecer.
+### 5. `app` started without its dependencies after a Docker restart (fixed in round 2)
 
-### 7. Sin página 404 propia
+Before this test, the `app` container (from the previous build) was in a
+restart loop with `getaddrinfo ENOTFOUND postgres`. Docker Desktop had
+restarted, and only `app` had `restart: unless-stopped`, so it came back up
+without the other services. Fix: `restart: unless-stopped` on Postgres,
+Elasticsearch, Redis and MinIO.
 
-Una URL inexistente devuelve el genérico `<p>Not Found</p>` de TanStack Router
-y genera avisos `notFoundError` en el log. Falta `defaultNotFoundComponent` en
-`src/router.tsx`.
+### 6. Incomplete or odd storage panel (partly fixed in round 2)
 
-### 8. Observaciones menores
+For Elasticsearch it reported "base 59 GB" when the index takes about 64 kB:
+that was the used space on the node's disk. **Fixed:** "base" is now the size
+of the index (`/_stats/store`). MinIO still doesn't appear.
 
-- ~~En "Primera vez" el campo de contraseña es `type="text"`: la contraseña se ve
-  en claro.~~ Corregido en la ronda 2.
-- Los usuarios creados desde administración no tienen que cambiar la
-  contraseña en el primer ingreso (el administrador sí).
-- Elasticsearch queda en estado `yellow` porque el índice pide 1 réplica en un
-  único nodo; conviene `number_of_replicas: 0`.
-- El README habla de roles "editor" y "lector", pero los roles que se ofrecen
-  son Administrador, Anónimo y Miembro.
-- La paleta de búsqueda no busca en el cuerpo de las notas; la búsqueda de
-  texto completo está en administración.
+### 7. No custom 404 page
 
-## Ronda 2 — ingreso, administración y permisos
+A nonexistent URL returns TanStack Router's generic `<p>Not Found</p>` and logs
+`notFoundError` warnings. `src/router.tsx` lacks a `defaultNotFoundComponent`.
 
-Prueba con la **imagen de producción** nueva, en el stack aislado
-`grafito-e2e` con base vacía; al terminar se borró la imagen y se recreó el
-stack normal con `docker compose up -d --build` (5 servicios sanos, datos
-existentes intactos).
+### 8. Minor notes
 
-### Ingreso lento o que "se queda cargando"
+- ~~On "Primera vez" the password field is `type="text"`, so the password is
+  shown in clear text.~~ Fixed in round 2.
+- Users created from administration don't have to change their password on
+  first sign-in (the administrator does).
+- Elasticsearch stays `yellow`, because the index asks for 1 replica on a
+  single node. `number_of_replicas: 0` would fix it.
+- The README mentioned "editor" and "reader" roles, but the roles offered are
+  Administrator, Anonymous and Member.
+- The search palette doesn't search note bodies. Full-text search lives in
+  administration.
 
-**Causa 1, el arriendo de sesión:** `assertLease` (`src/server/lease.ts`)
-borraba **todas** las sesiones del usuario si su arriendo anterior había
-vencido, incluida la que se acababa de crear al entrar. Pasa cada vez que
-alguien cierra el navegador sin "Salir" y su plazo vence. El ingreso entraba un
-instante y el pulso (12 s) lo expulsaba; el segundo intento funcionaba porque
-el arriendo viejo ya estaba borrado. Reproducido: tras entrar quedaban 0
-sesiones. **Arreglo:** si existe una sesión creada después del vencimiento, se
-borran solo las anteriores y se concede un arriendo nuevo.
+## Round 2: sign-in, administration and permissions
 
-**Causa 2, la imagen en modo desarrollo:** Vite dev compilaba cada módulo y
-función de servidor en la primera petición (~0,8 s cada una) y forzaba una
-recarga de la página en la primera visita ("Outdated Optimize Dep"). **Arreglo:**
-`Dockerfile` en dos etapas con build de producción (Nitro `node-server`).
+Tested with the new **production image** on the isolated `grafito-e2e` stack
+with an empty database. Afterwards the image was deleted and the normal stack
+was recreated with `docker compose up -d --build` (5 healthy services, existing
+data intact).
 
-| Medida | Antes (dev) | Después (producción) |
+### Slow sign-in, or sign-in that "keeps loading"
+
+**Cause 1, the session lease:**
+
+- `assertLease` (`src/server/lease.ts`) deleted **all** of a user's sessions
+  when their previous lease had expired, including the session just created by
+  signing in.
+- This happened whenever someone closed the browser without signing out and
+  their deadline passed.
+- The sign-in got in for a moment, then the pulse (12 seconds) kicked it out.
+  The second attempt worked because the old lease was gone by then.
+- Reproduced: right after signing in, 0 sessions remained.
+
+**Fix:** if there is a session created after the deadline, only older sessions
+are deleted and a new lease is granted.
+
+**Cause 2, the image in development mode:**
+
+- Vite dev compiled each module and server function on the first request,
+  about 0.8 seconds each.
+- It also forced a page reload on the first visit ("Outdated Optimize Dep").
+
+**Fix:** a two-stage `Dockerfile` with a production build (Nitro
+`node-server`).
+
+| Measure | Before (dev) | After (production) |
 | --- | --- | --- |
-| Imagen | 1,35 GB | 356 MB |
-| Memoria de `app` | ~2,4 GB | ~48 MB |
-| Carga de la página de ingreso | recarga forzada en la 1.ª visita | 120 ms, sin recarga |
-| Crear administrador → "Cambia la contraseña" | 665 ms (en caliente) | 462 ms |
-| Cambiar contraseña → bóveda | 432 ms | 329 ms |
-| Ingreso con arriendo vencido | expulsado a los ~12 s | 211 ms y sigue dentro (1 sesión, arriendo renovado) |
+| Image | 1.35 GB | 356 MB |
+| `app` memory | about 2.4 GB | about 48 MB |
+| Sign-in page load | Forced reload on the first visit | 120 ms, no reload |
+| Create administrator → "Cambia la contraseña" | 665 ms (warm) | 462 ms |
+| Change password → vault | 432 ms | 329 ms |
+| Sign-in with an expired lease | Kicked out after about 12 s | 211 ms and stays in (1 session, lease renewed) |
 
-Medido por función de servidor (curl, en caliente): `accessState` ~10 ms,
-`sign-in` ~170 ms (hash de la contraseña), `get-session` ~20 ms,
-`sessionProfile` ~15–30 ms.
+Measured per server function (curl, warm):
 
-### Casos probados
+- `accessState`: about 10 ms.
+- `sign-in`: about 170 ms (password hashing).
+- `get-session`: about 20 ms.
+- `sessionProfile`: about 15–30 ms.
 
-| Caso | Resultado |
+### Cases tested
+
+| Case | Result |
 | --- | --- |
-| "Primera vez": contraseña inicial oculta | ✅ `type="password"` |
-| Espacio y Monitor: medidor nuevo (`ui/UsageMeter`) | ✅ pista redondeada con el % escrito; ya no parece un campo de texto |
-| Elasticsearch "base" | ✅ 17 KB (tamaño real del índice; antes "59 GB", que era el disco) |
-| Roles sin barra fija de "Nuevo rol" | ✅ el campo solo aparece al pulsar "Nuevo rol" |
-| Usuarios: búsqueda | ✅ "lect" → solo "Lector Uno"; no toma el foco al abrir (foco en `BODY`) |
-| Usuarios: "Eliminar" como texto | ✅ enlace de texto rojo → "¿Eliminar? Sí · No" → eliminado |
-| Rol del administrador | ✅ el formulario muestra "Administrador" fijo, sin selector (el servidor ya lo rechazaba) |
-| Logo desde administración con una nota abierta antes | ✅ vuelve a `/` sin nota abierta |
-| Directorio: plegar | ✅ el botón está en la barra del directorio (flecha «); la cabecera ya no lo tiene |
-| Directorio plegado | ✅ queda un riel de 36 px con la flecha » para desplegarlo |
-| Miembro con solo "Notas → Leer" | ✅ sin Grafo, Nueva nota, Nuevo portafolio, Subir, Importar, Vincular ni Quitar vínculo; Editar y Dividir deshabilitados; título de solo lectura; casillas de tareas deshabilitadas; "Más acciones" → "Sin acciones para tu rol." |
-| Atajos con ese rol (Ctrl+N, Ctrl+G, Ctrl+E) | ✅ no crean nota, no abren grafo ni editor |
-| Dar "Ver grafo" y "Editar" en vivo | ✅ aparecen en ≤ 14 s sin recargar |
-| Quitarlos en vivo estando en Editar | ✅ el editor se cierra solo, vuelve a Leer y el grafo desaparece |
+| "Primera vez": initial password hidden | ✅ `type="password"` |
+| Storage and monitor: new meter (`ui/UsageMeter`) | ✅ rounded track with the % written; no longer looks like a text field |
+| Elasticsearch "base" | ✅ 17 KB, the real index size (previously "59 GB", which was the disk) |
+| Roles without a fixed "Nuevo rol" (new role) bar | ✅ the field only appears after clicking "Nuevo rol" |
+| Users: search | ✅ "lect" → only "Lector Uno"; doesn't grab focus on open (focus on `BODY`) |
+| Users: "Eliminar" (delete) as text | ✅ red text link → "¿Eliminar? Sí · No" → deleted |
+| Administrator's role | ✅ the form shows a fixed "Administrador" without a selector (the server already refused changes) |
+| Logo from administration, with a note open earlier | ✅ goes back to `/` with no note open |
+| Directory: collapse | ✅ the button is on the directory bar (« arrow); the header no longer has it |
+| Collapsed directory | ✅ leaves a 36 px rail with a » arrow to expand it |
+| Member with only "Notas → Leer" (notes → read) | ✅ details below |
+| Shortcuts with that role (Ctrl+N, Ctrl+G, Ctrl+E) | ✅ don't create a note or open the graph or editor |
+| Granting "Ver grafo" (view graph) and "Editar" (edit) live | ✅ they appear within 14 s, without reloading |
+| Revoking them live while in edit mode | ✅ the editor closes by itself, falls back to read, and the graph disappears |
 
-## Ronda 3 — Compartir (privada, compartida, pública)
+Details for the Member with only "Notas → Leer":
 
-Imagen de producción en el stack aislado `grafito-e2e` con base vacía; al final
-se recreó el stack normal con `docker compose up -d --build`: la migración
-`0006_share.sql` se aplicó sobre los datos existentes sin perder nada (1
-administrador, 2 usuarios).
+- No graph, new note, new portfolio, upload, import, link or unlink controls.
+- Edit and Split are disabled.
+- The title is read-only.
+- Task checkboxes are disabled.
+- "Más acciones" (more actions) shows "Sin acciones para tu rol." (no actions
+  for your role).
 
-Usuarios de prueba: administrador, Ana y Beto (Miembro; el rol incluye
+## Round 3: sharing (private, shared, public)
+
+Production image on the isolated `grafito-e2e` stack with an empty database.
+Afterwards the normal stack was recreated with `docker compose up -d --build`.
+The `0006_share.sql` migration applied over the existing data with nothing lost
+(1 administrator, 2 users).
+
+Test users: the administrator, Ana and Beto (Member; the role includes
 `notes.share`).
 
-| Caso | Esperado | Obtenido |
+| Case | Expected | Got |
 | --- | --- | --- |
-| Admin: "Más acciones → Compartir…" en «Bienvenida» → Compartida con Ana | Se guarda y la nota muestra 👥 | ✅ el diálogo lista a Ana y Beto; icono «Compartida» visible |
-| Admin: clic derecho en el portafolio «Atlas» → Compartir… → Pública | Genera un enlace `/p/<token>` | ✅ enlace de 32 caracteres con botón «Copiar» |
-| Copia publicada | Solo lo compartido | ✅ «Bienvenida» + las 4 notas y el archivo de Atlas; nada más |
-| Admin edita «Bienvenida» | Se publica sola | ✅ el texto nuevo aparece en la copia en ~2,5 s |
-| Enlace público **sin sesión** (0 sesiones) | Índice de Atlas en solo lectura | ✅ 5 documentos, el archivo se ve, 0 campos editables, título «Atlas · Grafito»; no incluye «Bienvenida» |
-| Enlace inventado | Aviso | ✅ «Este enlace no existe o dejó de ser público.» |
-| `/compartidos` sin sesión | Pide entrar | ✅ muestra el ingreso y, tras entrar, la lista |
-| Ana: Compartidos conmigo | Solo «Bienvenida» (Atlas es por enlace) | ✅ «Bienvenida · Nota · de Administrador» |
-| Ana abre la nota | Versión actualizada, solo lectura | ✅ «Compartido por Administrador · Solo lectura»; sin Editar/Dividir/Eliminar |
-| Beto abre la URL de la nota de Ana | Denegado por el servidor | ✅ «No existe o ya no está compartido contigo.»; su lista está vacía |
-| Admin pasa Atlas a Privada | El enlace deja de funcionar y se borra la copia | ✅ 0 portafolios publicados; el enlace muestra el aviso |
-| Admin borra «Bienvenida» (compartida) | Se deja de compartir | ✅ 0 elementos, 0 invitaciones, 0 documentos publicados |
+| Admin: "Más acciones → Compartir…" on «Bienvenida» → shared with Ana | Saved, and the note shows 👥 | ✅ the dialog lists Ana and Beto; "shared" icon visible |
+| Admin: right-click the «Atlas» portfolio → Compartir… → public | Generates a `/p/<token>` link | ✅ 32-character link with a «Copiar» (copy) button |
+| Published copy | Only what is shared | ✅ «Bienvenida», plus Atlas's 4 notes and file; nothing else |
+| Admin edits «Bienvenida» | Republished automatically | ✅ the new text appears in the copy in about 2.5 s |
+| Public link **without a session** (0 sessions) | Read-only Atlas index | ✅ details below |
+| Made-up link | Notice | ✅ «Este enlace no existe o dejó de ser público.» (this link doesn't exist or is no longer public) |
+| `/compartidos` without a session | Asks to sign in | ✅ shows sign-in and, after it, the list |
+| Ana: shared with me | Only «Bienvenida» (Atlas is by link) | ✅ «Bienvenida · Nota · de Administrador» |
+| Ana opens the note | Latest version, read-only | ✅ «Compartido por Administrador · Solo lectura» (shared by Administrator, read-only); no Edit, Split or Delete |
+| Beto opens Ana's note URL | Denied by the server | ✅ «No existe o ya no está compartido contigo.» (doesn't exist or is no longer shared with you); his list is empty |
+| Admin sets Atlas to private | The link stops working and the copy is deleted | ✅ 0 published portfolios; the link shows the notice |
+| Admin deletes «Bienvenida» (shared) | No longer shared | ✅ 0 items, 0 grants, 0 published documents |
 
-`npm run typecheck`, `npm test`, `npm run lint` (0 errores, 5 avisos previos)
-y `vite build` pasan; el bundle del navegador no contiene código de servidor
-(`node:crypto`, SQL de compartir).
+Details for the public link without a session:
 
-## Ronda 4 — Ajustes puntuales
+- 5 documents.
+- The file renders.
+- 0 editable fields.
+- The title is «Atlas · Grafito».
+- «Bienvenida» isn't included.
 
-| Caso | Resultado |
+`npm run typecheck`, `npm test`, `npm run lint` (0 errors, 5 earlier warnings)
+and `vite build` pass. The browser bundle contains no server code
+(`node:crypto`, sharing SQL).
+
+## Round 4: small fixes
+
+| Case | Result |
 | --- | --- |
-| Pantalla "Entrar" | ✅ el usuario empieza vacío (antes traía «admin») y con el foco; "Primera vez" mantiene `admin`/`admin` a propósito |
-| Selector de rol (`ui/Select`) | ✅ flecha propia a 12 px del borde, texto con 40 px de margen derecho |
-| Notas de ejemplo en una bóveda nueva | ✅ Atlas, Diario, Inicio, Personal y Taller cuelgan de «Documentación» |
+| Sign-in screen | ✅ the username starts empty (it used to be prefilled with «admin») and focused; "Primera vez" keeps `admin`/`admin` on purpose |
+| Role selector (`ui/Select`) | ✅ its own arrow 12 px from the edge; text with a 40 px right margin |
+| Sample notes in a new vault | ✅ Atlas, Diario, Inicio, Personal and Taller sit inside «Documentación» |
 
-Las bóvedas ya guardadas no cambian: el nuevo orden aplica a las bóvedas
-nuevas o tras «Restaurar notas de ejemplo».
+Vaults that were already saved don't change: the new layout applies to new
+vaults or after «Restaurar notas de ejemplo» (restore sample notes).
 
-## Ronda 5 — Editor, panel de detalles, Documentación y primera vez
+## Round 5: editor, details panel, Documentación and first run
 
-| Caso | Resultado |
+| Case | Result |
 | --- | --- |
-| Clic en la línea bajo Editar / Dividir / Leer | ✅ antes el editor empezaba en ese mismo píxel y el clic ponía el cursor; ahora hay un margen no editable de 6 px (comprobado con `elementFromPoint` en la línea y hasta 6 px por debajo) |
-| Línea vertical de Dividir | ✅ tampoco cae en el editor |
-| Panel de detalles | ✅ secciones separadas por línea, con icono, título, contador y una frase que explica su contenido; «Escritos en la nota» pasa a «Enlaces en el texto»; «Vincular» es una acción en la cabecera; los enlaces a notas que no existen dicen «sin crear» |
-| Bóveda guardada antes de «Documentación» (incluido el administrador) | ✅ al abrirla, Atlas, Diario, Inicio, Personal y Taller pasan dentro de «Documentación»; un portafolio propio en la raíz («Mi proyecto») no se toca; se aplica una sola vez |
-| «Primera vez» | ✅ usuario y contraseña vacíos; con una contraseña de 8+ caracteres entra directo (346 ms) sin pedir cambiarla; con una corta o «admin» sigue pidiendo el cambio |
+| Click on the line under Edit / Split / Read | ✅ details below |
+| Split's vertical line | ✅ doesn't fall inside the editor either |
+| Details panel | ✅ details below |
+| Vault saved before «Documentación» existed (including the administrator's) | ✅ details below |
+| «Primera vez» | ✅ details below |
 
-## Ronda 6 — Botones de icono sin fondo al pasar el ratón
+Click on the line under Edit / Split / Read:
 
-Logo, grafo, cuenta, plegar/desplegar el directorio, nuevo portafolio, cerrar /
-fijar / más acciones de la nota y los controles del grafo ya no muestran un
-recuadro de fondo al pasar el ratón: el icono cambia de color (el logo y el
-avatar se atenúan). El grafo abierto se marca solo con el color de acento. Las
-filas de listas y menús conservan su fondo, porque indica qué fila se elige.
-Comprobado en el navegador: ninguno de esos botones tiene `hover:bg-*`.
+- Before, the editor started at that exact pixel, so the click placed the
+  cursor.
+- Now there is a 6 px non-editable margin.
+- Checked with `elementFromPoint` on the line and up to 6 px below it.
 
-## Ronda 7 — Organizaciones y autenticación externa (LDAP, OAuth, SSO)
+Details panel:
 
-Stack aislado `grafito-e2e` con base vacía y el perfil `auth-test` (Keycloak 26
-y OpenLDAP con los datos de `dev/auth-test/`). Al final se recreó el stack
-normal: `0007_orgs_auth.sql` aplicada sobre los datos existentes (1 admin, 2
-usuarios).
+- Sections are separated by a line, each with an icon, title, counter and a
+  sentence explaining what it holds.
+- «Escritos en la nota» became «Enlaces en el texto» (links in the text).
+- «Vincular» (link) is an action in the header.
+- Links to notes that don't exist say «sin crear» (not created).
 
-### Autenticación
+Vault saved before «Documentación» existed:
 
-| Caso | Resultado |
+- On opening, Atlas, Diario, Inicio, Personal and Taller move inside
+  «Documentación».
+- A user's own root portfolio («Mi proyecto») isn't touched.
+- It applies only once.
+
+«Primera vez»:
+
+- Username and password start empty.
+- With a password of 8+ characters it enters directly (346 ms) without asking
+  for a change.
+- With a short one, or «admin», it still asks for a change.
+
+## Round 6: icon buttons without a hover background
+
+These buttons no longer show a background box on hover; the icon changes color
+instead (the logo and the avatar dim):
+
+- The logo, graph and account buttons.
+- Collapse and expand the directory.
+- New portfolio.
+- Close, pin and more actions on the note.
+- The graph controls.
+
+The open graph is marked only with the accent color. List and menu rows keep
+their background, because it shows which row is being chosen. Checked in the
+browser: none of those buttons has `hover:bg-*`.
+
+## Round 7: organizations and external authentication (LDAP, OAuth, SSO)
+
+Isolated `grafito-e2e` stack with an empty database and the `auth-test` profile
+(Keycloak 26 and OpenLDAP with data from `dev/auth-test/`). Afterwards the
+normal stack was recreated: `0007_orgs_auth.sql` applied over the existing data
+(1 admin, 2 users).
+
+### Authentication
+
+| Case | Result |
 | --- | --- |
-| Menú «Autenticación» con LDAP, OAuth y SSO | ✅ |
-| LDAP: «Probar conexión» buscando a `carla` | ✅ «Encontrado: Carla Directorio (carla@empresa.test) · uid=carla,ou=people,dc=grafito,dc=test» |
-| SSO: «Probar emisor» `http://keycloak:8080/realms/grafito` | ✅ emisor y URL de inicio de sesión leídos |
-| Guardar: secretos | ✅ guardados en `auth_provider`; al reabrir el panel el campo llega vacío («guardado; vacío lo conserva») y la página no contiene el secreto |
-| Ingreso | ✅ pestañas «Cuenta de Grafito / Directorio (LDAP)» y botón «Keycloak» |
-| LDAP: `diego` (`otro.test`, dominio no permitido) | ✅ «Tu dominio de correo no tiene acceso.»; no se crea la cuenta |
-| LDAP: contraseña incorrecta | ✅ «Usuario o contraseña incorrectos.» |
-| LDAP: `carla` | ✅ entra; cuenta creada como Miembro, `source = ldap`, cuenta `ldap` vinculada |
-| SSO: `sofia` en Keycloak (PKCE, retorno `/api/auth/oauth2/callback/sso`) | ✅ vuelve ya dentro; cuenta creada como Miembro, `source = sso` |
-| SSO: `intruso@otro.test` | ✅ vuelve a `/login?error=unable_to_create_user` con «Tu cuenta no tiene acceso a Grafito (dominio no permitido).»; 0 cuentas `otro.test` |
-| OAuth Google/GitHub/Microsoft | ⚠️ configuración y botones listos; no probado de punta a punta porque requiere credenciales reales de cada proveedor |
+| «Autenticación» menu with LDAP, OAuth and SSO | ✅ |
+| LDAP: «Probar conexión» (test connection) looking up `carla` | ✅ «Encontrado: Carla Directorio (carla@empresa.test) · uid=carla,ou=people,dc=grafito,dc=test» |
+| SSO: «Probar emisor» (test issuer) `http://keycloak:8080/realms/grafito` | ✅ issuer and sign-in URL read |
+| Save: secrets | ✅ details below |
+| Sign-in | ✅ «Cuenta de Grafito / Directorio (LDAP)» tabs and a «Keycloak» button |
+| LDAP: `diego` (`otro.test`, a domain that isn't allowed) | ✅ «Tu dominio de correo no tiene acceso.» (your email domain has no access); no account created |
+| LDAP: wrong password | ✅ «Usuario o contraseña incorrectos.» |
+| LDAP: `carla` | ✅ signs in; account created as Member, `source = ldap`, `ldap` account linked |
+| SSO: `sofia` in Keycloak (PKCE, callback `/api/auth/oauth2/callback/sso`) | ✅ returns signed in; account created as Member, `source = sso` |
+| SSO: `intruso@otro.test` | ✅ details below |
+| OAuth Google/GitHub/Microsoft | ⚠️ configuration and buttons ready; not tested end to end, because each provider needs real credentials |
 
-### Organizaciones
+Saving secrets:
 
-| Caso | Resultado |
+- They are stored in `auth_provider`.
+- When the panel reopens, the field comes back empty («guardado; vacío lo
+  conserva», saved; empty keeps it).
+- The page doesn't contain the secret.
+
+SSO with `intruso@otro.test`:
+
+- Returns to `/login?error=unable_to_create_user`.
+- Shows «Tu cuenta no tiene acceso a Grafito (dominio no permitido).» (your
+  account has no access, domain not allowed).
+- 0 `otro.test` accounts are created.
+
+### Organizations
+
+| Case | Result |
 | --- | --- |
-| Usuarios y permisos → Organizaciones | ✅ tarjeta nueva junto a Usuarios y Roles |
-| Crear «Empresa» y la sub-organización «Ventas»; Carla en Ventas | ✅ árbol con contadores; «1 miembros directos · 1 con sus sub-organizaciones» |
-| Diálogo Compartir | ✅ sección «Organizaciones · incluye sus sub-organizaciones» con rutas («Empresa › Ventas») y luego Usuarios |
-| Compartir «Bienvenida» solo con «Empresa» | ✅ `share_org_grant` = Empresa, 0 usuarios directos |
-| Carla (miembro de Ventas, sub-organización de Empresa) | ✅ la ve en «Compartidos conmigo» y la abre en solo lectura |
-| Sofía (sin organización) | ✅ lista vacía; la URL directa responde «No existe o ya no está compartido contigo.» |
+| Users and permissions → Organizations | ✅ new card next to Users and Roles |
+| Create «Empresa» and its sub-organization «Ventas»; Carla in Ventas | ✅ tree with counters: «1 miembros directos · 1 con sus sub-organizaciones» |
+| Share dialog | ✅ «Organizaciones · incluye sus sub-organizaciones» section with paths («Empresa › Ventas»), followed by Users |
+| Share «Bienvenida» only with «Empresa» | ✅ `share_org_grant` = Empresa, 0 direct users |
+| Carla (member of Ventas, a sub-organization of Empresa) | ✅ sees it under shared with me and opens it read-only |
+| Sofía (no organization) | ✅ empty list; the direct URL answers «No existe o ya no está compartido contigo.» |
 
-### Observaciones
+### Notes
 
-- **Lockfile:** `npm install ldapts` con el npm 11 local volvió a dejar el
-  lockfile incompatible con el npm 10 de la imagen; se regeneró con el npm del
-  contenedor (comando en ARCHITECTURE.md → Autenticación externa).
-- **Salir no cierra la sesión del proveedor:** tras salir de Grafito, Keycloak
-  conserva su sesión y el siguiente «Keycloak» entra sin pedir contraseña (es
-  el comportamiento normal de SSO; el cierre global sería una mejora aparte).
-- **Límite de peticiones:** Better Auth avisa de que no puede saber la IP del
-  cliente y usa un único contador compartido por ruta. Detrás de un proxy
-  inverso conviene configurar `advanced.ipAddress.ipAddressHeaders`.
+- **Lockfile:** `npm install ldapts` with the local npm 11 broke the lockfile
+  for the image's npm 10 again. It was regenerated with the container's npm
+  (command in ARCHITECTURE.md → External authentication).
+- **Signing out doesn't end the provider session:** after signing out of
+  Grafito, Keycloak keeps its session, so the next «Keycloak» sign-in goes
+  through without a password. That is normal SSO behavior; global sign-out
+  would be a separate improvement.
+- **Rate limiting:** Better Auth warns that it can't determine the client IP
+  and uses a single counter per route. Behind a reverse proxy, configure
+  `advanced.ipAddress.ipAddressHeaders`.
 
-## Ronda 8 — Bóveda en el servidor, API REST y asistente de IA
+## Round 8: server-side vault, REST API and AI assistant
 
-Stack aislado `grafito-e2e` con base vacía y el perfil `ai-test` (Ollama 0.6.8
-con `qwen2.5:1.5b`). Al final se recreó el stack normal: `0008_vault_api_ai.sql`
-aplicada sobre los datos existentes y `GRAFITO_ENCRYPTION_KEY` presente.
+Isolated `grafito-e2e` stack with an empty database and the `ai-test` profile
+(Ollama 0.6.8 with `qwen2.5:1.5b`). Afterwards the normal stack was recreated:
+`0008_vault_api_ai.sql` applied over the existing data, with
+`GRAFITO_ENCRYPTION_KEY` present.
 
-### Tests automáticos
+### Automated tests
 
-`npm test`: 17 pruebas. Además de las 5 de antes, 8 de los adaptadores (con
-cuerpos de ejemplo reales de cada API: herramientas, llamadas, resultados,
-URL y cabeceras de OpenAI, Anthropic, Gemini y Ollama, y errores legibles) y 4
-del cifrado (ida y vuelta, cifrados distintos, manipulación detectada, otra
-clave, sin clave).
+`npm test` ran 17 tests:
 
-### Sincronización
+- The 5 earlier tests.
+- 8 adapter tests, using real sample bodies from each API: tools, calls,
+  results, URLs and headers for OpenAI, Anthropic, Gemini and Ollama, plus
+  readable errors.
+- 4 encryption tests: round trip, distinct ciphertexts, tampering detected,
+  a different key, and no key.
 
-| Caso | Resultado |
+### Sync
+
+| Case | Result |
 | --- | --- |
-| Primer ingreso: la bóveda sube sola | ✅ 13 documentos y 6 portafolios en `vault_doc` / `vault_portfolio`, revisión 1 |
-| Nota creada por la IA aparece en el navegador | ✅ sin recargar (sincronización tras la respuesta) |
-| Nota creada y editada por la API aparece en el navegador | ✅ revisión del navegador = revisión del servidor (4) |
-| Edición en el navegador llega al servidor | ✅ en ~1,5 s (revisión 5) |
+| First sign-in: the vault uploads itself | ✅ 13 documents and 6 portfolios in `vault_doc` / `vault_portfolio`, revision 1 |
+| A note created by the AI appears in the browser | ✅ without reloading (sync after the response) |
+| A note created and edited through the API appears in the browser | ✅ browser revision = server revision (4) |
+| A browser edit reaches the server | ✅ in about 1.5 s (revision 5) |
 
-### API REST (con token personal y `curl`)
+### REST API (with a personal token and `curl`)
 
-| Caso | Resultado |
+| Case | Result |
 | --- | --- |
-| Cuenta → API: crear token | ✅ `gft_…` de 47 caracteres, mostrado una sola vez; en la lista solo el prefijo |
+| Account → API: create a token | ✅ 47-character `gft_…`, shown only once; the list shows only the prefix |
 | `GET /me`, `/portfolios`, `/notes?q=grafo` | ✅ |
-| `POST /notes` en un portafolio y `PATCH` | ✅ |
-| `GET /notes/:id/file` (SVG de ejemplo) | ✅ 200 `image/svg+xml` (antes 404: los data URL con `;charset=utf-8` no se decodificaban; corregido) |
-| Token inválido / sin autenticación | ✅ 401 con mensaje |
-| Cookie desde otro sitio | ✅ 403 |
-| JSON roto | ✅ 400 |
+| `POST /notes` in a portfolio, then `PATCH` | ✅ |
+| `GET /notes/:id/file` (sample SVG) | ✅ 200 `image/svg+xml` (previously 404: data URLs with `;charset=utf-8` weren't decoded; fixed) |
+| Invalid token / no authentication | ✅ 401 with a message |
+| Cookie from another site | ✅ 403 |
+| Malformed JSON | ✅ 400 |
 
-### IA
+### AI
 
-| Caso | Resultado |
+| Case | Result |
 | --- | --- |
-| Chat sin proveedores permitidos | ✅ «El administrador todavía no ha activado proveedores de IA.» |
-| Admin → IA: los 8 proveedores; Ollama y LM Studio «Probar» | ✅ «Responde. 1 modelos: qwen2.5:1.5b» |
-| Chat con proveedores permitidos pero sin conectar | ✅ «Todavía no has conectado…» con enlace a Cuenta |
-| Cuenta → IA: clave falsa de ChatGPT | ✅ llamada real a OpenAI, «respondió 401. La clave no es válida…»; **no se guarda** |
-| Conectar Ollama y LM Studio | ✅ |
-| Chat con proveedor pero sin modelo | ✅ «Selecciona un modelo para empezar.» y caja deshabilitada |
-| Ollama: «¿Qué portafolios tengo?» | ✅ usa `list_portfolios` y responde los 6 reales (15 s, CPU) |
-| Ollama: crear «Resumen IA» | ✅ en conversación nueva: `create_note`, nota en el servidor (autor «Administrador (IA)») y en el directorio |
-| LM Studio (adaptador OpenAI contra `ollama:11434/v1`): leer «Resumen IA» | ✅ usa `read_note` y cita el contenido real |
-| Chip de herramienta | ✅ abre la nota |
-| Ctrl+B / Esc | ✅ abre y cierra; dentro del editor Ctrl+B pone negrita y no abre el chat |
-| Móvil 375×812 | ✅ panel a pantalla completa; botón encima de la barra inferior |
-| Conversación tras recargar | ✅ se conserva en la pestaña |
+| Chat with no allowed providers | ✅ «El administrador todavía no ha activado proveedores de IA.» (no providers enabled yet) |
+| Admin → AI: the 8 providers; «Probar» (test) on Ollama and LM Studio | ✅ «Responde. 1 modelos: qwen2.5:1.5b» |
+| Chat with allowed but unconnected providers | ✅ «Todavía no has conectado…» (you haven't connected…) with a link to Account |
+| Account → AI: fake ChatGPT key | ✅ real call to OpenAI, «respondió 401. La clave no es válida…»; **not saved** |
+| Connect Ollama and LM Studio | ✅ |
+| Chat with a provider but no model | ✅ «Selecciona un modelo para empezar.» (pick a model to start) and the input disabled |
+| Ollama: «¿Qué portafolios tengo?» (what portfolios do I have?) | ✅ uses `list_portfolios` and lists the 6 real ones (15 s, CPU) |
+| Ollama: create «Resumen IA» | ✅ details below |
+| LM Studio (OpenAI adapter against `ollama:11434/v1`): read «Resumen IA» | ✅ uses `read_note` and quotes the real content |
+| Tool chip | ✅ opens the note |
+| Ctrl+B / Esc | ✅ open and close; inside the editor Ctrl+B makes text bold and doesn't open the chat |
+| Mobile 375×812 | ✅ full-screen panel; button above the bottom bar |
+| Conversation after a reload | ✅ kept in the tab |
 
-### Hallazgos
+Creating «Resumen IA» with Ollama, in a new conversation:
 
-- **Modelos muy pequeños:** `qwen2.5:1.5b`, con historial largo, una vez
-  respondió «nota creada» sin llamar a la herramienta (no había nada en la
-  base). En conversación nueva sí la usa. Para trabajo real conviene un modelo
-  de 7B o más, o los de la nube.
-- **Título en vez de id:** el modelo pasó el título a `read_note`; las
-  herramientas de leer y editar ahora aceptan id o título exacto.
-- **Claude, Gemini, Grok, DeepSeek y Kimi** no se probaron de punta a punta
-  por falta de claves; su formato está cubierto por los tests y el error con
-  clave inválida se probó contra OpenAI de verdad.
+- The model calls `create_note`.
+- The note appears on the server, with author «Administrador (IA)».
+- It also appears in the directory.
 
-## Ronda 9 — Interruptores, panel de IA e instancias locales propias
+### Findings
 
-| Caso | Resultado |
+- **Very small models:** with a long history, `qwen2.5:1.5b` once answered
+  «nota creada» (note created) without calling the tool, and nothing was in the
+  database. In a new conversation it does use the tool. For real work, use a
+  7B+ model or a cloud one.
+- **Title instead of id:** the model passed a title to `read_note`. The read
+  and edit tools now accept an id or an exact title.
+- **Claude, Gemini, Grok, DeepSeek and Kimi** weren't tested end to end,
+  because no keys were available. Their formats are covered by the tests, and
+  the invalid-key error was tested against the real OpenAI API.
+
+## Round 9: switches, AI panel and per-user local instances
+
+| Case | Result |
 | --- | --- |
-| Interruptores de Administración → IA | ✅ antes la bolita era `absolute` sin `left` y se salía de la pista; ahora `ui/Switch` (flex) en IA, Plugins, Fuentes y Autenticación; comprobado midiendo bolita y pista en las tres pantallas |
-| Lista de proveedores | ✅ solo el nombre y el interruptor (sin empresa debajo ni «Guardado.»; solo aparece un aviso si falla) |
-| Administrador y proveedores locales | ✅ ya no hay campo de dirección: solo activa o desactiva |
-| Cuenta → IA, Ollama | ✅ «Conectar» pide la dirección de tu instancia (sugerida `http://host.docker.internal:11434`) y una clave opcional |
-| `http://localhost:11434` | ✅ rechazada: «localhost sería el propio servidor de Grafito…» |
-| `http://postgres:5432` | ✅ rechazada: «Esa dirección es un servicio interno de Grafito.» |
-| `file:///etc/passwd` | ✅ rechazada |
-| Equipo inexistente | ✅ «No se pudo conectar…»; no se guarda |
-| `http://ollama:11434` (instancia del usuario) | ✅ «Conectado. 1 modelos disponibles.»; guardada en `ai_credential.base_url` de ese usuario |
-| Chat con la instancia propia | ✅ solo aparece Ollama (lo conectado); usa `list_portfolios` y responde los 6 portafolios |
-| `npm test` | ✅ 20 pruebas (3 nuevas de validación de direcciones) |
-| Migración `0009` sobre tus datos | ✅ `ai_provider.base_url` eliminada, `ai_credential.base_url` creada |
+| Switches in Administration → AI | ✅ details below |
+| Provider list | ✅ only the name and the switch (no company line, no «Guardado.»; a notice appears only on failure) |
+| Administrator and local providers | ✅ no address field any more: only on/off |
+| Account → AI, Ollama | ✅ «Conectar» (connect) asks for your instance's address (suggested `http://host.docker.internal:11434`) and an optional key |
+| `http://localhost:11434` | ✅ rejected: «localhost sería el propio servidor de Grafito…» (localhost would be Grafito's own server) |
+| `http://postgres:5432` | ✅ rejected: «Esa dirección es un servicio interno de Grafito.» (that address is an internal Grafito service) |
+| `file:///etc/passwd` | ✅ rejected |
+| Nonexistent host | ✅ «No se pudo conectar…» (couldn't connect); not saved |
+| `http://ollama:11434` (the user's instance) | ✅ «Conectado. 1 modelos disponibles.»; saved in that user's `ai_credential.base_url` |
+| Chat with the user's own instance | ✅ only Ollama (what's connected) appears; uses `list_portfolios` and lists the 6 portfolios |
+| `npm test` | ✅ 20 tests (3 new ones for address validation) |
+| Migration `0009` over existing data | ✅ `ai_provider.base_url` dropped, `ai_credential.base_url` created |
 
-## Ronda 10 — Temas en interruptores, ajustes por secciones
+Switches in Administration → AI:
 
-Imagen nueva (se borró `grafito-app` y se reconstruyó), probada en el stack
-aislado `grafito-e2e` con base vacía; al terminar `down -v` y vuelta al stack
-normal con tus datos.
+- Before, the knob was `absolute` without `left`, so it slid out of the track.
+- Now `ui/Switch` (flex) is used in AI, Plugins, Backends and Authentication.
+- Checked by measuring the knob and the track on all three screens.
 
-| Caso | Resultado |
+## Round 10: theme-aware switches, sectioned settings
+
+New image (`grafito-app` was deleted and rebuilt), tested on the isolated
+`grafito-e2e` stack with an empty database. Afterwards it was torn down with
+`down -v`, and the normal stack came back with its data.
+
+| Case | Result |
 | --- | --- |
-| Interruptor en tema Folleto, encendido | ✅ pista `accent` y bolita `accent-fg` (clara) |
-| Interruptor en tema Folleto, apagado | ✅ pista `inset` (crema), borde `line` (negro) y bolita `muted` (gris oscuro): antes todo se veía negro |
-| Administración → Plugins y resto de tarjetas | ✅ sin descripciones («Piezas que se pueden pausar», etc.) |
-| Raíz | ✅ sin «Cuatro miradas, sin manual» |
-| Administración: barra lateral | ✅ se pliega a un riel de iconos y se despliega (`chrome/SettingsNav`, recordado en `localStorage`) |
-| Cuenta por secciones | ✅ Datos de la cuenta, Contraseña, Conexiones de IA y API, con la misma barra plegable que Administración |
-| Cuenta sin permiso `ai.use` / `api.use` | ✅ esas secciones no aparecen |
-| Cuenta en móvil (375 px) | ✅ tarjetas, «Atrás» y sin desplazamiento horizontal |
-| `npm run typecheck`, `eslint`, `npm test` | ✅ sin errores; 20 pruebas |
+| Switch on, Folleto theme | ✅ `accent` track and a light `accent-fg` knob |
+| Switch off, Folleto theme | ✅ `inset` (cream) track, `line` (black) border and a `muted` (dark gray) knob; before, everything looked black |
+| Administration → Plugins and the other cards | ✅ no descriptions («Piezas que se pueden pausar», etc.) |
+| Raíz | ✅ without «Cuatro miradas, sin manual» |
+| Administration sidebar | ✅ collapses to an icon rail and expands (`chrome/SettingsNav`, remembered in `localStorage`) |
+| Account by sections | ✅ account details, password, AI connections and API, with the same collapsible sidebar as Administration |
+| Account without `ai.use` / `api.use` | ✅ those sections don't appear |
+| Account on mobile (375 px) | ✅ cards, «Atrás» (back), no horizontal scroll |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 20 tests |
 
-## Ronda 11 — «Compartidos conmigo» dentro de la bóveda
+## Round 11: «Compartidos conmigo» inside the vault
 
-Stack aislado `grafito-e2e` con base vacía: administrador y una usuaria de
-prueba «Lectora» (rol Miembro). El administrador compartió con ella el
-portafolio «Atlas» y la nota «Ritual de la mañana».
+Isolated `grafito-e2e` stack with an empty database: the administrator and a
+test user «Lectora» (Member role). The administrator shared the «Atlas»
+portfolio and the «Ritual de la mañana» note with her.
 
-| Caso | Resultado |
+| Case | Result |
 | --- | --- |
-| Directorio de Lectora | ✅ «Compartidos conmigo» aparece como segunda raíz, bajo sus propias notas (ya no es un enlace a otra página) |
-| Desplegar «Atlas» | ✅ muestra sus notas y archivos (Bitácora de campo, Fuentes, Hipótesis de Atlas, Mapa del proyecto Atlas, Plano del obrador), con el propietario al lado |
-| Abrir una nota compartida | ✅ se ve en el área principal, en solo lectura («Compartido por Administrador · Solo lectura») y marcada en el directorio |
-| Abrir una nota propia, o pulsar Raíz | ✅ se cierra la vista compartida y vuelve el editor / la página de inicio |
-| Nota compartida suelta | ✅ se abre con un clic |
-| Móvil (375 px) | ✅ desde «Notas» abre la nota compartida en la pestaña «Nota», sin desplazamiento horizontal |
-| Tamaño de Raíz | ✅ 40 px de alto (antes 56) con icono de 16 px; «Compartidos conmigo» igual |
-| Plegado de «Compartidos conmigo» | ✅ se recuerda en el navegador (`grafito.shared-open`) |
-| Al salir | ✅ se cierra la vista compartida (`leaveApp`) |
-| `/compartidos` y `/compartidos/$id` | ✅ siguen funcionando para enlaces directos |
+| Lectora's directory | ✅ «Compartidos conmigo» (shared with me) is a second root, below her own notes (no longer a link to another page) |
+| Expand «Atlas» | ✅ shows its notes and files (Bitácora de campo, Fuentes, Hipótesis de Atlas, Mapa del proyecto Atlas, Plano del obrador), with the owner alongside |
+| Open a shared note | ✅ shown in the main area, read-only («Compartido por Administrador · Solo lectura»), and highlighted in the directory |
+| Open an own note, or click Raíz | ✅ the shared view closes and the editor / home page returns |
+| A single shared note | ✅ opens with one click |
+| Mobile (375 px) | ✅ from «Notas», opens the shared note in the «Nota» tab, no horizontal scroll |
+| Raíz size | ✅ 40 px tall (was 56) with a 16 px icon; «Compartidos conmigo» matches |
+| Collapsing «Compartidos conmigo» | ✅ remembered in the browser (`grafito.shared-open`) |
+| Signing out | ✅ closes the shared view (`leaveApp`) |
+| `/compartidos` and `/compartidos/$id` | ✅ still work for direct links |
 
-## Comandos útiles
+## Useful commands
 
 ```bash
 docker compose build --no-cache app

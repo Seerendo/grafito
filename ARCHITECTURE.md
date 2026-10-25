@@ -1,74 +1,77 @@
-# Arquitectura de Grafito
+# Grafito architecture
 
-Grafito es una bóveda de notas en Markdown con enlaces `[[wiki]]`, etiquetas,
-portafolios, archivos adjuntos, diagramas Mermaid, grafo de relaciones y
-exportación a PDF. Tiene un administrador, roles y un panel de administración.
+Grafito is a Markdown notes vault. It has `[[wiki]]` links, tags, portfolios,
+attached files, Mermaid diagrams, a relationship graph and PDF export. On top of
+that it has an administrator, roles and an administration panel.
 
 ## Stack
 
-| Capa | Tecnología |
+| Layer | Technology |
 | --- | --- |
-| Framework | [TanStack Start](https://tanstack.com/start) (React 19 + SSR + funciones de servidor) |
-| Rutas | TanStack Router, rutas por archivo en `src/routes/` |
-| Estilos | Tailwind CSS v4 (`src/styles.css`, temas por `data-theme`) |
-| Estado de cliente | zustand (`src/app/vault/store.ts`), persistido en `localStorage` |
-| Autenticación | Better Auth, usuario y contraseña locales |
-| Base relacional | Postgres (`DATABASE_URL`) o PGLite embebido en `.data/pglite` |
-| Búsqueda | Elasticsearch (`ELASTICSEARCH_URL`) o índice en Postgres |
-| Archivos | MinIO / S3 (`S3_*`) o la bóveda del navegador |
-| Sesiones | Redis (`REDIS_URL`) para el plazo de sesión, o Postgres |
-| Build | Vite 8 + Nitro (preset `node-server`; `NITRO_PRESET=vercel` para Vercel) |
+| Framework | [TanStack Start](https://tanstack.com/start) (React 19, SSR and server functions) |
+| Routing | TanStack Router, file-based routes in `src/routes/` |
+| Styles | Tailwind CSS v4 (`src/styles.css`, themes through `data-theme`) |
+| Client state | zustand (`src/app/vault/store.ts`), cached in `localStorage` |
+| Authentication | Better Auth: local username and password, plus LDAP, OAuth and OIDC |
+| Relational database | Postgres (`DATABASE_URL`), or PGLite embedded in `.data/pglite` |
+| Search | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres |
+| Files | MinIO / S3 (`S3_*`), or the vault itself |
+| Sessions | Redis (`REDIS_URL`) holds session deadlines, or Postgres does |
+| Build | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel) |
 
-Cada servicio externo es opcional: si falta su variable, Grafito usa el recurso
-local indicado (ver `.env.example` y `src/server/platform.ts`).
+Every external service is optional. When its variable is missing, Grafito falls
+back to the local resource listed above (see `.env.example` and
+`src/server/platform.ts`).
 
-## Cómo se arranca
+## How it starts
 
-- **Docker (forma prevista):** `docker compose up -d --build` levanta Postgres,
-  Elasticsearch, Redis, MinIO y la app en `http://127.0.0.1:8080`. La imagen
-  es un **build de producción** en dos etapas: compila con `npm run build` y
-  la final solo lleva `.output/` y ejecuta `node .output/server/index.mjs`
-  (~356 MB de imagen, ~50 MB de memoria). Todos los servicios tienen
-  `restart: unless-stopped`.
-- **Local sin Docker:** `scripts/launch-guard.mjs` bloquea `npm run dev` salvo
-  que exista `GRAFITO_FROM_DOCKER=1` o `GRAFITO_INTERNAL_DEV=1`. Con la segunda
-  se usa PGLite y ningún servicio externo.
-- `.claude/launch.json` arranca Vite directamente (sin el guard) para la vista
-  previa del editor.
+- **Docker (the intended way):** `docker compose up -d --build` starts
+  Postgres, Elasticsearch, Redis, MinIO and the app at `http://127.0.0.1:8080`.
+  - The image is a two-stage **production build**: the first stage runs
+    `npm run build`, and the final stage only carries `.output/` and runs
+    `node .output/server/index.mjs`.
+  - The image is about 356 MB, and the app uses about 50 MB of memory.
+  - Every service has `restart: unless-stopped`.
+- **Locally without Docker:** `scripts/launch-guard.mjs` blocks `npm run dev`
+  unless `GRAFITO_FROM_DOCKER=1` or `GRAFITO_INTERNAL_DEV=1` is set. The second
+  one uses PGLite and no external services.
+- `.claude/launch.json` (not versioned) starts Vite directly, without the
+  guard, for the editor preview.
 
-| Script | Qué hace |
+| Script | What it does |
 | --- | --- |
-| `npm run dev` | Servidor de desarrollo en `0.0.0.0:8080` |
-| `npm run build` | `vite build` (salida en `.output/`) y luego `db:migrate` |
-| `npm start` | Ejecuta el build de producción (`.output/server/index.mjs`) |
-| `npm run db:migrate` | Aplica `migrations/*.sql` a `DATABASE_URL` (si existe) |
+| `npm run dev` | Development server on `0.0.0.0:8080` |
+| `npm run build` | `vite build` (output in `.output/`), then `db:migrate` |
+| `npm start` | Runs the production build (`.output/server/index.mjs`) |
+| `npm run db:migrate` | Applies `migrations/*.sql` to `DATABASE_URL`, if set |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Tests de `scripts/*.test.mjs` |
+| `npm test` | `scripts/*.test.mjs`, then `src/**/*.test.ts` (Node's test runner with type stripping) |
 | `npm run lint` / `format` | ESLint / Prettier |
 
-## Carpetas
+## Folders
 
 ```text
 grafito/
-├── migrations/          SQL versionado (se aplica una vez, por nombre de archivo)
-├── public/              Estáticos: favicon, icono, manifest PWA, imagen OG
-├── scripts/             Utilidades Node: launch-guard, migraciones y su test
+├── migrations/          Versioned SQL (applied once, by file name)
+├── public/              Static assets: favicon, icon, PWA manifest, OG image
+├── scripts/             Node utilities: launch guard, migrations and their test
+├── dev/                 Test fixtures for the auth-test profile (Keycloak realm, LDAP users)
 ├── src/
-│   ├── routes/          Rutas (archivo = URL) — capa más delgada posible
-│   ├── components/      UI de React, agrupada por pantalla/área
-│   ├── app/             Estado y servicios de cliente (store, tema, perfil)
-│   ├── domain/          Lógica pura, sin React ni E/S (testeable)
-│   ├── server/          Funciones de servidor e integraciones externas
-│   ├── lib/             Infraestructura transversal: auth, base de datos, errores
-│   ├── router.tsx       Crea el router (`getRouter`)
-│   ├── routeTree.gen.ts Generado por TanStack Router — no editar
-│   └── styles.css       Tailwind + tokens de los temas
-├── vite.config.ts       Vite + TanStack Start + Nitro + arranque de PGLite
-├── docker-compose.yml   Servicios para desarrollo/despliegue con Docker
-└── Dockerfile           Imagen de la app
+│   ├── routes/          Routes (file = URL), kept as thin as possible
+│   ├── components/      React UI, grouped by screen or area
+│   ├── app/             Client state and services (store, theme, profile)
+│   ├── domain/          Pure logic, no React and no I/O (testable)
+│   ├── server/          Server functions and external integrations
+│   ├── lib/             Cross-cutting infrastructure: auth, database, errors
+│   ├── router.tsx       Creates the router (`getRouter`)
+│   ├── routeTree.gen.ts Generated by TanStack Router (do not edit)
+│   └── styles.css       Tailwind and theme tokens
+├── vite.config.ts       Vite, TanStack Start, Nitro and PGLite startup
+├── docker-compose.yml   Services for development and deployment with Docker
+└── Dockerfile           App image
 ```
 
-### Dependencias entre capas
+### Layer dependencies
 
 ```text
 routes ─▶ components ─▶ app ─▶ domain
@@ -77,362 +80,440 @@ routes ─▶ components ─▶ app ─▶ domain
              server ─▶ lib (auth, db)
 ```
 
-- `domain/` no importa nada de la app: solo tipos y funciones puras.
-- `app/` (cliente) usa `domain/` y llama a `server/` mediante funciones de servidor.
-- `server/` corre solo en el servidor; los componentes lo importan únicamente a
-  través de `createServerFn`, que Vite convierte en llamadas RPC.
-- `lib/auth/*.server.ts` y `lib/auth/server.ts` nunca deben llegar al navegador.
+- `domain/` imports nothing from the app: only types and pure functions.
+- `app/` (client) uses `domain/` and calls `server/` through server functions.
+- `server/` runs only on the server. Components reach it only through
+  `createServerFn`, which Vite turns into RPC calls.
+- `lib/auth/*.server.ts` and `lib/auth/server.ts` must never reach the browser.
 
 ### `src/routes/`
 
-| Archivo | URL | Contenido |
+| File | URL | Content |
 | --- | --- | --- |
-| `__root.tsx` | — | Documento HTML, `<head>`, script de tema sin destello, `SessionWatch` |
-| `index.tsx` | `/` | `AccessGate` + `VaultApp` |
-| `login.tsx` | `/login` | `AccessGate` y redirección a `/` |
+| `__root.tsx` | — | HTML document, `<head>`, flash-free theme script, `SessionWatch` |
+| `index.tsx` | `/` | `AccessGate` and `VaultApp` |
+| `login.tsx` | `/login` | `AccessGate` and a redirect to `/` |
 | `cuenta.tsx` | `/cuenta` | `AccountScreen` |
 | `admin.tsx` | `/admin` | `AdminScreen` |
-| `api/auth/$.ts` | `/api/auth/*` | Handler de Better Auth |
-| `compartidos/index.tsx` | `/compartidos` | `AccessGate` + lista de lo compartido conmigo |
-| `compartidos/$shareId.tsx` | `/compartidos/<id>` | `AccessGate` + visor de solo lectura |
-| `p/$token.tsx` | `/p/<token>` | Visor público por enlace, **sin sesión** (no pasa por `AccessGate`) |
-| `api/v1/*.ts` | `/api/v1/…` | API REST de la bóveda (ver «API REST») |
-| `api/ai/chat.ts` | `/api/ai/chat` | Chat de IA (respuesta NDJSON) |
+| `api/auth/$.ts` | `/api/auth/*` | Better Auth handler |
+| `compartidos/index.tsx` | `/compartidos` | `AccessGate` and the list of items shared with me (kept for direct links) |
+| `compartidos/$shareId.tsx` | `/compartidos/<id>` | `AccessGate` and the read-only viewer |
+| `p/$token.tsx` | `/p/<token>` | Public viewer by link, **without a session** (skips `AccessGate`) |
+| `api/v1/*.ts` | `/api/v1/…` | Vault REST API (see [REST API](#rest-api)) |
+| `api/ai/chat.ts` | `/api/ai/chat` | AI chat (NDJSON response) |
 
 ### `src/components/`
 
-| Carpeta | Contenido |
+| Folder | Content |
 | --- | --- |
-| `ui/` | Piezas reutilizables sin lógica de negocio: `TextField`, `SearchField` (búsqueda sin autofoco), `Select` (selector con flecha propia), `Switch` (interruptor; pista `bg-inset`/`border-line` y bolita `bg-muted` apagado, pista `bg-accent` y bolita `bg-accent-fg` encendido, para que se distinga en todos los temas, también Folleto), `OptionGrid` (tarjetas de secciones para móvil), `Modal`, `TextAction` (acción en texto, p. ej. «Eliminar»), `UsageMeter` (medidor de uso con porcentaje) |
-| `chrome/` | Marco común: `ChromeHeader` (búsqueda, menú de cuenta), `AppFrame` (cabecera + contenido) y `SettingsNav` (barra lateral de secciones plegable a un riel de iconos, recordada en `localStorage`; la usan Administración y Cuenta) |
-| `brand/` | Marca (`Mark`) |
-| `access/` | `AccessGate`: primer arranque, ingreso y cambio obligatorio de contraseña |
-| `account/` | `AccountScreen` por secciones (misma estructura que Administración): `ProfileForm` (datos de la cuenta), `PasswordForm` (contraseña), `AiSettings` (conexiones de IA, `ai.use`) y `ApiTokens` (API, `api.use`); las dos últimas se ocultan sin permiso |
-| `admin/` | Pantalla de administración y sus tableros: `Boards` (usuarios, roles, monitor, logs), `OrgsBoard` (organizaciones) y `AuthBoards` (LDAP, OAuth, SSO) |
-| `session/` | `SessionWatch`: vigila el plazo de sesión y cierra al vencer |
-| `ai/` | `AiChat`: botón flotante y panel del chat (Ctrl+B) |
-| `share/` | `SharedViewer` (visor de solo lectura reutilizable; dentro de la bóveda sin índice propio, `index={false}`), `shared-tree.ts` (recorrido de un elemento compartido) y `ShareScreens` (`/compartidos`, elemento compartido y vista pública) |
-| `vault/` | La bóveda: `VaultApp` (layout), `Sidebar`, `EditorPane`, `MarkdownView`, `ContextPane`, `GraphView`, `CommandPalette`, `FileView`, `MermaidDiagram`, `NotePdf`, `HomeBoard`, `VaultMirror` (sincroniza con el índice del servidor) e `ingest-files.ts` |
+| `ui/` | Reusable pieces with no business logic (listed below) |
+| `chrome/` | Shared frame: `ChromeHeader` (search, account menu), `AppFrame` (header and content) and `SettingsNav` (section sidebar that collapses to an icon rail; the state is kept in `localStorage`; used by Administration and Account) |
+| `brand/` | Brand mark (`Mark`) |
+| `access/` | `AccessGate`: first run, sign-in and the forced password change |
+| `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password), `AiSettings` (AI connections, `ai.use`) and `ApiTokens` (API, `api.use`). The last two are hidden without the permission. |
+| `admin/` | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO) |
+| `session/` | `SessionWatch`: watches the session deadline and signs out when it expires |
+| `ai/` | `AiChat`: floating button and chat panel (Ctrl+B) |
+| `share/` | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
+| `vault/` | The vault (listed below) |
 
-### `src/app/` (cliente)
+The `ui/` pieces:
 
-| Archivo | Responsabilidad |
+- `TextField`.
+- `SearchField`: search box that doesn't take focus on its own.
+- `Select`: dropdown with its own arrow.
+- `Switch`: a theme-safe toggle that stays visible in every theme, including
+  Folleto. Off is an `inset` track with a `line` border and a `muted` knob; on
+  is an `accent` track with an `accent-fg` knob.
+- `OptionGrid`: section cards for mobile.
+- `Modal`.
+- `TextAction`: an action shown as text, such as "Eliminar".
+- `UsageMeter`: usage meter with a percentage.
+
+The `vault/` pieces:
+
+- `VaultApp`: the layout.
+- `Sidebar`: the directory. `SharedSection` inside it adds the **Compartidos
+  conmigo** root.
+- `EditorPane`, `MarkdownView`, `ContextPane`, `GraphView`, `CommandPalette`,
+  `FileView`, `MermaidDiagram`, `NotePdf` and `HomeBoard`.
+- `ShareDialog` and `ShareMirror` for sharing.
+- `VaultMirror` and `VaultSync` for server sync.
+- `ingest-files.ts` for imports.
+
+### `src/app/` (client)
+
+| File | Responsibility |
 | --- | --- |
-| `vault/store.ts` | Store zustand de la bóveda (notas, portafolios, archivos), persistido en `localStorage` por usuario (`grafito.v2:<userId>`); se abre con `openVaultFor(userId)` y se cierra con `closeVault()` |
-| `vault/seed.ts` | Notas de ejemplo del primer uso, agrupadas bajo el portafolio «Documentación» |
-| `theme.ts` | Catálogo de temas, aplicar/ciclar tema, script de arranque generado desde `THEMES` |
-| `account-profile.ts` | Perfil de la cuenta activa (nombre, iniciales, rol) |
-| `vault/sync.ts` | Sincronización de la bóveda con el servidor (revisiones y huellas por documento) |
-| `ai-chat.ts` | Estado del chat de IA: abierto, modelo elegido, conversación y lectura del NDJSON |
-| `shares.ts` | Lo que el usuario tiene compartido (`useMyShares`, `visibilityMap`, `publicUrl`) |
-| `shared-view.ts` | Elemento compartido conmigo abierto en la bóveda (`useSharedView`); abrir una nota propia, Raíz o salir lo cierra |
-| `permissions.ts` | Permisos del usuario en el cliente: `can()`, `useCan()`, `usePermissions()`; los carga `AccessGate` y los refresca el pulso de `SessionWatch` |
-| `actor.ts` | Nombre de quien crea/edita notas |
-| `plugins.ts` | Flags de plugins activos |
-| `vault-hold.ts` | Recuerda al administrador que tiene la bóveda abierta |
-| `leave.ts` | Salir: revoca la sesión, limpia estado local y cierra Better Auth |
+| `vault/store.ts` | Vault zustand store (notes, portfolios, files), cached in `localStorage` per user (`grafito.v2:<userId>`). `openVaultFor(userId)` opens it and `closeVault()` closes it. |
+| `vault/seed.ts` | Sample notes for the first use, grouped under the «Documentación» portfolio |
+| `vault/sync.ts` | Syncs the vault with the server (revisions and per-document fingerprints) |
+| `theme.ts` | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES` |
+| `account-profile.ts` | Profile of the signed-in account (name, initials, role) |
+| `ai-chat.ts` | AI chat state: open or closed, chosen model, conversation and NDJSON reading |
+| `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
+| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`). Opening an own note, Raíz or signing out closes it. |
+| `permissions.ts` | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them. |
+| `actor.ts` | Name of whoever creates or edits notes |
+| `plugins.ts` | Flags of the enabled plugins |
+| `vault-hold.ts` | Remembers which administrator holds the vault open |
+| `leave.ts` | Sign out: revokes the session, clears local state and signs out of Better Auth |
 
-### `src/domain/` (lógica pura)
+### `src/domain/` (pure logic)
 
-| Archivo | Responsabilidad |
+| File | Responsibility |
 | --- | --- |
-| `vault/types.ts` | Tipos del modelo (Document, Portfolio, VaultFile, GraphEdge…) |
-| `vault/links.ts` | Enlaces `[[wiki]]`, etiquetas, encabezados, conteo de palabras |
-| `vault/graph.ts` | Aristas del grafo e intención de clic |
-| `vault/portfolios.ts` | Árbol de portafolios |
-| `vault/migrate.ts` | Migración de bóvedas antiguas: formato v1 y `nestSamplePortfolios` (mete los portafolios de ejemplo en «Documentación», una sola vez) |
-| `session.ts` | Plazos de sesión permitidos |
-| `ai.ts` | Catálogo de los 8 proveedores de IA y su protocolo |
-| `orgs.ts` | Organizaciones: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle` |
-| `share.ts` | Compartir: `Visibility`, `coveredBy` / `coveredByAll` (qué cubre una nota o un portafolio con sus subportafolios) |
-| `permissions.ts` | Claves de permiso de la bóveda (`PERMISSION`) y cuál aplica a borrar/exportar según el tipo |
+| `vault/types.ts` | Model types (Document, Portfolio, VaultFile, GraphEdge…) |
+| `vault/links.ts` | `[[wiki]]` links, tags, headings, word count |
+| `vault/graph.ts` | Graph edges and click intent |
+| `vault/portfolios.ts` | Portfolio tree |
+| `vault/migrate.ts` | Migrates old vaults: the v1 format and `nestSamplePortfolios` (moves the sample portfolios into «Documentación», once) |
+| `session.ts` | Allowed session lengths |
+| `ai.ts` | Catalog of the 8 AI providers and their protocol |
+| `orgs.ts` | Organizations: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle` |
+| `share.ts` | Sharing: `Visibility`, and `coveredBy` / `coveredByAll` (what a note, or a portfolio with its sub-portfolios, covers) |
+| `permissions.ts` | Vault permission keys (`PERMISSION`), and which one applies to deleting or exporting by document kind |
 
-### `src/server/` (solo servidor)
+### `src/server/` (server only)
 
-| Archivo | Responsabilidad |
+| File | Responsibility |
 | --- | --- |
-| `admin.functions.ts` | Funciones de servidor de instalación, administración, usuarios, roles, plugins, fuentes e índice |
-| `session.functions.ts` | Pulso de sesión, plazo, cuenta propia y espacio usado |
-| `lease.ts` | "Arriendo" de sesión con plazo (Redis o Postgres). Un ingreso posterior al vencimiento recibe un plazo nuevo en vez de ser expulsado |
-| `platform.ts` | Constantes del administrador y detección de motores por variables de entorno |
-| `profile.ts` | Perfil y permisos de un usuario |
-| `share.ts` | Acceso a datos de lo compartido: elementos, invitados, copia publicada, lectura por usuario y por enlace |
-| `vault.ts` / `vault.functions.ts` | Bóveda en el servidor: sincronización (`pushChanges`/`pullChanges`) y operaciones para la API y la IA |
-| `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts` | API REST: autenticación (token o sesión), respuestas y tokens personales |
-| `crypto.ts` | AES-256-GCM con `GRAFITO_ENCRYPTION_KEY` |
-| `ai/` | IA: adaptadores (`openai`, `anthropic`, `gemini`, `ollama`), `config` (permitidos y claves), `tools` (herramientas de la bóveda) y `agent` (bucle del asistente) |
-| `ai.functions.ts` | Administración → IA, Cuenta → IA y estado del chat |
-| `orgs.ts` / `orgs.functions.ts` | Organizaciones: datos y funciones (permiso `orgs.manage`) |
-| `auth.functions.ts` | Administración → Autenticación (`authState`, `saveAuthProvider`, `testLdap`, `testSso`) y `authMethods` (público: qué botones muestra el ingreso) |
-| `share.functions.ts` | Funciones de servidor de compartir: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `openShared`, `openPublic` (esta última sin sesión) |
-| `redis.ts` / `search.ts` / `storage.ts` | Clientes de Redis, Elasticsearch y MinIO/S3 |
+| `admin.functions.ts` | Server functions for setup, administration, users, roles, plugins, backends and the index |
+| `session.functions.ts` | Session pulse, session length, own account and storage usage |
+| `lease.ts` | Session "lease" with a deadline (Redis or Postgres). A sign-in after the deadline gets a new lease instead of being kicked out. |
+| `platform.ts` | Administrator constants and backend detection from environment variables |
+| `profile.ts` | A user's profile and permissions (`allows()`) |
+| `share.ts` | Sharing data: items, grants, published copies, and reading by user or by link |
+| `vault.ts` / `vault.functions.ts` | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and the AI |
+| `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts` | REST API: authentication (token or session), responses and personal tokens |
+| `crypto.ts` | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY` |
+| `ai/` | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses) |
+| `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
+| `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
+| `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
+| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `openShared`, `openPublic` (the last one without a session) |
+| `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients |
 
 ### `src/lib/`
 
-| Archivo | Responsabilidad |
+| File | Responsibility |
 | --- | --- |
-| `db.ts` | `getSql()` sobre Postgres o PGLite, normalización de tipos y migraciones en PGLite |
-| `error-component.tsx` | Pantalla de error por defecto del router |
-| `auth/server.ts` | `getAuth()`: Better Auth con email/contraseña y los proveedores externos activos; se cachea y se rehace al cambiar la configuración (`invalidateAuth`) |
-| `auth/providers.server.ts` | Configuración de proveedores (`auth_provider`): lectura, guardado, secretos enmascarados, dominios permitidos |
-| `auth/ldap.server.ts` / `auth/ldap-plugin.server.ts` | Verificación LDAP (`ldapts`) y endpoint `POST /api/auth/ldap/sign-in` |
-| `auth/provision.server.ts` | Alta de cuentas externas: rol por defecto y nombre de usuario único |
-| `auth/external.ts` | Cliente: `ldapSignIn`, `signInWithProvider`, mensajes de error de proveedor |
-| `auth/client.ts` | Cliente de Better Auth para el navegador y `signOut()` |
-| `auth/password.ts` | `signInWithPassword` y `changePassword`, compartidos por ingreso y cuenta |
-| `auth/bearer.ts` | Token de sesión en `sessionStorage` como respaldo de la cookie |
-| `auth/cookies.ts` | Nombres de las cookies de sesión |
-| `auth/use-current-user.ts` | Hooks `useCurrentUserState` / `useCurrentUser` |
+| `db.ts` | `getSql()` over Postgres or PGLite, type normalization, and migrations on PGLite |
+| `error-component.tsx` | Default router error screen |
+| `auth/server.ts` | `getAuth()`: Better Auth with email/password and the enabled external providers. It is cached and rebuilt when the configuration changes (`invalidateAuth`). |
+| `auth/providers.server.ts` | Provider configuration (`auth_provider`): reading, saving, masked secrets, allowed domains |
+| `auth/ldap.server.ts` / `auth/ldap-plugin.server.ts` | LDAP verification (`ldapts`) and the `POST /api/auth/ldap/sign-in` endpoint |
+| `auth/provision.server.ts` | Creates external accounts: default role and a unique username |
+| `auth/external.ts` | Client: `ldapSignIn`, `signInWithProvider` and provider error messages |
+| `auth/client.ts` | Better Auth browser client and `signOut()` |
+| `auth/password.ts` | `signInWithPassword` and `changePassword`, shared by sign-in and account |
+| `auth/bearer.ts` | Session token in `sessionStorage`, as a fallback for the cookie |
+| `auth/cookies.ts` | Session cookie names |
+| `auth/use-current-user.ts` | The `useCurrentUserState` / `useCurrentUser` hooks |
 | `auth/gates.tsx` | `RedirectToSignIn` |
-| `auth/middleware.ts` | `authMiddleware` para funciones de servidor (inyecta `context.userId`) |
-| `auth/verify.server.ts` | Resolución de sesión en el servidor y `UnauthorizedError` |
-| `auth/isolation.server.ts` | Bloqueo de peticiones cross-site con Fetch-Metadata |
-| `auth/pglite-dialect.ts` | Dialecto Kysely para que Better Auth use PGLite |
+| `auth/middleware.ts` | `authMiddleware` for server functions (injects `context.userId`) |
+| `auth/verify.server.ts` | Server-side session resolution and `UnauthorizedError` |
+| `auth/isolation.server.ts` | Blocks cross-site requests using Fetch Metadata |
+| `auth/pglite-dialect.ts` | Kysely dialect so Better Auth can use PGLite |
 
 ### `migrations/`
 
-Se aplican en orden por nombre; la tabla `_migrations` guarda cuáles ya corrieron
-(clave = nombre de archivo, ver `scripts/migration-plan.mjs`). Con Postgres las
-aplica `npm run db:migrate`; con PGLite, `src/lib/db.ts` al primer acceso.
-Nunca edites una migración ya aplicada: crea `0006_*.sql`.
+- Migrations are applied in order by file name. The `_migrations` table records
+  which ones already ran, keyed by file name (see `scripts/migration-plan.mjs`).
+- On Postgres, `npm run db:migrate` applies them. On PGLite, `src/lib/db.ts`
+  applies them on first access.
+- Never edit a migration that was already applied. Add the next number instead,
+  for example `0010_*.sql`.
 
-| Archivo | Tablas |
+| File | Tables |
 | --- | --- |
-| `0001_auth.sql` | Esquema de Better Auth: `user`, `session`, `account`, `verification` |
-| `0002_admin.sql` | `app_admin`, roles, permisos, fuentes, plugins, `doc_index` |
-| `0003`–`0005` | Ajustes, arriendos de sesión, perfiles, roles por usuario, logs |
-| `0006_share.sql` | `share_item`, `share_grant`, `published_doc`, `published_portfolio` y el permiso `notes.share` |
-| `0009_ai_local_per_user.sql` | La dirección de Ollama / LM Studio pasa a ser de cada usuario (`ai_credential.base_url`) |
-| `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` y los permisos `ai.use`, `ai.manage`, `api.use` |
-| `0007_orgs_auth.sql` | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` y los permisos `orgs.manage` / `auth.manage` |
+| `0001_auth.sql` | Better Auth schema: `user`, `session`, `account`, `verification` |
+| `0002_admin.sql` | `app_admin`, roles, permissions, backends, plugins, `doc_index` |
+| `0003`–`0005` | Settings, session leases, profiles, per-user roles, logs |
+| `0006_share.sql` | `share_item`, `share_grant`, `published_doc`, `published_portfolio` and the `notes.share` permission |
+| `0007_orgs_auth.sql` | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` and the `orgs.manage` / `auth.manage` permissions |
+| `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions |
+| `0009_ai_local_per_user.sql` | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`) |
 
-## Flujo de acceso
+## Access flow
 
-1. `AccessGate` pregunta `accessState()`: si no hay administrador, muestra
-   "Primera vez" (por defecto `admin` / `admin`).
-2. Tras crear o entrar, si `mustChangePassword` está activo obliga a cambiarla.
-3. Con sesión válida, `VaultApp` abre la bóveda de ese usuario
-   (`openVaultFor`) y no pinta nada hasta tenerla; `VaultMirror` replica solo
-   esa bóveda al índice del servidor. `SessionWatch` hace un pulso
-   periódico y cierra la sesión cuando vence el plazo configurado.
-4. Las funciones de servidor usan `authMiddleware`, que valida origen
-   (`isolation.server.ts`) y sesión (`verify.server.ts`).
+1. `AccessGate` calls `accessState()`. If there is no administrator yet, it
+   shows "Primera vez" (first run).
+2. After creating the administrator or signing in, it forces a password change
+   if `mustChangePassword` is set.
+3. With a valid session, `VaultApp` opens that user's vault (`openVaultFor`)
+   and renders nothing until it is loaded. `VaultSync` keeps it in sync with
+   the server. `SessionWatch` sends a periodic pulse and signs out when the
+   configured deadline passes.
+4. Server functions use `authMiddleware`, which checks the request origin
+   (`isolation.server.ts`) and the session (`verify.server.ts`).
 
-## Limpieza realizada (origen: plantilla Grok App Builder)
+## Cleanup performed (origin: the Grok App Builder template)
 
-El proyecto nació en el sandbox de Grok. Se retiró lo que pertenecía a esa
-plataforma y no a Grafito; todo lo movido está en `_respaldo-grok/` con la misma
-ruta relativa, para poder recuperarlo. **Bórralo cuando confirmes que todo va bien.**
+The project started in the Grok sandbox. Everything that belonged to that
+platform rather than to Grafito was removed. Removed files were moved to
+`_respaldo-grok/` with the same relative paths, so they can be recovered. That
+folder is not versioned.
 
-- Instrucciones y skills del agente: `.grok/`, `AGENTS.md`, `startup.sh`.
-- Basura de QA y artefactos: `screenshots/`, `artifacts/`, `.vercel/` (salida de
-  build), `.tanstack/`, `.node_modules.lock`.
-- Integraciones de la plataforma sin uso en Grafito: broker OAuth de Grok,
-  sesiones "gate", popup de ingreso, puente de vista previa, reescritura de rutas
-  de vista previa, conectores `app-data`, `multiplayer`, inyector PWA/branding
-  (`server/`, `public/__grok/`) y sus scripts de prueba.
-- Dependencias sin importar: Radix UI, react-query, react-table, recharts,
-  react-hook-form, date-fns, sonner, clsx/tailwind-merge/cva, playwright, etc.
+- Agent instructions and skills: `.grok/`, `AGENTS.md`, `startup.sh`.
+- QA leftovers and artifacts: `screenshots/`, `artifacts/`, `.vercel/` (build
+  output), `.tanstack/`, `.node_modules.lock`.
+- Platform integrations that Grafito didn't use:
+  - Grok's OAuth broker, "gate" sessions and the sign-in popup.
+  - The preview bridge and its route rewriting.
+  - The `app-data` and `multiplayer` connectors.
+  - The PWA/branding injector (`server/`, `public/__grok/`).
+  - Their test scripts.
+- Dependencies that nothing imported: Radix UI, react-query, react-table,
+  recharts, react-hook-form, date-fns, sonner, clsx/tailwind-merge/cva,
+  playwright and others.
 
-Cambios de código:
+Code changes:
 
-- Auth reducida a usuario/contraseña. `requireUserId` ya no tiene la rama de
-  "usuario dev" (nunca se activaba: la auth siempre estaba encendida).
-- `password.ts` y `bearer.ts` centralizan llamadas y token que estaban
-  duplicados en `AccessGate` y `AccountScreen`.
-- Componentes compartidos: `ui/TextField` (antes `Field` en dos archivos) y
-  `chrome/AppFrame` (antes `Shell`/`Frame` idénticos en admin y cuenta).
-- El script de tema de `__root.tsx` se genera desde `THEMES`; antes era una
-  copia a mano de la tabla.
-- Manifest PWA e icono propios en `public/`; metadatos Open Graph en `__root.tsx`.
-- Corregido: tras entrar, crear el administrador o cambiar la contraseña la
-  pantalla no avanzaba hasta recargar. `password.ts` usa `fetch` directo (para
-  leer `set-auth-token`) y Better Auth solo refresca `useSession()` cuando la
-  llamada pasa por `authClient`; ahora se emite `$sessionSignal` a mano.
+- `requireUserId` lost its "dev user" branch, which never ran because auth was
+  always on.
+- `password.ts` and `bearer.ts` centralize calls and token handling that were
+  duplicated in `AccessGate` and `AccountScreen`.
+- Shared components: `ui/TextField` (previously `Field`, in two files) and
+  `chrome/AppFrame` (previously identical `Shell` / `Frame` copies in admin and
+  account).
+- The theme script in `__root.tsx` is generated from `THEMES`. It used to be a
+  hand-made copy of the table.
+- The app has its own PWA manifest and icon in `public/`, and Open Graph
+  metadata in `__root.tsx`.
+- Fixed: after signing in, creating the administrator or changing the password,
+  the screen didn't advance until a reload.
+  - Cause: `password.ts` uses a direct `fetch` (to read `set-auth-token`), but
+    Better Auth only refreshes `useSession()` for calls made through
+    `authClient`.
+  - Fix: `$sessionSignal` is now emitted by hand.
 
-Se conservaron a propósito los nombres heredados `__Host-grok-auth.*` (cookies)
-y `grok-auth.bearer-token` (sessionStorage): cambiarlos cerraría todas las
-sesiones abiertas. Están centralizados en `lib/auth/cookies.ts` y
-`lib/auth/bearer.ts` por si se quiere renombrarlos más adelante.
+The legacy names `__Host-grok-auth.*` (cookies) and `grok-auth.bearer-token`
+(sessionStorage) were kept on purpose, because renaming them would sign out
+every open session. They are centralized in `lib/auth/cookies.ts` and
+`lib/auth/bearer.ts` in case they are renamed later.
 
-## Pendientes conocidos
+## Known gaps
 
-- PGLite no viaja en el build de producción (su `.wasm` no se incluye): la
-  imagen siempre necesita `DATABASE_URL`. Para probar sin Postgres usa
-  `npm run dev` con `GRAFITO_INTERNAL_DEV=1`.
-- MinIO no aparece en "Espacio": su API de administración no responde con las
-  credenciales del cubo.
-- `migrations/0001_auth.sql` conserva un comentario que menciona Grok (no se
-  edita una migración aplicada).
+- PGLite isn't included in the production build (its `.wasm` isn't bundled),
+  so the image always needs `DATABASE_URL`. To try it without Postgres, use
+  `npm run dev` with `GRAFITO_INTERNAL_DEV=1`.
+- MinIO doesn't appear in the storage panel, because its admin API doesn't
+  accept the bucket credentials.
+- `migrations/0001_auth.sql` still has a comment that mentions Grok. Applied
+  migrations aren't edited.
 
-## Permisos de rol
+## Role permissions
 
-Los roles y sus permisos se gestionan en Administración → Roles (tabla
-`app_role_permission`). Se aplican en tres capas:
+Roles and their permissions are managed in Administration → Roles (table
+`app_role_permission`). They are enforced in three layers:
 
-1. **Servidor:** las funciones de administración comprueban el permiso del
-   actor (`allows()` en `server/profile.ts`); las de la bóveda filtran por
-   `context.userId`.
-2. **Store de la bóveda** (`app/vault/store.ts`): cada acción que modifica
-   (crear, editar, renombrar, borrar, mover, vincular, subir, importar, modo
-   edición, grafo) comprueba `can()` antes de cambiar nada. Es el cierre que no
-   se salta con atajos de teclado ni arrastrar y soltar.
-3. **Interfaz:** los controles sin permiso se ocultan (Grafo, Nueva nota,
-   portafolios, subir, vincular, acciones del menú) o se deshabilitan (Editar,
-   Dividir, casillas de tareas, título en solo lectura). Sin `notes.read` la
-   bóveda muestra un aviso.
+1. **Server:**
+   - Administration functions check the actor's permission (`allows()` in
+     `server/profile.ts`).
+   - Vault functions filter by `context.userId` and check write and delete
+     permissions.
+2. **Vault store** (`app/vault/store.ts`): every action that modifies the
+   vault checks `can()` before changing anything. That covers create, edit,
+   rename, delete, move, link, upload, import, edit mode and the graph. This is
+   the lock that keyboard shortcuts and drag and drop can't bypass.
+3. **Interface:**
+   - Hidden without permission: the graph, "new note", portfolios, upload,
+     link, and menu actions.
+   - Disabled without permission: Edit, Split, task checkboxes and the title
+     (read-only).
+   - Without `notes.read`, the vault shows a notice.
 
-`sessionPulse` devuelve los permisos cada 12 s, así que un cambio de rol se
-aplica sin volver a entrar; si se retira la edición o el grafo, la vista vuelve
-a Leer y el grafo se cierra solo. El administrador inicial siempre tiene todos
-los permisos y su rol no se puede cambiar (interfaz y servidor).
+`sessionPulse` returns the permissions every 12 seconds, so a role change takes
+effect without signing in again. If editing or the graph is revoked, the view
+falls back to Read and the graph closes by itself. The initial administrator
+always has every permission, and their role can't be changed (in the interface
+or on the server).
 
-## Compartir
+## Sharing
 
-Cada nota o portafolio es **privado** por defecto. Su dueño puede cambiarlo con
-"Compartir…" (menú "Más acciones" del editor o clic derecho en el directorio),
-si su rol tiene `notes.share`:
+Every note and portfolio is **private** by default. If their role has
+`notes.share`, the owner can change that with "Compartir…" (Share…), from the
+editor's "more actions" menu or by right-clicking in the directory.
 
-| Visibilidad | Quién lo ve | Cómo |
+| Visibility | Who sees it | How |
 | --- | --- | --- |
-| Privada | Solo el dueño | No hay fila en `share_item` |
-| Compartida | Los usuarios elegidos | "Compartidos conmigo": segunda raíz del directorio (`vault/SharedSection`), se abre en el área principal; `/compartidos` queda para enlaces directos |
-| Pública | Cualquiera con el enlace, sin sesión | `/p/<token>` (token aleatorio de 192 bits) |
+| Private | Only the owner | No row in `share_item` |
+| Shared | The chosen users and organizations | In their directory, under the **Compartidos conmigo** root (`vault/SharedSection`). Items open in the main area. `/compartidos` remains for direct links. |
+| Public | Anyone with the link, without a session | `/p/<token>` (random 192-bit token) |
 
-Todo lo compartido es **de solo lectura**. Compartir un portafolio incluye sus
-subportafolios y documentos. El directorio y el editor marcan lo compartido (👥)
-y lo público (🌐), también cuando lo heredan de un portafolio.
+- Everything shared is **read-only**.
+- Sharing a portfolio includes its sub-portfolios and documents.
+- The directory and the editor mark shared (👥) and public (🌐) items, including
+  ones that inherit the status from a portfolio.
 
-Como las notas viven en el navegador de su dueño, el servidor guarda una
-**copia publicada** (`published_doc`, `published_portfolio`) solo de lo
-compartido. `ShareMirror` la actualiza unos 2,5 s después de cada cambio del
-dueño, y el servidor recalcula qué cubre cada elemento (`domain/share.ts`), así
-que descarta lo que el cliente mande de más. Al pasar algo a privada se borra
-su copia; al borrar una nota o un portafolio compartido se quita su elemento
-compartido. El servidor solo entrega un elemento a su dueño, a sus invitados o,
-si es público, a quien tenga el token.
+The server keeps a **published copy** (`published_doc`, `published_portfolio`)
+of shared content only:
 
-Limitaciones: los demás ven la última versión que el dueño publicó desde su
-navegador (si edita sin conexión, se publica al volver); los archivos
-compartidos se guardan en Postgres como data URL (hasta ~1,5 MB cada uno).
+- **Publishing:** `ShareMirror` refreshes it about 2.5 seconds after each change
+  by the owner.
+- **Coverage check:** the server recomputes what each item covers
+  (`domain/share.ts`) and drops anything extra the client sends.
+- **Revoking:**
+  - Making an item private deletes its copy.
+  - Deleting a shared note or portfolio removes its share item.
+- **Access:** the server only serves an item to its owner, to its grantees,
+  or, if it is public, to whoever has the token.
 
-## Organizaciones
+Limitations:
 
-Administración → Usuarios y permisos → Organizaciones (permiso `orgs.manage`).
-Son jerárquicas: cada una puede tener sub-organizaciones (sin ciclos; borrar
-una borra sus sub-organizaciones) y miembros. Al **compartir** una nota o un
-portafolio con una organización, lo ven sus miembros y los de todas sus
-sub-organizaciones; el servidor lo resuelve subiendo desde las organizaciones
-del usuario hasta las raíces (consulta recursiva en `server/share.ts`).
+- Recipients see the last version the owner published from their browser.
+  Edits made offline are published when the owner reconnects.
+- Shared files are stored in Postgres as data URLs, up to about 1.5 MB each.
 
-## Autenticación externa
+## Organizations
 
-Administración → Autenticación (permiso `auth.manage`). Cada proveedor tiene:
-activado, rol de las cuentas nuevas (por defecto Miembro) y dominios de correo
-permitidos (vacío = cualquiera). Los secretos se guardan en `auth_provider` y
-nunca vuelven al navegador; un secreto vacío al guardar conserva el anterior.
+Administration → Users and permissions → Organizations (`orgs.manage`
+permission).
 
-| Proveedor | Cómo entra la persona | Detalle |
+- **Hierarchy:** organizations can have sub-organizations, with no cycles.
+  Deleting one deletes its sub-organizations.
+- **Members:** each organization has its own members.
+- **Sharing:** when a note or portfolio is **shared** with an organization, its
+  members and the members of all its sub-organizations see it. The server
+  resolves this by walking up from the user's organizations to the roots (a
+  recursive query in `server/share.ts`).
+
+## External authentication
+
+Administration → Authentication (`auth.manage` permission). Each provider has
+three settings:
+
+- Whether it is enabled.
+- The role for new accounts (Member by default).
+- The allowed email domains (empty means any).
+
+Secrets are stored in `auth_provider` and never go back to the browser. Saving
+with an empty secret keeps the previous one.
+
+| Provider | How people sign in | Details |
 | --- | --- | --- |
-| LDAP / Active Directory | Pestaña «Directorio (LDAP)» del ingreso | La cuenta de servicio busca con el filtro (`{{username}}` escapado) y luego se enlaza con el DN de la persona. Botón «Probar conexión». |
-| OAuth: Google, GitHub, Microsoft | Botón «Continuar con…» | Proveedores sociales de Better Auth; el panel muestra la dirección de retorno a registrar. |
-| SSO (OpenID Connect) | Botón con el texto configurado (p. ej. «Keycloak») | `genericOAuth` con descubrimiento (`<emisor>/.well-known/openid-configuration`) y PKCE. Botón «Probar emisor». |
+| LDAP / Active Directory | The «Directorio (LDAP)» tab on the sign-in screen | The service account searches with the filter (`{{username}}`, escaped), then binds with the person's DN. Has a «Probar conexión» (test connection) button. |
+| OAuth: Google, GitHub, Microsoft | A «Continuar con…» button | Better Auth social providers. The panel shows the callback URL to register. |
+| SSO (OpenID Connect) | A button with the configured label (for example «Keycloak») | `genericOAuth` with discovery (`<issuer>/.well-known/openid-configuration`) and PKCE. Has a «Probar emisor» (test issuer) button. |
 
-La primera vez se crea la cuenta (`provision.server.ts`) con el rol por
-defecto y `app_user_role.source` = proveedor; Usuarios lo muestra con una
-etiqueta. Una cuenta externa **no** se apropia de una existente por coincidir
-el correo (`disableImplicitLinking`, y en LDAP se rechaza con «Ya existe otra
-cuenta con ese correo»). Las cuentas LDAP sin correo usan
-`<uid>@ldap.grafito.app`.
+On first sign-in, `provision.server.ts` creates the account with the default
+role and sets `app_user_role.source` to the provider. The Users list shows it as
+a badge.
 
-Para probar: `docker compose --profile auth-test up -d` levanta Keycloak
-(`127.0.0.1:8180`) y OpenLDAP con datos de `dev/auth-test/` (ver comentarios en
-`docker-compose.yml`).
+An external account **never** takes over an existing account just because the
+email matches. Better Auth uses `disableImplicitLinking`, and LDAP rejects it
+with «Ya existe otra cuenta con ese correo» ("another account already uses that
+email"). LDAP accounts without an email use `<uid>@ldap.grafito.app`.
 
-**Lockfile:** tras `npm install <paquete>` con un npm distinto del de la imagen
-(Node 22 / npm 10), regenera `package-lock.json` así para que `npm ci` del
-`Dockerfile` no falle:
+To test locally, run `docker compose --profile auth-test up -d`. It starts
+Keycloak (`127.0.0.1:8180`) and OpenLDAP with data from `dev/auth-test/` (see
+the comments in `docker-compose.yml`).
+
+**Lockfile:** after `npm install <package>` with a different npm than the
+image's (Node 22 / npm 10), regenerate `package-lock.json` like this so the
+`Dockerfile`'s `npm ci` doesn't fail:
 
 ```bash
 docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --package-lock-only
 ```
 
-## Bóveda en el servidor y sincronización
+## Server-side vault and sync
 
-Desde la migración 0008 la bóveda de cada usuario vive en Postgres
-(`vault_doc`, `vault_portfolio`); el navegador guarda una copia para abrir al
-instante. `app/vault/sync.ts` la sincroniza:
+Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
+`vault_portfolio`). The browser keeps a copy so it can open instantly.
+`app/vault/sync.ts` syncs the two:
 
-- Cada cambio en el servidor recibe la siguiente revisión del usuario
-  (`vault_state.revision`); las bajas quedan como lápidas.
-- El navegador recuerda la última revisión recibida y una huella de cada
-  documento tal como quedó sincronizado. Baja lo nuevo, sube lo que cambió aquí
-  y, si un documento cambió en los dos lados, gana el más reciente.
-- Sincroniza al abrir la bóveda, 1,5 s después de cada cambio, cada 20 s, al
-  volver a la pestaña y justo después de que la IA cambie algo.
-- Primera vez en un navegador: si el servidor ya tiene la bóveda y aquí solo
-  está la de ejemplo, se adopta la del servidor; si aquí había notas guardadas
-  (versiones anteriores), se mezclan y se sube lo que falte.
-- El servidor rechaza cambios de quien no tiene permisos de escritura y bajas
-  sin el permiso de borrar.
+- **Revisions:** every server-side change gets the user's next revision
+  (`vault_state.revision`). Deletions stay as tombstones.
+- **Merging:** the browser remembers the last revision it received and a
+  fingerprint of each document as last synced. It pulls what is new, pushes
+  what changed locally, and if a document changed on both sides, the newest
+  wins.
+- **When it syncs:**
+  - When the vault opens.
+  - 1.5 seconds after each change.
+  - Every 20 seconds.
+  - When the tab regains focus.
+  - Right after the AI changes something.
+- **First time in a browser:**
+  - If the server already has the vault and the browser only has the sample
+    one, the server's vault is adopted.
+  - If the browser had saved notes (older versions), the two are merged and
+    whatever is missing is uploaded.
+- **Permissions:** the server rejects changes from users without write
+  permission, and deletions without the delete permission.
 
-## API REST
+## REST API
 
-Autenticación: `Authorization: Bearer gft_…` (token personal, Cuenta → API; en
-la base solo se guarda su SHA-256) o la sesión del navegador (solo desde el
-mismo sitio). Cada operación comprueba el permiso del rol.
+Authentication:
 
-| Método y ruta | Permiso | Qué hace |
+- `Authorization: Bearer gft_…`: a personal token from Account → API. Only its
+  SHA-256 hash is stored.
+- Or the browser session, from the same site only.
+
+Every operation checks the role's permission.
+
+| Method and path | Permission | What it does |
 | --- | --- | --- |
-| `GET /api/v1/me` | — | Usuario, rol y permisos |
-| `GET /api/v1/portfolios` | `notes.read` | Portafolios |
-| `POST /api/v1/portfolios` `{ name, parentId? }` | `portfolios.manage` | Crea un portafolio |
-| `GET /api/v1/notes?portfolio=<id\|root>&q=<texto>&limit=<n>` | `notes.read` | Notas y archivos (sin contenido) |
-| `POST /api/v1/notes` `{ title, content?, portfolioId? }` | `notes.create` | Crea una nota |
-| `GET /api/v1/notes/:id` | `notes.read` | La nota (o los datos del archivo y su texto si es de texto) |
-| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | `notes.edit` | Cambia una nota; renombrar actualiza los `[[enlaces]]` |
-| `DELETE /api/v1/notes/:id` | `notes.delete` / `files.delete` | La borra |
-| `GET /api/v1/notes/:id/file` | `files.download` | Descarga el archivo |
+| `GET /api/v1/me` | — | User, role and permissions |
+| `GET /api/v1/portfolios` | `notes.read` | Portfolios |
+| `POST /api/v1/portfolios` `{ name, parentId? }` | `portfolios.manage` | Creates a portfolio |
+| `GET /api/v1/notes?portfolio=<id\|root>&q=<text>&limit=<n>` | `notes.read` | Notes and files (without content) |
+| `POST /api/v1/notes` `{ title, content?, portfolioId? }` | `notes.create` | Creates a note |
+| `GET /api/v1/notes/:id` | `notes.read` | The note, or for a file its metadata and its text if it is a text file |
+| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | `notes.edit` | Updates a note. Renaming updates `[[links]]`. |
+| `DELETE /api/v1/notes/:id` | `notes.delete` / `files.delete` | Deletes it |
+| `GET /api/v1/notes/:id/file` | `files.download` | Downloads the file |
 
-Errores: JSON `{ "error": "…" }` con 400, 401, 403, 404 o 409.
+Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
 
-## Asistente de IA
+## AI assistant
 
-- **Administración → IA** (`ai.manage`): solo activa o desactiva cada
-  proveedor.
-- **Cuenta → IA** (`ai.use`): cada persona conecta los permitidos. En los de la
-  nube, con su propia clave contra la URL oficial; en Ollama y LM Studio, con la
-  dirección de **su propia instancia** y una clave opcional. Se prueba antes de
-  guardarse; la clave va cifrada (AES-256-GCM con `GRAFITO_ENCRYPTION_KEY`; solo
-  se muestran sus 4 últimos caracteres).
-- **Direcciones propias** (`server/ai/local-url.ts`): como es el servidor quien
-  las llama, solo se aceptan `http(s)` sin credenciales y se rechazan el propio
-  servidor (`localhost`, `127.x`, `::1`, `0.0.0.0`) y los servicios internos
-  del despliegue (`postgres`, `redis`, `elasticsearch`, `minio`, `app`…). Se
-  vuelve a validar en cada uso y los adaptadores no siguen redirecciones. Una
-  dirección de la red local que no sea de Grafito sí se acepta (es el caso de
-  uso); si eso no conviene en tu despliegue, desactiva Ollama y LM Studio.
-- **Chat**: botón flotante en la bóveda o **Ctrl+B** (dentro del editor de la
-  nota Ctrl+B sigue siendo negrita; Esc lo cierra). Sin proveedor conectado lo
-  dice y enlaza a Cuenta; con proveedor pero sin modelo, pide elegirlo.
+- **Administration → AI** (`ai.manage`): only turns each provider on or off.
+- **Account → AI** (`ai.use`): each person connects the allowed providers.
+  - Cloud providers use the person's own key, against the official URL.
+  - Ollama and LM Studio use the address of **the person's own instance**,
+    with an optional key.
+  - The connection is tested before saving.
+  - The key is encrypted (AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`). Only its
+    last 4 characters are shown.
+- **Self-hosted addresses** (`server/ai/local-url.ts`): the server makes the
+  call, so these are restricted:
+  - Only `http(s)` without credentials is accepted.
+  - Grafito's own server (`localhost`, `127.x`, `::1`, `0.0.0.0`) is rejected.
+  - The deployment's internal services (`postgres`, `redis`, `elasticsearch`,
+    `minio`, `app`…) are rejected.
+  - The address is validated again on every use, and adapters don't follow
+    redirects.
+  - Other LAN addresses are accepted, since that is the use case. If that isn't
+    acceptable in your deployment, disable Ollama and LM Studio.
+- **Chat:**
+  - Opens from the floating button in the vault or **Ctrl+B**. Inside the note
+    editor, Ctrl+B stays bold, and Esc closes the chat.
+  - With no provider connected, it says so and links to Account.
+  - With a provider but no model, it asks you to pick one.
 
-| Proveedor | Protocolo | Dirección | Clave |
+| Provider | Protocol | Address | Key |
 | --- | --- | --- | --- |
 | ChatGPT (OpenAI) | Chat Completions | `https://api.openai.com/v1` | `Authorization: Bearer` |
-| Claude (Anthropic) | Messages (`tool_use` / `tool_result`) | `https://api.anthropic.com` | `x-api-key` + `anthropic-version` |
+| Claude (Anthropic) | Messages (`tool_use` / `tool_result`) | `https://api.anthropic.com` | `x-api-key` and `anthropic-version` |
 | Grok (xAI) | Chat Completions | `https://api.x.ai/v1` | Bearer |
 | Gemini (Google) | `generateContent` (`functionCall` / `functionResponse`) | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key` |
 | DeepSeek | Chat Completions | `https://api.deepseek.com` | Bearer |
 | Kimi (Moonshot) | Chat Completions | `https://api.moonshot.ai/v1` | Bearer |
-| Ollama | `/api/chat` nativo | la instancia de cada usuario | opcional |
-| LM Studio | Chat Completions | la instancia de cada usuario (`…/v1`) | opcional |
+| Ollama | Native `/api/chat` | Each user's instance | Optional |
+| LM Studio | Chat Completions | Each user's instance (`…/v1`) | Optional |
 
-El agente (`server/ai/agent.ts`) alterna llamadas al modelo y herramientas hasta
-8 pasos. Herramientas (solo las que permite el rol): `list_portfolios`,
-`list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
-`create_portfolio`; las de leer y editar aceptan id o título. La respuesta llega
-como NDJSON y el chat muestra cada herramienta usada (clic para abrir la nota).
+The agent (`server/ai/agent.ts`) alternates model calls and tool calls, for up
+to 8 steps.
 
-Para probar con un modelo abierto: `docker compose --profile ai-test up -d`
-(Ollama con `qwen2.5:1.5b`): activa Ollama en Administración → IA y conéctalo
-en Cuenta → IA con `http://ollama:11434`.
+- **Tools:** only those the role allows, out of `list_portfolios`,
+  `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note` and
+  `create_portfolio`. The read and edit tools accept an id or a title.
+- **Response:** streamed as NDJSON. The chat shows each tool used, and you can
+  click one to open the note.
+
+To try it with an open model, run `docker compose --profile ai-test up -d`
+(Ollama with `qwen2.5:1.5b`). Enable Ollama in Administration → AI, then
+connect it in Account → AI with `http://ollama:11434`.
