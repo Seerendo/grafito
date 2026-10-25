@@ -1,0 +1,582 @@
+import { Activity, Building2, Clock, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, Navigate } from "@tanstack/react-router";
+import { setAccountProfile } from "@/app/account-profile";
+import { leaveApp } from "@/app/leave";
+import { SESSION_PRESETS } from "@/domain/session";
+import { setPluginFlags } from "@/app/plugins";
+import { applyTheme, currentTheme, THEMES, type ThemeId } from "@/app/theme";
+import { useVault } from "@/app/vault/store";
+import { AppFrame } from "@/components/chrome/AppFrame";
+import { Switch } from "@/components/ui/Switch";
+import { UsageMeter } from "@/components/ui/UsageMeter";
+import { OptionGrid } from "@/components/ui/OptionGrid";
+import { SettingsNav } from "@/components/chrome/SettingsNav";
+import { RedirectToSignIn } from "@/lib/auth/gates";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/server/admin.functions";
+import { setSessionTtl, storageReport } from "@/server/session.functions";
+import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
+import { OrgsBoard } from "./OrgsBoard";
+import { AiBoard } from "./AiBoard";
+import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
+
+type Section = "usuarios" | "autenticacion" | "ia" | "plugins" | "apariencia" | "sesion" | "monitor";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas";
+type State = Awaited<ReturnType<typeof adminState>>;
+type StoreSpace = {
+  id: string;
+  label: string;
+  total: number | null;
+  available: number | null;
+  used: number | null;
+};
+
+const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[] = [
+  {
+    id: "usuarios",
+    label: "Usuarios y permisos",
+    icon: Users,
+    need: ["admin.access", "users.create", "users.update", "users.delete", "roles.manage", "orgs.manage"],
+  },
+  {
+    id: "autenticacion",
+    label: "Autenticación",
+    icon: ShieldCheck,
+    need: ["auth.manage"],
+  },
+  {
+    id: "ia",
+    label: "Inteligencia artificial",
+    icon: Sparkles,
+    need: ["ai.manage"],
+  },
+  { id: "plugins", label: "Plugins", icon: Puzzle, need: ["plugins.manage"] },
+  { id: "apariencia", label: "Apariencia", icon: Palette },
+  { id: "sesion", label: "Sesión", icon: Clock, need: ["session.manage"] },
+  {
+    id: "monitor",
+    label: "Monitorización y logs",
+    icon: Activity,
+    need: ["monitor.view", "admin.access", "sources.manage"],
+  },
+];
+
+function allowed(view: AdminView, key: string) {
+  return view.owner || view.actorPermissions.includes(key);
+}
+
+function visibleNav(view: AdminView) {
+  return NAV.filter((item) => !item.need || item.need.some((key) => allowed(view, key)));
+}
+
+export function AdminScreen() {
+  const { user, isPending } = useCurrentUserState();
+  const [view, setState] = useState<State | null>(null);
+  const [section, setSection] = useState<Section | null>(null);
+  const [leaf, setLeaf] = useState<Leaf | null>(null);
+  const [roleId, setRoleId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [probe, setProbe] = useState<{ elastic: string; bucket: string } | null>(null);
+
+  const load = () => {
+    void adminState()
+      .then((next) => {
+        setState(next);
+        if (next.isAdmin && user?.id) {
+          setAccountProfile({
+            userId: user.id,
+            displayName: next.displayName,
+            contactEmail: next.contactEmail,
+            loginName: next.loginName,
+            isAdmin: next.owner,
+            canAdmin: true,
+          });
+          setPluginFlags(Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.enabled])));
+        }
+      })
+      .catch(() => setError("No se pudo leer la administración."));
+  };
+
+  useEffect(() => {
+    if (user?.id) useVault.getState().openVaultFor(user.id);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    load();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector("[role=menu], [cmdk-root]")) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.closest("[role=menu]") ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) {
+          target.blur();
+        }
+        return;
+      }
+      if (roleId || leaf || section) {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        setRoleId(null);
+        setLeaf(null);
+        setSection(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [roleId, leaf, section]);
+
+  if (isPending || (user && !view && !error)) {
+    return (
+      <AppFrame>
+        <p className="grid flex-1 place-items-center text-sm text-muted">Cargando…</p>
+      </AppFrame>
+    );
+  }
+  if (!user) return <RedirectToSignIn />;
+  if (error) {
+    return (
+      <AppFrame>
+        <p className="grid flex-1 place-items-center text-sm text-danger">{error}</p>
+      </AppFrame>
+    );
+  }
+  if (!view?.isAdmin) {
+    return (
+      <main className="grid min-h-dvh place-items-center bg-bg px-4 text-fg">
+        <div className="text-center">
+          <h1 className="font-serif text-3xl">Sin permiso</h1>
+          <Link to="/" className="mt-4 inline-flex h-11 items-center text-sm text-accent">
+            Volver a la bóveda
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (view.mustChangePassword) return <Navigate to="/" />;
+
+  const items = visibleNav(view);
+  const current = items.find((item) => item.id === section) ?? null;
+  const openSection = (id: Section) => {
+    setSection(id);
+    setLeaf(null);
+    setRoleId(null);
+  };
+  const title = heading(view, current?.id ?? null, leaf, roleId);
+
+  return (
+    <AppFrame>
+      <div className="flex min-h-0 flex-1">
+        <SettingsNav
+          title="Ajustes"
+          storageKey="grafito.admin-nav"
+          allLabel="Todas"
+          items={items}
+          active={current?.id ?? null}
+          onSelect={(id) => {
+            if (id) openSection(id);
+            else {
+              setSection(null);
+              setLeaf(null);
+              setRoleId(null);
+            }
+          }}
+          footer={view.loginName}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grafito-in w-full px-4 py-6 sm:px-8">
+              {current ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (roleId) setRoleId(null);
+                    else if (leaf) setLeaf(null);
+                    else setSection(null);
+                  }}
+                  className="mb-3 text-sm text-accent md:hidden"
+                >
+                  Atrás
+                </button>
+              ) : null}
+              <h1 className="font-serif text-3xl tracking-tight">{title}</h1>
+              <div className="mt-6">
+                {!current ? <OptionGrid items={items} onPick={openSection} /> : null}
+                {current?.id === "usuarios" && !leaf ? (
+                  allowed(view, "users.create") ||
+                  allowed(view, "users.update") ||
+                  allowed(view, "users.delete") ||
+                  allowed(view, "roles.manage") ||
+                  allowed(view, "orgs.manage") ? (
+                    <OptionGrid
+                      items={[
+                        ...(allowed(view, "users.create") || allowed(view, "users.update") || allowed(view, "users.delete")
+                          ? [{ id: "usuarios" as const, label: "Usuarios", icon: Users }]
+                          : []),
+                        ...(allowed(view, "roles.manage")
+                          ? [{ id: "roles" as const, label: "Roles", icon: KeyRound }]
+                          : []),
+                        ...(allowed(view, "orgs.manage")
+                          ? [
+                              {
+                                id: "organizaciones" as const,
+                                label: "Organizaciones",
+                                icon: Building2,
+                              },
+                            ]
+                          : []),
+                      ]}
+                      onPick={(id) => setLeaf(id)}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted">Este rol no administra cuentas.</p>
+                  )
+                ) : null}
+                {current?.id === "usuarios" && leaf === "usuarios" ? <UsersBoard view={view} reload={load} /> : null}
+                {current?.id === "usuarios" && leaf === "organizaciones" ? <OrgsBoard view={view} /> : null}
+                {current?.id === "usuarios" && leaf === "roles" ? (
+                  <RolesBoard view={view} reload={load} roleId={roleId} onOpen={setRoleId} />
+                ) : null}
+                {current?.id === "autenticacion" && !leaf ? (
+                  <OptionGrid
+                    items={[
+                      { id: "ldap" as const, label: "LDAP", icon: Network },
+                      { id: "oauth" as const, label: "OAuth", icon: KeyRound },
+                      { id: "sso" as const, label: "SSO", icon: ShieldCheck },
+                    ]}
+                    onPick={(id) => setLeaf(id)}
+                  />
+                ) : null}
+                {current?.id === "autenticacion" && leaf === "ldap" ? <LdapPanel /> : null}
+                {current?.id === "autenticacion" && leaf === "oauth" ? <OAuthPanel /> : null}
+                {current?.id === "autenticacion" && leaf === "sso" ? <SsoPanel /> : null}
+                {current?.id === "monitor" && !leaf ? (
+                  <OptionGrid
+                    items={[
+                      ...(allowed(view, "monitor.view")
+                        ? [
+                            { id: "monitor" as const, label: "Monitor de sistema", icon: Activity },
+                            { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
+                          ]
+                        : []),
+                      ...(allowed(view, "admin.access")
+                        ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }]
+                        : []),
+                      ...(allowed(view, "sources.manage")
+                        ? [{ id: "fuentes" as const, label: "Fuentes", icon: Database }]
+                        : []),
+                    ]}
+                    onPick={(id) => setLeaf(id)}
+                  />
+                ) : null}
+                {current?.id === "monitor" && leaf === "monitor" ? <MonitorBoard /> : null}
+                {current?.id === "monitor" && leaf === "logs" ? <LogsBoard /> : null}
+                {current?.id === "monitor" && leaf === "espacio" ? <SpacePanel /> : null}
+                {current?.id === "monitor" && leaf === "fuentes" ? (
+                  <Sources
+                    view={view}
+                    probe={probe}
+                    reload={load}
+                    onProbe={() => {
+                      void probeSources().then((result) =>
+                        setProbe({
+                          elastic: result.elastic?.detail ?? "",
+                          bucket: result.bucket?.detail ?? "",
+                        }),
+                      );
+                    }}
+                  />
+                ) : null}
+                {current?.id === "apariencia" && !leaf ? (
+                  <OptionGrid
+                    items={[{ id: "temas", label: "Temas", icon: Palette }]}
+                    onPick={(id) => setLeaf(id)}
+                  />
+                ) : null}
+                {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
+                {current?.id === "ia" ? <AiBoard /> : null}
+                {current?.id === "plugins" ? <Plugins view={view} reload={load} /> : null}
+                {current?.id === "sesion" ? <SessionPanel seconds={view.sessionTtl} /> : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AppFrame>
+  );
+}
+
+function heading(view: AdminView, section: Section | null, leaf: Leaf | null, roleId: string | null) {
+  if (!section) return "Administración";
+  if (section === "usuarios" && leaf === "usuarios") return "Usuarios";
+  if (section === "usuarios" && leaf === "roles") {
+    return view.roles.find((role) => role.id === roleId)?.name ?? "Roles";
+  }
+  if (section === "usuarios" && leaf === "organizaciones") return "Organizaciones";
+  if (section === "usuarios") return "Usuarios y permisos";
+  if (section === "autenticacion" && leaf === "ldap") return "LDAP";
+  if (section === "autenticacion" && leaf === "oauth") return "OAuth";
+  if (section === "autenticacion" && leaf === "sso") return "SSO";
+  if (section === "apariencia" && leaf === "temas") return "Temas";
+  if (section === "apariencia") return "Apariencia";
+  if (section === "monitor" && leaf === "monitor") return "Monitor de sistema";
+  if (section === "monitor" && leaf === "logs") return "Logs de sistema";
+  if (section === "monitor" && leaf === "espacio") return "Espacio";
+  if (section === "monitor" && leaf === "fuentes") return "Fuentes";
+  if (section === "monitor") return "Monitorización y logs";
+  return NAV.find((item) => item.id === section)?.label ?? "Administración";
+}
+
+function Sources({
+  view,
+  probe,
+  reload,
+  onProbe,
+}: {
+  view: Extract<State, { isAdmin: true }>;
+  probe: { elastic: string; bucket: string } | null;
+  reload: () => void;
+  onProbe: () => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <ul>
+        {view.sources.map((source) => (
+          <li key={source.id} className="flex items-center gap-4 border-b border-line px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm">{source.label}</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {engineLabel(source.id, view.engines)}
+                {source.id === "documents" ? ` · ${view.indexed}` : ""}
+              </p>
+            </div>
+            <Switch
+              checked={source.enabled}
+              ariaLabel={source.label}
+              onChange={(enabled) => void setSourceEnabled({ data: { id: source.id, enabled } }).then(reload)}
+            />
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <button type="button" onClick={onProbe} className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+          Comprobar
+        </button>
+        {probe ? (
+          <div className="min-w-0 text-xs text-muted">
+            <p className="truncate">{probe.elastic}</p>
+            <p className="truncate">{probe.bucket}</p>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function Plugins({ view, reload }: { view: Extract<State, { isAdmin: true }>; reload: () => void }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <ul>
+        {view.plugins.map((plugin) => (
+          <li key={plugin.id} className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm">{plugin.name}</p>
+              <p className="mt-0.5 text-xs text-muted">{plugin.description}</p>
+            </div>
+            <Switch
+              checked={plugin.enabled}
+              ariaLabel={plugin.name}
+              onChange={(enabled) => void setPluginEnabled({ data: { id: plugin.id, enabled } }).then(reload)}
+            />
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ThemesPanel() {
+  const [current, setCurrent] = useState<ThemeId>("grafito");
+  useEffect(() => setCurrent(currentTheme()), []);
+  return (
+    <div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {THEMES.map((theme) => (
+          <button
+            key={theme.id}
+            type="button"
+            aria-pressed={current === theme.id}
+            onClick={() => {
+              applyTheme(theme.id);
+              setCurrent(theme.id);
+            }}
+            className="theme-card"
+          >
+            <span className="theme-stage" data-preview={theme.id}>
+              <b>{theme.name}</b>
+              <span>Aa — nota, vínculo, archivo</span>
+            </span>
+            <span className="theme-card-copy">
+              <strong className="text-sm">{theme.name}</strong>
+              {current === theme.id ? <em className="ml-2 text-xs text-accent not-italic">En uso</em> : null}
+              <small>{theme.blurb}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SessionPanel({ seconds }: { seconds: number }) {
+  const [picked, setPicked] = useState(seconds);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => setPicked(seconds), [seconds]);
+  const dirty = picked !== seconds;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <ul>
+        {SESSION_PRESETS.map((item) => (
+          <li key={item.seconds} className="border-b border-line last:border-b-0">
+            <button
+              type="button"
+              aria-pressed={picked === item.seconds}
+              onClick={() => setPicked(item.seconds)}
+              className={`flex h-14 w-full items-center gap-3 px-4 text-left text-sm transition-colors ${
+                picked === item.seconds ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+              }`}
+            >
+              <span className={`size-2 rounded-full ${picked === item.seconds ? "bg-accent" : "bg-line"}`} />
+              {item.label}
+              {seconds === item.seconds ? <span className="ml-auto text-xs text-faint">Actual</span> : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+        <button
+          type="button"
+          disabled={!dirty || busy}
+          onClick={() => {
+            setBusy(true);
+            setError("");
+            void setSessionTtl({ data: { seconds: picked } })
+              .then((result) => {
+                if (!result.ok) {
+                  setError("No se aplicó.");
+                  setBusy(false);
+                  return;
+                }
+                void leaveApp();
+              })
+              .catch(() => {
+                setError("No se aplicó.");
+                setBusy(false);
+              });
+          }}
+          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
+        >
+          {busy ? "Cerrando…" : "Aplicar y salir"}
+        </button>
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function SpacePanel() {
+  const [stores, setStores] = useState<StoreSpace[] | null>(null);
+  const [error, setError] = useState("");
+
+  const load = () => {
+    setError("");
+    void storageReport()
+      .then((next) => {
+        if (!next.ok) {
+          setError("Sin permiso.");
+          return;
+        }
+        setStores(next.stores);
+      })
+      .catch(() => setError("No se pudo medir."));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (!stores) return <p className="text-sm text-muted">Cargando…</p>;
+  if (stores.length === 0) return <p className="text-sm text-muted">Ninguna base conectada.</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex">
+        <button type="button" onClick={load} className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+          Actualizar
+        </button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {stores.map((store) => {
+          const measured = store.total != null && store.available != null && store.total > 0;
+          const percent = measured
+            ? Math.max(0, Math.min(100, Math.round(((store.total! - store.available!) / store.total!) * 100)))
+            : 0;
+          return (
+            <div key={store.id} className="border border-line bg-surface p-4">
+              <p className="text-xs tracking-widest text-faint uppercase">{store.label}</p>
+              {measured ? (
+                <>
+                  <p className="mt-1 font-serif text-3xl">{formatBytes(store.available!)}</p>
+                  <p className="mt-1 text-xs text-muted">
+                    Disponible de {formatBytes(store.total!)}
+                    {store.used != null ? ` · base ${formatBytes(store.used)}` : ""}
+                  </p>
+                  <UsageMeter percent={percent} label={`Uso de ${store.label}`} />
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 font-serif text-3xl">{store.used != null ? formatBytes(store.used) : "—"}</p>
+                  <p className="mt-1 text-xs text-muted">Ocupado</p>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  const digits = value >= 10 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[index]}`;
+}
+
+function engineLabel(id: string, engines: { relational: string; documents: string; files: string }): string {
+  if (id === "relational") return engines.relational === "postgres" ? "Postgres" : "Postgres embebido";
+  if (id === "documents") return engines.documents === "elasticsearch" ? "Elasticsearch" : "Índice de Postgres";
+  return engines.files === "minio" ? "MinIO" : "Bóveda local";
+}

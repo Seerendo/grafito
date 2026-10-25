@@ -1,0 +1,178 @@
+# Grafito y sus servicios. En la máquina: docker compose up --build
+# La app habla con los nombres de servicio (postgres, elasticsearch, redis, minio),
+# no con 127.0.0.1. El navegador entra por http://127.0.0.1:8080.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grafito
+      POSTGRES_PASSWORD: grafito
+      POSTGRES_DB: grafito
+    ports:
+      - "5432:5432"
+    volumes:
+      - grafito_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grafito -d grafito"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  elasticsearch:
+    image: elasticsearch:8.15.3
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - grafito_es:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:9200 >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - grafito_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: grafito
+      MINIO_ROOT_PASSWORD: grafito-secret
+      MC_HOST_local: http://grafito:grafito-secret@127.0.0.1:9000
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - grafito_s3:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  minio-init:
+    image: cgr.dev/chainguard/minio:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 grafito grafito-secret; do sleep 2; done;
+      mc mb -p local/grafito || true;
+      "
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      GRAFITO_FROM_DOCKER: "1"
+      DATABASE_URL: postgres://grafito:grafito@postgres:5432/grafito
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: grafito
+      S3_ACCESS_KEY: grafito
+      S3_SECRET_KEY: grafito-secret
+      S3_REGION: us-east-1
+      BETTER_AUTH_SECRET: grafito-dev-secret-cambia-esto
+      # Cifra las claves de IA de cada usuario. Cámbiala (32+ caracteres) y no la
+      # pierdas: sin ella no se pueden leer las claves ya guardadas.
+      GRAFITO_ENCRYPTION_KEY: grafito-dev-encryption-key-cambia-esto-0001
+      BETTER_AUTH_URL: http://127.0.0.1:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # --- Solo para probar la autenticación externa (no se levantan por defecto) ---
+  # docker compose --profile auth-test up -d
+  # Datos de prueba en dev/auth-test/. Configuración en Administración → Autenticación:
+  #   LDAP: ldap://openldap:389 · cn=admin,dc=grafito,dc=test / grafito-ldap
+  #         base ou=people,dc=grafito,dc=test · filtro (uid={{username}})
+  #   SSO:  emisor http://keycloak:8080/realms/grafito · cliente grafito / grafito-sso-secret
+  openldap:
+    image: osixia/openldap:1.5.0
+    profiles: ["auth-test"]
+    command: --copy-service
+    environment:
+      LDAP_ORGANISATION: Grafito
+      LDAP_DOMAIN: grafito.test
+      LDAP_ADMIN_PASSWORD: grafito-ldap
+    ports:
+      - "3389:389"
+    volumes:
+      - ./dev/auth-test/ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    profiles: ["auth-test"]
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: grafito-keycloak
+      # El navegador entra por 127.0.0.1:8180; la app habla con keycloak:8080.
+      KC_HOSTNAME: http://127.0.0.1:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./dev/auth-test/keycloak:/opt/keycloak/data/import:ro
+
+  # --- Solo para probar la IA con un modelo abierto (no se levanta por defecto) ---
+  # docker compose --profile ai-test up -d
+  # Administración → IA → Ollama: http://ollama:11434 (o LM Studio con http://ollama:11434/v1,
+  # que también habla el protocolo de OpenAI). El modelo se descarga la primera vez.
+  ollama:
+    image: ollama/ollama:0.6.8
+    profiles: ["ai-test"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - grafito_ollama:/root/.ollama
+
+  ollama-model:
+    image: ollama/ollama:0.6.8
+    profiles: ["ai-test"]
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull qwen2.5:1.5b"]
+
+volumes:
+  grafito_ollama:
+  grafito_pg:
+  grafito_es:
+  grafito_s3:
+  grafito_redis:

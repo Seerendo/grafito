@@ -1,0 +1,42 @@
+{
+  "realm": "grafito",
+  "enabled": true,
+  "displayName": "Grafito (pruebas)",
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "grafito",
+      "name": "Grafito",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "grafito-sso-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:8080/*", "http://localhost:8080/*"],
+      "webOrigins": ["http://127.0.0.1:8080", "http://localhost:8080"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ],
+  "users": [
+    {
+      "username": "sofia",
+      "enabled": true,
+      "email": "sofia@empresa.test",
+      "emailVerified": true,
+      "firstName": "Sofía",
+      "lastName": "Keycloak",
+      "credentials": [{ "type": "password", "value": "Sofia-Sso-2026", "temporary": false }]
+    },
+    {
+      "username": "intruso",
+      "enabled": true,
+      "email": "intruso@otro.test",
+      "emailVerified": true,
+      "firstName": "Intruso",
+      "lastName": "Ajeno",
+      "credentials": [{ "type": "password", "value": "Intruso-Sso-2026", "temporary": false }]
+    }
+  ]
+}

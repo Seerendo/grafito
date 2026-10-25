@@ -1,0 +1,15 @@
+{
+  "name": "Grafito",
+  "short_name": "Grafito",
+  "description": "Bóveda de notas en Markdown con enlaces, menciones y grafo.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#12110e",
+  "theme_color": "#12110e",
+  "icons": [
+    { "src": "/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

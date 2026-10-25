@@ -1,0 +1,14 @@
+node_modules/
+.data/
+.vercel/
+.output/
+.nitro/
+.tanstack/
+.env
+.env.local
+*.log
+_respaldo-grok/
+.claude/
+.DS_Store
+Thumbs.db
+coverage/

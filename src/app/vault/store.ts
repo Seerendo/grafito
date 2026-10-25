@@ -1,0 +1,754 @@
+import { create } from "zustand";
+import { actorName } from "@/app/actor";
+import { findByTitle, replaceWikiTitle } from "@/domain/vault/links";
+import { migrateLegacyVault, nestSamplePortfolios } from "@/domain/vault/migrate";
+import { PERMISSION, deletePermission } from "@/domain/permissions";
+import { descendantIds } from "@/domain/vault/portfolios";
+import {
+  MAX_UPLOAD_BYTES,
+  type DialogState,
+  type Document,
+  type ManualKind,
+  type Portfolio,
+  type ViewMode,
+} from "@/domain/vault/types";
+import { can, subscribePermissions } from "@/app/permissions";
+import { heldAdminId } from "@/app/vault-hold";
+import { createSeed } from "./seed";
+
+/**
+ * Cada usuario guarda su bóveda en su propia clave (`grafito.v2:<userId>`).
+ * Las claves sin usuario son de versiones anteriores, compartidas por todo el
+ * navegador: solo el administrador las adopta, una vez, y luego se borran.
+ */
+const STORAGE_PREFIX = "grafito.v2:";
+const SHARED_KEY = "grafito.v2";
+const LEGACY_KEY = "grafito.v1";
+
+function storageKey(userId: string): string {
+  return `${STORAGE_PREFIX}${userId}`;
+}
+
+type Persisted = {
+  documents: Document[];
+  portfolios: Portfolio[];
+  activeId: string | null;
+  mode: ViewMode;
+};
+
+function isDocument(value: unknown): value is Document {
+  if (!value || typeof value !== "object") return false;
+  const document = value as Partial<Document>;
+  return (
+    typeof document.id === "string" &&
+    typeof document.title === "string" &&
+    (document.kind === "markdown" || document.kind === "file") &&
+    typeof document.content === "string"
+  );
+}
+
+const AUTHOR = "Administrador";
+
+function authorOf(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : AUTHOR;
+}
+
+function mark(): { updatedAt: number; updatedBy: string } {
+  return { updatedAt: Date.now(), updatedBy: actorName() };
+}
+
+function born(): { createdAt: number; updatedAt: number; createdBy: string; updatedBy: string } {
+  const now = Date.now();
+  const who = actorName();
+  return { createdAt: now, updatedAt: now, createdBy: who, updatedBy: who };
+}
+
+function normalize(document: Document): Document {
+  const links = Array.isArray(document.links)
+    ? document.links.filter(
+        (link) =>
+          link &&
+          typeof link.targetId === "string" &&
+          (link.kind === "referencia" || link.kind === "llama"),
+      )
+    : [];
+  return {
+    id: document.id,
+    title: document.title,
+    portfolioId: typeof document.portfolioId === "string" ? document.portfolioId : null,
+    kind: document.kind,
+    content: document.content,
+    file:
+      document.file &&
+      typeof document.file.name === "string" &&
+      typeof document.file.mime === "string" &&
+      typeof document.file.dataUrl === "string"
+        ? document.file
+        : null,
+    links,
+    createdAt: Number(document.createdAt) || Date.now(),
+    updatedAt: Number(document.updatedAt) || Date.now(),
+    createdBy: authorOf(document.createdBy),
+    updatedBy: authorOf(document.updatedBy),
+    pinned: Boolean(document.pinned),
+  };
+}
+
+function isPortfolio(value: unknown): value is Portfolio {
+  if (!value || typeof value !== "object") return false;
+  const portfolio = value as Partial<Portfolio>;
+  return typeof portfolio.id === "string" && typeof portfolio.name === "string";
+}
+
+function parseSaved(raw: string): Persisted | null {
+  const data = JSON.parse(raw) as Partial<Persisted>;
+  if (!Array.isArray(data.documents)) return null;
+  const documents = data.documents.filter(isDocument).map(normalize);
+  if (documents.length === 0) return null;
+  const portfolios = Array.isArray(data.portfolios) ? data.portfolios.filter(isPortfolio) : [];
+  const activeId = documents.some((document) => document.id === data.activeId)
+    ? (data.activeId as string)
+    : documents[0]!.id;
+  const mode: ViewMode =
+    data.mode === "edit" || data.mode === "split" || data.mode === "read" ? data.mode : "read";
+  return { documents, portfolios, activeId, mode };
+}
+
+/** Bóveda compartida de versiones anteriores (sin usuario), si la hay. */
+function loadShared(): Persisted | null {
+  const current = localStorage.getItem(SHARED_KEY);
+  if (current) return parseSaved(current);
+  const legacy = localStorage.getItem(LEGACY_KEY);
+  return legacy ? migrateLegacyVault(JSON.parse(legacy)) : null;
+}
+
+/**
+ * Bóveda guardada de `userId`. Si no tiene, y `adoptShared`, la compartida de
+ * versiones anteriores (`adopted: true`).
+ */
+function loadSaved(userId: string, adoptShared: boolean): { saved: Persisted | null; adopted: boolean } {
+  if (typeof window === "undefined") return { saved: null, adopted: false };
+  try {
+    const own = localStorage.getItem(storageKey(userId));
+    if (own) return { saved: parseSaved(own), adopted: false };
+    if (!adoptShared) return { saved: null, adopted: false };
+    const shared = loadShared();
+    return { saved: shared, adopted: shared !== null };
+  } catch {
+    return { saved: null, adopted: false };
+  }
+}
+
+function forgetShared(): void {
+  try {
+    localStorage.removeItem(SHARED_KEY);
+    localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
+function sameTitle(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+function titleTaken(
+  documents: Document[],
+  title: string,
+  portfolioId: string | null,
+  kind: "markdown" | "file",
+  exceptId?: string,
+): boolean {
+  return documents.some((document) => {
+    if (document.id === exceptId) return false;
+    if (!sameTitle(document.title, title)) return false;
+    if (kind === "file") return document.portfolioId === portfolioId;
+    if (document.kind === "markdown") return true;
+    return document.portfolioId === portfolioId;
+  });
+}
+
+function uniqueTitle(
+  documents: Document[],
+  base: string,
+  portfolioId: string | null,
+  kind: "markdown" | "file",
+  exceptId?: string,
+): string {
+  const clean = base.trim() || "Sin título";
+  if (!titleTaken(documents, clean, portfolioId, kind, exceptId)) return clean;
+  let index = 2;
+  while (titleTaken(documents, `${clean} ${index}`, portfolioId, kind, exceptId)) index += 1;
+  return `${clean} ${index}`;
+}
+
+function withTitle(documents: Document[], id: string, title: string): Document[] {
+  const current = documents.find((document) => document.id === id);
+  if (!current || current.title === title) return documents;
+  return documents.map((document) => {
+    if (document.id === id) {
+      let content = document.content;
+      const heading = `# ${current.title}`;
+      if (document.kind === "markdown" && content.startsWith(heading)) {
+        content = `# ${title}${content.slice(heading.length)}`;
+      }
+      return {
+        ...document,
+        title,
+        content: document.kind === "markdown" ? replaceWikiTitle(content, current.title, title) : content,
+        ...mark(),
+      };
+    }
+    if (document.kind !== "markdown") return document;
+    const content = replaceWikiTitle(document.content, current.title, title);
+    return content === document.content ? document : { ...document, content, ...mark() };
+  });
+}
+
+type VaultState = Persisted & {
+  selectedPortfolioId: string | null;
+  rootPicked: boolean;
+  collapsed: Record<string, boolean>;
+  query: string;
+  tag: string | null;
+  graph: boolean;
+  palette: boolean;
+  dialog: DialogState;
+  /** Usuario dueño de la bóveda en memoria; `null` hasta `openVaultFor`. */
+  owner: string | null;
+  /** La bóveda de `owner` ya se cargó y se puede guardar. */
+  hydrated: boolean;
+  /** La bóveda en memoria es la de ejemplo: no venía guardada en este navegador. */
+  seeded: boolean;
+  /** Aplica cambios llegados del servidor (sincronización, IA, API). */
+  applyRemote: (changes: {
+    docs: Document[];
+    deletedDocs: string[];
+    portfolios: Portfolio[];
+    deletedPortfolios: string[];
+  }) => void;
+  /** Sustituye la bóveda entera por la del servidor. */
+  replaceVault: (documents: Document[], portfolios: Portfolio[]) => void;
+  /** Carga la bóveda de `userId` (o la de ejemplo si no tiene). */
+  openVaultFor: (userId: string) => void;
+  /** Guarda y descarga la bóveda en memoria (al salir). */
+  closeVault: () => void;
+  setActive: (id: string) => void;
+  selectInGraph: (id: string) => void;
+  setMode: (mode: ViewMode) => void;
+  setQuery: (query: string) => void;
+  setTag: (tag: string | null) => void;
+  setGraph: (graph: boolean) => void;
+  toggleGraph: () => void;
+  setPalette: (palette: boolean) => void;
+  setDialog: (dialog: DialogState) => void;
+  setSelectedPortfolio: (id: string | null) => void;
+  clearSelection: () => void;
+  /** Vuelve al inicio: sin nota abierta, sin grafo, filtro ni diálogos. */
+  showStart: () => void;
+  toggleCollapsed: (id: string) => void;
+  updateContent: (id: string, content: string) => void;
+  rename: (id: string, title: string) => boolean;
+  togglePin: (id: string) => void;
+  toggleTask: (id: string, line: number) => void;
+  createDocument: (portfolioId?: string | null, title?: string, content?: string) => string;
+  uploadFile: (portfolioId: string | null, name: string, mime: string, dataUrl: string) => string | null;
+  createPortfolio: (parentId: string | null, name: string) => void;
+  deleteDocument: (id: string) => void;
+  deletePortfolio: (id: string) => void;
+  moveDocument: (id: string, portfolioId: string | null) => void;
+  movePortfolio: (id: string, parentId: string | null) => void;
+  renamePortfolio: (id: string, name: string) => boolean;
+  resolveMove: (action: "replace" | "rename") => void;
+  addManualLink: (sourceId: string, targetId: string, kind: ManualKind) => void;
+  removeManualLink: (sourceId: string, targetId: string) => void;
+  openTitle: (title: string) => void;
+  duplicate: (id: string) => void;
+  importNote: (title: string, content: string, portfolioId?: string | null) => void;
+  closeActive: () => void;
+  reset: () => void;
+};
+
+/** Estado de una bóveda recién abierta: datos guardados o de ejemplo, UI limpia. */
+function freshVault(saved: Persisted | null) {
+  const seed = createSeed();
+  return {
+    documents: saved?.documents ?? seed.documents,
+    portfolios: saved?.portfolios ?? seed.portfolios,
+    activeId: saved?.activeId ?? seed.activeId,
+    mode: saved?.mode ?? ("read" as ViewMode),
+    selectedPortfolioId: "p-inicio" as string | null,
+    rootPicked: false,
+    collapsed: {} as Record<string, boolean>,
+    query: "",
+    tag: null,
+    graph: false,
+    palette: false,
+    dialog: null as DialogState,
+  };
+}
+
+function persist(state: Pick<VaultState, "owner" | "hydrated" | keyof Persisted>): void {
+  if (!state.hydrated || !state.owner) return;
+  const payload: Persisted = {
+    documents: state.documents,
+    portfolios: state.portfolios,
+    activeId: state.activeId,
+    mode: state.mode,
+  };
+  try {
+    localStorage.setItem(storageKey(state.owner), JSON.stringify(payload));
+  } catch {
+    /* almacenamiento lleno o no disponible */
+  }
+}
+
+export const useVault = create<VaultState>((set, get) => ({
+  ...freshVault(null),
+  owner: null,
+  hydrated: false,
+  seeded: false,
+
+  openVaultFor: (userId) => {
+    if (get().owner === userId && get().hydrated) return;
+    persist(get());
+    // Solo el administrador hereda la bóveda compartida de versiones anteriores.
+    const { saved, adopted } = loadSaved(userId, heldAdminId() === userId);
+    const nested = saved ? nestSamplePortfolios(saved.portfolios) : null;
+    set({
+      ...freshVault(nested && saved ? { ...saved, portfolios: nested } : saved),
+      owner: userId,
+      hydrated: true,
+      seeded: !saved,
+    });
+    if (nested) persist(get());
+    if (adopted) {
+      persist(get());
+      forgetShared();
+    }
+  },
+
+  closeVault: () => {
+    persist(get());
+    set({ ...freshVault(null), owner: null, hydrated: false, seeded: false });
+  },
+
+  applyRemote: (changes) => {
+    const gone = new Set(changes.deletedDocs);
+    const incoming = new Map(changes.docs.map((document) => [document.id, normalize(document)]));
+    const documents = get()
+      .documents.filter((document) => !gone.has(document.id))
+      .map((document) => incoming.get(document.id) ?? document);
+    const known = new Set(documents.map((document) => document.id));
+    for (const document of incoming.values()) if (!known.has(document.id)) documents.unshift(document);
+    const goneFolders = new Set(changes.deletedPortfolios);
+    const folders = new Map(changes.portfolios.map((portfolio) => [portfolio.id, portfolio]));
+    const portfolios = get()
+      .portfolios.filter((portfolio) => !goneFolders.has(portfolio.id))
+      .map((portfolio) => folders.get(portfolio.id) ?? portfolio);
+    const knownFolders = new Set(portfolios.map((portfolio) => portfolio.id));
+    for (const portfolio of folders.values()) if (!knownFolders.has(portfolio.id)) portfolios.push(portfolio);
+    const activeId = get().activeId;
+    set({
+      documents,
+      portfolios,
+      activeId: activeId && gone.has(activeId) ? null : activeId,
+      seeded: false,
+    });
+  },
+
+  replaceVault: (documents, portfolios) => {
+    const activeId = get().activeId;
+    set({
+      documents: documents.map(normalize),
+      portfolios,
+      activeId: documents.some((document) => document.id === activeId) ? activeId : null,
+      seeded: false,
+    });
+  },
+
+  setActive: (id) => set({ activeId: id, graph: false, palette: false }),
+  selectInGraph: (id) => set({ activeId: id, palette: false }),
+  closeActive: () => set({ activeId: null, graph: false }),
+  setMode: (mode) => {
+    if (mode !== "read" && !can(PERMISSION.notesEdit)) return;
+    set({ mode });
+  },
+  setQuery: (query) => set({ query }),
+  setTag: (tag) => set({ tag, palette: false }),
+  setGraph: (graph) => {
+    if (graph && !can(PERMISSION.graphView)) return;
+    set({ graph, palette: false });
+  },
+  toggleGraph: () => get().setGraph(!get().graph),
+  setPalette: (palette) => set({ palette }),
+  setDialog: (dialog) => set({ dialog, palette: false }),
+  setSelectedPortfolio: (id) => set({ selectedPortfolioId: id, rootPicked: id === null }),
+  clearSelection: () => set({ activeId: null, graph: false, selectedPortfolioId: null, rootPicked: false }),
+  showStart: () =>
+    set({
+      activeId: null,
+      graph: false,
+      selectedPortfolioId: null,
+      rootPicked: false,
+      palette: false,
+      dialog: null,
+      query: "",
+      tag: null,
+    }),
+  toggleCollapsed: (id) =>
+    set((state) => ({ collapsed: { ...state.collapsed, [id]: !state.collapsed[id] } })),
+
+  updateContent: (id, content) => {
+    if (!can(PERMISSION.notesEdit)) return;
+    set((state) => ({
+      documents: state.documents.map((document) =>
+        document.id === id ? { ...document, content, ...mark() } : document,
+      ),
+    }));
+  },
+
+  rename: (id, raw) => {
+    if (!can(PERMISSION.notesEdit)) return false;
+    const title = raw.trim();
+    if (!title) return false;
+    const current = get().documents.find((document) => document.id === id);
+    if (!current) return false;
+    if (current.title === title) return true;
+    if (titleTaken(get().documents, title, current.portfolioId, current.kind, id)) return false;
+    set({ documents: withTitle(get().documents, id, title) });
+    return true;
+  },
+
+  togglePin: (id) =>
+    set((state) => ({
+      documents: state.documents.map((document) =>
+        document.id === id ? { ...document, pinned: !document.pinned } : document,
+      ),
+    })),
+
+  toggleTask: (id, line) => {
+    if (!can(PERMISSION.notesEdit)) return;
+    set((state) => ({
+      documents: state.documents.map((document) => {
+        if (document.id !== id || document.kind !== "markdown") return document;
+        const lines = document.content.split("\n");
+        const current = lines[line];
+        if (!current) return document;
+        lines[line] = current.includes("[ ]")
+          ? current.replace("[ ]", "[x]")
+          : current.replace(/\[(x|X)\]/, "[ ]");
+        return { ...document, content: lines.join("\n"), ...mark() };
+      }),
+    }));
+  },
+
+  createDocument: (portfolioId, title, content) => {
+    if (!can(PERMISSION.notesCreate)) return "";
+    const target = portfolioId === undefined ? get().selectedPortfolioId : portfolioId;
+    const name = uniqueTitle(get().documents, title?.trim() || "Sin título", target, "markdown");
+    const document: Document = {
+      id: crypto.randomUUID(),
+      title: name,
+      portfolioId: target,
+      kind: "markdown",
+      content: content ?? `# ${name}\n\n`,
+      file: null,
+      links: [],
+      ...born(),
+      pinned: false,
+    };
+    set({
+      documents: [document, ...get().documents],
+      activeId: document.id,
+      graph: false,
+      palette: false,
+      selectedPortfolioId: target,
+    });
+    return document.id;
+  },
+
+  uploadFile: (portfolioId, name, mime, dataUrl) => {
+    if (!can(PERMISSION.filesUpload)) return "Tu rol no permite subir archivos.";
+    if (dataUrl.length > Math.ceil(MAX_UPLOAD_BYTES * 1.4)) {
+      return "El archivo supera el límite de unos 700 KB.";
+    }
+    const base = name.replace(/\.[^.]+$/, "") || name;
+    const title = uniqueTitle(get().documents, base, portfolioId, "file");
+    const document: Document = {
+      id: crypto.randomUUID(),
+      title,
+      portfolioId,
+      kind: "file",
+      content: "",
+      file: { name, mime: mime || "application/octet-stream", dataUrl },
+      links: [],
+      ...born(),
+      pinned: false,
+    };
+    set({
+      documents: [document, ...get().documents],
+      activeId: document.id,
+      graph: false,
+      palette: false,
+      selectedPortfolioId: portfolioId,
+    });
+    return null;
+  },
+
+  createPortfolio: (parentId, name) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    const clean = name.trim().replace(/[\\/]/g, "");
+    if (!clean) return;
+    const id = crypto.randomUUID();
+    set({
+      portfolios: [...get().portfolios, { id, name: clean, parentId }],
+      selectedPortfolioId: id,
+      dialog: null,
+      collapsed: { ...get().collapsed, [id]: false, ...(parentId ? { [parentId]: false } : {}) },
+    });
+  },
+
+  deleteDocument: (id) => {
+    const target = get().documents.find((document) => document.id === id);
+    if (!target || !can(deletePermission(target.kind))) return;
+    const documents = get()
+      .documents.filter((document) => document.id !== id)
+      .map((document) => ({
+        ...document,
+        links: document.links.filter((link) => link.targetId !== id),
+      }));
+    set({
+      documents,
+      activeId: get().activeId === id ? (documents[0]?.id ?? null) : get().activeId,
+      dialog: null,
+    });
+  },
+
+  deletePortfolio: (id) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    const portfolio = get().portfolios.find((item) => item.id === id);
+    if (!portfolio) return;
+    const drop = descendantIds(get().portfolios, id);
+    const removed = new Set(
+      get()
+        .documents.filter((document) => document.portfolioId && drop.has(document.portfolioId))
+        .map((document) => document.id),
+    );
+    const documents = get()
+      .documents.filter((document) => !removed.has(document.id))
+      .map((document) => ({
+        ...document,
+        links: document.links.filter((link) => !removed.has(link.targetId)),
+      }));
+    const selected = get().selectedPortfolioId;
+    const activeId = get().activeId;
+    set({
+      portfolios: get().portfolios.filter((item) => !drop.has(item.id)),
+      documents,
+      activeId: activeId !== null && removed.has(activeId) ? null : activeId,
+      selectedPortfolioId: selected !== null && drop.has(selected) ? portfolio.parentId : selected,
+      dialog: null,
+    });
+  },
+
+  moveDocument: (id, portfolioId) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    const current = get().documents.find((document) => document.id === id);
+    if (!current || current.portfolioId === portfolioId) return;
+    if (portfolioId && !get().portfolios.some((portfolio) => portfolio.id === portfolioId)) return;
+    const existing = get().documents.find(
+      (document) =>
+        document.id !== id &&
+        document.portfolioId === portfolioId &&
+        sameTitle(document.title, current.title),
+    );
+    if (existing) {
+      set({ dialog: { type: "move-conflict", id, portfolioId, existingId: existing.id } });
+      return;
+    }
+    set({
+      documents: get().documents.map((document) =>
+        document.id === id ? { ...document, portfolioId, ...mark() } : document,
+      ),
+      collapsed: portfolioId ? { ...get().collapsed, [portfolioId]: false } : get().collapsed,
+      selectedPortfolioId: portfolioId,
+    });
+  },
+
+  movePortfolio: (id, parentId) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    if (id === parentId) return;
+    if (parentId && !get().portfolios.some((portfolio) => portfolio.id === parentId)) return;
+    const blocked = descendantIds(get().portfolios, id);
+    if (parentId && blocked.has(parentId)) return;
+    set({
+      portfolios: get().portfolios.map((portfolio) =>
+        portfolio.id === id ? { ...portfolio, parentId } : portfolio,
+      ),
+      collapsed: parentId ? { ...get().collapsed, [parentId]: false } : get().collapsed,
+      selectedPortfolioId: id,
+    });
+  },
+
+  renamePortfolio: (id, name) => {
+    if (!can(PERMISSION.portfoliosManage)) return false;
+    const clean = name.trim().replace(/[\\/]/g, "");
+    if (!clean) return false;
+    if (!get().portfolios.some((portfolio) => portfolio.id === id)) return false;
+    set({
+      portfolios: get().portfolios.map((portfolio) =>
+        portfolio.id === id ? { ...portfolio, name: clean } : portfolio,
+      ),
+      dialog: null,
+    });
+    return true;
+  },
+
+  resolveMove: (action) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    const dialog = get().dialog;
+    if (!dialog || dialog.type !== "move-conflict") return;
+    const source = get().documents.find((document) => document.id === dialog.id);
+    if (!source) {
+      set({ dialog: null });
+      return;
+    }
+    if (action === "replace") {
+      const documents = get()
+        .documents.filter((document) => document.id !== dialog.existingId)
+        .map((document) => ({
+          ...document,
+          portfolioId: document.id === source.id ? dialog.portfolioId : document.portfolioId,
+          ...(document.id === source.id ? mark() : { updatedAt: document.updatedAt, updatedBy: document.updatedBy }),
+          links: document.links
+            .filter((link) => !(document.id === source.id && link.targetId === dialog.existingId))
+            .map((link) =>
+              link.targetId === dialog.existingId ? { ...link, targetId: source.id } : link,
+            ),
+        }));
+      set({
+        documents,
+        activeId: get().activeId === dialog.existingId ? source.id : get().activeId,
+        collapsed: dialog.portfolioId ? { ...get().collapsed, [dialog.portfolioId]: false } : get().collapsed,
+        selectedPortfolioId: dialog.portfolioId,
+        dialog: null,
+      });
+      return;
+    }
+    const title = uniqueTitle(get().documents, source.title, dialog.portfolioId, source.kind, source.id);
+    const documents = withTitle(get().documents, source.id, title).map((document) =>
+      document.id === source.id
+        ? { ...document, portfolioId: dialog.portfolioId, ...mark() }
+        : document,
+    );
+    set({
+      documents,
+      collapsed: dialog.portfolioId ? { ...get().collapsed, [dialog.portfolioId]: false } : get().collapsed,
+      selectedPortfolioId: dialog.portfolioId,
+      dialog: null,
+    });
+  },
+
+  addManualLink: (sourceId, targetId, kind) => {
+    if (!can(PERMISSION.linksManage)) return;
+    if (sourceId === targetId) return;
+    set({
+      documents: get().documents.map((document) => {
+        if (document.id !== sourceId) return document;
+        const links = document.links.filter((link) => link.targetId !== targetId);
+        return { ...document, links: [...links, { targetId, kind }], ...mark() };
+      }),
+      dialog: null,
+    });
+  },
+
+  removeManualLink: (sourceId, targetId) => {
+    if (!can(PERMISSION.linksManage)) return;
+    set({
+      documents: get().documents.map((document) =>
+        document.id === sourceId
+          ? {
+              ...document,
+              links: document.links.filter((link) => link.targetId !== targetId),
+              ...mark(),
+            }
+          : document,
+      ),
+    });
+  },
+
+  openTitle: (title) => {
+    const found = findByTitle(get().documents, title);
+    if (found) {
+      set({ activeId: found.id, graph: false, palette: false });
+      return;
+    }
+    const portfolioId = get().documents.find((document) => document.id === get().activeId)?.portfolioId ?? null;
+    get().createDocument(portfolioId, title, `# ${title}\n\n`);
+  },
+
+  duplicate: (id) => {
+    if (!can(PERMISSION.notesCreate)) return;
+    const source = get().documents.find((document) => document.id === id);
+    if (!source || source.kind !== "markdown") return;
+    const title = uniqueTitle(get().documents, `${source.title} copia`, source.portfolioId, "markdown");
+    const heading = `# ${source.title}`;
+    const content = source.content.startsWith(heading)
+      ? `# ${title}${source.content.slice(heading.length)}`
+      : source.content;
+    get().createDocument(source.portfolioId, title, content);
+  },
+
+  importNote: (title, content, portfolioId) => {
+    if (!can(PERMISSION.notesCreate)) return;
+    if (portfolioId !== undefined) {
+      const name = title.replace(/\.(md|markdown)$/i, "").trim() || "Sin título";
+      get().createDocument(portfolioId, name, content);
+      return;
+    }
+    const existing = get().portfolios.find((portfolio) => portfolio.name === "Importadas" && !portfolio.parentId);
+    const importedId = existing?.id ?? crypto.randomUUID();
+    if (!existing) {
+      set({ portfolios: [...get().portfolios, { id: importedId, name: "Importadas", parentId: null }] });
+    }
+    get().createDocument(importedId, title.replace(/\.md$/i, ""), content);
+  },
+
+  reset: () => {
+    if (!can(PERMISSION.notesCreate) || !can(PERMISSION.notesDelete)) return;
+    set({ ...freshVault(null), hydrated: get().owner !== null });
+  },
+}));
+
+subscribePermissions(() => {
+  const state = useVault.getState();
+  const patch: Partial<VaultState> = {};
+  if (state.mode !== "read" && !can(PERMISSION.notesEdit)) patch.mode = "read";
+  if (state.graph && !can(PERMISSION.graphView)) patch.graph = false;
+  if (Object.keys(patch).length > 0) useVault.setState(patch);
+});
+
+const persistFlag = "__grafitoPersistV3";
+if (typeof window !== "undefined" && !(persistFlag in window)) {
+  Object.defineProperty(window, persistFlag, { value: true });
+  let timer = 0;
+  useVault.subscribe((state, previous) => {
+    // Al cambiar de dueño, `openVaultFor` / `closeVault` ya guardaron.
+    if (state.owner !== previous.owner) {
+      window.clearTimeout(timer);
+      return;
+    }
+    if (!state.hydrated) return;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => persist(useVault.getState()), 200);
+  });
+  window.addEventListener("pagehide", () => {
+    window.clearTimeout(timer);
+    persist(useVault.getState());
+  });
+}
+
+export function useActiveDocument(): Document | null {
+  return useVault((state) => state.documents.find((document) => document.id === state.activeId) ?? null);
+}

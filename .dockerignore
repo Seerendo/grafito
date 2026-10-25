@@ -1,0 +1,10 @@
+node_modules
+.data
+.vercel
+.output
+.git
+.env
+.env.local
+_respaldo-grok
+*.log
+dev

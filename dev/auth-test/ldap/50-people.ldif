@@ -1,0 +1,20 @@
+# Usuarios de prueba para el perfil auth-test (solo desarrollo).
+dn: ou=people,dc=grafito,dc=test
+objectClass: organizationalUnit
+ou: people
+
+dn: uid=carla,ou=people,dc=grafito,dc=test
+objectClass: inetOrgPerson
+uid: carla
+cn: Carla Directorio
+sn: Directorio
+mail: carla@empresa.test
+userPassword: Carla-Ldap-2026
+
+dn: uid=diego,ou=people,dc=grafito,dc=test
+objectClass: inetOrgPerson
+uid: diego
+cn: Diego Externo
+sn: Externo
+mail: diego@otro.test
+userPassword: Diego-Ldap-2026

@@ -1,0 +1,646 @@
+@import "@fontsource/outfit/latin-ext-400.css";
+@import "@fontsource/outfit/latin-ext-500.css";
+@import "@fontsource/outfit/latin-ext-600.css";
+@import "@fontsource/literata/latin-ext-400.css";
+@import "@fontsource/literata/latin-ext-400-italic.css";
+@import "@fontsource/literata/latin-ext-600.css";
+@import "@fontsource/literata/latin-ext-700.css";
+@import "tailwindcss";
+@source inline("contents");
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata", "Iowan Old Style", Palatino, Georgia, serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-bg: #12110e;
+  --color-surface: #1b1915;
+  --color-elevated: #26231d;
+  --color-inset: #0e0d0b;
+  --color-fg: #f3eee6;
+  --color-muted: #a89b8c;
+  --color-faint: #746a5e;
+  --color-line: #3a342c;
+  --color-accent: #e0a14a;
+  --color-accent-fg: #1c1408;
+  --color-danger: #e07a72;
+
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html[data-theme="grafito"] {
+  color-scheme: dark;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+  --color-bg: #12110e;
+  --color-surface: #1b1915;
+  --color-elevated: #26231d;
+  --color-inset: #0e0d0b;
+  --color-fg: #f3eee6;
+  --color-muted: #a89b8c;
+  --color-faint: #746a5e;
+  --color-line: #3a342c;
+  --color-accent: #e0a14a;
+  --color-accent-fg: #1c1408;
+  --color-danger: #e07a72;
+}
+
+html[data-theme="papel"] {
+  color-scheme: light;
+  --font-sans: "Literata", Palatino, Georgia, serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --color-bg: #f4efe4;
+  --color-surface: #fbf7ef;
+  --color-elevated: #e7dcc8;
+  --color-inset: #efe4d2;
+  --color-fg: #1c140e;
+  --color-muted: #5c4d3e;
+  --color-faint: #7a6a58;
+  --color-line: #d3c3ab;
+  --color-accent: #7a2e1f;
+  --color-accent-fg: #fff8ef;
+  --color-danger: #9b2c2c;
+}
+
+html[data-theme="terminal"] {
+  color-scheme: dark;
+  --font-sans: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-serif: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --color-bg: #070a07;
+  --color-surface: #0c120c;
+  --color-elevated: #152015;
+  --color-inset: #040604;
+  --color-fg: #d7f5c2;
+  --color-muted: #7d9a72;
+  --color-faint: #4e6848;
+  --color-line: #243324;
+  --color-accent: #b6f27a;
+  --color-accent-fg: #071107;
+  --color-danger: #ff7b72;
+}
+
+html[data-theme="taller"] {
+  color-scheme: dark;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.85rem;
+  --radius-lg: 1.15rem;
+  --color-bg: #241910;
+  --color-surface: #312218;
+  --color-elevated: #463226;
+  --color-inset: #1a120c;
+  --color-fg: #f6e7d4;
+  --color-muted: #c4a88d;
+  --color-faint: #8d7360;
+  --color-line: #5a4334;
+  --color-accent: #e07a3d;
+  --color-accent-fg: #2a1408;
+  --color-danger: #e07a72;
+}
+
+html[data-theme="marea"] {
+  color-scheme: dark;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0.6rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.4rem;
+  --color-bg: #07141c;
+  --color-surface: #0d1e2a;
+  --color-elevated: #163244;
+  --color-inset: #041018;
+  --color-fg: #e5f4f4;
+  --color-muted: #8fb4b8;
+  --color-faint: #5e8086;
+  --color-line: #1e4452;
+  --color-accent: #3dcdc2;
+  --color-accent-fg: #04221f;
+  --color-danger: #f09890;
+}
+
+html[data-theme="cine"] {
+  color-scheme: dark;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --color-bg: #090909;
+  --color-surface: #111111;
+  --color-elevated: #1c1c1c;
+  --color-inset: #000000;
+  --color-fg: #f4efe6;
+  --color-muted: #b3ab9f;
+  --color-faint: #7a7368;
+  --color-line: #2c2c2c;
+  --color-accent: #ff3b30;
+  --color-accent-fg: #1a0504;
+  --color-danger: #ff8a80;
+}
+
+html[data-theme="cine"] body {
+  letter-spacing: 0.01em;
+}
+
+html[data-theme="manuscrito"] {
+  color-scheme: light;
+  --font-sans: "Literata", Palatino, Georgia, serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --color-bg: #fbf6ec;
+  --color-surface: #fffaf2;
+  --color-elevated: #f0e2cf;
+  --color-inset: #f7efe2;
+  --color-fg: #2a1c14;
+  --color-muted: #6a5144;
+  --color-faint: #8a7060;
+  --color-line: #e2d0bb;
+  --color-accent: #7a2438;
+  --color-accent-fg: #fff7f4;
+  --color-danger: #9b2c2c;
+}
+
+html[data-theme="manuscrito"] body {
+  background-color: #fbf6ec;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 31px,
+    rgba(140, 90, 70, 0.16) 32px
+  );
+  background-attachment: fixed;
+  line-height: 1.55;
+}
+
+html[data-theme="plano"] {
+  color-scheme: light;
+  --font-sans: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-serif: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --color-bg: #e7f0f6;
+  --color-surface: #f7fbfe;
+  --color-elevated: #d5e6f3;
+  --color-inset: #dceaf4;
+  --color-fg: #102033;
+  --color-muted: #3d5870;
+  --color-faint: #5d7690;
+  --color-line: #9bb8d0;
+  --color-accent: #0b5cab;
+  --color-accent-fg: #f4f9ff;
+  --color-danger: #a12632;
+}
+
+html[data-theme="plano"] body {
+  background-color: #e7f0f6;
+  background-image:
+    linear-gradient(rgba(11, 92, 171, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 92, 171, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-attachment: fixed;
+}
+
+html[data-theme="invernadero"] {
+  color-scheme: dark;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Literata", Palatino, Georgia, serif;
+  --radius-sm: 0.7rem;
+  --radius-md: 1.1rem;
+  --radius-lg: 1.6rem;
+  --color-bg: #101c16;
+  --color-surface: #17261d;
+  --color-elevated: #24382b;
+  --color-inset: #0b1510;
+  --color-fg: #e7f0df;
+  --color-muted: #b7c9ae;
+  --color-faint: #7e9478;
+  --color-line: #34513c;
+  --color-accent: #c6f25a;
+  --color-accent-fg: #14200c;
+  --color-danger: #ff8f86;
+}
+
+html[data-theme="invernadero"] body {
+  background-color: #101c16;
+  background-image: radial-gradient(ellipse at 50% -10%, rgba(198, 242, 90, 0.16), transparent 52%);
+  background-attachment: fixed;
+}
+
+html[data-theme="folleto"] {
+  color-scheme: light;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 0.2rem;
+  --radius-md: 0.35rem;
+  --radius-lg: 0.5rem;
+  --color-bg: #f3ecdf;
+  --color-surface: #fff8ee;
+  --color-elevated: #d9e7ff;
+  --color-inset: #efe4d2;
+  --color-fg: #1a1a1a;
+  --color-muted: #4d463f;
+  --color-faint: #6f675e;
+  --color-line: #1a1a1a;
+  --color-accent: #e23d6a;
+  --color-accent-fg: #fff5f8;
+  --color-danger: #9b1c3c;
+}
+
+html[data-theme="folleto"] body {
+  background-color: #f3ecdf;
+  background-image:
+    radial-gradient(circle at 0 0, rgba(226, 61, 106, 0.16), transparent 42%),
+    radial-gradient(circle at 100% 0, rgba(37, 99, 235, 0.14), transparent 38%);
+  background-attachment: fixed;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    cursor: default;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  [role="button"],
+  aside,
+  nav,
+  header,
+  p,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  li,
+  label,
+  span,
+  small,
+  dt,
+  dd {
+    caret-color: transparent;
+    user-select: none;
+  }
+
+  aside input,
+  aside textarea,
+  header input,
+  input,
+  textarea,
+  [contenteditable="true"] {
+    user-select: text;
+    caret-color: auto;
+    cursor: text;
+  }
+
+  select {
+    cursor: pointer;
+    caret-color: transparent;
+    user-select: none;
+  }
+
+  article,
+  article * {
+    user-select: text;
+    cursor: auto;
+    caret-color: transparent;
+  }
+
+  article input,
+  article textarea,
+  article [contenteditable="true"] {
+    user-select: text;
+    caret-color: auto;
+    cursor: text;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  [data-home],
+  [data-home] * {
+    user-select: none;
+    caret-color: transparent;
+    cursor: default;
+  }
+
+  [data-home] button,
+  [data-home] [role="button"] {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+    color: var(--color-fg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.theme-moon {
+  display: none;
+}
+
+html[data-tone="dark"] .theme-sun {
+  display: none;
+}
+
+html[data-tone="dark"] .theme-moon {
+  display: block;
+}
+
+.theme-swatch {
+  display: flex;
+  height: 4.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  padding: 0.6rem 0.7rem;
+}
+
+.theme-swatch b {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.theme-swatch span {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.theme-swatch i {
+  display: block;
+  height: 0.45rem;
+  width: 1.1rem;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.theme-swatch[data-preview="grafito"] {
+  background: #12110e;
+  color: #e0a14a;
+  border-radius: 0.25rem;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-swatch[data-preview="papel"] {
+  background: #f4efe4;
+  color: #7a2e1f;
+  border-radius: 0;
+  font-family: Literata, serif;
+}
+
+.theme-swatch[data-preview="terminal"] {
+  background: #070a07;
+  color: #b6f27a;
+  border-radius: 0;
+  font-family: ui-monospace, monospace;
+}
+
+.theme-swatch[data-preview="taller"] {
+  background: #241910;
+  color: #e07a3d;
+  border-radius: 0.85rem;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-swatch[data-preview="marea"] {
+  background: #07141c;
+  color: #3dcdc2;
+  border-radius: 1rem;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-swatch[data-preview="cine"] {
+  background: #090909;
+  color: #ff3b30;
+  border-radius: 0;
+  font-family: Literata, serif;
+}
+
+.theme-card {
+  display: flex;
+  min-height: 12.5rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  text-align: left;
+}
+
+.theme-card[aria-pressed="true"] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.theme-stage {
+  display: flex;
+  height: 6.75rem;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.85rem 0.95rem;
+}
+
+.theme-stage b {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.theme-stage span {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.theme-card-copy {
+  padding: 0.8rem 0.95rem 0.95rem;
+}
+
+.theme-card-copy small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.theme-stage[data-preview="grafito"] {
+  background: #12110e;
+  color: #e0a14a;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-stage[data-preview="papel"] {
+  background: #f4efe4;
+  color: #7a2e1f;
+  font-family: Literata, serif;
+}
+
+.theme-stage[data-preview="terminal"] {
+  background: #070a07;
+  color: #b6f27a;
+  font-family: ui-monospace, monospace;
+}
+
+.theme-stage[data-preview="taller"] {
+  background: #241910;
+  color: #e07a3d;
+  border-radius: 0.85rem 0.85rem 0 0;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-stage[data-preview="marea"] {
+  background: #07141c;
+  color: #3dcdc2;
+  font-family: Outfit, sans-serif;
+}
+
+.theme-stage[data-preview="cine"] {
+  background: #090909;
+  color: #ff3b30;
+  font-family: Literata, serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.theme-stage[data-preview="manuscrito"] {
+  background-color: #fbf6ec;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 15px, rgba(140, 90, 70, 0.2) 16px);
+  color: #7a2438;
+  font-family: Literata, serif;
+}
+
+.theme-stage[data-preview="plano"] {
+  background-color: #e7f0f6;
+  background-image:
+    linear-gradient(rgba(11, 92, 171, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(11, 92, 171, 0.16) 1px, transparent 1px);
+  background-size: 14px 14px;
+  color: #0b5cab;
+  font-family: ui-monospace, monospace;
+}
+
+.theme-stage[data-preview="invernadero"] {
+  background-color: #101c16;
+  background-image: radial-gradient(circle at 80% 0, rgba(198, 242, 90, 0.35), transparent 55%);
+  color: #c6f25a;
+  font-family: Literata, serif;
+}
+
+.theme-stage[data-preview="folleto"] {
+  background-color: #f3ecdf;
+  background-image:
+    radial-gradient(circle at 0 100%, rgba(226, 61, 106, 0.35), transparent 46%),
+    radial-gradient(circle at 100% 0, rgba(37, 99, 235, 0.28), transparent 42%);
+  color: #1a1a1a;
+  font-family: Outfit, sans-serif;
+}
+
+.pdf-host {
+  position: fixed;
+  top: 0;
+  left: -12000px;
+  width: 760px;
+  pointer-events: none;
+}
+
+.pdf-sheet {
+  width: 720px;
+  background: #ffffff;
+  color: #1c140e;
+  padding: 28px 32px 48px;
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-elevated: #f4efe6;
+  --color-inset: #f7f4ee;
+  --color-fg: #1c140e;
+  --color-muted: #5c5146;
+  --color-faint: #7d7368;
+  --color-line: #e6dccf;
+  --color-accent: #7a2e1f;
+  --color-accent-fg: #fff8ef;
+  --color-danger: #9b2c2c;
+  font-family: Literata, Palatino, Georgia, serif;
+}
+
+.pdf-title {
+  margin: 0 0 4px;
+  font-family: Literata, Palatino, Georgia, serif;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 650;
+}
+
+[cmdk-item] {
+  cursor: pointer;
+}
+
+[cmdk-item][data-selected="true"] {
+  background: var(--color-elevated);
+  color: var(--color-fg);
+}
+
+[cmdk-group-heading] {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-faint);
+}
+
+@keyframes grafito-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.grafito-in {
+  animation: grafito-in 180ms ease;
+}
