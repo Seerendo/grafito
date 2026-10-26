@@ -2,7 +2,7 @@ import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
-import { recordVersion } from "./history";
+import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
 
 /**
  * La bóveda de cada usuario en el servidor (solo servidor). Fuente de verdad
@@ -189,7 +189,17 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
   const converted: string[] = [];
   for (const incoming of changes.docs) {
     const stored = incoming.kind === "file" ? await storeIncomingFile(sql, userId, incoming.file) : null;
-    const doc = stored ? { ...incoming, file: stored.file } : incoming;
+    let doc = stored ? { ...incoming, file: stored.file } : incoming;
+    // El contenido de un archivo solo cambia en el servidor (editor de Office):
+    // un navegador que renombra o mueve un archivo no puede volver a una clave vieja.
+    if (doc.kind === "file" && doc.file) {
+      const current = await sql<{ file_key: string | null; file_size: unknown }>`
+        select file_key, file_size from vault_doc where user_id = ${userId} and id = ${doc.id} and not deleted limit 1
+      `;
+      if (current[0]?.file_key) {
+        doc = { ...doc, file: { ...doc.file, key: current[0].file_key, size: Number(current[0].file_size ?? 0), dataUrl: undefined } };
+      }
+    }
     if (stored?.converted) converted.push(doc.id);
     await writeDoc(sql, userId, doc, rev, true);
   }
@@ -434,6 +444,47 @@ export async function createPortfolio(
   return portfolio;
 }
 
+/**
+ * Nuevo contenido de un archivo (editor de Office, o restaurar una versión):
+ * el objeto nuevo ya está en el almacén; el anterior queda en el historial.
+ */
+export async function replaceFile(
+  sql: Sql,
+  userId: string,
+  id: string,
+  input: { key: string; size: number; actor: string; separateVersion?: boolean },
+): Promise<Document> {
+  const current = await getDoc(sql, userId, id);
+  if (!current?.file?.key) throw new VaultError("Ese archivo no existe.", 404);
+  await ensureFileBaseline(sql, userId, {
+    id,
+    title: current.title,
+    key: current.file.key,
+    size: current.file.size ?? 0,
+    author: current.updatedBy,
+    at: current.updatedAt,
+  });
+  const now = Date.now();
+  const rev = await nextRevision(sql, userId);
+  await sql`
+    update vault_doc set file_key = ${input.key}, file_size = ${input.size}, updated_at = ${now}, updated_by = ${input.actor},
+      rev = ${rev}
+    where user_id = ${userId} and id = ${id}
+  `;
+  await recordFileVersion(sql, userId, {
+    id,
+    title: current.title,
+    key: input.key,
+    size: input.size,
+    author: input.actor,
+    at: now,
+    separate: input.separateVersion,
+  });
+  const doc = await getDoc(sql, userId, id);
+  if (!doc) throw new VaultError("Ese archivo no existe.", 404);
+  return doc;
+}
+
 // ---------------------------------------------------------------------------
 // Papelera
 
@@ -514,7 +565,8 @@ export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Prom
     const keys = await sql<{ file_key: string | null }>`
       select file_key from vault_doc where user_id = ${userId} and id = ${id} and deleted
     `;
-    await removeFile(sql, keys[0]?.file_key);
+    const versions = await versionKeys(sql, userId, id);
+    for (const key of new Set([keys[0]?.file_key, ...versions])) await removeFile(sql, key);
     await sql`
       update vault_doc set content = '', file_data = null, file_key = null, file_size = null, links_json = '[]',
         deleted_at = null

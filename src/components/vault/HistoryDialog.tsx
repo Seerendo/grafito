@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { diffLines, diffStats, type DiffLine } from "@/domain/diff";
 import { docHistory, docVersion, restoreDocVersion } from "@/server/history.functions";
+import { intl, t } from "@/app/i18n";
 
 type Version = Extract<Awaited<ReturnType<typeof docHistory>>, { ok: true }>["versions"][number];
 type Restored = Extract<Awaited<ReturnType<typeof restoreDocVersion>>, { ok: true }>;
@@ -44,7 +45,7 @@ export function HistoryDialog({
         setVersions(result.versions);
         setSelected(result.versions[0]?.id ?? null);
       })
-      .catch(() => setError("No se pudo leer el historial."));
+      .catch(() => setError(t("No se pudo leer el historial.")));
   }, [docId, shareId]);
 
   const index = versions?.findIndex((version) => version.id === selected) ?? -1;
@@ -53,7 +54,7 @@ export function HistoryDialog({
 
   useEffect(() => {
     for (const version of [current, previous]) {
-      if (!version || requested.current.has(version.id)) continue;
+      if (!version || version.file || requested.current.has(version.id)) continue;
       requested.current.add(version.id);
       void docVersion({ data: { docId, shareId, versionId: version.id } }).then((result) => {
         if (result.ok) setContents((known) => ({ ...known, [version.id]: result.version.content }));
@@ -62,7 +63,7 @@ export function HistoryDialog({
   }, [current, previous, docId, shareId]);
 
   const lines = useMemo(() => {
-    if (!current || contents[current.id] === undefined) return null;
+    if (!current || current.file || contents[current.id] === undefined) return null;
     const before = previous ? contents[previous.id] : "";
     if (before === undefined) return null;
     return diffLines(before, contents[current.id]!);
@@ -81,17 +82,17 @@ export function HistoryDialog({
       onRestored(result);
       onClose();
     } catch {
-      setError("No se pudo restaurar.");
+      setError(t("No se pudo restaurar."));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Historial" onClose={onClose} wide>
-      {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
-      {!versions && !error ? <p className="text-sm text-muted">Cargando…</p> : null}
-      {versions && versions.length === 0 ? <p className="text-sm text-muted">Sin versiones.</p> : null}
+    <Modal title={t("Historial")} onClose={onClose} wide>
+      {error ? <p className="mb-3 text-sm text-danger">{t(error)}</p> : null}
+      {!versions && !error ? <p className="text-sm text-muted">{t("Cargando…")}</p> : null}
+      {versions && versions.length === 0 ? <p className="text-sm text-muted">{t("Sin versiones.")}</p> : null}
       {versions && versions.length > 0 ? (
         <div className="flex max-h-[70vh] min-h-0 flex-col gap-3 md:flex-row">
           <ul className="max-h-48 shrink-0 overflow-y-auto rounded-md border border-line md:max-h-none md:w-60">
@@ -107,8 +108,8 @@ export function HistoryDialog({
                 >
                   <span className="block truncate">{formatWhen(version.createdAt)}</span>
                   <span className="block truncate text-xs text-faint">
-                    {version.author || "Alguien"}
-                    {position === 0 ? " · actual" : ""}
+                    {version.author || t("Alguien")}
+                    {position === 0 ? t(" · actual") : ""}
                   </span>
                 </button>
               </li>
@@ -128,20 +129,28 @@ export function HistoryDialog({
                     onClick={() => void restore()}
                     className="h-9 rounded-md bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-60"
                   >
-                    {busy ? "Restaurando…" : "Restaurar esta versión"}
+                    {busy ? t("Restaurando…") : t("Restaurar esta versión")}
                   </button>
                 ) : null}
               </div>
             ) : null}
             <div className="min-h-40 flex-1 overflow-auto rounded-md border border-line bg-inset font-mono text-xs leading-5">
-              {lines ? <DiffView lines={lines} /> : <p className="p-3 text-muted">Cargando…</p>}
+              {current?.file ? (
+                <p className="p-3 text-muted">
+                  {current.title} · {formatSize(current.size)}
+                </p>
+              ) : lines ? (
+                <DiffView lines={lines} />
+              ) : (
+                <p className="p-3 text-muted">{t("Cargando…")}</p>
+              )}
             </div>
           </div>
         </div>
       ) : null}
       <div className="mt-4 flex justify-end">
         <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
-          Cerrar
+          {t("Cerrar")}
         </button>
       </div>
     </Modal>
@@ -164,7 +173,7 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
     if (line.kind === "same") return;
     for (let offset = -CONTEXT; offset <= CONTEXT; offset += 1) keep.add(position + offset);
   });
-  if (keep.size === 0) return <p className="p-3 text-muted">Sin cambios de texto.</p>;
+  if (keep.size === 0) return <p className="p-3 text-muted">{t("Sin cambios de texto.")}</p>;
   const rows: ({ type: "line"; line: DiffLine; key: number } | { type: "gap"; count: number; key: number })[] = [];
   let gap = 0;
   lines.forEach((line, position) => {
@@ -182,7 +191,7 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
       {rows.map((row) =>
         row.type === "gap" ? (
           <p key={row.key} className="px-3 py-0.5 text-faint">
-            ··· {row.count} {row.count === 1 ? "línea" : "líneas"} sin cambios
+            ··· {row.count} {row.count === 1 ? t("línea") : t("líneas")}{" "}{t("sin cambios")}
           </p>
         ) : (
           <p
@@ -206,8 +215,13 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
   );
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
+  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
     new Date(ms),
   );
 }

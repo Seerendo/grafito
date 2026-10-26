@@ -4,6 +4,7 @@ import { graphClickIntent, graphEdges } from "@/domain/vault/graph";
 import { extractHeadings, extractWikiLinks } from "@/domain/vault/links";
 import type { GraphKind } from "@/domain/vault/types";
 import { useVault } from "@/app/vault/store";
+import { t } from "@/app/i18n";
 
 type SimNode = {
   id: string;
@@ -359,7 +360,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
         context.strokeStyle = active || node.id === hoverId.current ? accent : faint;
         context.stroke();
         if (!active && !showQuietLabels) continue;
-        const label = node.title.length > 28 ? `${node.title.slice(0, 26)}…` : node.title;
+        const label = node.title.length > 28 ? t("{0}…", { 0: node.title.slice(0, 26) }) : node.title;
         context.font = `${12 / cam.k}px Outfit, sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "top";
@@ -679,9 +680,9 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2 select-none">
         <div className="min-w-0">
-          <h2 className="font-serif text-xl">Grafo</h2>
+          <h2 className="font-serif text-xl">{t("Grafo")}</h2>
           <p className="text-xs text-faint">
-            {visibleNotes.length} documentos · {visibleEdges.length} vínculos
+            {visibleNotes.length}{" "}{t("documentos ·")}{" "}{visibleEdges.length}{" "}{t("vínculos")}
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -690,19 +691,19 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
             onClick={() => setLocal(false)}
             className={`h-10 rounded-md px-3 text-sm ${local ? "text-muted hover:bg-elevated" : "bg-elevated text-fg"}`}
           >
-            Todo
+            {t("Todo")}
           </button>
           <button
             type="button"
             onClick={() => setLocal(true)}
             className={`h-10 rounded-md px-3 text-sm ${local ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
           >
-            Entorno
+            {t("Entorno")}
           </button>
           <div className="flex items-center rounded-md border border-line">
             <button
               type="button"
-              aria-label="Alejar"
+              aria-label={t("Alejar")}
               onClick={() => apiRef.current.zoom(1 / 1.2)}
               className="grid h-10 w-10 place-items-center text-muted hover:text-fg"
             >
@@ -710,7 +711,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
             </button>
             <button
               type="button"
-              aria-label="Encajar el grafo"
+              aria-label={t("Encajar el grafo")}
               onClick={() => apiRef.current.fit()}
               className="h-10 min-w-12 px-1 text-xs text-muted hover:text-fg"
             >
@@ -718,7 +719,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
             </button>
             <button
               type="button"
-              aria-label="Acercar"
+              aria-label={t("Acercar")}
               onClick={() => apiRef.current.zoom(1.2)}
               className="grid h-10 w-10 place-items-center text-muted hover:text-fg"
             >
@@ -726,7 +727,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
             </button>
             <button
               type="button"
-              aria-label="Ir al documento seleccionado"
+              aria-label={t("Ir al documento seleccionado")}
               onClick={() => apiRef.current.focus()}
               className="grid h-10 w-10 place-items-center text-muted hover:text-fg"
             >
@@ -738,7 +739,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
             onClick={() => setSeed((value) => value + 1)}
             className="h-10 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
           >
-            Reacomodar
+            {t("Reacomodar")}
           </button>
         </div>
       </div>
@@ -750,7 +751,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
           onKeyDown={onStageKey}
           className="relative min-h-0 flex-1 outline-none select-none"
         >
-          <canvas ref={canvasRef} aria-label="Grafo de documentos" className="h-full w-full cursor-grab touch-none" />
+          <canvas ref={canvasRef} aria-label={t("Grafo de documentos")} className="h-full w-full cursor-grab touch-none" />
         </div>
       </div>
     </div>
@@ -763,7 +764,7 @@ function NodeCard() {
   const activeId = useVault((state) => state.activeId);
   const document = documents.find((item) => item.id === activeId) ?? null;
   if (!document) return null;
-  const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? "Raíz";
+  const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Raíz");
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const wikis = document.kind === "markdown" ? extractWikiLinks(document.content) : [];
   return (
@@ -772,12 +773,12 @@ function NodeCard() {
       className="max-h-52 overflow-y-auto border-b border-line bg-surface px-4 py-3 select-none md:absolute md:top-3 md:right-3 md:z-10 md:max-h-96 md:w-72 md:border"
     >
       <p className="text-xs text-faint">
-        {document.kind === "file" ? "Archivo" : "Nota"} · {portfolio}
+        {document.kind === "file" ? t("Archivo") : t("Nota")} · {portfolio}
       </p>
       <h3 className="mt-1 font-serif text-xl leading-tight">{document.title}</h3>
-      <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">Esquema</h4>
+      <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">{t("Esquema")}</h4>
       {headings.length === 0 ? (
-        document.kind === "file" ? null : <p className="mt-1 text-sm text-muted">Sin encabezados</p>
+        document.kind === "file" ? null : <p className="mt-1 text-sm text-muted">{t("Sin encabezados")}</p>
       ) : (
         <ul className="mt-1">
           {headings.map((heading) => (
@@ -794,19 +795,19 @@ function NodeCard() {
       )}
       {wikis.length > 0 || document.links.length > 0 ? (
         <>
-          <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">Vínculos</h4>
+          <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">{t("Vínculos")}</h4>
           <ul className="mt-1 text-sm text-muted">
             {wikis.map((title) => (
               <li key={`w-${title}`} className="truncate py-0.5">
-                Wiki · {title}
+                {t("Wiki ·")}{" "}{title}
               </li>
             ))}
             {document.links.map((link) => {
               const target = documents.find((item) => item.id === link.targetId);
-              const label = link.kind === "llama" ? "Invoca" : "Referencia";
+              const label = link.kind === "llama" ? t("Invoca") : t("Referencia");
               return (
                 <li key={`${link.kind}-${link.targetId}`} className="truncate py-0.5">
-                  {label} · {target?.title ?? "sin destino"}
+                  {t(label)} · {target?.title ?? t("sin destino")}
                 </li>
               );
             })}

@@ -7,7 +7,9 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { listVersions, readVersion } from "@/server/history";
 import { editableTarget } from "@/server/share";
-import { getDoc, listTrash, MAX_CONTENT, purgeTrash, restoreFromTrash, updateNote, VaultError } from "@/server/vault";
+import { putBlob, readBlob } from "@/server/blobs";
+import { newFileKey } from "@/server/files";
+import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreFromTrash, updateNote, VaultError } from "@/server/vault";
 
 /**
  * Historial de versiones, edición de lo compartido y papelera.
@@ -50,7 +52,8 @@ export const docVersion = createServerFn({ method: "GET" })
     const ownerId = await ownerOf(sql, context.userId, data.docId, data.shareId);
     if (!ownerId) return { ok: false as const, error: "No tienes acceso a esta nota." };
     const version = await readVersion(sql, ownerId, data.docId, data.versionId);
-    return version ? { ok: true as const, version } : { ok: false as const, error: "Esa versión ya no existe." };
+    if (!version) return { ok: false as const, error: "Esa versión ya no existe." };
+    return { ok: true as const, version: { title: version.title, content: version.content, fileSize: version.fileSize } };
   });
 
 export const restoreDocVersion = createServerFn({ method: "POST" })
@@ -65,6 +68,16 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
     const version = await readVersion(sql, ownerId, data.docId, data.versionId);
     if (!version) return { ok: false as const, error: "Esa versión ya no existe." };
     try {
+      if (version.fileKey) {
+        // Se copia el objeto: cada versión conserva el suyo.
+        const bytes = await readBlob(sql, version.fileKey);
+        const current = await getDoc(sql, ownerId, data.docId);
+        if (!bytes || !current?.file) return { ok: false as const, error: "Esa versión ya no existe." };
+        const key = newFileKey(ownerId);
+        await putBlob(sql, key, bytes, current.file.mime);
+        const doc = await replaceFile(sql, ownerId, data.docId, { key, size: bytes.byteLength, actor, separateVersion: true });
+        return { ok: true as const, updatedAt: doc.updatedAt, title: doc.title, content: "" };
+      }
       const doc = await updateNote(sql, ownerId, data.docId, {
         title: version.title,
         content: version.content,

@@ -4,6 +4,7 @@ import { useSharedView } from "@/app/shared-view";
 import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
 import { openShared, sharedWithMe } from "@/server/share.functions";
 import type { SharedTree } from "@/server/share";
+import { t } from "@/app/i18n";
 
 /**
  * «Compartidos conmigo» como segunda raíz del directorio: lo que otros
@@ -87,15 +88,15 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
         className="flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg"
       >
         <Users className="size-4 shrink-0 text-faint" />
-        <span className="truncate font-medium">Compartidos conmigo</span>
+        <span className="truncate font-medium">{t("Compartidos conmigo")}</span>
         <ChevronRight className={`ml-auto size-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open ? (
         <ul>
-          {failed ? <li className="px-3 py-2 text-xs text-danger">No se pudo leer lo compartido.</li> : null}
-          {!items && !failed ? <li className="px-3 py-2 text-xs text-faint">Cargando…</li> : null}
+          {failed ? <li className="px-3 py-2 text-xs text-danger">{t("No se pudo leer lo compartido.")}</li> : null}
+          {!items && !failed ? <li className="px-3 py-2 text-xs text-faint">{t("Cargando…")}</li> : null}
           {items && items.length === 0 ? (
-            <li className="px-3 py-2 text-xs text-faint">Nadie ha compartido nada contigo todavía.</li>
+            <li className="px-3 py-2 text-xs text-faint">{t("Nadie ha compartido nada contigo todavía.")}</li>
           ) : null}
           {items?.map((item) => {
             const tree = trees[item.id];
@@ -107,7 +108,7 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
               <li key={item.id}>
                 <button
                   type="button"
-                  title={`De ${item.ownerName}`}
+                  title={t("De {0}", { 0: item.ownerName })}
                   onClick={async () => {
                     if (portfolio) {
                       toggle(item.id);
@@ -128,17 +129,17 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                     <span className="size-3.5 shrink-0" />
                   )}
                   <Icon className="size-3.5 shrink-0 text-faint" />
-                  <span className="truncate">{item.title || "Sin título"}</span>
+                  <span className="truncate">{item.title || t("Sin título")}</span>
                   {item.access === "edit" ? (
-                    <Pencil className="size-3 shrink-0 text-faint" aria-label="Puedes editar" />
+                    <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} />
                   ) : null}
                   <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
                 </button>
                 {portfolio && isOpen ? (
                   tree === undefined ? (
-                    <p className="py-1 pl-10 text-xs text-faint">Cargando…</p>
+                    <p className="py-1 pl-10 text-xs text-faint">{t("Cargando…")}</p>
                   ) : tree === null ? (
-                    <p className="py-1 pl-10 text-xs text-danger">Ya no está compartido contigo.</p>
+                    <p className="py-1 pl-10 text-xs text-danger">{t("Ya no está compartido contigo.")}</p>
                   ) : (
                     <SharedBranch
                       tree={tree}

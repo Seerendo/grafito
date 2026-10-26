@@ -1,4 +1,5 @@
 import { Search, X } from "lucide-react";
+import { t } from "@/app/i18n";
 
 /**
  * Campo de búsqueda compacto con lupa. No toma el foco al aparecer: el cursor
@@ -29,7 +30,7 @@ export function SearchField({
         <button
           type="button"
           onClick={() => onChange("")}
-          aria-label="Limpiar búsqueda"
+          aria-label={t("Limpiar búsqueda")}
           className="grid size-6 shrink-0 place-items-center rounded text-faint hover:text-fg"
         >
           <X className="size-3.5" />

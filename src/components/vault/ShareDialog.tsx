@@ -7,6 +7,7 @@ import { SearchField } from "@/components/ui/SearchField";
 import { orgPath } from "@/domain/orgs";
 import type { ShareKind, Visibility } from "@/domain/share";
 import { setShare, shareOrgs, shareUsers } from "@/server/share.functions";
+import { t } from "@/app/i18n";
 
 type Candidate = Awaited<ReturnType<typeof shareUsers>>[number];
 type OrgCandidate = Awaited<ReturnType<typeof shareOrgs>>[number];
@@ -76,7 +77,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
       setMyShares(result.shares);
       if (visibility !== "public") onClose();
     } catch {
-      setError("No se pudo guardar.");
+      setError(t("No se pudo guardar."));
     } finally {
       setBusy(false);
     }
@@ -85,32 +86,32 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   const link = current?.visibility === "public" && current.publicToken ? publicUrl(current.publicToken) : null;
 
   return (
-    <Modal title={`Compartir «${title}»`} onClose={onClose}>
-      <div className="space-y-2" role="radiogroup" aria-label="Visibilidad">
+    <Modal title={t("Compartir «{0}»", { 0: title })} onClose={onClose}>
+      <div className="space-y-2" role="radiogroup" aria-label={t("Visibilidad")}>
         <Choice active={visibility === "private"} onClick={() => setVisibility("private")} icon={<Lock className="size-4" />}>
-          <strong className="font-medium">Privada</strong>
+          <strong className="font-medium">{t("Privada")}</strong>
         </Choice>
         <Choice active={visibility === "shared"} onClick={() => setVisibility("shared")} icon={<Users className="size-4" />}>
-          <strong className="font-medium">Compartida</strong>
+          <strong className="font-medium">{t("Compartida")}</strong>
         </Choice>
         <Choice active={visibility === "public"} onClick={() => setVisibility("public")} icon={<Globe className="size-4" />}>
-          <strong className="font-medium">Pública</strong>
+          <strong className="font-medium">{t("Pública")}</strong>
         </Choice>
       </div>
 
       {visibility === "shared" ? (
         <div className="mt-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Permiso">
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("Permiso")}>
             <Choice active={access === "read"} onClick={() => setAccess("read")} icon={<Eye className="size-4" />}>
-              Solo lectura
+              {t("Solo lectura")}
             </Choice>
             <Choice active={access === "edit"} onClick={() => setAccess("edit")} icon={<Pencil className="size-4" />}>
-              Puede editar
+              {t("Puede editar")}
             </Choice>
           </div>
-          <SearchField value={query} onChange={setQuery} placeholder="Buscar usuario u organización" />
+          <SearchField value={query} onChange={setQuery} placeholder={t("Buscar usuario u organización")} />
           <ul className="max-h-56 overflow-y-auto rounded-md border border-line">
-            {filteredOrgs.length > 0 ? <ListHeading>Organizaciones</ListHeading> : null}
+            {filteredOrgs.length > 0 ? <ListHeading>{t("Organizaciones")}</ListHeading> : null}
             {filteredOrgs.map((org) => (
               <CheckRow
                 key={org.id}
@@ -120,10 +121,10 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
                 onToggle={() => toggle(selectedOrgs, org.id, setSelectedOrgs)}
               />
             ))}
-            <ListHeading>Usuarios</ListHeading>
-            {people === null ? <li className="px-3 py-3 text-sm text-muted">Cargando…</li> : null}
+            <ListHeading>{t("Usuarios")}</ListHeading>
+            {people === null ? <li className="px-3 py-3 text-sm text-muted">{t("Cargando…")}</li> : null}
             {people !== null && filtered.length === 0 ? (
-              <li className="px-3 py-3 text-sm text-muted">Ningún usuario coincide.</li>
+              <li className="px-3 py-3 text-sm text-muted">{t("Ningún usuario coincide.")}</li>
             ) : null}
             {filtered.map((person) => (
               <CheckRow
@@ -155,15 +156,15 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
             }}
             className="shrink-0 text-sm text-accent underline-offset-4 hover:underline"
           >
-            {copied ? "Copiado" : "Copiar"}
+            {copied ? t("Copiado") : t("Copiar")}
           </button>
         </div>
       ) : null}
 
-      {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm text-danger">{t(error)}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
         <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
-          {link && visibility === "public" ? "Cerrar" : "Cancelar"}
+          {link && visibility === "public" ? t("Cerrar") : t("Cancelar")}
         </button>
         <button
           type="button"
@@ -171,7 +172,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
           onClick={() => void save()}
           className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
         >
-          {busy ? "Guardando…" : visibility === "public" && !link ? "Crear enlace" : "Guardar"}
+          {busy ? t("Guardando…") : visibility === "public" && !link ? t("Crear enlace") : t("Guardar")}
         </button>
       </div>
     </Modal>
@@ -240,7 +241,7 @@ function CheckRow({
         </span>
         <span className="shrink-0 text-faint">{icon}</span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        {hint ? <span className="text-xs text-faint">{hint}</span> : null}
+        {hint ? <span className="text-xs text-faint">{t(hint)}</span> : null}
       </button>
     </li>
   );

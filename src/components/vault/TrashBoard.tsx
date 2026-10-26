@@ -7,6 +7,7 @@ import { syncVault } from "@/app/vault/sync";
 import { TextAction } from "@/components/ui/TextAction";
 import { PERMISSION } from "@/domain/permissions";
 import { trashList, trashPurge, trashRestore } from "@/server/history.functions";
+import { intl, t } from "@/app/i18n";
 
 type Item = Awaited<ReturnType<typeof trashList>>[number];
 
@@ -31,7 +32,7 @@ export function TrashBoard() {
       setItems(await trashList());
       setError("");
     } catch {
-      setError("No se pudo leer la papelera.");
+      setError(t("No se pudo leer la papelera."));
     }
   };
 
@@ -52,7 +53,7 @@ export function TrashBoard() {
       useTrashView.getState().setOpen(false);
       useVault.getState().setActive(result.id);
     } catch {
-      setError("No se pudo recuperar.");
+      setError(t("No se pudo recuperar."));
     } finally {
       setBusy(null);
     }
@@ -66,7 +67,7 @@ export function TrashBoard() {
       if (!result.ok) setError(result.error);
       await load();
     } catch {
-      setError("No se pudo borrar.");
+      setError(t("No se pudo borrar."));
     } finally {
       setBusy(null);
     }
@@ -76,28 +77,28 @@ export function TrashBoard() {
     <div className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8">
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-wrap items-end gap-3">
-          <h1 className="font-serif text-4xl font-semibold tracking-tight">Papelera</h1>
+          <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Papelera")}</h1>
           {canPurge && items && items.length > 0 ? (
             <span className="ml-auto flex items-center gap-3 text-sm">
               {confirming === "all" ? (
                 <>
-                  <span className="text-muted">¿Vaciar la papelera?</span>
+                  <span className="text-muted">{t("¿Vaciar la papelera?")}</span>
                   <TextAction tone="danger" onClick={() => void purge()}>
-                    Sí
+                    {t("Sí")}
                   </TextAction>
-                  <TextAction onClick={() => setConfirming(null)}>No</TextAction>
+                  <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
                 </>
               ) : (
                 <TextAction tone="danger" onClick={() => setConfirming("all")}>
-                  Vaciar
+                  {t("Vaciar")}
                 </TextAction>
               )}
             </span>
           ) : null}
         </div>
-        {error ? <p className="mt-4 text-sm text-danger">{error}</p> : null}
-        {!items && !error ? <p className="mt-6 text-sm text-muted">Cargando…</p> : null}
-        {items && items.length === 0 ? <p className="mt-6 text-sm text-muted">La papelera está vacía.</p> : null}
+        {error ? <p className="mt-4 text-sm text-danger">{t(error)}</p> : null}
+        {!items && !error ? <p className="mt-6 text-sm text-muted">{t("Cargando…")}</p> : null}
+        {items && items.length === 0 ? <p className="mt-6 text-sm text-muted">{t("La papelera está vacía.")}</p> : null}
         {items && items.length > 0 ? (
           <ul className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
             {items.map((item) => {
@@ -109,25 +110,25 @@ export function TrashBoard() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{item.title}</span>
                     <span className="block text-xs text-faint">
-                      {item.portfolioName ?? "Raíz"} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? "día" : "días"}
+                      {item.portfolioName ?? t("Raíz")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
                     </span>
                   </span>
                   {confirming === item.id ? (
                     <span className="flex items-center gap-3">
-                      <span className="text-muted">¿Borrar para siempre?</span>
+                      <span className="text-muted">{t("¿Borrar para siempre?")}</span>
                       <TextAction tone="danger" onClick={() => void purge([item.id])}>
-                        Sí
+                        {t("Sí")}
                       </TextAction>
-                      <TextAction onClick={() => setConfirming(null)}>No</TextAction>
+                      <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
                     </span>
                   ) : (
                     <span className="flex items-center gap-4">
                       {canRestore ? (
-                        <TextAction onClick={() => void restore(item.id)}>{busy === item.id ? "…" : "Recuperar"}</TextAction>
+                        <TextAction onClick={() => void restore(item.id)}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
                       ) : null}
                       {canPurge ? (
                         <TextAction tone="danger" onClick={() => setConfirming(item.id)}>
-                          Eliminar
+                          {t("Eliminar")}
                         </TextAction>
                       ) : null}
                     </span>
@@ -143,5 +144,5 @@ export function TrashBoard() {
 }
 
 function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
 }

@@ -1,6 +1,7 @@
 import { File, FileText, Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
+import { intl, t } from "@/app/i18n";
 
 const RECENT = 12;
 
@@ -13,13 +14,13 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
     [documents],
   );
-  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? "Raíz";
+  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Raíz");
 
   return (
     <div data-home className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8">
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-wrap items-end gap-3">
-          <h1 className="font-serif text-4xl font-semibold tracking-tight">Raíz</h1>
+          <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Raíz")}</h1>
           {onCreate ? (
             <button
               type="button"
@@ -27,13 +28,13 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
               className="ml-auto inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
             >
               <Plus className="size-4" />
-              Nueva nota
+              {t("Nueva nota")}
             </button>
           ) : null}
         </div>
         {recent.length > 0 ? (
           <section className="mt-6">
-            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">Recientes</h2>
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Recientes")}</h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {recent.map((document) => {
                 const Icon = document.kind === "file" ? File : FileText;
@@ -62,5 +63,5 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
 
 function formatWhen(ms: number): string {
   if (!ms) return "";
-  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short" }).format(new Date(ms));
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useVault } from "@/app/vault/store";
 import { MarkdownView } from "./MarkdownView";
+import { t } from "@/app/i18n";
 
 type PdfJob = { title: string; content: string };
 
@@ -20,7 +21,7 @@ function bindNotePdf(next: Handler) {
 }
 
 function fileName(title: string) {
-  const clean = title.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "nota";
+  const clean = title.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || t("nota");
   return `${clean}.pdf`;
 }
 
@@ -153,7 +154,7 @@ export function NotePdfHost() {
   useEffect(() => {
     if (!job) return;
     let cancel = false;
-    setNotice("Preparando PDF…");
+    setNotice(t("Preparando PDF…"));
     const run = async () => {
       const root = sheetRef.current;
       if (!root) return;
@@ -180,7 +181,7 @@ export function NotePdfHost() {
         await canvasToPdf(canvas, job.title);
         if (!cancel) setNotice("");
       } catch {
-        if (!cancel) setNotice("No se pudo crear el PDF.");
+        if (!cancel) setNotice(t("No se pudo crear el PDF."));
       } finally {
         if (!cancel) setJob(null);
       }
@@ -201,7 +202,7 @@ export function NotePdfHost() {
     <>
       {notice ? (
         <p className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-sm text-fg shadow-2xl">
-          {notice}
+          {t(notice)}
         </p>
       ) : null}
       {job ? (

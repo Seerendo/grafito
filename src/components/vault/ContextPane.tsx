@@ -5,6 +5,7 @@ import type { ManualKind } from "@/domain/vault/types";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
+import { t } from "@/app/i18n";
 
 const KIND_LABEL: Record<ManualKind, string> = {
   referencia: "referencia",
@@ -73,7 +74,7 @@ export function ContextPane({
   if (!document) {
     return (
       <aside className="flex h-full items-center justify-center bg-surface p-6 text-sm text-faint select-none md:w-72 md:border-l md:border-line">
-        Sin documento abierto
+        {t("Sin documento abierto")}
       </aside>
     );
   }
@@ -128,13 +129,13 @@ export function ContextPane({
     <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 select-none md:w-72 md:border-l md:border-line">
       {document.kind === "markdown" ? (
         <Section
-          title="Esquema"
+          title={t("Esquema")}
           icon={<ListTree className="size-3.5" />}
           count={headings.length}
           fold={{ open: openSections.esquema, onToggle: () => toggleSection("esquema") }}
         >
           {outline.length === 0 ? (
-            <Empty>Esta nota no tiene encabezados.</Empty>
+            <Empty>{t("Esta nota no tiene encabezados.")}</Empty>
           ) : (
             <OutlineTree
               nodes={outline}
@@ -147,7 +148,7 @@ export function ContextPane({
       ) : null}
 
       <Section
-        title="Vínculos"
+        title={t("Vínculos")}
         icon={<Link2 className="size-3.5" />}
         count={manual.length}
         fold={{ open: openSections.vinculos, onToggle: () => toggleSection("vinculos") }}
@@ -159,13 +160,13 @@ export function ContextPane({
               className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-accent hover:bg-elevated"
             >
               <Plus className="size-3.5" />
-              Vincular
+              {t("Vincular")}
             </button>
           ) : null
         }
       >
         {manual.length === 0 ? (
-          <Empty>Sin vínculos.</Empty>
+          <Empty>{t("Sin vínculos.")}</Empty>
         ) : (
           <ul>
             {manual.map((item) => (
@@ -181,13 +182,13 @@ export function ContextPane({
                     {KIND_LABEL[item.link.kind]}
                   </span>
                   <span className={`truncate ${item.target ? "text-fg" : "text-muted"}`}>
-                    {item.target?.title ?? "destino borrado"}
+                    {item.target?.title ?? t("destino borrado")}
                   </span>
                 </button>
                 {canLink ? (
                   <button
                     type="button"
-                    aria-label="Quitar vínculo"
+                    aria-label={t("Quitar vínculo")}
                     onClick={() => removeManualLink(document.id, item.link.targetId)}
                     className="grid h-10 w-9 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
                   >
@@ -202,13 +203,13 @@ export function ContextPane({
 
       {document.kind === "markdown" ? (
         <Section
-          title="Enlaces en el texto"
+          title={t("Enlaces en el texto")}
           icon={<ArrowUpRight className="size-3.5" />}
           count={outgoingWiki.length}
           fold={{ open: openSections.escritos, onToggle: () => toggleSection("escritos") }}
         >
           {outgoingWiki.length === 0 ? (
-            <Empty>Todavía no hay [[enlaces]] en el texto.</Empty>
+            <Empty>{t("Todavía no hay [[enlaces]] en el texto.")}</Empty>
           ) : (
             <ul>
               {outgoingWiki.map((item) => (
@@ -233,7 +234,7 @@ export function ContextPane({
                     <span className={`truncate ${item.target ? "text-fg" : "text-muted underline decoration-dashed"}`}>
                       {item.title}
                     </span>
-                    {item.target ? null : <span className="ml-auto shrink-0 text-[11px] text-faint">sin crear</span>}
+                    {item.target ? null : <span className="ml-auto shrink-0 text-[11px] text-faint">{t("sin crear")}</span>}
                   </button>
                 </li>
               ))}
@@ -243,13 +244,13 @@ export function ContextPane({
       ) : null}
 
       <Section
-        title="Menciones"
+        title={t("Menciones")}
         icon={<ArrowDownLeft className="size-3.5" />}
         count={incomingWiki.length + incomingManual.length}
         fold={{ open: openSections.menciones, onToggle: () => toggleSection("menciones") }}
       >
         {incomingWiki.length + incomingManual.length === 0 ? (
-          <Empty>Nadie apunta a este documento.</Empty>
+          <Empty>{t("Nadie apunta a este documento.")}</Empty>
         ) : (
           <ul className="space-y-1">
             {[...incomingManual, ...incomingWiki].map((item) => (
@@ -263,7 +264,7 @@ export function ContextPane({
                   <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-fg">{item.title}</span>
-                    {item.detail ? <span className="mt-0.5 line-clamp-2 block text-xs text-faint">{item.detail}</span> : null}
+                    {item.detail ? <span className="mt-0.5 line-clamp-2 block text-xs text-faint">{t(item.detail)}</span> : null}
                   </span>
                 </button>
               </li>
@@ -273,9 +274,9 @@ export function ContextPane({
       </Section>
 
       {document.kind === "markdown" ? (
-        <Section title="Etiquetas" icon={<Hash className="size-3.5" />} count={tags.length}>
+        <Section title={t("Etiquetas")} icon={<Hash className="size-3.5" />} count={tags.length}>
           {tags.length === 0 ? (
-            <Empty>Sin etiquetas. Prueba con #atlas.</Empty>
+            <Empty>{t("Sin etiquetas. Prueba con #atlas.")}</Empty>
           ) : (
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
@@ -321,7 +322,7 @@ function OutlineTree({
               {hasKids ? (
                 <button
                   type="button"
-                  aria-label={open ? `Replegar ${node.text}` : `Desplegar ${node.text}`}
+                  aria-label={open ? t("Replegar {0}", { 0: node.text }) : t("Desplegar {0}", { 0: node.text })}
                   aria-expanded={open}
                   onClick={() => onToggle(node.id)}
                   className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"

@@ -5,6 +5,7 @@ import { extractTags } from "@/domain/vault/links";
 import { useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
+import { t } from "@/app/i18n";
 
 export function CommandPalette({
   onOpenNote,
@@ -47,7 +48,7 @@ export function CommandPalette({
     }
     close();
   };
-  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? "Raíz";
+  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Raíz");
 
   return (
     <div
@@ -55,7 +56,7 @@ export function CommandPalette({
       onMouseDown={close}
     >
       <Command
-        label="Paleta de comandos"
+        label={t("Paleta de comandos")}
         vimBindings={false}
         onMouseDown={(event) => event.stopPropagation()}
         className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
@@ -64,12 +65,12 @@ export function CommandPalette({
           <Search className="size-4 text-faint" />
           <Command.Input
             autoFocus
-            placeholder="Buscar documentos o comandos"
+            placeholder={t("Buscar documentos o comandos")}
             className="h-12 w-full bg-transparent text-sm text-fg outline-none placeholder:text-faint"
           />
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
-          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">Sin resultados</Command.Empty>
+          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
           <Command.Group heading="Acciones">
             {can(PERMISSION.notesCreate) ? (
             <Command.Item
@@ -80,7 +81,7 @@ export function CommandPalette({
                 close();
               }}
             >
-              <Row icon={<FilePlus className="size-4" />} label="Nueva nota" hint="Ctrl N" />
+              <Row icon={<FilePlus className="size-4" />} label={t("Nueva nota")} hint="Ctrl N" />
             </Command.Item>
             ) : null}
             {can(PERMISSION.linksManage) ? (
@@ -92,12 +93,12 @@ export function CommandPalette({
                 close();
               }}
             >
-              <Row icon={<Link2 className="size-4" />} label="Vincular" />
+              <Row icon={<Link2 className="size-4" />} label={t("Vincular")} />
             </Command.Item>
             ) : null}
             {can(PERMISSION.graphView) ? (
             <Command.Item value="abrir grafo" onSelect={() => { toggleGraph(); close(); }}>
-              <Row icon={<Network className="size-4" />} label="Mostrar u ocultar grafo" hint="Ctrl G" />
+              <Row icon={<Network className="size-4" />} label={t("Mostrar u ocultar grafo")} hint="Ctrl G" />
             </Command.Item>
             ) : null}
             {can(PERMISSION.notesEdit) ? (
@@ -108,12 +109,12 @@ export function CommandPalette({
                 close();
               }}
             >
-              <Row icon={<Search className="size-4" />} label="Cambiar modo de la nota" hint="Ctrl E" />
+              <Row icon={<Search className="size-4" />} label={t("Cambiar modo de la nota")} hint="Ctrl E" />
             </Command.Item>
             ) : null}
             {can(PERMISSION.notesCreate) && can(PERMISSION.notesDelete) ? (
               <Command.Item value="restaurar ejemplo" onSelect={() => setDialog({ type: "reset" })}>
-                <Row icon={<RotateCcw className="size-4" />} label="Restaurar notas de ejemplo" />
+                <Row icon={<RotateCcw className="size-4" />} label={t("Restaurar notas de ejemplo")} />
               </Command.Item>
             ) : null}
           </Command.Group>
@@ -151,7 +152,7 @@ function Row({ icon, label, hint }: { icon: ReactNode; label: string; hint?: str
     <span className="flex h-11 items-center gap-2 px-2 text-sm">
       <span className="text-muted">{icon}</span>
       <span className="truncate">{label}</span>
-      {hint ? <span className="ml-auto shrink-0 text-xs text-faint">{hint}</span> : null}
+      {hint ? <span className="ml-auto shrink-0 text-xs text-faint">{t(hint)}</span> : null}
     </span>
   );
 }

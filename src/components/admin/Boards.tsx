@@ -15,6 +15,7 @@ import {
   systemSnapshot as loadSnapshot,
   updateVaultUser,
 } from "@/server/admin.functions";
+import { t } from "@/app/i18n";
 
 export type AdminView = Extract<Awaited<ReturnType<typeof adminState>>, { isAdmin: true }>;
 
@@ -35,20 +36,20 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
     );
   }, [query, view.users]);
   if (!can(view, "users.create") && !can(view, "users.update") && !can(view, "users.delete")) {
-    return <p className="text-sm text-muted">Este rol no administra usuarios.</p>;
+    return <p className="text-sm text-muted">{t("Este rol no administra usuarios.")}</p>;
   }
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <SearchField value={query} onChange={setQuery} placeholder="Buscar usuario" />
+        <SearchField value={query} onChange={setQuery} placeholder={t("Buscar usuario")} />
         {can(view, "users.create") ? (
           <button type="button" onClick={() => { setError(""); setOpen("new"); }} className="h-11 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
-            Nuevo usuario
+            {t("Nuevo usuario")}
           </button>
         ) : null}
       </div>
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {people.length === 0 ? <p className="text-sm text-muted">Ningún usuario coincide.</p> : null}
+      {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
+      {people.length === 0 ? <p className="text-sm text-muted">{t("Ningún usuario coincide.")}</p> : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface empty:hidden">
         {people.map((person) => (
           <li key={person.id} className="flex items-center gap-2 border-b border-line last:border-b-0">
@@ -70,7 +71,7 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
             {can(view, "users.delete") && !person.owner ? (
               confirming === person.id ? (
                 <span className="mr-4 flex shrink-0 items-center gap-3 text-sm">
-                  <span className="text-muted">¿Eliminar?</span>
+                  <span className="text-muted">{t("¿Eliminar?")}</span>
                   <TextAction
                     tone="danger"
                     onClick={() => {
@@ -82,13 +83,13 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
                       });
                     }}
                   >
-                    Sí
+                    {t("Sí")}
                   </TextAction>
-                  <TextAction onClick={() => setConfirming(null)}>No</TextAction>
+                  <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
                 </span>
               ) : (
                 <TextAction tone="danger" className="mr-4" onClick={() => setConfirming(person.id)}>
-                  Eliminar
+                  {t("Eliminar")}
                 </TextAction>
               )
             ) : null}
@@ -98,7 +99,7 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
       {open === "new" ? (
         <UserForm
           roles={view.roles}
-          title="Nuevo usuario"
+          title={t("Nuevo usuario")}
           onClose={() => setOpen(null)}
           onSubmit={async (values) => {
             const result = await createVaultUser({
@@ -114,7 +115,7 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
       {open && open !== "new" ? (
         <UserForm
           roles={view.roles}
-          title="Actualizar usuario"
+          title={t("Actualizar usuario")}
           person={view.users.find((item) => item.id === open.id)}
           onClose={() => setOpen(null)}
           onSubmit={async (values) => {
@@ -186,11 +187,11 @@ function UserForm({
     >
       <h2 className="font-serif text-2xl">{title}</h2>
       <label className="block text-sm">
-        <span className="text-muted">Nombre</span>
+        <span className="text-muted">{t("Nombre")}</span>
         <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3" />
       </label>
       <label className="block text-sm">
-        <span className="text-muted">Usuario</span>
+        <span className="text-muted">{t("Usuario")}</span>
         <input
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -201,7 +202,7 @@ function UserForm({
         />
       </label>
       <label className="block text-sm">
-        <span className="text-muted">{person ? "Nueva contraseña (opcional)" : "Contraseña"}</span>
+        <span className="text-muted">{person ? t("Nueva contraseña (opcional)") : t("Contraseña")}</span>
         <input
           type="password"
           value={password}
@@ -212,28 +213,28 @@ function UserForm({
         />
       </label>
       <label className="block text-sm">
-        <span className="text-muted">Rol</span>
+        <span className="text-muted">{t("Rol")}</span>
         {person?.owner ? (
-          <p className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted" title="El administrador inicial siempre es Administrador">
-            Administrador
+          <p className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted" title={t("El administrador inicial siempre es Administrador")}>
+            {t("Administrador")}
           </p>
         ) : (
           <Select value={roleId} onChange={setRoleId} className="mt-1">
             {roles.map((role) => (
               <option key={role.id} value={role.id}>
-                {role.name}
+                {t(role.name)}
               </option>
             ))}
           </Select>
         )}
       </label>
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50">
-          {busy ? "Guardando…" : "Guardar"}
+          {busy ? t("Guardando…") : t("Guardar")}
         </button>
         <button type="button" onClick={onClose} className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated">
-          Cancelar
+          {t("Cancelar")}
         </button>
       </div>
     </form>
@@ -257,7 +258,7 @@ export function RolesBoard({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const role = view.roles.find((item) => item.id === roleId) ?? null;
-  if (!can(view, "roles.manage")) return <p className="text-sm text-muted">Este rol no administra permisos.</p>;
+  if (!can(view, "roles.manage")) return <p className="text-sm text-muted">{t("Este rol no administra permisos.")}</p>;
   if (role) {
     return <RoleGrid role={role} permissions={view.permissions} onBack={() => onOpen(null)} reload={reload} />;
   }
@@ -282,14 +283,14 @@ export function RolesBoard({
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            aria-label="Nombre del rol"
-            placeholder="Nombre del rol"
+            aria-label={t("Nombre del rol")}
+            placeholder={t("Nombre del rol")}
             autoFocus
             required
             className="h-11 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
           />
           <button type="submit" className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
-            Crear
+            {t("Crear")}
           </button>
           <button
             type="button"
@@ -299,7 +300,7 @@ export function RolesBoard({
             }}
             className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated"
           >
-            Cancelar
+            {t("Cancelar")}
           </button>
         </form>
       ) : (
@@ -309,17 +310,17 @@ export function RolesBoard({
             onClick={() => setCreating(true)}
             className="ml-auto h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
           >
-            Nuevo rol
+            {t("Nuevo rol")}
           </button>
         </div>
       )}
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface">
         {view.roles.map((item) => (
           <li key={item.id} className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 last:border-b-0">
             <button type="button" onClick={() => onOpen(item.id)} className="min-w-0 flex-1 text-left">
-              <span className="block text-sm">{item.name}</span>
-              <span className="block text-xs text-muted">{item.fixed ? "Predeterminado" : "Creado aquí"} · {item.permissions.length} permisos</span>
+              <span className="block text-sm">{t(item.name)}</span>
+              <span className="block text-xs text-muted">{item.fixed ? t("Predeterminado") : t("Creado aquí")} · {item.permissions.length}{" "}{t("permisos")}</span>
             </button>
             {item.fixed ? null : renaming === item.id ? (
               <form
@@ -347,7 +348,7 @@ export function RolesBoard({
                   className="h-11 w-36 rounded-md border border-line bg-inset px-2 text-sm"
                 />
                 <button type="submit" className="h-11 rounded-md px-3 text-sm text-accent">
-                  Guardar
+                  {t("Guardar")}
                 </button>
               </form>
             ) : (
@@ -360,7 +361,7 @@ export function RolesBoard({
                   }}
                   className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
                 >
-                  Renombrar
+                  {t("Renombrar")}
                 </button>
                 <TextAction
                   tone="danger"
@@ -373,7 +374,7 @@ export function RolesBoard({
                     });
                   }}
                 >
-                  Eliminar
+                  {t("Eliminar")}
                 </TextAction>
               </>
             )}
@@ -409,12 +410,12 @@ function RoleGrid({
   return (
     <div>
       <button type="button" onClick={onBack} className="mb-4 text-sm text-accent">
-        Roles
+        {t("Roles")}
       </button>
       <div className="space-y-5">
         {areas.map((group) => (
           <section key={group.area}>
-            <h3 className="text-xs font-medium tracking-widest text-faint uppercase">{group.area}</h3>
+            <h3 className="text-xs font-medium tracking-widest text-faint uppercase">{t(group.area)}</h3>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {group.items.map((permission) => {
                 const on = role.locked || role.permissions.includes(permission.key);
@@ -449,7 +450,7 @@ function RoleGrid({
                         </svg>
                       ) : null}
                     </span>
-                    <span className="text-sm">{permission.label}</span>
+                    <span className="text-sm">{t(permission.label)}</span>
                   </button>
                 );
               })}
@@ -468,27 +469,27 @@ export function MonitorBoard() {
     setError("");
     void loadSnapshot()
       .then((result) => {
-        if (!result.ok) setError("Sin permiso.");
+        if (!result.ok) setError(t("Sin permiso."));
         else setSnap(result);
       })
-      .catch(() => setError("No se pudo leer el sistema."));
+      .catch(() => setError(t("No se pudo leer el sistema.")));
   };
   useEffect(() => {
     load();
   }, []);
-  if (error) return <p className="text-sm text-danger">{error}</p>;
-  if (!snap) return <p className="text-sm text-muted">Leyendo…</p>;
+  if (error) return <p className="text-sm text-danger">{t(error)}</p>;
+  if (!snap) return <p className="text-sm text-muted">{t("Leyendo…")}</p>;
   const mem = snap.memTotal > 0 ? Math.round(((snap.memTotal - snap.memFree) / snap.memTotal) * 100) : 0;
   const meters = [
     ["CPU", `${snap.cpu}%`, snap.cpu],
-    ["Memoria", `${mem}%`, mem],
+    [t("Memoria"), `${mem}%`, mem],
   ] as const;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <p className="text-sm text-muted">{snap.hostname} · {snap.cores} núcleos</p>
+        <p className="text-sm text-muted">{snap.hostname} · {snap.cores}{" "}{t("núcleos")}</p>
         <button type="button" onClick={load} className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
-          Actualizar
+          {t("Actualizar")}
         </button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -500,14 +501,14 @@ export function MonitorBoard() {
           </div>
         ))}
         <div className="border border-line bg-surface p-4">
-          <p className="text-xs tracking-widest text-faint uppercase">Carga</p>
+          <p className="text-xs tracking-widest text-faint uppercase">{t("Carga")}</p>
           <p className="mt-1 font-serif text-3xl">{snap.load[0] ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">1, 5 y 15 min: {snap.load.join(" · ")}</p>
+          <p className="mt-2 text-xs text-muted">{t("1, 5 y 15 min:")}{" "}{snap.load.join(" · ")}</p>
         </div>
         <div className="border border-line bg-surface p-4">
-          <p className="text-xs tracking-widest text-faint uppercase">En marcha</p>
+          <p className="text-xs tracking-widest text-faint uppercase">{t("En marcha")}</p>
           <p className="mt-1 font-serif text-3xl">{formatUptime(snap.uptime)}</p>
-          <p className="mt-2 text-xs text-muted">Proceso {formatBytes(snap.rss)}</p>
+          <p className="mt-2 text-xs text-muted">{t("Proceso")}{" "}{formatBytes(snap.rss)}</p>
         </div>
       </div>
     </div>
@@ -520,20 +521,20 @@ export function LogsBoard() {
   useEffect(() => {
     void loadLogs()
       .then((result) => {
-        if (!result.ok) setError("Sin permiso.");
+        if (!result.ok) setError(t("Sin permiso."));
         else setRows(result.rows);
       })
-      .catch(() => setError("No se pudieron leer los registros."));
+      .catch(() => setError(t("No se pudieron leer los registros.")));
   }, []);
-  if (error) return <p className="text-sm text-danger">{error}</p>;
-  if (rows.length === 0) return <p className="text-sm text-muted">Todavía no hay registros.</p>;
+  if (error) return <p className="text-sm text-danger">{t(error)}</p>;
+  if (rows.length === 0) return <p className="text-sm text-muted">{t("Todavía no hay registros.")}</p>;
   return (
     <ul className="overflow-hidden rounded-lg border border-line bg-surface">
       {rows.map((row) => (
         <li key={row.id} className="border-b border-line px-4 py-3 last:border-b-0">
-          <p className="text-sm">{row.message}</p>
+          <p className="text-sm">{t(row.message)}</p>
           <p className="mt-1 text-xs text-muted">
-            {row.area} · {row.actor || "sistema"} · {row.at.replace("T", " ").slice(0, 19)}
+            {t(row.area)} · {row.actor || t("sistema")} · {row.at.replace("T", " ").slice(0, 19)}
           </p>
         </li>
       ))}

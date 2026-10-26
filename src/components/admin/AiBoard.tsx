@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/Switch";
 import { aiAdminState, saveAiPolicy } from "@/server/ai.functions";
+import { t } from "@/app/i18n";
 
 /**
  * Administración → IA: qué proveedores pueden usar las personas. Cada una los
@@ -18,21 +19,20 @@ export function AiBoard() {
   useEffect(() => {
     void aiAdminState()
       .then((next) => {
-        if (!next.ok) setError("Sin permiso para configurar la IA.");
+        if (!next.ok) setError(t("Sin permiso para configurar la IA."));
         else setState(next);
       })
-      .catch(() => setError("No se pudo leer la configuración."));
+      .catch(() => setError(t("No se pudo leer la configuración.")));
   }, []);
 
-  if (error) return <p className="text-sm text-danger">{error}</p>;
-  if (!state) return <p className="text-sm text-muted">Cargando…</p>;
+  if (error) return <p className="text-sm text-danger">{t(error)}</p>;
+  if (!state) return <p className="text-sm text-muted">{t("Cargando…")}</p>;
 
   return (
     <div className="space-y-4">
       {!state.encryption ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          Falta <code>GRAFITO_ENCRYPTION_KEY</code> (32 caracteres o más) en el servidor: nadie podrá guardar claves hasta
-          que la definas.
+          {t("Falta")}{" "}<code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}{t("(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.")}
         </p>
       ) : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface">
@@ -52,10 +52,10 @@ function ProviderRow({ provider }: { provider: Provider }) {
   return (
     <li className="flex items-center gap-4 border-b border-line px-4 py-1 last:border-b-0">
       <span className="min-w-0 flex-1 truncate text-sm">{provider.label}</span>
-      {error ? <span className="text-xs text-danger">{error}</span> : null}
+      {error ? <span className="text-xs text-danger">{t(error)}</span> : null}
       <Switch
         checked={enabled}
-        ariaLabel={`Permitir ${provider.label}`}
+        ariaLabel={t("Permitir {0}", { 0: provider.label })}
         disabled={busy}
         onChange={(next) => {
           setBusy(true);
@@ -65,7 +65,7 @@ function ProviderRow({ provider }: { provider: Provider }) {
               if (result.ok) setEnabled(next);
               else setError(result.error);
             })
-            .catch(() => setError("No se pudo guardar."))
+            .catch(() => setError(t("No se pudo guardar.")))
             .finally(() => setBusy(false));
         }}
       />

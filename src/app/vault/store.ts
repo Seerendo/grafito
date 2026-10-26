@@ -14,6 +14,7 @@ import {
 import { can, subscribePermissions } from "@/app/permissions";
 import { heldAdminId } from "@/app/vault-hold";
 import { createSeed } from "./seed";
+import { t } from "@/app/i18n";
 
 /**
  * Cada usuario guarda su bóveda en su propia clave (`grafito.v2:<userId>`).
@@ -174,7 +175,7 @@ function uniqueTitle(
   kind: "markdown" | "file",
   exceptId?: string,
 ): string {
-  const clean = base.trim() || "Sin título";
+  const clean = base.trim() || t("Sin título");
   if (!titleTaken(documents, clean, portfolioId, kind, exceptId)) return clean;
   let index = 2;
   while (titleTaken(documents, `${clean} ${index}`, portfolioId, kind, exceptId)) index += 1;
@@ -445,7 +446,7 @@ export const useVault = create<VaultState>((set, get) => ({
   createDocument: (portfolioId, title, content) => {
     if (!can(PERMISSION.notesCreate)) return "";
     const target = portfolioId === undefined ? get().selectedPortfolioId : portfolioId;
-    const name = uniqueTitle(get().documents, title?.trim() || "Sin título", target, "markdown");
+    const name = uniqueTitle(get().documents, title?.trim() || t("Sin título"), target, "markdown");
     const document: Document = {
       id: crypto.randomUUID(),
       title: name,
@@ -468,7 +469,7 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   uploadFile: (portfolioId, name, mime, stored) => {
-    if (!can(PERMISSION.filesUpload)) return "Tu rol no permite subir archivos.";
+    if (!can(PERMISSION.filesUpload)) return t("Tu rol no permite subir archivos.");
     const base = name.replace(/\.[^.]+$/, "") || name;
     const title = uniqueTitle(get().documents, base, portfolioId, "file");
     const document: Document = {
@@ -699,14 +700,14 @@ export const useVault = create<VaultState>((set, get) => ({
   importNote: (title, content, portfolioId) => {
     if (!can(PERMISSION.notesCreate)) return;
     if (portfolioId !== undefined) {
-      const name = title.replace(/\.(md|markdown)$/i, "").trim() || "Sin título";
+      const name = title.replace(/\.(md|markdown)$/i, "").trim() || t("Sin título");
       get().createDocument(portfolioId, name, content);
       return;
     }
     const existing = get().portfolios.find((portfolio) => portfolio.name === "Importadas" && !portfolio.parentId);
     const importedId = existing?.id ?? crypto.randomUUID();
     if (!existing) {
-      set({ portfolios: [...get().portfolios, { id: importedId, name: "Importadas", parentId: null }] });
+      set({ portfolios: [...get().portfolios, { id: importedId, name: t("Importadas"), parentId: null }] });
     }
     get().createDocument(importedId, title.replace(/\.md$/i, ""), content);
   },

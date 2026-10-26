@@ -23,9 +23,11 @@ import { Route as ApiFilesUploadsRouteImport } from './routes/api/files/uploads'
 import { Route as ApiV1MeRouteImport } from './routes/api/v1/me'
 import { Route as ApiV1NotesRouteImport } from './routes/api/v1/notes'
 import { Route as ApiV1PortfoliosRouteImport } from './routes/api/v1/portfolios'
+import { Route as WopiFilesIdRouteImport } from './routes/wopi/files/$id'
 import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/uploads.complete'
 import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
 import { Route as ApiV1NotesIdRouteImport } from './routes/api/v1/notes.$id'
+import { Route as WopiFilesIdContentsRouteImport } from './routes/wopi/files/$id.contents'
 import { Route as ApiV1NotesIdFileRouteImport } from './routes/api/v1/notes.$id.file'
 
 const IndexRoute = IndexRouteImport.update({
@@ -98,6 +100,11 @@ const ApiV1PortfoliosRoute = ApiV1PortfoliosRouteImport.update({
   path: '/api/v1/portfolios',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WopiFilesIdRoute = WopiFilesIdRouteImport.update({
+  id: '/wopi/files/$id',
+  path: '/wopi/files/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiFilesUploadsCompleteRoute = ApiFilesUploadsCompleteRouteImport.update({
   id: '/complete',
   path: '/complete',
@@ -112,6 +119,11 @@ const ApiV1NotesIdRoute = ApiV1NotesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ApiV1NotesRoute,
+} as any)
+const WopiFilesIdContentsRoute = WopiFilesIdContentsRouteImport.update({
+  id: '/contents',
+  path: '/contents',
+  getParentRoute: () => WopiFilesIdRoute,
 } as any)
 const ApiV1NotesIdFileRoute = ApiV1NotesIdFileRouteImport.update({
   id: '/file',
@@ -134,9 +146,11 @@ export interface FileRoutesByFullPath {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
 export interface FileRoutesByTo {
@@ -154,9 +168,11 @@ export interface FileRoutesByTo {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
 export interface FileRoutesById {
@@ -175,9 +191,11 @@ export interface FileRoutesById {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
 export interface FileRouteTypes {
@@ -197,9 +215,11 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
+    | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -217,9 +237,11 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
+    | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
   id:
     | '__root__'
@@ -237,9 +259,11 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
+    | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
   fileRoutesById: FileRoutesById
 }
@@ -258,6 +282,7 @@ export interface RootRouteChildren {
   ApiV1MeRoute: typeof ApiV1MeRoute
   ApiV1NotesRoute: typeof ApiV1NotesRouteWithChildren
   ApiV1PortfoliosRoute: typeof ApiV1PortfoliosRoute
+  WopiFilesIdRoute: typeof WopiFilesIdRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -360,6 +385,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1PortfoliosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/wopi/files/$id': {
+      id: '/wopi/files/$id'
+      path: '/wopi/files/$id'
+      fullPath: '/wopi/files/$id'
+      preLoaderRoute: typeof WopiFilesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/files/uploads/complete': {
       id: '/api/files/uploads/complete'
       path: '/complete'
@@ -380,6 +412,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/v1/notes/$id'
       preLoaderRoute: typeof ApiV1NotesIdRouteImport
       parentRoute: typeof ApiV1NotesRoute
+    }
+    '/wopi/files/$id/contents': {
+      id: '/wopi/files/$id/contents'
+      path: '/contents'
+      fullPath: '/wopi/files/$id/contents'
+      preLoaderRoute: typeof WopiFilesIdContentsRouteImport
+      parentRoute: typeof WopiFilesIdRoute
     }
     '/api/v1/notes/$id/file': {
       id: '/api/v1/notes/$id/file'
@@ -429,6 +468,18 @@ const ApiV1NotesRouteWithChildren = ApiV1NotesRoute._addFileChildren(
   ApiV1NotesRouteChildren,
 )
 
+interface WopiFilesIdRouteChildren {
+  WopiFilesIdContentsRoute: typeof WopiFilesIdContentsRoute
+}
+
+const WopiFilesIdRouteChildren: WopiFilesIdRouteChildren = {
+  WopiFilesIdContentsRoute: WopiFilesIdContentsRoute,
+}
+
+const WopiFilesIdRouteWithChildren = WopiFilesIdRoute._addFileChildren(
+  WopiFilesIdRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
@@ -444,6 +495,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1MeRoute: ApiV1MeRoute,
   ApiV1NotesRoute: ApiV1NotesRouteWithChildren,
   ApiV1PortfoliosRoute: ApiV1PortfoliosRoute,
+  WopiFilesIdRoute: WopiFilesIdRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

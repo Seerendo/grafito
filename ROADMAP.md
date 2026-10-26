@@ -20,14 +20,29 @@ from them.
 - Files in object storage (item 4 below): chunked uploads up to a
   configurable limit (100 MB by default), signed links, migration of older
   files, a bucket backup, and a Postgres fallback without MinIO.
+- Office documents with Collabora Online (item 1 below), on by default in
+  `docker-compose.yml` and switchable off: WOPI, file versions, and read-only
+  or editable access by permission and share.
+- English interface, selectable in Account → User preferences.
 
-## 1. Office documents (decided: Collabora Online)
+## 1. Office documents (Collabora Online) — done
+
+Implemented as described below; see [docs/OFFICE.md](docs/OFFICE.md).
+
+Still open:
+
+- Create blank documents, spreadsheets and presentations from Grafito.
+- An end-to-end test of editing an Office file through a share (the
+  permission path is shared with notes and covered there).
+- PDF previews of Office files for viewers without the editor.
+
+Original plan:
 
 Goal: edit Word, Excel, PowerPoint and OpenDocument files (`.docx`, `.xlsx`,
 `.pptx`, `.odt`, `.ods`, `.odp`) inside Grafito, with native track changes.
 
 - **Engine:** Collabora Online (the CODE image, MPL licensed), added as an
-  optional `office` profile in `docker-compose.yml`.
+  service in `docker-compose.yml` (on by default).
 - **Protocol:** Grafito implements the WOPI host endpoints:
   - `CheckFileInfo`, `GetFile` and `PutFile`, under `/wopi/files/:id`.
   - Short-lived access tokens, scoped to one document and one user.
@@ -95,7 +110,9 @@ Still open:
 
 ## 8. Platform
 
-- Interface translations (i18n), starting with English.
+- More interface languages (English is done; the catalog is in
+  `src/domain/i18n/`). Sample notes in English for new English-language
+  vaults.
 - Offline-first mobile client with conflict resolution.
 - External observability: OpenTelemetry traces and a Prometheus `/metrics`
   endpoint.

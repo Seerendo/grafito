@@ -2,6 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TextAction } from "@/components/ui/TextAction";
 import { createApiToken, myApiTokens, revokeApiToken } from "@/server/api-tokens.functions";
+import { intl, t } from "@/app/i18n";
 
 /**
  * Cuenta → API: tokens personales para usar la API REST (`/api/v1`) desde
@@ -49,22 +50,22 @@ export function ApiTokens() {
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
-          aria-label="Nombre del token"
-          placeholder="Nombre (p. ej. «Script de respaldo»)"
+          aria-label={t("Nombre del token")}
+          placeholder={t("Nombre (p. ej. «Script de respaldo»)")}
           className="h-10 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
         />
         <button type="submit" className="h-10 rounded-md border border-line px-4 text-sm hover:bg-elevated">
-          Crear token
+          {t("Crear token")}
         </button>
       </form>
       {fresh ? (
         <div className="mt-3 rounded-md border border-accent/50 bg-elevated p-3 text-sm">
-          <p className="text-xs text-muted">Cópialo ahora: no se volverá a mostrar.</p>
+          <p className="text-xs text-muted">{t("Cópialo ahora: no se volverá a mostrar.")}</p>
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate text-xs">{fresh}</code>
             <button
               type="button"
-              aria-label="Copiar token"
+              aria-label={t("Copiar token")}
               onClick={() => {
                 void navigator.clipboard?.writeText(fresh).then(() => setCopied(true));
               }}
@@ -82,13 +83,15 @@ export function ApiTokens() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{token.name}</span>
                 <span className="block text-xs text-muted">
-                  {token.prefix}… · creado {new Date(token.createdAt).toLocaleDateString("es")}
-                  {token.lastUsedAt ? ` · usado ${new Date(token.lastUsedAt).toLocaleString("es")}` : " · sin usar"}
+                  {token.prefix}{t("… · creado")}{" "}{new Date(token.createdAt).toLocaleDateString(intl())}
+                  {token.lastUsedAt
+                    ? t(" · usado {0}", { 0: new Date(token.lastUsedAt).toLocaleString(intl()) })
+                    : t(" · sin usar")}
                 </span>
               </span>
               {confirming === token.id ? (
                 <span className="flex items-center gap-3">
-                  <span className="text-muted">¿Revocar?</span>
+                  <span className="text-muted">{t("¿Revocar?")}</span>
                   <TextAction
                     tone="danger"
                     onClick={() => {
@@ -96,13 +99,13 @@ export function ApiTokens() {
                       void revokeApiToken({ data: { id: token.id } }).then(load);
                     }}
                   >
-                    Sí
+                    {t("Sí")}
                   </TextAction>
-                  <TextAction onClick={() => setConfirming(null)}>No</TextAction>
+                  <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
                 </span>
               ) : (
                 <TextAction tone="danger" onClick={() => setConfirming(token.id)}>
-                  Revocar
+                  {t("Revocar")}
                 </TextAction>
               )}
             </li>

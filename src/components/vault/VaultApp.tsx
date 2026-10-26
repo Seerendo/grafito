@@ -35,6 +35,7 @@ import { GraphView } from "./GraphView";
 import { Sidebar, SidebarRail } from "./Sidebar";
 import { NotePdfHost } from "./NotePdf";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
+import { t } from "@/app/i18n";
 
 type Pane = "files" | "note" | "graph" | "links";
 
@@ -75,13 +76,13 @@ function NoReadAccess() {
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <span className="flex items-center gap-0.5">
           <Mark />
-          <span className="select-none font-semibold tracking-tight">Grafito</span>
+          <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
         </span>
         <span className="flex-1" />
         <AccountMenu />
       </header>
       <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
-        Tu rol no tiene permiso para leer notas.
+        {t("Tu rol no tiene permiso para leer notas.")}
       </p>
     </div>
   );
@@ -280,13 +281,13 @@ function VaultWorkspace() {
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button
           type="button"
-          aria-label="Inicio"
+          aria-label={t("Inicio")}
           onClick={goHome}
           onContextMenu={(event) => event.preventDefault()}
           className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity hover:opacity-80"
         >
           <Mark />
-          <span className="select-none font-semibold tracking-tight">Grafito</span>
+          <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
         </button>
         <button
           type="button"
@@ -294,14 +295,14 @@ function VaultWorkspace() {
           className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md bg-inset px-3 text-left text-sm text-muted"
         >
           <Search className="size-4 shrink-0" />
-          <span className="truncate">Buscar</span>
-          <span className="ml-auto hidden text-xs text-faint lg:inline">Ctrl K</span>
+          <span className="truncate">{t("Buscar")}</span>
+          <span className="ml-auto hidden text-xs text-faint lg:inline">{t("Ctrl K")}</span>
         </button>
         <AccountMenu />
         {canGraph ? (
         <button
           type="button"
-          aria-label={graph ? "Cerrar grafo" : "Abrir grafo"}
+          aria-label={graph ? t("Cerrar grafo") : t("Abrir grafo")}
           aria-pressed={graph}
           onClick={() => {
             const next = !graph;
@@ -318,7 +319,7 @@ function VaultWorkspace() {
         {canCreate ? (
           <button
             type="button"
-            aria-label="Nueva nota"
+            aria-label={t("Nueva nota")}
             onClick={() => {
               createDocument(selectedPortfolioId);
               setPane("note");
@@ -389,16 +390,16 @@ function VaultWorkspace() {
 
       {mobile ? (
         <nav className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}>
-          <NavButton active={pane === "files"} label="Notas" onClick={() => setPane("files")}>
+          <NavButton active={pane === "files"} label={t("Notas")} onClick={() => setPane("files")}>
             <Folder className="size-5" />
           </NavButton>
-          <NavButton active={pane === "note"} label="Nota" onClick={() => { setGraph(false); setPane("note"); }}>
+          <NavButton active={pane === "note"} label={t("Nota")} onClick={() => { setGraph(false); setPane("note"); }}>
             <FileText className="size-5" />
           </NavButton>
           {canGraph ? (
             <NavButton
               active={pane === "graph"}
-              label="Grafo"
+              label={t("Grafo")}
               onClick={() => {
                 setGraph(true);
                 setPane("graph");
@@ -407,7 +408,7 @@ function VaultWorkspace() {
               <Network className="size-5" />
             </NavButton>
           ) : null}
-          <NavButton active={pane === "links"} label="Vínculos" onClick={() => setPane("links")}>
+          <NavButton active={pane === "links"} label={t("Vínculos")} onClick={() => setPane("links")}>
             <Link2 className="size-5" />
           </NavButton>
         </nav>
@@ -439,7 +440,7 @@ function FileDrop({
     const state = useVault.getState();
     const active = state.documents.find((document) => document.id === state.activeId);
     const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
-    const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? "Raíz";
+    const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? t("Raíz");
     return { portfolioId, name };
   };
 
@@ -475,7 +476,7 @@ function FileDrop({
       {children}
       {over ? (
         <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-lg border-2 border-dashed border-accent bg-bg/80 text-sm text-fg">
-          Soltar para agregar a {place().name}
+          {t("Soltar para agregar a")}{" "}{place().name}
         </div>
       ) : null}
     </div>
@@ -557,7 +558,7 @@ function VaultDialogs() {
   if (dialog.type === "portfolio") {
     const parent = portfolios.find((item) => item.id === dialog.parentId);
     return (
-      <Modal title="Nuevo portafolio" onClose={() => setDialog(null)}>
+      <Modal title={t("Nuevo portafolio")} onClose={() => setDialog(null)}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -568,12 +569,12 @@ function VaultDialogs() {
             autoFocus
             value={name}
             onChange={(event) => setName(event.target.value)}
-            placeholder={parent ? `Dentro de ${parent.name}` : "Nombre"}
+            placeholder={parent ? t("Dentro de {0}", { 0: parent.name }) : t("Nombre")}
             className="h-11 w-full rounded-md border border-line bg-inset px-3 text-sm outline-none"
           />
           <div className="mt-4 flex justify-end gap-2">
-            <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
-            <Primary type="submit">Crear</Primary>
+            <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+            <Primary type="submit">{t("Crear")}</Primary>
           </div>
         </form>
       </Modal>
@@ -586,18 +587,18 @@ function VaultDialogs() {
         ? documents.find((item) => item.id === dialog.id)?.title
         : portfolios.find((item) => item.id === dialog.id)?.name;
     return (
-      <Modal title="Renombrar" onClose={() => setDialog(null)}>
+      <Modal title={t("Renombrar")} onClose={() => setDialog(null)}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             if (!name.trim()) {
-              setRenameError("Escribe un nombre.");
+              setRenameError(t("Escribe un nombre."));
               return;
             }
             const ok =
               dialog.type === "rename-document" ? rename(dialog.id, name) : renamePortfolio(dialog.id, name);
             if (!ok) {
-              setRenameError("Ese nombre ya está en este lugar.");
+              setRenameError(t("Ese nombre ya está en este lugar."));
               setName(current ?? "");
               return;
             }
@@ -611,13 +612,13 @@ function VaultDialogs() {
               setName(event.target.value);
               setRenameError("");
             }}
-            aria-label="Nombre"
+            aria-label={t("Nombre")}
             className="h-11 w-full rounded-md border border-line bg-inset px-3 text-sm outline-none"
           />
-          {renameError ? <p className="mt-2 text-xs text-danger">{renameError}</p> : null}
+          {renameError ? <p className="mt-2 text-xs text-danger">{t(renameError)}</p> : null}
           <div className="mt-4 flex justify-end gap-2">
-            <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
-            <Primary type="submit">Guardar</Primary>
+            <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+            <Primary type="submit">{t("Guardar")}</Primary>
           </div>
         </form>
       </Modal>
@@ -626,19 +627,21 @@ function VaultDialogs() {
 
   if (dialog.type === "move-conflict") {
     const source = documents.find((item) => item.id === dialog.id);
-    const place = portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? "Raíz";
+    const place = portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? t("Raíz");
     return (
-      <Modal title="Mismo nombre" onClose={() => setDialog(null)}>
+      <Modal title={t("Mismo nombre")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          Ya hay un «{source?.title ?? "documento"}» en {place}. Reemplazar borra el que ya estaba. Renombrar mueve
-          este con otro nombre.
+          {t("Ya hay un «{0}» en {1}. Reemplazar borra el que ya estaba. Renombrar mueve este con otro nombre.", {
+            0: source?.title ?? t("documento"),
+            1: place,
+          })}
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
+          <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
           <Primary type="button" onClick={() => resolveMove("rename")}>
-            Renombrar
+            {t("Renombrar")}
           </Primary>
-          <Danger onClick={() => resolveMove("replace")}>Reemplazar</Danger>
+          <Danger onClick={() => resolveMove("replace")}>{t("Reemplazar")}</Danger>
         </div>
       </Modal>
     );
@@ -647,13 +650,13 @@ function VaultDialogs() {
   if (dialog.type === "delete-document") {
     const document = documents.find((item) => item.id === dialog.id);
     return (
-      <Modal title="Eliminar documento" onClose={() => setDialog(null)}>
+      <Modal title={t("Eliminar documento")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          «{document?.title ?? "Este documento"}» irá a la papelera.
+          {t("«{0}» irá a la papelera.", { 0: document?.title ?? t("Este documento") })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
-          <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
-          <Danger onClick={() => deleteDocument(dialog.id)}>Eliminar</Danger>
+          <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+          <Danger onClick={() => deleteDocument(dialog.id)}>{t("Eliminar")}</Danger>
         </div>
       </Modal>
     );
@@ -662,13 +665,13 @@ function VaultDialogs() {
   if (dialog.type === "delete-portfolio") {
     const portfolio = portfolios.find((item) => item.id === dialog.id);
     return (
-      <Modal title="Eliminar portafolio" onClose={() => setDialog(null)}>
+      <Modal title={t("Eliminar portafolio")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          «{portfolio?.name ?? "Este portafolio"}» y todo lo que contiene irán a la papelera.
+          {t("«{0}» y todo lo que contiene irán a la papelera.", { 0: portfolio?.name ?? t("Este portafolio") })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
-          <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
-          <Danger onClick={() => deletePortfolio(dialog.id)}>Eliminar portafolio</Danger>
+          <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+          <Danger onClick={() => deletePortfolio(dialog.id)}>{t("Eliminar portafolio")}</Danger>
         </div>
       </Modal>
     );
@@ -676,15 +679,15 @@ function VaultDialogs() {
 
   if (dialog.type === "link") {
     return (
-      <Modal title="Vincular" onClose={() => setDialog(null)}>
+      <Modal title={t("Vincular")} onClose={() => setDialog(null)}>
         <div className="grid grid-cols-2 gap-2">
-          <KindButton active={kind === "referencia"} label="Referencia" onClick={() => setKind("referencia")} />
-          <KindButton active={kind === "llama"} label="Invoca" onClick={() => setKind("llama")} />
+          <KindButton active={kind === "referencia"} label={t("Referencia")} onClick={() => setKind("referencia")} />
+          <KindButton active={kind === "llama"} label={t("Invoca")} onClick={() => setKind("llama")} />
         </div>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar destino"
+          placeholder={t("Buscar destino")}
           className="mt-3 h-11 w-full rounded-md border border-line bg-inset px-3 text-sm outline-none"
         />
         <ul className="mt-2 max-h-56 overflow-y-auto">
@@ -697,12 +700,12 @@ function VaultDialogs() {
               >
                 <span className="truncate">{document.title}</span>
                 <span className="ml-auto shrink-0 text-xs text-faint">
-                  {document.kind === "file" ? "archivo" : "nota"}
+                  {document.kind === "file" ? t("archivo") : t("nota")}
                 </span>
               </button>
             </li>
           ))}
-          {candidates.length === 0 ? <li className="px-2 py-3 text-sm text-faint">No hay destinos.</li> : null}
+          {candidates.length === 0 ? <li className="px-2 py-3 text-sm text-faint">{t("No hay destinos.")}</li> : null}
         </ul>
       </Modal>
     );
@@ -710,23 +713,23 @@ function VaultDialogs() {
 
   if (dialog.type === "upload-error") {
     return (
-      <Modal title="No se pudo subir" onClose={() => setDialog(null)}>
-        <p className="text-sm text-muted">{dialog.message}</p>
+      <Modal title={t("No se pudo subir")} onClose={() => setDialog(null)}>
+        <p className="text-sm text-muted">{t(dialog.message)}</p>
         <div className="mt-4 flex justify-end">
-          <Primary onClick={() => setDialog(null)}>Entendido</Primary>
+          <Primary onClick={() => setDialog(null)}>{t("Entendido")}</Primary>
         </div>
       </Modal>
     );
   }
 
   return (
-    <Modal title="Restaurar el ejemplo" onClose={() => setDialog(null)}>
+    <Modal title={t("Restaurar el ejemplo")} onClose={() => setDialog(null)}>
       <p className="text-sm text-muted">
-        Esto sustituye la bóveda actual por los portafolios de ejemplo, incluido Inicio. Lo que hayas escrito aquí se pierde.
+        {t("Esto sustituye la bóveda actual por los portafolios de ejemplo, incluido Inicio. Lo que hayas escrito aquí se pierde.")}
       </p>
       <div className="mt-4 flex justify-end gap-2">
-        <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
-        <Danger onClick={reset}>Restaurar</Danger>
+        <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+        <Danger onClick={reset}>{t("Restaurar")}</Danger>
       </div>
     </Modal>
   );

@@ -92,6 +92,8 @@ export async function removeFile(sql: Sql, key: string | null | undefined): Prom
 export async function removeUserFiles(sql: Sql, userId: string): Promise<void> {
   const rows = await sql<{ file_key: string }>`
     select file_key from vault_doc where user_id = ${userId} and file_key is not null
+    union
+    select file_key from vault_doc_version where user_id = ${userId} and file_key is not null
   `;
   for (const row of rows) await deleteBlob(sql, row.file_key);
   await sql`delete from file_blob where key like ${`vault/${userId}/%`}`;

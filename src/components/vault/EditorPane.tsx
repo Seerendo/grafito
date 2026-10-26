@@ -40,9 +40,10 @@ import { HomeBoard } from "./HomeBoard";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
 import { requestNotePdf } from "./NotePdf";
+import { intl, t } from "@/app/i18n";
 
 function wrapSelection(value: string, start: number, end: number, before: string, after: string) {
-  const selected = value.slice(start, end) || "texto";
+  const selected = value.slice(start, end) || t("texto");
   const next = value.slice(0, start) + before + selected + after + value.slice(end);
   const from = start + before.length;
   const to = from + selected.length;
@@ -149,7 +150,7 @@ export function EditorPane({
     );
   }
 
-  const portfolioName = portfolios.find((item) => item.id === document.portfolioId)?.name ?? "Raíz";
+  const portfolioName = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Raíz");
   const isFile = document.kind === "file";
   // Sin permiso de edición la nota siempre se lee, aunque se guardara otro modo.
   const viewMode = canEdit ? mode : "read";
@@ -165,7 +166,7 @@ export function EditorPane({
         .slice(0, 6)
     : [];
   const words = wordCount(document.content);
-  const edited = new Intl.DateTimeFormat("es", {
+  const edited = new Intl.DateTimeFormat(intl(), {
     day: "numeric",
     month: "short",
     timeZone: "UTC",
@@ -174,7 +175,7 @@ export function EditorPane({
   const commitTitle = () => {
     const ok = rename(document.id, title);
     if (!ok) {
-      setTitleError("Ya hay un documento con ese nombre.");
+      setTitleError(t("Ya hay un documento con ese nombre."));
       setTitle(document.title);
       return;
     }
@@ -220,7 +221,7 @@ export function EditorPane({
     const area = areaRef.current;
     if (!area || isFile) return;
     const { selectionStart: start, selectionEnd: end } = area;
-    const selected = document.content.slice(start, end) || "código";
+    const selected = document.content.slice(start, end) || t("código");
     const lead = start > 0 && document.content[start - 1] !== "\n" ? "\n" : "";
     const snippet = `\`\`\`\n${selected}\n\`\`\`\n`;
     const next = document.content.slice(0, start) + lead + snippet + document.content.slice(end);
@@ -233,7 +234,7 @@ export function EditorPane({
     const area = areaRef.current;
     if (!area || isFile) return;
     const { selectionStart: start, selectionEnd: end } = area;
-    const selected = document.content.slice(start, end) || "texto";
+    const selected = document.content.slice(start, end) || t("texto");
     const snippet = `[${selected}](https://)`;
     const next = document.content.slice(0, start) + snippet + document.content.slice(end);
     const urlAt = start + selected.length + 3;
@@ -301,17 +302,17 @@ export function EditorPane({
                 event.currentTarget.blur();
               }
             }}
-            aria-label="Título del documento"
+            aria-label={t("Título del documento")}
             readOnly={!canEdit}
             className="w-full bg-transparent font-serif text-2xl font-semibold tracking-tight text-fg outline-none"
           />
-          {titleError ? <p className="text-xs text-danger">{titleError}</p> : null}
+          {titleError ? <p className="text-xs text-danger">{t(titleError)}</p> : null}
         </div>
         <div className="flex shrink-0 items-center">
           <VisibilityMark id={document.id} className="px-2" />
           <button
             type="button"
-            aria-label="Cerrar documento"
+            aria-label={t("Cerrar documento")}
             onClick={onClose}
             className="grid h-11 w-11 place-items-center rounded-md text-muted hover:text-fg"
           >
@@ -319,7 +320,7 @@ export function EditorPane({
           </button>
           <button
             type="button"
-            aria-label={document.pinned ? "Quitar fijada" : "Fijar documento"}
+            aria-label={document.pinned ? t("Quitar fijada") : t("Fijar documento")}
             onClick={() => togglePin(document.id)}
             className={`grid h-11 w-11 place-items-center rounded-md ${document.pinned ? "text-accent" : "text-muted hover:text-fg"}`}
           >
@@ -328,7 +329,7 @@ export function EditorPane({
           <div className="relative" ref={menuRef}>
             <button
               type="button"
-              aria-label="Más acciones"
+              aria-label={t("Más acciones")}
               aria-expanded={menu}
               onClick={() => setMenu((open) => !open)}
               className="grid h-11 w-11 place-items-center rounded-md text-muted hover:text-fg"
@@ -340,7 +341,7 @@ export function EditorPane({
                 {can(PERMISSION.notesShare) ? (
                   <MenuButton
                     icon={<Share2 className="size-4" />}
-                    label="Compartir…"
+                    label={t("Compartir…")}
                     onClick={() => {
                       setMenu(false);
                       setDialog({ type: "share", kind: "document", id: document.id });
@@ -350,17 +351,17 @@ export function EditorPane({
                 {can(PERMISSION.linksManage) ? (
                   <MenuButton
                     icon={<Link2 className="size-4" />}
-                    label="Vincular"
+                    label={t("Vincular")}
                     onClick={() => {
                       setMenu(false);
                       setDialog({ type: "link", sourceId: document.id });
                     }}
                   />
                 ) : null}
-                {!isFile ? (
+                {!isFile || document.file?.key ? (
                   <MenuButton
                     icon={<History className="size-4" />}
-                    label="Historial"
+                    label={t("Historial")}
                     onClick={() => {
                       setMenu(false);
                       // Primero se sube lo último escrito, para que esté en el historial.
@@ -372,7 +373,7 @@ export function EditorPane({
                 {!isFile && can(PERMISSION.notesCreate) ? (
                   <MenuButton
                     icon={<Copy className="size-4" />}
-                    label="Duplicar"
+                    label={t("Duplicar")}
                     onClick={() => {
                       duplicate(document.id);
                       setMenu(false);
@@ -382,14 +383,14 @@ export function EditorPane({
                 {can(exportPermission(document.kind)) ? (
                   <MenuButton
                     icon={<Download className="size-4" />}
-                    label={isFile ? "Descargar archivo" : "Exportar .md"}
+                    label={isFile ? t("Descargar archivo") : t("Exportar .md")}
                     onClick={exportNote}
                   />
                 ) : null}
                 {!isFile && can(PERMISSION.notesExport) ? (
                   <MenuButton
                     icon={<Download className="size-4" />}
-                    label="Descargar PDF"
+                    label={t("Descargar PDF")}
                     onClick={() => {
                       setMenu(false);
                       requestNotePdf({ title: document.title, content: document.content });
@@ -399,7 +400,7 @@ export function EditorPane({
                 {can(deletePermission(document.kind)) ? (
                   <MenuButton
                     icon={<Trash2 className="size-4" />}
-                    label="Eliminar"
+                    label={t("Eliminar")}
                     danger
                     onClick={() => {
                       setMenu(false);
@@ -407,7 +408,7 @@ export function EditorPane({
                     }}
                   />
                 ) : null}
-                <p className="hidden px-3 py-2 text-xs text-faint only:block">Sin acciones para tu rol.</p>
+                <p className="hidden px-3 py-2 text-xs text-faint only:block">{t("Sin acciones para tu rol.")}</p>
               </div>
             ) : null}
           </div>
@@ -416,64 +417,64 @@ export function EditorPane({
 
       {isFile ? null : (
         <div className="flex items-center gap-1 border-b border-line px-3 py-1">
-          <ModeButton active={viewMode === "edit"} label="Editar" disabled={!canEdit} onClick={() => setMode("edit")}>
+          <ModeButton active={viewMode === "edit"} label={t("Editar")} disabled={!canEdit} onClick={() => setMode("edit")}>
             <PenLine className="size-4" />
           </ModeButton>
           <ModeButton
             active={viewMode === "split"}
-            label="Dividir"
+            label={t("Dividir")}
             className="hidden md:inline-flex"
             disabled={!canEdit}
             onClick={() => setMode("split")}
           >
             <Columns2 className="size-4" />
           </ModeButton>
-          <ModeButton active={viewMode === "read" || (mobile && viewMode === "split")} label="Leer" onClick={() => setMode("read")}>
+          <ModeButton active={viewMode === "read" || (mobile && viewMode === "split")} label={t("Leer")} onClick={() => setMode("read")}>
             <BookOpen className="size-4" />
           </ModeButton>
           {showEditor ? (
             <div className="ml-auto flex min-w-0 items-center">
-              <ToolButton label="Negrita" onClick={() => applyWrap("**", "**")}>
+              <ToolButton label={t("Negrita")} onClick={() => applyWrap("**", "**")}>
                 <Bold className="size-4" />
               </ToolButton>
-              <ToolButton label="Cursiva" onClick={() => applyWrap("*", "*")}>
+              <ToolButton label={t("Cursiva")} onClick={() => applyWrap("*", "*")}>
                 <Italic className="size-4" />
               </ToolButton>
-              <ToolButton label="Código en línea" onClick={() => applyWrap("`", "`")}>
+              <ToolButton label={t("Código en línea")} onClick={() => applyWrap("`", "`")}>
                 <Code className="size-4" />
               </ToolButton>
-              <ToolButton label="Enlace interno" onClick={() => applyWrap("[[", "]]")}>
+              <ToolButton label={t("Enlace interno")} onClick={() => applyWrap("[[", "]]")}>
                 <Link2 className="size-4" />
               </ToolButton>
               <div ref={insertRef} className="relative">
-                <ToolButton label="Insertar Markdown" onClick={() => setInsertOpen((open) => !open)}>
+                <ToolButton label={t("Insertar Markdown")} onClick={() => setInsertOpen((open) => !open)}>
                   <Plus className="size-4" />
                 </ToolButton>
                 {insertOpen ? (
                   <div className="absolute right-0 z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl">
-                    <MenuButton icon={<Table className="size-4" />} label="Tabla" onClick={() => applyBlock(TABLE, TABLE_AT)} />
-                    <MenuButton icon={<Code className="size-4" />} label="Bloque de código" onClick={applyFence} />
-                    <MenuButton icon={<Heading2 className="size-4" />} label="Encabezado" onClick={() => applyPrefix("## ")} />
-                    <MenuButton icon={<List className="size-4" />} label="Lista" onClick={() => applyPrefix("- ")} />
-                    <MenuButton icon={<ListOrdered className="size-4" />} label="Lista numerada" onClick={() => applyPrefix("1. ")} />
-                    <MenuButton icon={<ListChecks className="size-4" />} label="Tareas" onClick={() => applyPrefix("- [ ] ")} />
-                    <MenuButton icon={<Quote className="size-4" />} label="Cita" onClick={() => applyPrefix("> ")} />
+                    <MenuButton icon={<Table className="size-4" />} label={t("Tabla")} onClick={() => applyBlock(TABLE, TABLE_AT)} />
+                    <MenuButton icon={<Code className="size-4" />} label={t("Bloque de código")} onClick={applyFence} />
+                    <MenuButton icon={<Heading2 className="size-4" />} label={t("Encabezado")} onClick={() => applyPrefix("## ")} />
+                    <MenuButton icon={<List className="size-4" />} label={t("Lista")} onClick={() => applyPrefix("- ")} />
+                    <MenuButton icon={<ListOrdered className="size-4" />} label={t("Lista numerada")} onClick={() => applyPrefix("1. ")} />
+                    <MenuButton icon={<ListChecks className="size-4" />} label={t("Tareas")} onClick={() => applyPrefix("- [ ] ")} />
+                    <MenuButton icon={<Quote className="size-4" />} label={t("Cita")} onClick={() => applyPrefix("> ")} />
                     <MenuButton
                       icon={<Lightbulb className="size-4" />}
-                      label="Llamado"
-                      onClick={() => applyBlock("> [!idea] Idea\n> ", "> [!idea] Idea\n> ".length)}
+                      label={t("Llamado")}
+                      onClick={() => applyBlock(t("> [!idea] Idea\n> "), t("> [!idea] Idea\n> ").length)}
                     />
-                    <MenuButton icon={<Link className="size-4" />} label="Enlace" onClick={applyLink} />
-                    <MenuButton icon={<Minus className="size-4" />} label="Regla" onClick={() => applyBlock("---\n", 4)} />
-                    <MenuButton icon={<Strikethrough className="size-4" />} label="Tachado" onClick={() => applyWrap("~~", "~~")} />
-                    <MenuButton icon={<Highlighter className="size-4" />} label="Resaltado" onClick={() => applyWrap("==", "==")} />
+                    <MenuButton icon={<Link className="size-4" />} label={t("Enlace")} onClick={applyLink} />
+                    <MenuButton icon={<Minus className="size-4" />} label={t("Regla")} onClick={() => applyBlock("---\n", 4)} />
+                    <MenuButton icon={<Strikethrough className="size-4" />} label={t("Tachado")} onClick={() => applyWrap("~~", "~~")} />
+                    <MenuButton icon={<Highlighter className="size-4" />} label={t("Resaltado")} onClick={() => applyWrap("==", "==")} />
                   </div>
                 ) : null}
               </div>
             </div>
           ) : (
             <p className="ml-auto pr-2 text-xs text-faint">
-              {words} palabras · {readingLabel(words)} · {document.updatedBy} · {edited}
+              {words}{" "}{t("palabras ·")}{" "}{readingLabel(words)} · {document.updatedBy} · {edited}
             </p>
           )}
         </div>
@@ -510,7 +511,7 @@ export function EditorPane({
                 }
               }}
               spellCheck
-              aria-label="Contenido de la nota"
+              aria-label={t("Contenido de la nota")}
               className="min-h-0 w-full flex-1 resize-none bg-transparent px-4 pt-1.5 pb-3 font-sans text-sm leading-normal text-fg outline-none sm:px-5"
             />
             {wiki ? (
@@ -526,7 +527,7 @@ export function EditorPane({
                       >
                         {item.title}
                         <span className="ml-auto text-xs text-faint">
-                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)?.name ?? "Raíz"}
+                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)?.name ?? t("Raíz")}
                         </span>
                       </button>
                     </li>
@@ -539,7 +540,7 @@ export function EditorPane({
                         onClick={() => acceptWiki(wiki.query.trim())}
                         className="flex h-11 w-full items-center rounded-md px-2 text-left text-sm text-accent hover:bg-elevated"
                       >
-                        Usar [[{wiki.query.trim()}]]
+                        {t("Usar [[")}{wiki.query.trim()}]]
                       </button>
                     </li>
                   ) : null}
@@ -571,7 +572,7 @@ export function EditorPane({
       {showEditor ? (
         <footer className="flex h-10 shrink-0 items-center gap-3 border-t border-line px-4 text-xs text-faint">
           <span>
-            {words} palabras · {readingLabel(words)}
+            {words}{" "}{t("palabras ·")}{" "}{readingLabel(words)}
           </span>
           <span className="ml-auto">
             {document.updatedBy} · {edited}
@@ -602,7 +603,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? "Tu rol no permite editar" : undefined}
+      title={disabled ? t("Tu rol no permite editar") : undefined}
       className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${className} ${
         active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
       }`}

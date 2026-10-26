@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { t } from "@/app/i18n";
 
 /** Tarjetas para elegir una sección o subsección (ajustes, administración). */
 export function OptionGrid<T extends string>({
@@ -20,7 +21,7 @@ export function OptionGrid<T extends string>({
             className="flex min-h-24 flex-col items-start gap-3 border border-line bg-surface p-4 text-left transition-colors hover:bg-elevated"
           >
             <Icon className="size-5 text-accent" />
-            <span className="block font-serif text-xl leading-tight">{item.label}</span>
+            <span className="block font-serif text-xl leading-tight">{t(item.label)}</span>
           </button>
         );
       })}

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AiProviderId } from "@/domain/ai";
 import { bearerHeader } from "@/lib/auth/bearer";
 import { syncVault } from "@/app/vault/sync";
+import { t } from "@/app/i18n";
 
 /**
  * Estado del chat de IA (cliente): abierto o cerrado, modelo elegido y la
@@ -128,7 +129,7 @@ export const useAiChat = create<ChatState>((set, get) => ({
       });
       if (!response.ok || !response.body) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error || `El servidor respondió ${response.status}.`);
+        throw new Error(body?.error || t("El servidor respondió {0}.", { 0: response.status }));
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -160,7 +161,7 @@ export const useAiChat = create<ChatState>((set, get) => ({
       }
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === "AbortError";
-      patch({ error: aborted ? "Detenido." : error instanceof Error ? error.message : "No se pudo enviar." });
+      patch({ error: aborted ? t("Detenido.") : error instanceof Error ? error.message : t("No se pudo enviar.") });
     } finally {
       patch({ pending: false });
       set({ busy: false, controller: null });

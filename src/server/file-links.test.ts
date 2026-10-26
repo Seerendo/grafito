@@ -37,3 +37,14 @@ test("caducado: no vale", () => {
   expired.set("e", String(Math.floor(Date.now() / 1000) - 10));
   assert.equal(verifyFileUrl("doc-1", expired), null);
 });
+
+test("fichas firmadas: ida y vuelta, manipulación y caducidad", async () => {
+  const { readToken, signToken } = await import("./file-links.ts");
+  const { token } = signToken({ d: "doc-1", w: true }, 60);
+  assert.deepEqual({ ...readToken<{ d: string; w: boolean }>(token), exp: 0 }, { d: "doc-1", w: true, exp: 0 });
+  const [body, sig] = token.split(".");
+  const forged = Buffer.from(JSON.stringify({ d: "doc-1", w: true, exp: Date.now() + 1e9 })).toString("base64url");
+  assert.equal(readToken(`${forged}.${sig}`), null);
+  assert.equal(readToken(`${body}.x${sig!.slice(1)}`), null);
+  assert.equal(readToken(signToken({ d: "doc-1" }, -1).token), null);
+});

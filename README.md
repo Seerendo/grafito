@@ -7,14 +7,16 @@ organizations, sharing (private, with people, or by public link), external
 sign-in (LDAP, OAuth, OpenID Connect), an AI assistant that works on your notes,
 and a REST API.
 
-The interface is in Spanish; this guide quotes on-screen labels as they appear
-(for example **Compartir…**, "Share…").
+The interface is available in Spanish and English (**Cuenta → Preferencias de
+usuario**, "Account → User preferences"). This guide quotes the Spanish labels,
+with the English ones in quotes (for example **Compartir…**, "Share…").
 
-- [Quick start](#quick-start)
+- [Installation](#installation)
 - [First run](#first-run)
 - [Using the vault](#using-the-vault)
 - [Sharing](#sharing)
 - [History and trash](#history-and-trash)
+- [Office documents](#office-documents)
 - [Account](#account)
 - [Administration](#administration)
 - [AI assistant](#ai-assistant)
@@ -23,9 +25,20 @@ The interface is in Spanish; this guide quotes on-screen labels as they appear
 - [Development](#development)
 - [Further reading](#further-reading)
 
-## Quick start
+## Installation
 
-Requirements: Docker with Docker Compose.
+### Requirements
+
+- **Software:** Docker with Docker Compose v2 (Docker Desktop on Windows and
+  macOS, or Docker Engine on Linux). Git, to download the code.
+- **Memory:** about 1.7 GB when idle; plan for 4 GB or more. Each document
+  open in the Office editor adds some.
+- **Disk:** about 5 GB for the images, plus your data and backups.
+- **Ports:** `8080` (Grafito) and `9980` (the Office editor) must be free.
+- **Internet:** needed only for the first download. After that, everything
+  runs locally (see [Offline installation](#offline-installation)).
+
+### Default installation
 
 ```bash
 git clone https://github.com/Seerendo/grafito.git
@@ -33,24 +46,136 @@ cd grafito
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8080>. Compose starts:
+Open <http://127.0.0.1:8080> and follow [First run](#first-run). The first
+start takes a few minutes while the images download and the app builds.
 
-- The app, as a production build.
-- Postgres 16, Elasticsearch 8, Redis 7 and MinIO. They are only reachable
-  from the machine itself (`127.0.0.1`).
-- Two backup services: a daily database dump in `./backups`, and a copy of
-  the uploaded files in `./backups/files`.
+This starts:
 
-Migrations run automatically when the app starts.
+| Service | What it does | Reachable at |
+| --- | --- | --- |
+| `app` | Grafito (production build) | `http://127.0.0.1:8080` |
+| `postgres` | Accounts, vaults, sharing, versions | this machine only |
+| `elasticsearch` | Full-text search | this machine only |
+| `redis` | Session deadlines | this machine only |
+| `minio` | Uploaded files | this machine only |
+| `collabora` | Office editor (Collabora Online) | `http://127.0.0.1:9980` |
+| `backup`, `backup-files` | Daily copies of the database and the files in `./backups` | — |
 
-> Before exposing Grafito to anyone, create a `.env` file next to
-> `docker-compose.yml` with your own secrets (`BETTER_AUTH_SECRET`,
-> `GRAFITO_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `S3_SECRET_KEY`) and the
-> public address (`BETTER_AUTH_URL`). See
-> [docs/OPERATIONS.md](docs/OPERATIONS.md). Keep the encryption key safe:
-> without it, saved AI keys can't be read.
+Migrations run automatically when the app starts. This setup works as is on
+your own computer.
 
-Useful commands:
+### Configuration with `.env`
+
+Docker Compose reads a file named `.env` next to `docker-compose.yml`, if one
+exists. Without it, the defaults written in `docker-compose.yml` are used.
+They are fine for trying Grafito on your own computer, but they are public (they
+are in this repository).
+
+`.env` is listed in `.gitignore`, so your secrets never reach Git. To create it
+from the template:
+
+```bash
+cp .env.example .env
+```
+
+Uncomment and fill in what you need, then apply it with
+`docker compose up -d`. Generate secrets with `openssl rand -base64 32`.
+
+| Variable | Set it when | Notes |
+| --- | --- | --- |
+| `BETTER_AUTH_SECRET` | Always, outside your own computer | Signs sessions. Changing it later only signs everyone out. |
+| `GRAFITO_ENCRYPTION_KEY` | Before anyone saves AI keys | 32+ characters. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
+| `POSTGRES_PASSWORD`, `S3_SECRET_KEY` | **Before the first start** | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md). |
+| `COLLABORA_ADMIN_PASSWORD` | Always, outside your own computer | Password of Collabora's own admin console (user `admin`). Port 9980 is reachable from the network. |
+| `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito | See [On a server or a network](#on-a-server-or-a-network). |
+| `GRAFITO_MAX_UPLOAD_MB` | To change the upload limit | 100 MB by default. |
+| `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS` | To change the backup schedule | Daily, keeping 14 days. |
+
+### Installation options
+
+#### On a server or a network
+
+When people use Grafito from other machines, it needs the addresses they will
+use. For example, behind `https://notes.example.com`, with the editor at
+`https://office.example.com`:
+
+```dotenv
+BETTER_AUTH_URL=https://notes.example.com
+GRAFITO_PUBLIC_ORIGIN=https://notes.example.com
+COLLABORA_URL=https://office.example.com
+BETTER_AUTH_SECRET=...
+GRAFITO_ENCRYPTION_KEY=...
+POSTGRES_PASSWORD=...
+S3_SECRET_KEY=...
+COLLABORA_ADMIN_PASSWORD=...
+```
+
+Put a reverse proxy with HTTPS (for example Caddy or nginx) in front of port
+`8080` and, for the editor, port `9980`. On a local network without a domain,
+use the machine's IP instead, for example `http://192.168.1.20:8080` and
+`http://192.168.1.20:9980`.
+
+#### Without the Office editor
+
+```bash
+# in .env
+COLLABORA_URL=
+```
+
+```bash
+docker compose up -d --scale collabora=0
+```
+
+Office files can still be uploaded and downloaded. See
+[docs/OFFICE.md](docs/OFFICE.md).
+
+#### Without automatic backups
+
+```bash
+docker compose up -d --scale backup=0 --scale backup-files=0
+```
+
+Use this only if you back up the Docker volumes another way. See
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+#### Offline installation
+
+Grafito needs no internet connection while it runs. To install it on a machine
+without internet:
+
+1. On a machine with internet, run `docker compose pull` and
+   `docker compose build`.
+2. Save the images with `docker save` and copy them along with this folder.
+3. On the target machine, load them with `docker load` and run
+   `docker compose up -d`.
+
+The AI assistant is the only feature that needs internet, and only with cloud
+providers. Self-hosted Ollama or LM Studio also work offline.
+
+#### Test services
+
+Not started by default:
+
+- `docker compose --profile auth-test up -d`: Keycloak and OpenLDAP with
+  sample users, to try external sign-in.
+- `docker compose --profile ai-test up -d`: Ollama with a small open model, to
+  try the AI assistant.
+
+#### Without Docker (development)
+
+See [Development](#development).
+
+### Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+Migrations run by themselves. Take a backup first (see
+[docs/OPERATIONS.md](docs/OPERATIONS.md)).
+
+### Stopping and uninstalling
 
 ```bash
 docker compose ps
@@ -58,8 +183,9 @@ docker compose logs -f app
 docker compose down
 ```
 
-`docker compose down` keeps your data. Add `-v` only if you want to delete the
-volumes, which erases all accounts and notes.
+`docker compose down` stops everything and keeps your data. `docker compose down -v`
+also **deletes the volumes**, erasing all accounts, notes and files. The
+`./backups` folder is kept.
 
 ## First run
 
@@ -174,11 +300,31 @@ Public links are always read-only.
   - Or you can delete it for good.
   - Items are removed automatically after 30 days.
 
+## Office documents
+
+Word, Excel, PowerPoint and OpenDocument files can be edited inside Grafito
+with **Abrir en el editor** ("Open in the editor"). The editor is
+Collabora Online, which `docker compose up -d` starts by default. To turn it
+off, set `COLLABORA_URL=` in `.env` and run
+`docker compose up -d --scale collabora=0`.
+
+- **Versions:** every save is a version in the file's history, and the
+  original is always kept.
+- **Track changes:** Collabora's own track changes (Review → Track Changes) are
+  stored in the document.
+- **Offline:** it runs entirely on your machine or network, with no internet
+  needed.
+
+Setup, offline use and licensing notes for commercial use are in
+[docs/OFFICE.md](docs/OFFICE.md).
+
 ## Account
 
 Open the avatar menu → **Cuenta**. Settings are split into sections:
 
 - **Datos de la cuenta:** display name and contact email.
+- **Preferencias de usuario:** the interface language (Español / English). It
+  is saved to the account, so it follows you to other browsers.
 - **Contraseña:** change your password. Accounts that sign in with LDAP, OAuth
   or SSO change it at their provider.
 - **Conexiones de IA:** connect the AI providers the administrator allowed (see
@@ -267,8 +413,10 @@ status 400, 401, 403, 404 or 409.
 
 ## Configuration
 
-The server reads environment variables. `.env.example` documents all of them.
-Inside Docker Compose they are already set in `docker-compose.yml`.
+This is the full list of variables the Grafito server reads, for running it
+outside the provided Docker Compose setup. With Docker Compose, set them in
+`.env` as described in [Configuration with `.env`](#configuration-with-env).
+`.env.example` documents them all.
 
 | Variable | Purpose | If missing |
 | --- | --- | --- |
@@ -279,6 +427,8 @@ Inside Docker Compose they are already set in `docker-compose.yml`.
 | `REDIS_URL` | Session deadlines | Stored in Postgres |
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session signing and public URL | Required in production |
 | `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys (32+ characters) | AI keys can't be saved |
+| `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Previous key during a rotation | — |
+| `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md)) | Editor off |
 
 ### Testing external sign-in locally
 
@@ -317,6 +467,8 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 
 - [docs/OPERATIONS.md](docs/OPERATIONS.md): backups, restore, secret rotation
   and what to do when something is down.
+- [docs/OFFICE.md](docs/OFFICE.md): the Office editor (Collabora), offline use
+  and licensing.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,
   sharing, sync, authentication and AI internals.
 - [TEST.md](TEST.md): the end-to-end test log for each round of changes.

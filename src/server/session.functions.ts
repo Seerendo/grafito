@@ -52,6 +52,19 @@ export const accountState = createServerFn({ method: "GET" })
     return profile;
   });
 
+/** Cuenta → Preferencias: idioma de la interfaz. */
+export const savePreferences = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ locale: z.enum(["es", "en"]) }).parse(input))
+  .handler(async ({ context, data }) => {
+    const sql = await requireLease(context.userId);
+    await sql`
+      insert into app_profile (user_id, locale) values (${context.userId}, ${data.locale})
+      on conflict (user_id) do update set locale = ${data.locale}
+    `;
+    return { ok: true as const };
+  });
+
 export const updateAccount = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>

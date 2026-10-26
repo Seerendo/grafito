@@ -15,6 +15,8 @@ export type UserProfile = {
   roleName: string;
   mustChangePassword: boolean;
   permissions: string[];
+  /** Idioma elegido en Cuenta → Preferencias ("" = sin elegir). */
+  locale: "es" | "en" | "";
 };
 
 export function allows(profile: Pick<UserProfile, "isAdmin" | "permissions">, key: string): boolean {
@@ -51,8 +53,8 @@ export async function readUserProfile(sql: Sql, userId: string): Promise<UserPro
   const admin = await sql<{ must_change_password: unknown; login_name: string }>`
     select must_change_password, login_name from app_admin where user_id = ${userId} limit 1
   `;
-  const contact = await sql<{ contact_email: string | null }>`
-    select contact_email from app_profile where user_id = ${userId} limit 1
+  const contact = await sql<{ contact_email: string | null; locale: string | null }>`
+    select contact_email, locale from app_profile where user_id = ${userId} limit 1
   `;
   const membership = await sql<{ role_id: string; login_name: string; role_name: string }>`
     select m.role_id, m.login_name, r.name as role_name
@@ -83,5 +85,6 @@ export async function readUserProfile(sql: Sql, userId: string): Promise<UserPro
     roleName: owner ? "Administrador" : (membership[0]?.role_name ?? ""),
     mustChangePassword: flag(row?.must_change_password),
     permissions,
+    locale: contact[0]?.locale === "en" || contact[0]?.locale === "es" ? contact[0].locale : "",
   };
 }

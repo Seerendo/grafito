@@ -9,6 +9,7 @@ import { clearAccountProfile, setAccountProfile } from "@/app/account-profile";
 import { clearPermissions, setPermissions } from "@/app/permissions";
 import { STRONG_PASSWORD, emailForUsername } from "@/server/platform";
 import { accessState, createInitialAdmin, markPasswordChanged, sessionProfile } from "@/server/admin.functions";
+import { getLocale, setLocale, t } from "@/app/i18n";
 
 const AppAdminContext = createContext(false);
 
@@ -43,7 +44,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
         setInstall(next);
         setInstallError("");
       })
-      .catch(() => setInstallError("No se pudo leer si el sistema ya está configurado."));
+      .catch(() => setInstallError(t("No se pudo leer si el sistema ya está configurado.")));
 
   useEffect(() => {
     void refreshInstall();
@@ -74,12 +75,14 @@ export function AccessGate({ children }: { children: ReactNode }) {
       .then((next) => {
         if (cancelled) return;
         setPermissions(next);
+        // El idioma elegido en otra sesión sigue al usuario.
+        if (next.locale && next.locale !== getLocale()) setLocale(next.locale);
         if (!next.isAdmin) {
           if (held && held !== userId && account?.userId === held) return;
           clearHeldAdmin();
           setAccountProfile({
             userId,
-            displayName: next.displayName || "Cuenta",
+            displayName: next.displayName || t("Cuenta"),
             contactEmail: next.contactEmail,
             loginName: next.loginName,
             isAdmin: false,
@@ -126,7 +129,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   if (installError) {
     return (
       <Shell>
-        <p className="text-sm text-danger">{installError}</p>
+        <p className="text-sm text-danger">{t(installError)}</p>
       </Shell>
     );
   }
@@ -164,7 +167,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   if (!install || isPending || (user && !account)) {
     return (
       <Shell>
-        <p className="text-sm text-muted">Cargando…</p>
+        <p className="text-sm text-muted">{t("Cargando…")}</p>
       </Shell>
     );
   }
@@ -203,7 +206,7 @@ function SetupForm({
       onSignedIn(password);
       onInstalled();
     } catch {
-      setError("La cuenta quedó creada, pero no se pudo entrar. Vuelve a intentarlo.");
+      setError(t("La cuenta quedó creada, pero no se pudo entrar. Vuelve a intentarlo."));
       onInstalled();
     } finally {
       setBusy(false);
@@ -212,18 +215,18 @@ function SetupForm({
 
   return (
     <Shell>
-      <p className="text-xs font-medium tracking-widest text-faint uppercase">Grafito</p>
-      <h1 className="mt-2 font-serif text-3xl">Primera vez</h1>
+      <p className="text-xs font-medium tracking-widest text-faint uppercase">{t("Grafito")}</p>
+      <h1 className="mt-2 font-serif text-3xl">{t("Primera vez")}</h1>
       <form onSubmit={submit} className="mt-5 space-y-3">
-        <TextField label="Usuario" value={username} onChange={setUsername} autoComplete="off" autoFocus />
-        <TextField label="Contraseña" value={password} onChange={setPassword} autoComplete="new-password" secret />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <TextField label={t("Usuario")} value={username} onChange={setUsername} autoComplete="off" autoFocus />
+        <TextField label={t("Contraseña")} value={password} onChange={setPassword} autoComplete="new-password" secret />
+        {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
         <button
           type="submit"
           disabled={busy}
           className="h-11 w-full rounded-md bg-accent text-sm font-medium text-accent-fg disabled:opacity-60"
         >
-          {busy ? "Creando…" : "Crear administrador"}
+          {busy ? t("Creando…") : t("Crear administrador")}
         </button>
       </form>
     </Shell>
@@ -261,13 +264,13 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
       }
       const email = emailForUsername(username);
       if (!email) {
-        setError("Ese usuario no es válido.");
+        setError(t("Ese usuario no es válido."));
         return;
       }
       await signInWithPassword(email, password);
       onSignedIn(password);
     } catch {
-      setError("Usuario o contraseña incorrectos.");
+      setError(t("Usuario o contraseña incorrectos."));
     } finally {
       setBusy(false);
     }
@@ -280,14 +283,14 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
 
   return (
     <Shell>
-      <p className="text-xs font-medium tracking-widest text-faint uppercase">Grafito</p>
-      <h1 className="mt-2 font-serif text-3xl">Entrar</h1>
+      <p className="text-xs font-medium tracking-widest text-faint uppercase">{t("Grafito")}</p>
+      <h1 className="mt-2 font-serif text-3xl">{t("Entrar")}</h1>
       {methods?.ldap ? (
-        <div role="tablist" aria-label="Tipo de cuenta" className="mt-5 grid grid-cols-2 rounded-md border border-line p-0.5 text-sm">
+        <div role="tablist" aria-label={t("Tipo de cuenta")} className="mt-5 grid grid-cols-2 rounded-md border border-line p-0.5 text-sm">
           {(
             [
-              ["local", "Cuenta de Grafito"],
-              ["ldap", "Directorio (LDAP)"],
+              ["local", t("Cuenta de Grafito")],
+              ["ldap", t("Directorio (LDAP)")],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -308,26 +311,26 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
       ) : null}
       <form onSubmit={submit} className="mt-5 space-y-3">
         <TextField
-          label={mode === "ldap" ? "Usuario del directorio" : "Usuario"}
+          label={mode === "ldap" ? t("Usuario del directorio") : t("Usuario")}
           value={username}
           onChange={setUsername}
           autoComplete="username"
           autoFocus
         />
-        <TextField label="Contraseña" value={password} onChange={setPassword} autoComplete="current-password" secret />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <TextField label={t("Contraseña")} value={password} onChange={setPassword} autoComplete="current-password" secret />
+        {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
         <button
           type="submit"
           disabled={busy}
           className="h-11 w-full rounded-md bg-accent text-sm font-medium text-accent-fg disabled:opacity-60"
         >
-          {busy ? "Entrando…" : "Entrar"}
+          {busy ? t("Entrando…") : t("Entrar")}
         </button>
       </form>
       {external.length > 0 ? (
         <div className="mt-5">
           <p className="flex items-center gap-3 text-xs text-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">
-            o continúa con
+            {t("o continúa con")}
           </p>
           <div className="mt-3 grid gap-2">
             {external.map((provider) => (
@@ -376,28 +379,28 @@ function ChangePassword({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (nextPassword.length < STRONG_PASSWORD) {
-      setError(`La nueva contraseña necesita al menos ${STRONG_PASSWORD} caracteres.`);
+      setError(t("La nueva contraseña necesita al menos {0} caracteres.", { 0: STRONG_PASSWORD }));
       return;
     }
     if (nextPassword === currentPassword) {
-      setError("Tiene que ser distinta de la contraseña inicial.");
+      setError(t("Tiene que ser distinta de la contraseña inicial."));
       return;
     }
     setBusy(true);
     setError("");
     try {
       if (!(await changePassword(currentPassword, nextPassword))) {
-        setError("No se cambió. Revisa la contraseña actual.");
+        setError(t("No se cambió. Revisa la contraseña actual."));
         return;
       }
       const marked = await markPasswordChanged();
       if (!marked.ok) {
-        setError("La clave cambió, pero no se pudo cerrar el primer ingreso.");
+        setError(t("La clave cambió, pero no se pudo cerrar el primer ingreso."));
         return;
       }
       const email = emailForUsername(loginName);
       if (!email) {
-        setError("No se pudo entrar.");
+        setError(t("No se pudo entrar."));
         return;
       }
       try {
@@ -408,7 +411,7 @@ function ChangePassword({
       rememberAdmin(userId);
       onChanged();
     } catch {
-      setError("No se pudo cambiar la contraseña.");
+      setError(t("No se pudo cambiar la contraseña."));
     } finally {
       setBusy(false);
     }
@@ -417,31 +420,31 @@ function ChangePassword({
   return (
     <Shell>
       <p className="text-xs font-medium tracking-widest text-faint uppercase">{loginName}</p>
-      <h1 className="mt-2 font-serif text-3xl">Cambia la contraseña</h1>
+      <h1 className="mt-2 font-serif text-3xl">{t("Cambia la contraseña")}</h1>
       <form onSubmit={submit} className="mt-5 space-y-3">
         <TextField
-          label="Contraseña actual"
+          label={t("Contraseña actual")}
           value={currentPassword}
           onChange={setCurrentPassword}
           autoComplete="current-password"
           secret
         />
         <TextField
-          label="Nueva contraseña"
+          label={t("Nueva contraseña")}
           value={nextPassword}
           onChange={setNextPassword}
           autoComplete="new-password"
           secret
           autoFocus
-          title="Al menos 8 caracteres, distinta de la actual"
+          title={t("Al menos 8 caracteres, distinta de la actual")}
         />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
         <button
           type="submit"
           disabled={busy}
           className="h-11 w-full rounded-md bg-accent text-sm font-medium text-accent-fg disabled:opacity-60"
         >
-          {busy ? "Guardando…" : "Guardar y entrar"}
+          {busy ? t("Guardando…") : t("Guardar y entrar")}
         </button>
       </form>
     </Shell>

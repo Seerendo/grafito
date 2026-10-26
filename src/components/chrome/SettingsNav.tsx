@@ -1,5 +1,6 @@
 import { ChevronsLeft, ChevronsRight, LayoutGrid, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { t } from "@/app/i18n";
 
 /**
  * Barra lateral de secciones para pantallas de ajustes (Administración,
@@ -60,8 +61,8 @@ export function SettingsNav<T extends string>({
         <button
           type="button"
           onClick={toggle}
-          aria-label={`Desplegar ${title.toLowerCase()}`}
-          title={`Desplegar ${title.toLowerCase()}`}
+          aria-label={t("Desplegar {0}", { 0: title.toLowerCase() })}
+          title={t("Desplegar {0}", { 0: title.toLowerCase() })}
           className="mb-1 grid h-11 w-9 place-items-center rounded-md text-faint hover:text-fg"
         >
           <ChevronsRight className="size-4" />
@@ -74,9 +75,9 @@ export function SettingsNav<T extends string>({
               key={entry.id ?? "__all"}
               type="button"
               onClick={() => onSelect(entry.id)}
-              aria-label={entry.label}
+              aria-label={t(entry.label)}
               aria-current={on ? "page" : undefined}
-              title={entry.label}
+              title={t(entry.label)}
               className={`grid h-11 w-9 place-items-center rounded-md ${on ? "bg-elevated text-accent" : "text-muted hover:bg-elevated hover:text-fg"}`}
             >
               <Icon className="size-4" />
@@ -94,8 +95,8 @@ export function SettingsNav<T extends string>({
         <button
           type="button"
           onClick={toggle}
-          aria-label={`Plegar ${title.toLowerCase()}`}
-          title={`Plegar ${title.toLowerCase()}`}
+          aria-label={t("Plegar {0}", { 0: title.toLowerCase() })}
+          title={t("Plegar {0}", { 0: title.toLowerCase() })}
           className="grid h-9 w-7 place-items-center rounded-md text-faint hover:text-fg"
         >
           <ChevronsLeft className="size-4" />
@@ -116,7 +117,7 @@ export function SettingsNav<T extends string>({
               }`}
             >
               <Icon className={`size-4 shrink-0 ${on ? "text-accent" : ""}`} />
-              <span className="truncate">{entry.label}</span>
+              <span className="truncate">{t(entry.label)}</span>
             </button>
           );
         })}

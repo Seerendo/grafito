@@ -6,6 +6,7 @@ import { MarkdownView } from "@/components/vault/MarkdownView";
 import { editSharedDoc } from "@/server/history.functions";
 import type { PublishedDoc, SharedTree } from "@/server/share";
 import { childrenOf, docsIn, orderDocuments, rootParent } from "./shared-tree";
+import { intl, t } from "@/app/i18n";
 
 /**
  * Visor de una nota o un portafolio compartido: índice a la izquierda (o
@@ -78,14 +79,14 @@ export function SharedViewer({
           updatedAt: new Date(result.updatedAt).toISOString(),
           updatedBy: result.updatedBy,
         });
-        setMessage("Guardado");
+        setMessage(t("Guardado"));
       } else if ("conflict" in result && result.conflict) {
         setConflict(result.current);
       } else {
         setMessage(result.error);
       }
     } catch {
-      setMessage("No se pudo guardar.");
+      setMessage(t("No se pudo guardar."));
     } finally {
       setSaving(false);
     }
@@ -95,11 +96,11 @@ export function SharedViewer({
     <div className="flex min-h-0 flex-1 flex-col md:flex-row">
       {single ? null : (
         <nav
-          aria-label="Contenido compartido"
+          aria-label={t("Contenido compartido")}
           className="max-h-56 shrink-0 overflow-y-auto border-b border-line bg-surface p-2 md:max-h-none md:w-72 md:border-r md:border-b-0"
         >
           <Branch tree={tree} parentId={rootParent(tree)} depth={0} activeId={active?.id ?? null} onOpen={setActiveId} />
-          {ordered.length === 0 ? <p className="px-3 py-2 text-sm text-muted">Todavía no hay documentos publicados.</p> : null}
+          {ordered.length === 0 ? <p className="px-3 py-2 text-sm text-muted">{t("Todavía no hay documentos publicados.")}</p> : null}
         </nav>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -107,16 +108,16 @@ export function SharedViewer({
           <Badge className="size-3.5 shrink-0 text-faint" />
           <span className="min-w-0 flex-1 truncate">
             {active ? <span className="font-medium text-fg">{active.title} · </span> : null}
-            Compartido por {tree.share.ownerName} · {tree.share.access === "edit" ? "Puedes editar" : "Solo lectura"}
+            {t("Compartido por")}{" "}{tree.share.ownerName} · {tree.share.access === "edit" ? t("Puedes editar") : t("Solo lectura")}
             {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
           </span>
-          {message ? <span className={message === "Guardado" ? "text-muted" : "text-danger"}>{message}</span> : null}
+          {message ? <span className={message === "Guardado" ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
           {canEdit ? (
             <span className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
-                aria-label="Historial"
-                title="Historial"
+                aria-label={t("Historial")}
+                title={t("Historial")}
                 onClick={() => setHistory(true)}
                 className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
               >
@@ -133,7 +134,7 @@ export function SharedViewer({
                     className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:text-fg"
                   >
                     <BookOpen className="size-4" />
-                    {dirty ? "Descartar" : "Leer"}
+                    {dirty ? t("Descartar") : t("Leer")}
                   </button>
                   <button
                     type="button"
@@ -141,7 +142,7 @@ export function SharedViewer({
                     onClick={() => void save()}
                     className="h-9 rounded-md bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-50"
                   >
-                    {saving ? "Guardando…" : "Guardar"}
+                    {saving ? t("Guardando…") : t("Guardar")}
                   </button>
                 </>
               ) : (
@@ -155,7 +156,7 @@ export function SharedViewer({
                   className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-muted hover:text-fg"
                 >
                   <PenLine className="size-4" />
-                  Editar
+                  {t("Editar")}
                 </button>
               )}
             </span>
@@ -164,7 +165,7 @@ export function SharedViewer({
         {conflict && active ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm sm:px-5">
             <span className="min-w-0 flex-1">
-              {conflict.updatedBy || tree.share.ownerName} cambió la nota mientras la editabas.
+              {conflict.updatedBy || tree.share.ownerName}{" "}{t("cambió la nota mientras la editabas.")}
             </span>
             <button
               type="button"
@@ -179,7 +180,7 @@ export function SharedViewer({
               }}
               className="h-9 rounded-md px-3 text-sm text-fg hover:bg-elevated"
             >
-              Usar la suya
+              {t("Usar la suya")}
             </button>
             <button
               type="button"
@@ -187,7 +188,7 @@ export function SharedViewer({
               onClick={() => void save(conflict.updatedAt)}
               className="h-9 rounded-md bg-accent px-3 text-sm font-medium text-accent-fg disabled:opacity-50"
             >
-              Guardar la mía
+              {t("Guardar la mía")}
             </button>
           </div>
         ) : null}
@@ -209,10 +210,16 @@ export function SharedViewer({
         ) : null}
         {!active ? (
           <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
-            El contenido todavía no está disponible. Vuelve a intentarlo en unos segundos.
+            {t("El contenido todavía no está disponible. Vuelve a intentarlo en unos segundos.")}
           </p>
         ) : active.kind === "file" && active.file ? (
-          <FileView title={active.title} file={active.file} docId={active.id} links={active.file} />
+          <FileView
+            title={active.title}
+            file={active.file}
+            docId={active.id}
+            links={active.file}
+            shareId={onChange ? tree.share.id : undefined}
+          />
         ) : editing ? (
           <textarea
             value={draft}
@@ -223,7 +230,7 @@ export function SharedViewer({
                 if (dirty && !saving) void save();
               }
             }}
-            aria-label={`Editar ${active.title}`}
+            aria-label={t("Editar {0}", { 0: active.title })}
             spellCheck
             className="min-h-0 w-full flex-1 resize-none bg-bg px-4 py-4 font-mono text-sm leading-6 text-fg outline-none sm:px-8"
           />
@@ -300,5 +307,5 @@ function Branch({
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
 }

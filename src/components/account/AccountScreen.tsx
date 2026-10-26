@@ -1,4 +1,4 @@
-import { Braces, KeyRound, Sparkles, UserRound } from "lucide-react";
+import { Braces, KeyRound, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -13,19 +13,22 @@ import { accountState } from "@/server/session.functions";
 import { AiSettings } from "./AiSettings";
 import { ApiTokens } from "./ApiTokens";
 import { PasswordForm } from "./PasswordForm";
+import { PreferencesForm } from "./PreferencesForm";
 import { ProfileForm } from "./ProfileForm";
+import { t } from "@/app/i18n";
 
 /**
  * Cuenta: por secciones, con la misma estructura que Administración (barra
  * plegable en escritorio, tarjetas y «Atrás» en móvil).
  */
 
-type Section = "perfil" | "contrasena" | "ia" | "api";
+type Section = "perfil" | "preferencias" | "contrasena" | "ia" | "api";
 
 type Profile = Awaited<ReturnType<typeof accountState>>;
 
 const SECTIONS: SettingsItem<Section>[] = [
   { id: "perfil", label: "Datos de la cuenta", icon: UserRound },
+  { id: "preferencias", label: "Preferencias de usuario", icon: SlidersHorizontal },
   { id: "contrasena", label: "Contraseña", icon: KeyRound },
   { id: "ia", label: "Conexiones de IA", icon: Sparkles },
   { id: "api", label: "API", icon: Braces },
@@ -55,7 +58,7 @@ export function AccountScreen() {
         });
       })
       .catch(() => {
-        if (!cancelled) setError("No se pudo leer la cuenta.");
+        if (!cancelled) setError(t("No se pudo leer la cuenta."));
       });
     return () => {
       cancelled = true;
@@ -65,7 +68,7 @@ export function AccountScreen() {
   if (isPending || (user && !profile && !error)) {
     return (
       <AppFrame>
-        <p className="grid flex-1 place-items-center text-sm text-muted">Cargando…</p>
+        <p className="grid flex-1 place-items-center text-sm text-muted">{t("Cargando…")}</p>
       </AppFrame>
     );
   }
@@ -73,7 +76,7 @@ export function AccountScreen() {
   if (error || !profile) {
     return (
       <AppFrame>
-        <p className="grid flex-1 place-items-center text-sm text-danger">{error}</p>
+        <p className="grid flex-1 place-items-center text-sm text-danger">{t(error)}</p>
       </AppFrame>
     );
   }
@@ -88,9 +91,9 @@ export function AccountScreen() {
     <AppFrame>
       <div className="flex min-h-0 flex-1">
         <SettingsNav
-          title="Cuenta"
+          title={t("Cuenta")}
           storageKey="grafito.account-nav"
-          allLabel="Todas"
+          allLabel={t("Todas")}
           items={items}
           active={current?.id ?? null}
           onSelect={setSection}
@@ -100,10 +103,10 @@ export function AccountScreen() {
           <div className="grafito-in w-full px-4 py-6 sm:px-8">
             {current ? (
               <button type="button" onClick={() => setSection(null)} className="mb-3 text-sm text-accent md:hidden">
-                Atrás
+                {t("Atrás")}
               </button>
             ) : null}
-            <h1 className="font-serif text-3xl tracking-tight">{current?.label ?? "Cuenta"}</h1>
+            <h1 className="font-serif text-3xl tracking-tight">{current ? t(current.label) : t("Cuenta")}</h1>
             <div className="mt-6">
               {!current ? <OptionGrid items={items} onPick={setSection} /> : null}
               {current?.id === "perfil" ? (
@@ -113,6 +116,7 @@ export function AccountScreen() {
                   identity={{ loginName: profile.loginName, isAdmin: profile.isAdmin, canAdmin: profile.canAdmin }}
                 />
               ) : null}
+              {current?.id === "preferencias" ? <PreferencesForm /> : null}
               {current?.id === "contrasena" ? <PasswordForm loginEmail={profile.email} /> : null}
               {current?.id === "ia" ? <AiSettings /> : null}
               {current?.id === "api" ? <ApiTokens /> : null}

@@ -12,6 +12,7 @@ import { requestNotePdf } from "./NotePdf";
 import { SharedSection } from "./SharedSection";
 import { useTrashView } from "@/app/trash-view";
 import { VisibilityMark } from "./visibility";
+import { t } from "@/app/i18n";
 
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 const DOC_MIME = "application/x-grafito-document";
@@ -232,11 +233,11 @@ export function Sidebar({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filtrar"
+            placeholder={t("Filtrar")}
             className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-faint"
           />
           {query ? (
-            <button type="button" aria-label="Limpiar filtro" onClick={() => setQuery("")} className="text-faint hover:text-fg">
+            <button type="button" aria-label={t("Limpiar filtro")} onClick={() => setQuery("")} className="text-faint hover:text-fg">
               <X className="size-4" />
             </button>
           ) : null}
@@ -244,7 +245,7 @@ export function Sidebar({
         {canManagePortfolios ? (
           <button
             type="button"
-            aria-label="Nuevo portafolio"
+            aria-label={t("Nuevo portafolio")}
             onClick={() => setDialog({ type: "portfolio", parentId: selectedId })}
             className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted hover:text-fg"
           >
@@ -254,8 +255,8 @@ export function Sidebar({
         {onCollapse ? (
           <button
             type="button"
-            aria-label="Plegar el directorio"
-            title="Plegar el directorio"
+            aria-label={t("Plegar el directorio")}
+            title={t("Plegar el directorio")}
             onClick={onCollapse}
             className="grid h-11 w-7 shrink-0 place-items-center rounded-md text-faint hover:text-fg"
           >
@@ -293,7 +294,7 @@ export function Sidebar({
       >
         {searching ? (
           filtered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-faint">Nada coincide.</p>
+            <p className="px-3 py-8 text-center text-sm text-faint">{t("Nada coincide.")}</p>
           ) : (
             <ul>
               {filtered.map((document) => (
@@ -335,7 +336,7 @@ export function Sidebar({
               }`}
             >
               <House className={`size-4 shrink-0 ${selectedId === null && rootPicked ? "text-accent" : "text-faint"}`} />
-              <span className="truncate font-medium">{dropOver === "root" ? "Soltar en la raíz" : "Raíz"}</span>
+              <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la raíz") : t("Raíz")}</span>
             </button>
             <GroupedDocs
               documents={forest.loose}
@@ -383,7 +384,7 @@ export function Sidebar({
               }`}
             >
               <Trash2 className={`size-4 shrink-0 ${trashOpen ? "text-accent" : "text-faint"}`} />
-              <span className="truncate font-medium">Papelera</span>
+              <span className="truncate font-medium">{t("Papelera")}</span>
             </button>
             <div className="min-h-16 flex-1" />
           </div>
@@ -490,7 +491,7 @@ function GroupedDocs({
   return (
     <>
       <KindFold
-        label="Notas"
+        label={t("Notas")}
         documents={notes}
         groupKey={`notes:${scope}`}
         activeId={activeId}
@@ -503,7 +504,7 @@ function GroupedDocs({
         onContextMenu={onContextMenu}
       />
       <KindFold
-        label="Archivos"
+        label={t("Archivos")}
         documents={files}
         groupKey={`files:${scope}`}
         activeId={activeId}
@@ -710,7 +711,7 @@ function PortfolioBranch({
         {selected ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
         <button
           type="button"
-          aria-label={isCollapsed ? `Abrir ${node.portfolio.name}` : `Cerrar ${node.portfolio.name}`}
+          aria-label={isCollapsed ? t("Abrir {0}", { 0: node.portfolio.name }) : t("Cerrar {0}", { 0: node.portfolio.name })}
           onClick={() => onToggle(node.portfolio.id)}
           onContextMenu={menuEvent}
           className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
@@ -812,37 +813,37 @@ function RowContextMenu({
   const left = Math.min(menu.x, window.innerWidth - 220);
   const top = Math.min(menu.y, window.innerHeight - 320);
   const items: { label: string; onClick: () => void; danger?: boolean }[] = [];
-  if (can(PERMISSION.notesCreate)) items.push({ label: "Nueva nota", onClick: () => onNewNote(portfolioId) });
+  if (can(PERMISSION.notesCreate)) items.push({ label: t("Nueva nota"), onClick: () => onNewNote(portfolioId) });
   if (can(PERMISSION.portfoliosManage)) {
-    items.push({ label: "Nuevo portafolio", onClick: () => onNewPortfolio(menu.kind === "portfolio" ? menu.id : null) });
+    items.push({ label: t("Nuevo portafolio"), onClick: () => onNewPortfolio(menu.kind === "portfolio" ? menu.id : null) });
   }
-  if (can(PERMISSION.filesUpload)) items.push({ label: "Subir archivo", onClick: () => onUpload(portfolioId) });
+  if (can(PERMISSION.filesUpload)) items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
   if (menu.kind === "document" && document) {
-    if (can(PERMISSION.notesShare)) items.push({ label: "Compartir…", onClick: () => onShare("document", document.id) });
-    if (can(PERMISSION.notesEdit)) items.push({ label: "Renombrar", onClick: () => onRenameDocument(document.id) });
-    if (can(PERMISSION.linksManage)) items.push({ label: "Vincular", onClick: () => onLink(document.id) });
+    if (can(PERMISSION.notesShare)) items.push({ label: t("Compartir…"), onClick: () => onShare("document", document.id) });
+    if (can(PERMISSION.notesEdit)) items.push({ label: t("Renombrar"), onClick: () => onRenameDocument(document.id) });
+    if (can(PERMISSION.linksManage)) items.push({ label: t("Vincular"), onClick: () => onLink(document.id) });
     if (document.kind === "markdown" && can(PERMISSION.notesCreate)) {
-      items.push({ label: "Duplicar", onClick: () => onDuplicate(document.id) });
+      items.push({ label: t("Duplicar"), onClick: () => onDuplicate(document.id) });
     }
     if (can(exportPermission(document.kind))) {
       items.push({
-        label: document.kind === "file" ? "Descargar" : "Exportar .md",
+        label: document.kind === "file" ? t("Descargar") : t("Exportar .md"),
         onClick: () => onDownload(document.id),
       });
     }
     if (document.kind === "markdown" && can(PERMISSION.notesExport)) {
-      items.push({ label: "Descargar PDF", onClick: () => onDownloadPdf(document.id) });
+      items.push({ label: t("Descargar PDF"), onClick: () => onDownloadPdf(document.id) });
     }
     if (can(deletePermission(document.kind))) {
-      items.push({ label: "Eliminar", danger: true, onClick: () => onDeleteDocument(document.id) });
+      items.push({ label: t("Eliminar"), danger: true, onClick: () => onDeleteDocument(document.id) });
     }
   }
   if (menu.kind === "portfolio" && can(PERMISSION.notesShare)) {
-    items.push({ label: "Compartir…", onClick: () => onShare("portfolio", menu.id) });
+    items.push({ label: t("Compartir…"), onClick: () => onShare("portfolio", menu.id) });
   }
   if (menu.kind === "portfolio" && can(PERMISSION.portfoliosManage)) {
-    items.push({ label: "Renombrar", onClick: () => onRenamePortfolio(menu.id) });
-    items.push({ label: "Eliminar", danger: true, onClick: () => onDeletePortfolio(menu.id) });
+    items.push({ label: t("Renombrar"), onClick: () => onRenamePortfolio(menu.id) });
+    items.push({ label: t("Eliminar"), danger: true, onClick: () => onDeletePortfolio(menu.id) });
   }
   if (items.length === 0) return null;
   return (
@@ -889,8 +890,8 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }) {
     <div className="flex h-full w-9 shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
       <button
         type="button"
-        aria-label="Desplegar el directorio"
-        title="Desplegar el directorio"
+        aria-label={t("Desplegar el directorio")}
+        title={t("Desplegar el directorio")}
         onClick={onExpand}
         className="grid h-11 w-7 place-items-center rounded-md text-faint hover:text-fg"
       >

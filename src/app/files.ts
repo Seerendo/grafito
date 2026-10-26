@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { Document, VaultFile } from "@/domain/vault/types";
 import { bearerHeader } from "@/lib/auth/bearer";
 import { fileLink } from "@/server/files.functions";
+import { t } from "@/app/i18n";
 
 /**
  * Archivos en el cliente: subida por partes a `/api/files/uploads`, enlaces
@@ -28,7 +29,7 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
     headers: { ...(init.headers as Record<string, string> | undefined), ...bearerHeader() },
   });
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error || `El servidor respondió ${response.status}.`);
+  if (!response.ok) throw new Error(body.error || t("El servidor respondió {0}.", { 0: response.status }));
   return body;
 }
 
@@ -69,7 +70,7 @@ export async function uploadVaultFile(file: File): Promise<{ key: string; size: 
         body: JSON.stringify({ key: started.key, uploadId: started.uploadId, abort: true }),
       }).catch(() => undefined);
     }
-    throw error instanceof Error ? error : new Error("No se pudo subir.");
+    throw error instanceof Error ? error : new Error(t("No se pudo subir."));
   } finally {
     track(null, id);
   }

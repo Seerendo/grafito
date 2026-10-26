@@ -1,10 +1,10 @@
-# Grafito y sus servicios. En la máquina: docker compose up --build
-# La app habla con los nombres de servicio (postgres, elasticsearch, redis, minio),
-# no con 127.0.0.1. El navegador entra por http://127.0.0.1:8080.
+# Grafito and its services. On your machine: docker compose up -d --build
+# The app reaches the other services by service name (postgres, elasticsearch,
+# redis, minio, collabora), not 127.0.0.1. The browser opens http://127.0.0.1:8080.
 #
-# Secretos y direcciones: se leen de un archivo .env junto a este (ver
-# .env.example). Los valores por defecto solo sirven para probar en local.
-# Los puertos de los servicios internos quedan solo en 127.0.0.1.
+# Secrets and addresses are read from a .env file next to this one (see
+# .env.example and the README's Installation section). The defaults are only
+# meant for local testing. Internal service ports are bound to 127.0.0.1 only.
 
 services:
   postgres:
@@ -63,7 +63,7 @@ services:
       MINIO_ROOT_USER: grafito
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-grafito-secret}
       MC_HOST_local: http://grafito:${S3_SECRET_KEY:-grafito-secret}@127.0.0.1:9000
-      # Grafito lee la capacidad del cubo en Administración → Espacio.
+      # Lets Grafito read the bucket's capacity for Administration → Storage.
       MINIO_PROMETHEUS_AUTH_TYPE: public
     ports:
       - "127.0.0.1:9000:9000"
@@ -106,14 +106,19 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-grafito-secret}
       S3_REGION: us-east-1
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-grafito-dev-secret-cambia-esto}
-      # Cifra las claves de IA de cada usuario. Cámbiala (32+ caracteres) y no la
-      # pierdas: sin ella no se pueden leer las claves ya guardadas. Para
-      # rotarla, la anterior va en GRAFITO_ENCRYPTION_KEY_PREVIOUS.
+      # Encrypts each user's AI keys. Change it (32+ characters) and don't lose it:
+      # without it, saved keys can't be read. To rotate it, put the previous one in
+      # GRAFITO_ENCRYPTION_KEY_PREVIOUS (see docs/OPERATIONS.md).
       GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-grafito-dev-encryption-key-cambia-esto-0001}
       GRAFITO_ENCRYPTION_KEY_PREVIOUS: ${GRAFITO_ENCRYPTION_KEY_PREVIOUS:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
-      # Tope por archivo en MB (100 por defecto con MinIO).
+      # Upload limit per file, in MB (100 by default with MinIO).
       GRAFITO_MAX_UPLOAD_MB: ${GRAFITO_MAX_UPLOAD_MB:-100}
+      # Office editor (on by default). An empty COLLABORA_URL= turns it off.
+      # See docs/OFFICE.md.
+      COLLABORA_URL: ${COLLABORA_URL-http://127.0.0.1:9980}
+      COLLABORA_INTERNAL_URL: ${COLLABORA_INTERNAL_URL:-http://collabora:9980}
+      GRAFITO_WOPI_URL: ${GRAFITO_WOPI_URL:-http://app:8080}
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,10 +131,10 @@ services:
       minio-init:
         condition: service_completed_successfully
 
-  # Copia de la base cada día (formato custom de pg_dump) en ./backups, con
-  # retención. Las notas y los archivos viven en Postgres, así que esto basta
-  # para restaurar; Elasticsearch se reconstruye y Redis no guarda nada
-  # imprescindible. Restaurar: docs/OPERATIONS.md.
+  # Daily database dump (pg_dump custom format) in ./backups, with retention.
+  # Notes, file metadata and versions live in Postgres; file bytes are copied
+  # by backup-files. Elasticsearch is rebuilt and Redis holds nothing essential.
+  # How to restore: docs/OPERATIONS.md.
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -149,10 +154,10 @@ services:
           file=/backups/grafito-$$(date -u +%Y%m%d-%H%M%S).dump
           if pg_dump -Fc -f "$$file.tmp"; then
             mv "$$file.tmp" "$$file"
-            echo "copia: $$file"
+            echo "backup: $$file"
           else
             rm -f "$$file.tmp"
-            echo "copia: FALLÓ" >&2
+            echo "backup: FAILED" >&2
           fi
           find /backups -name 'grafito-*.dump' -mtime +$$BACKUP_KEEP_DAYS -delete
           sleep "$$BACKUP_INTERVAL_SECONDS"
@@ -161,9 +166,9 @@ services:
       postgres:
         condition: service_healthy
 
-  # Copia de los archivos (bucket de MinIO) en ./backups/files, con la misma
-  # frecuencia. Es un espejo que solo añade: lo borrado en Grafito se conserva
-  # aquí, para que una copia antigua de la base encuentre sus archivos.
+  # Copy of the uploaded files (the MinIO bucket) in ./backups/files, on the same
+  # schedule. The mirror only adds: files deleted in Grafito are kept here, so an
+  # older database dump still finds its files.
   backup-files:
     image: cgr.dev/chainguard/minio:latest
     restart: unless-stopped
@@ -178,9 +183,9 @@ services:
         until mc alias set local http://minio:9000 grafito "$$S3_SECRET_KEY" >/dev/null; do sleep 5; done
         while true; do
           if mc mirror --overwrite --quiet local/grafito /backups/files; then
-            echo "copia de archivos: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "files backup: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           else
-            echo "copia de archivos: FALLÓ" >&2
+            echo "files backup: FAILED" >&2
           fi
           sleep "$$BACKUP_INTERVAL_SECONDS"
         done
@@ -188,12 +193,38 @@ services:
       minio-init:
         condition: service_completed_successfully
 
-  # --- Solo para probar la autenticación externa (no se levantan por defecto) ---
+  # --- Office editor (on by default) ---
+  # To turn it off: COLLABORA_URL= in .env and docker compose up -d --scale collabora=0
+  # Collabora Online (CODE edition) is a separate service with its own license
+  # (MPL 2.0) and terms of use: Grafito doesn't include it, it only talks to it
+  # over WOPI. It works without internet once the image is downloaded.
+  # See docs/OFFICE.md.
+  collabora:
+    image: collabora/code:26.04.4.2.1
+    restart: unless-stopped
+    environment:
+      # Grafito as Collabora sees it (WOPISrc).
+      aliasgroup1: ${GRAFITO_WOPI_URL:-http://app:8080}
+      # frame_ancestors (below) is who may embed the editor: one value, no spaces.
+      # 127.0.0.1 is always allowed; by default localhost too. On a server, set
+      # GRAFITO_PUBLIC_ORIGIN to the address people open Grafito with.
+      extra_params: >-
+        --o:ssl.enable=false --o:ssl.termination=false
+        --o:net.frame_ancestors=${GRAFITO_PUBLIC_ORIGIN:-localhost:*}
+        --o:home_mode.enable=true --o:mount_jail_tree=false
+      username: admin
+      password: ${COLLABORA_ADMIN_PASSWORD:-grafito-office-cambia-esto}
+      dictionaries: es_ES en_US
+      DONT_GEN_SSL_CERT: "1"
+    ports:
+      - "9980:9980"
+
+  # --- Only for testing external sign-in (not started by default) ---
   # docker compose --profile auth-test up -d
-  # Datos de prueba en dev/auth-test/. Configuración en Administración → Autenticación:
+  # Test data in dev/auth-test/. Settings for Administration → Authentication:
   #   LDAP: ldap://openldap:389 · cn=admin,dc=grafito,dc=test / grafito-ldap
-  #         base ou=people,dc=grafito,dc=test · filtro (uid={{username}})
-  #   SSO:  emisor http://keycloak:8080/realms/grafito · cliente grafito / grafito-sso-secret
+  #         base ou=people,dc=grafito,dc=test · filter (uid={{username}})
+  #   SSO:  issuer http://keycloak:8080/realms/grafito · client grafito / grafito-sso-secret
   openldap:
     image: osixia/openldap:1.5.0
     profiles: ["auth-test"]
@@ -214,7 +245,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: grafito-keycloak
-      # El navegador entra por 127.0.0.1:8180; la app habla con keycloak:8080.
+      # The browser uses 127.0.0.1:8180; the app talks to keycloak:8080.
       KC_HOSTNAME: http://127.0.0.1:8180
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
@@ -223,10 +254,11 @@ services:
     volumes:
       - ./dev/auth-test/keycloak:/opt/keycloak/data/import:ro
 
-  # --- Solo para probar la IA con un modelo abierto (no se levanta por defecto) ---
+  # --- Only for testing the AI with an open model (not started by default) ---
   # docker compose --profile ai-test up -d
-  # Administración → IA → Ollama: http://ollama:11434 (o LM Studio con http://ollama:11434/v1,
-  # que también habla el protocolo de OpenAI). El modelo se descarga la primera vez.
+  # Allow Ollama in Administration → AI, then connect it in Account → AI with
+  # http://ollama:11434 (or LM Studio with http://ollama:11434/v1, which also speaks
+  # the OpenAI protocol). The model is downloaded the first time.
   ollama:
     image: ollama/ollama:0.6.8
     profiles: ["ai-test"]

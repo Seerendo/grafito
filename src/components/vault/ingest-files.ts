@@ -1,6 +1,7 @@
 import { uploadVaultFile } from "@/app/files";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
+import { t } from "@/app/i18n";
 
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -43,7 +44,7 @@ export async function ingestExternalFiles(files: FileList | File[], portfolioId:
       if (result) error = result;
       else uploaded = true;
     } catch (failure) {
-      error = failure instanceof Error ? failure.message : `No se pudo subir «${file.name}».`;
+      error = failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
     }
   }
   const owner = useVault.getState().owner;

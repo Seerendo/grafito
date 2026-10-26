@@ -252,6 +252,8 @@ The `vault/` pieces:
 | `0007_orgs_auth.sql` | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` and the `orgs.manage` / `auth.manage` permissions |
 | `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions |
 | `0009_ai_local_per_user.sql` | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`) |
+| `0013_user_preferences.sql` | `app_profile.locale` (interface language) |
+| `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
 | `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
 | `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note) |
 
@@ -533,6 +535,60 @@ configured.
 - **Backups:** `pg_dump` covers documents and, without S3, the bytes. The
   `backup-files` service mirrors the bucket into `./backups/files` without
   deleting, so older dumps still find their files.
+
+## Office editor (WOPI)
+
+On by default in `docker-compose.yml` (the `collabora` service). It is
+turned off by setting `COLLABORA_URL` to empty (`server/office.ts`,
+`docs/OFFICE.md`).
+
+- **`officeSession`** (`office.functions.ts`):
+  - Checks access (own file, or a share via `editableTarget` /
+    `grantedDocOwner`).
+  - Signs a 10-hour token with `signToken` (`server/file-links.ts`). The token
+    carries document, owner, editor, write flag, browser origin and share id.
+  - Returns the editor URL from Collabora's `/hosting/discovery`, rewritten to
+    the public `COLLABORA_URL`, with `WOPISrc` and `lang`.
+- **WOPI endpoints:**
+  - `routes/wopi/files/$id.ts` implements `CheckFileInfo`.
+  - `$id.contents.ts` implements `GetFile` and `PutFile`.
+  - `PutFile` stores a new object, calls `replaceFile` (`server/vault.ts`) and
+    records a file version (`recordFileVersion`; the original is the
+    baseline).
+  - When editing through a share, the share is checked again on every save.
+- **Client:** `components/vault/OfficeEditor.tsx` opens the editor in an iframe
+  through a POST form. The CSP allows Collabora's origin in `frame-src` and
+  `form-action` (`lib/security-headers.ts`).
+- **Browser state:** a pushed file document can't change its storage key.
+  Only the server changes file contents.
+
+## Languages (i18n)
+
+The interface is in Spanish and English.
+
+- **`domain/i18n.ts`:** `translate(locale, text, vars)`. The Spanish text is
+  the key, and `domain/i18n/en.ts` is the English catalog.
+  - `{0}`-style variables fill in values.
+  - The same keys work as patterns to translate messages the server sends
+    already assembled (errors, log entries, AI tool chips).
+  - Missing translations fall back to Spanish.
+- **`app/i18n.ts`:** the client provides `t()`, `useLocale()`, `setLocale()`
+  and `intl()` (date and number formats).
+  - The language is stored in the `grafito-locale` cookie.
+  - `routes/__root.tsx` reads that cookie on the server and the client
+    (`createIsomorphicFn`), so the first render matches and hydrates cleanly.
+  - Changing the language remounts the app (`<Outlet key={locale}>`).
+- **Account preference:** Account → User preferences saves it in
+  `app_profile.locale` (migration 0013). `AccessGate` applies it after
+  sign-in.
+- **Server:** messages stay in Spanish and are translated where the client
+  displays them (`t(error)`).
+- **Not translated:** content (notes, including the sample notes) and
+  technical names.
+- **Adding a language:**
+  1. Add it to `Locale` and `LOCALES`.
+  2. Create its catalog next to `en.ts`.
+  3. Register the catalog in `catalogs`.
 
 ## Security headers
 

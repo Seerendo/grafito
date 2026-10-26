@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { isLightTheme } from "@/app/theme";
+import { t } from "@/app/i18n";
 
 export function MermaidDiagram({ chart, variant = "app" }: { chart: string; variant?: "app" | "print" }) {
   const reactId = useId().replace(/:/g, "");
@@ -37,7 +38,7 @@ export function MermaidDiagram({ chart, variant = "app" }: { chart: string; vari
         const rendered = await mermaid.render(`grafito${reactId}${theme}${variant}`, chart.trim());
         if (!cancelled) setSvg(rendered.svg);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Diagrama inválido");
+        if (!cancelled) setError(err instanceof Error ? err.message : t("Diagrama inválido"));
       }
     })();
     return () => {
@@ -48,14 +49,14 @@ export function MermaidDiagram({ chart, variant = "app" }: { chart: string; vari
   if (error) {
     return (
       <pre data-mermaid-status="error" className="mt-4 overflow-x-auto rounded-lg bg-inset p-4 font-mono text-sm text-danger">
-        {error}
+        {t(error)}
       </pre>
     );
   }
   if (!svg) {
     return (
       <p data-mermaid-status="pending" className="mt-4 font-sans text-sm text-faint">
-        Dibujando diagrama…
+        {t("Dibujando diagrama…")}
       </p>
     );
   }

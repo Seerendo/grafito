@@ -9,6 +9,7 @@ import { findByTitle } from "@/domain/vault/links";
 import type { AiProviderId } from "@/domain/ai";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { aiChatState, aiModels } from "@/server/ai.functions";
+import { t } from "@/app/i18n";
 
 /**
  * Chat de IA de la bóveda: botón flotante (o Ctrl+B) que abre un panel para
@@ -49,8 +50,8 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
       {!open ? (
         <button
           type="button"
-          aria-label="Abrir chat de IA (Ctrl+B)"
-          title="Chat de IA (Ctrl+B)"
+          aria-label={t("Abrir chat de IA (Ctrl+B)")}
+          title={t("Chat de IA (Ctrl+B)")}
           onClick={() => setOpen(true)}
           className={`fixed right-4 z-30 grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105 ${
             mobile ? "bottom-20" : "bottom-5"
@@ -105,21 +106,21 @@ function ChatPanel({
   return (
     <aside
       role="dialog"
-      aria-label="Chat de IA"
+      aria-label={t("Chat de IA")}
       className={`fixed z-40 flex flex-col border border-line bg-surface shadow-2xl ${
         mobile ? "inset-0" : "right-4 bottom-4 h-[min(640px,calc(100dvh-6rem))] w-[min(420px,calc(100vw-2rem))] rounded-lg"
       }`}
     >
       <header className="flex items-center gap-2 border-b border-line px-3 py-2">
         <Bot className="size-4 text-accent" />
-        <span className="text-sm font-medium">Asistente</span>
+        <span className="text-sm font-medium">{t("Asistente")}</span>
         <span className="ml-auto flex items-center">
           {turns.length > 0 ? (
-            <button type="button" onClick={clear} aria-label="Nueva conversación" title="Nueva conversación" className="grid size-9 place-items-center text-muted hover:text-fg">
+            <button type="button" onClick={clear} aria-label={t("Nueva conversación")} title={t("Nueva conversación")} className="grid size-9 place-items-center text-muted hover:text-fg">
               <Trash2 className="size-4" />
             </button>
           ) : null}
-          <button type="button" onClick={onClose} aria-label="Cerrar chat (Ctrl+B)" title="Cerrar (Ctrl+B)" className="grid size-9 place-items-center text-muted hover:text-fg">
+          <button type="button" onClick={onClose} aria-label={t("Cerrar chat (Ctrl+B)")} title={t("Cerrar (Ctrl+B)")} className="grid size-9 place-items-center text-muted hover:text-fg">
             <X className="size-4" />
           </button>
         </span>
@@ -127,18 +128,18 @@ function ChatPanel({
 
       {info === null ? (
         <Centered>
-          <Loader2 className="size-4 animate-spin" /> Cargando…
+          <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
         </Centered>
       ) : providers.length === 0 ? (
         <Centered>
           <span>
             {info.ok && info.anyAllowed
-              ? "Todavía no has conectado ningún proveedor de IA."
-              : "El administrador todavía no ha activado proveedores de IA."}
+              ? t("Todavía no has conectado ningún proveedor de IA.")
+              : t("El administrador todavía no ha activado proveedores de IA.")}
           </span>
           {info.ok && info.anyAllowed ? (
             <Link to="/cuenta" className="text-accent underline-offset-4 hover:underline">
-              Conectar uno en Cuenta → IA
+              {t("Conectar uno en Cuenta → IA")}
             </Link>
           ) : null}
         </Centered>
@@ -147,11 +148,10 @@ function ChatPanel({
           <ModelPicker providers={providers} />
           <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
             {!modelReady ? (
-              <Hint>Selecciona un modelo para empezar.</Hint>
+              <Hint>{t("Selecciona un modelo para empezar.")}</Hint>
             ) : turns.length === 0 ? (
               <Hint>
-                Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el
-                portafolio Atlas?»
+                {t("Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el portafolio Atlas?»")}
               </Hint>
             ) : null}
             {turns.map((turn) => (
@@ -177,19 +177,19 @@ function ChatPanel({
               }}
               disabled={!modelReady}
               rows={2}
-              aria-label="Mensaje para la IA"
-              placeholder={modelReady ? "Escribe… (Enter envía, Mayús+Enter salta de línea)" : "Selecciona un modelo"}
+              aria-label={t("Mensaje para la IA")}
+              placeholder={modelReady ? t("Escribe… (Enter envía, Mayús+Enter salta de línea)") : t("Selecciona un modelo")}
               className="max-h-40 min-h-11 flex-1 resize-none rounded-md border border-line bg-inset px-3 py-2 text-sm text-fg outline-none disabled:opacity-60"
             />
             {busy ? (
-              <button type="button" onClick={stop} aria-label="Detener" className="grid size-11 shrink-0 place-items-center rounded-md border border-line text-fg">
+              <button type="button" onClick={stop} aria-label={t("Detener")} className="grid size-11 shrink-0 place-items-center rounded-md border border-line text-fg">
                 <Square className="size-4" />
               </button>
             ) : (
               <button
                 type="submit"
                 disabled={!modelReady || !draft.trim()}
-                aria-label="Enviar"
+                aria-label={t("Enviar")}
                 className="grid size-11 shrink-0 place-items-center rounded-md bg-accent text-accent-fg disabled:opacity-50"
               >
                 <Send className="size-4" />
@@ -220,7 +220,7 @@ function ModelPicker({ providers }: { providers: { id: AiProviderId; label: stri
         if (!result.ok) setError(result.error);
         setModels(result.models);
       })
-      .catch(() => setError("No se pudieron leer los modelos."));
+      .catch(() => setError(t("No se pudieron leer los modelos.")));
   }, [provider]);
 
   const current = model?.provider === provider ? model.model : "";
@@ -236,7 +236,7 @@ function ModelPicker({ providers }: { providers: { id: AiProviderId; label: stri
         }}
       >
         <option value="" disabled>
-          Proveedor
+          {t("Proveedor")}
         </option>
         {providers.map((item) => (
           <option key={item.id} value={item.id}>
@@ -249,7 +249,7 @@ function ModelPicker({ providers }: { providers: { id: AiProviderId; label: stri
         onChange={(value) => provider && setModel(value ? { provider, model: value } : null)}
       >
         <option value="" disabled>
-          {!provider ? "Modelo" : models === null && !error ? "Cargando…" : options.length ? "Modelo" : "Sin modelos"}
+          {!provider ? t("Modelo") : models === null && !error ? t("Cargando…") : options.length ? t("Modelo") : t("Sin modelos")}
         </option>
         {options.map((name) => (
           <option key={name} value={name}>
@@ -257,7 +257,7 @@ function ModelPicker({ providers }: { providers: { id: AiProviderId; label: stri
           </option>
         ))}
       </Select>
-      {error ? <p className="col-span-2 text-xs text-danger">{error}</p> : null}
+      {error ? <p className="col-span-2 text-xs text-danger">{t(error)}</p> : null}
     </div>
   );
 }
@@ -284,7 +284,7 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
                 }`}
               >
                 {tool.ok ? <CheckCircle2 className="size-3 shrink-0" /> : <CircleAlert className="size-3 shrink-0" />}
-                <span className="truncate">{tool.label}</span>
+                <span className="truncate">{t(tool.label)}</span>
               </button>
             </li>
           ))}
@@ -306,10 +306,10 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
       ) : null}
       {turn.pending && !turn.content ? (
         <p className="flex items-center gap-2 text-xs text-muted">
-          <Loader2 className="size-3.5 animate-spin" /> Pensando…
+          <Loader2 className="size-3.5 animate-spin" />{" "}{t("Pensando…")}
         </p>
       ) : null}
-      {turn.error ? <p className="text-xs text-danger">{turn.error}</p> : null}
+      {turn.error ? <p className="text-xs text-danger">{t(turn.error)}</p> : null}
     </div>
   );
 }

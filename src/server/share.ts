@@ -409,6 +409,14 @@ export async function openForUser(
   }));
 }
 
+/** Dueño de `docId` si `userId` lo puede ver a través del elemento compartido `shareId`. */
+export async function grantedDocOwner(sql: Sql, userId: string, shareId: string, docId: string): Promise<string | null> {
+  const item = await grantedItem(sql, userId, shareId);
+  if (!item) return null;
+  const tree = await treeFor(sql, item);
+  return tree.documents.some((document) => document.id === docId) ? item.owner_id : null;
+}
+
 /** Dueño de `docId` si un enlace público (`token`) lo incluye. */
 export async function publicDocOwner(sql: Sql, token: string, docId: string): Promise<string | null> {
   const item = await publicItem(sql, token);

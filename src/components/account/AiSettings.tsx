@@ -2,6 +2,7 @@ import { CheckCircle2, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TextAction } from "@/components/ui/TextAction";
 import { aiAccountState, removeAiKey, saveAiKey } from "@/server/ai.functions";
+import { t } from "@/app/i18n";
 
 /**
  * Cuenta → IA: cada persona conecta los proveedores que el administrador
@@ -31,13 +32,13 @@ export function AiSettings() {
   if (hidden) return null;
   return (
     <section>
-      {!state ? <p className="mt-4 text-sm text-muted">Cargando…</p> : null}
+      {!state ? <p className="mt-4 text-sm text-muted">{t("Cargando…")}</p> : null}
       {state && state.providers.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">El administrador todavía no ha activado ningún proveedor de IA.</p>
+        <p className="mt-4 text-sm text-muted">{t("El administrador todavía no ha activado ningún proveedor de IA.")}</p>
       ) : null}
       {state && !state.encryption && state.providers.some((provider) => !provider.local) ? (
         <p className="mt-4 text-sm text-danger">
-          El servidor no tiene configurada la clave de cifrado: por ahora no se pueden guardar claves de la nube.
+          {t("El servidor no tiene configurada la clave de cifrado: por ahora no se pueden guardar claves de la nube.")}
         </p>
       ) : null}
       {state ? (
@@ -70,10 +71,10 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
       }
       setKey("");
       setEditing(false);
-      setNote({ ok: true, text: `Conectado. ${result.models.length} modelos disponibles.` });
+      setNote({ ok: true, text: t("Conectado. {0} modelos disponibles.", { 0: result.models.length }) });
       await reload();
     } catch {
-      setNote({ ok: false, text: "No se pudo guardar." });
+      setNote({ ok: false, text: t("No se pudo guardar.") });
     } finally {
       setBusy(false);
     }
@@ -85,20 +86,20 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 text-sm">
             {provider.label}
-            {connected ? <CheckCircle2 className="size-3.5 text-accent" aria-label="Conectado" /> : null}
+            {connected ? <CheckCircle2 className="size-3.5 text-accent" aria-label={t("Conectado")} /> : null}
           </span>
           <span className="block truncate text-xs text-muted">
             {connected
               ? provider.local
                 ? provider.credential?.baseUrl
-                : `Clave guardada ${provider.credential?.hint ?? ""}`
-              : "Sin conectar"}
+                : t("Clave guardada {0}", { 0: provider.credential?.hint ?? "" })
+              : t("Sin conectar")}
           </span>
         </span>
         {!editing ? (
           <span className="flex items-center gap-4">
             <TextAction onClick={() => setEditing(true)}>
-              {provider.local ? (connected ? "Cambiar dirección" : "Conectar") : connected ? "Cambiar clave" : "Añadir clave"}
+              {provider.local ? (connected ? t("Cambiar dirección") : t("Conectar")) : connected ? t("Cambiar clave") : t("Añadir clave")}
             </TextAction>
             {connected ? (
               <TextAction
@@ -107,7 +108,7 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
                   void removeAiKey({ data: { provider: provider.id } }).then(reload);
                 }}
               >
-                Quitar
+                {t("Quitar")}
               </TextAction>
             ) : null}
           </span>
@@ -126,7 +127,7 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
               <input
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                aria-label={`Dirección de tu ${provider.label}`}
+                aria-label={t("Dirección de tu {0}", { 0: provider.label })}
                 placeholder={provider.suggestedUrl}
                 autoFocus
                 spellCheck={false}
@@ -138,8 +139,8 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             type="password"
             value={key}
             onChange={(event) => setKey(event.target.value)}
-            aria-label={`Clave de ${provider.label}`}
-            placeholder={provider.local ? "Clave (opcional, si tu servidor la pide)" : provider.keyPlaceholder}
+            aria-label={t("Clave de {0}", { 0: provider.label })}
+            placeholder={provider.local ? t("Clave (opcional, si tu servidor la pide)") : provider.keyPlaceholder}
             autoComplete="off"
             autoFocus={!provider.local}
             spellCheck={false}
@@ -150,7 +151,7 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             disabled={busy || (!canSave && Boolean(key))}
             className="h-10 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
           >
-            {busy ? "Probando…" : provider.local ? "Probar y conectar" : "Probar y guardar"}
+            {busy ? t("Probando…") : provider.local ? t("Probar y conectar") : t("Probar y guardar")}
           </button>
           <button
             type="button"
@@ -160,7 +161,7 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             }}
             className="h-10 rounded-md px-3 text-sm text-muted hover:text-fg"
           >
-            Cancelar
+            {t("Cancelar")}
           </button>
           {provider.local ? null : (
           <a
@@ -169,7 +170,7 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             rel="noreferrer"
             className="inline-flex w-full items-center gap-1 text-xs text-muted hover:text-fg"
           >
-            ¿Dónde consigo la clave? <ExternalLink className="size-3" />
+            {t("¿Dónde consigo la clave?")}{" "}<ExternalLink className="size-3" />
           </a>
           )}
         </form>

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Select } from "@/components/ui/Select";
 import { Switch } from "@/components/ui/Switch";
 import { authState, saveAuthProvider, testLdap, testSso } from "@/server/auth.functions";
+import { t } from "@/app/i18n";
 
 /** Administración → Autenticación: LDAP, OAuth (Google, GitHub, Microsoft) y SSO (OIDC). */
 
@@ -16,10 +17,10 @@ function useAuthState() {
   const load = () =>
     authState()
       .then((next) => {
-        if (!next.ok) setError("Sin permiso para configurar la autenticación.");
+        if (!next.ok) setError(t("Sin permiso para configurar la autenticación."));
         else setState(next);
       })
-      .catch(() => setError("No se pudo leer la configuración."));
+      .catch(() => setError(t("No se pudo leer la configuración.")));
   useEffect(() => {
     void load();
   }, []);
@@ -27,7 +28,7 @@ function useAuthState() {
 }
 
 function Loading({ error }: { error: string }) {
-  return error ? <p className="text-sm text-danger">{error}</p> : <p className="text-sm text-muted">Cargando…</p>;
+  return error ? <p className="text-sm text-danger">{t(error)}</p> : <p className="text-sm text-muted">{t("Cargando…")}</p>;
 }
 
 export function LdapPanel() {
@@ -68,8 +69,8 @@ function LdapTest({ config }: { config: Config }) {
         <input
           value={probe}
           onChange={(event) => setProbe(event.target.value)}
-          placeholder="Usuario para buscar (opcional)"
-          aria-label="Usuario para la prueba"
+          placeholder={t("Usuario para buscar (opcional)")}
+          aria-label={t("Usuario para la prueba")}
           className="h-11 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
         />
         <button
@@ -80,12 +81,12 @@ function LdapTest({ config }: { config: Config }) {
             setResult(null);
             void testLdap({ data: { config, probeUser: probe } })
               .then((next) => setResult(next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error }))
-              .catch(() => setResult({ ok: false, text: "No se pudo probar." }))
+              .catch(() => setResult({ ok: false, text: t("No se pudo probar.") }))
               .finally(() => setBusy(false));
           }}
           className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
         >
-          {busy ? "Probando…" : "Probar conexión"}
+          {busy ? t("Probando…") : t("Probar conexión")}
         </button>
       </div>
       {result ? <p className={`text-sm ${result.ok ? "text-muted" : "text-danger"}`}>{result.text}</p> : null}
@@ -97,9 +98,9 @@ export function OAuthPanel() {
   const { state, error } = useAuthState();
   if (!state) return <Loading error={error} />;
   const items: { id: "google" | "github" | "microsoft"; name: string }[] = [
-    { id: "google", name: "Google" },
-    { id: "github", name: "GitHub" },
-    { id: "microsoft", name: "Microsoft" },
+    { id: "google", name: t("Google") },
+    { id: "github", name: t("GitHub") },
+    { id: "microsoft", name: t("Microsoft") },
   ];
   return (
     <div className="space-y-8">
@@ -161,12 +162,12 @@ function SsoTest({ issuer }: { issuer: string }) {
           setResult(null);
           void testSso({ data: { issuer } })
             .then((next) => setResult(next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error }))
-            .catch(() => setResult({ ok: false, text: "Escribe una URL válida." }))
+            .catch(() => setResult({ ok: false, text: t("Escribe una URL válida.") }))
             .finally(() => setBusy(false));
         }}
         className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
       >
-        {busy ? "Probando…" : "Probar emisor"}
+        {busy ? t("Probando…") : t("Probar emisor")}
       </button>
       {result ? <p className={`text-sm break-all ${result.ok ? "text-muted" : "text-danger"}`}>{result.text}</p> : null}
     </div>
@@ -215,9 +216,9 @@ function ProviderForm({
       }
       setConfig(result.provider.config as Config);
       setHasSecret(result.provider.hasSecret);
-      setStatus({ ok: !result.warning, text: result.warning || "Guardado. Ya se aplica en el ingreso." });
+      setStatus({ ok: !result.warning, text: result.warning || t("Guardado. Ya se aplica en el ingreso.") });
     } catch {
-      setStatus({ ok: false, text: "No se pudo guardar." });
+      setStatus({ ok: false, text: t("No se pudo guardar.") });
     } finally {
       setBusy(false);
     }
@@ -231,26 +232,26 @@ function ProviderForm({
         void save();
       }}
     >
-      <Switch label="Activado" checked={enabled} onChange={setEnabled} />
-      {callback ? <CopyLine label="Dirección de retorno" value={callback} /> : null}
+      <Switch label={t("Activado")} checked={enabled} onChange={setEnabled} />
+      {callback ? <CopyLine label={t("Dirección de retorno")} value={callback} /> : null}
       <div className="grid gap-3 md:grid-cols-2">
         {fields.map((field) =>
           field.toggle ? (
             <div key={field.key} className="md:col-span-2">
               <Switch
-                label={field.label}
+                label={t(field.label)}
                 checked={Boolean(config[field.key])}
                 onChange={(value) => setConfig({ ...config, [field.key]: value })}
               />
             </div>
           ) : (
             <label key={field.key} className="block text-sm">
-              <span className="text-muted">{field.label}</span>
+              <span className="text-muted">{t(field.label)}</span>
               <input
                 type={field.secret ? "password" : "text"}
                 value={String(config[field.key] ?? "")}
                 onChange={(event) => setConfig({ ...config, [field.key]: event.target.value })}
-                placeholder={field.secret && hasSecret ? "•••••••• (guardado; vacío lo conserva)" : field.placeholder}
+                placeholder={field.secret && hasSecret ? t("•••••••• (guardado; vacío lo conserva)") : field.placeholder && t(field.placeholder)}
                 autoComplete={field.secret ? "new-password" : "off"}
                 spellCheck={false}
                 className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 text-fg"
@@ -259,21 +260,21 @@ function ProviderForm({
           ),
         )}
         <label className="block text-sm">
-          <span className="text-muted">Rol de las cuentas nuevas</span>
+          <span className="text-muted">{t("Rol de las cuentas nuevas")}</span>
           <Select value={defaultRole} onChange={setDefaultRole} className="mt-1">
             {roles.map((role) => (
               <option key={role.id} value={role.id}>
-                {role.name}
+                {t(role.name)}
               </option>
             ))}
           </Select>
         </label>
         <label className="block text-sm">
-          <span className="text-muted">Dominios de correo permitidos</span>
+          <span className="text-muted">{t("Dominios de correo permitidos")}</span>
           <input
             value={domains}
             onChange={(event) => setDomains(event.target.value)}
-            placeholder="empresa.com, filial.com (vacío: cualquiera)"
+            placeholder={t("empresa.com, filial.com (vacío: cualquiera)")}
             spellCheck={false}
             className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 text-fg"
           />
@@ -282,7 +283,7 @@ function ProviderForm({
       {test ? test(config) : null}
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
         <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60">
-          {busy ? "Guardando…" : "Guardar"}
+          {busy ? t("Guardando…") : t("Guardar")}
         </button>
         {status ? <p className={`text-sm ${status.ok ? "text-muted" : "text-danger"}`}>{status.text}</p> : null}
       </div>
@@ -305,7 +306,7 @@ function CopyLine({ label, value }: { label: string; value: string }) {
               window.setTimeout(() => setCopied(false), 1500);
             });
           }}
-          aria-label="Copiar"
+          aria-label={t("Copiar")}
           className="shrink-0 text-faint hover:text-fg"
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}

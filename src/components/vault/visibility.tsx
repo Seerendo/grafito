@@ -2,6 +2,7 @@ import { Globe, Users } from "lucide-react";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useMyShares, visibilityMap } from "@/app/shares";
 import { useVault } from "@/app/vault/store";
+import { t } from "@/app/i18n";
 
 type Marks = ReadonlyMap<string, "shared" | "public">;
 
@@ -25,7 +26,7 @@ export function VisibilityMark({ id, className = "" }: { id: string; className?:
   const visibility = useVisibility(id);
   if (visibility === "private") return null;
   const Icon = visibility === "public" ? Globe : Users;
-  const label = visibility === "public" ? "Pública" : "Compartida";
+  const label = visibility === "public" ? t("Pública") : t("Compartida");
   return (
     <span title={label} aria-label={label} className={`inline-flex shrink-0 text-faint ${className}`}>
       <Icon className="size-3.5" />

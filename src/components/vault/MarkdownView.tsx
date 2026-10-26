@@ -2,6 +2,7 @@ import { Info, Lightbulb, Quote, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { usePluginEnabled } from "@/app/plugins";
+import { t } from "@/app/i18n";
 
 type InlineCtx = {
   onWiki: (title: string) => void;
@@ -467,7 +468,7 @@ export function MarkdownView({
                 <li key={item.line} className="flex items-start gap-1">
                   <button
                     type="button"
-                    aria-label={item.checked ? "Marcar como pendiente" : "Marcar como hecha"}
+                    aria-label={item.checked ? t("Marcar como pendiente") : t("Marcar como hecha")}
                     disabled={!onToggleTask}
                     onClick={() => onToggleTask?.(item.line)}
                     className="grid h-11 w-11 shrink-0 place-items-center disabled:cursor-default"

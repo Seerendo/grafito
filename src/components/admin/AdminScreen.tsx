@@ -20,6 +20,7 @@ import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from 
 import { OrgsBoard } from "./OrgsBoard";
 import { AiBoard } from "./AiBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
+import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "plugins" | "apariencia" | "sesion" | "monitor";
 type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas";
@@ -95,7 +96,7 @@ export function AdminScreen() {
           setPluginFlags(Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.enabled])));
         }
       })
-      .catch(() => setError("No se pudo leer la administración."));
+      .catch(() => setError(t("No se pudo leer la administración.")));
   };
 
   useEffect(() => {
@@ -139,7 +140,7 @@ export function AdminScreen() {
   if (isPending || (user && !view && !error)) {
     return (
       <AppFrame>
-        <p className="grid flex-1 place-items-center text-sm text-muted">Cargando…</p>
+        <p className="grid flex-1 place-items-center text-sm text-muted">{t("Cargando…")}</p>
       </AppFrame>
     );
   }
@@ -147,7 +148,7 @@ export function AdminScreen() {
   if (error) {
     return (
       <AppFrame>
-        <p className="grid flex-1 place-items-center text-sm text-danger">{error}</p>
+        <p className="grid flex-1 place-items-center text-sm text-danger">{t(error)}</p>
       </AppFrame>
     );
   }
@@ -155,9 +156,9 @@ export function AdminScreen() {
     return (
       <main className="grid min-h-dvh place-items-center bg-bg px-4 text-fg">
         <div className="text-center">
-          <h1 className="font-serif text-3xl">Sin permiso</h1>
+          <h1 className="font-serif text-3xl">{t("Sin permiso")}</h1>
           <Link to="/" className="mt-4 inline-flex h-11 items-center text-sm text-accent">
-            Volver a la bóveda
+            {t("Volver a la bóveda")}
           </Link>
         </div>
       </main>
@@ -179,9 +180,9 @@ export function AdminScreen() {
     <AppFrame>
       <div className="flex min-h-0 flex-1">
         <SettingsNav
-          title="Ajustes"
+          title={t("Ajustes")}
           storageKey="grafito.admin-nav"
-          allLabel="Todas"
+          allLabel={t("Todas")}
           items={items}
           active={current?.id ?? null}
           onSelect={(id) => {
@@ -207,7 +208,7 @@ export function AdminScreen() {
                   }}
                   className="mb-3 text-sm text-accent md:hidden"
                 >
-                  Atrás
+                  {t("Atrás")}
                 </button>
               ) : null}
               <h1 className="font-serif text-3xl tracking-tight">{title}</h1>
@@ -240,7 +241,7 @@ export function AdminScreen() {
                       onPick={(id) => setLeaf(id)}
                     />
                   ) : (
-                    <p className="text-sm text-muted">Este rol no administra cuentas.</p>
+                    <p className="text-sm text-muted">{t("Este rol no administra cuentas.")}</p>
                   )
                 ) : null}
                 {current?.id === "usuarios" && leaf === "usuarios" ? <UsersBoard view={view} reload={load} /> : null}
@@ -318,24 +319,24 @@ export function AdminScreen() {
 }
 
 function heading(view: AdminView, section: Section | null, leaf: Leaf | null, roleId: string | null) {
-  if (!section) return "Administración";
-  if (section === "usuarios" && leaf === "usuarios") return "Usuarios";
+  if (!section) return t("Administración");
+  if (section === "usuarios" && leaf === "usuarios") return t("Usuarios");
   if (section === "usuarios" && leaf === "roles") {
-    return view.roles.find((role) => role.id === roleId)?.name ?? "Roles";
+    return view.roles.find((role) => role.id === roleId)?.name ?? t("Roles");
   }
-  if (section === "usuarios" && leaf === "organizaciones") return "Organizaciones";
-  if (section === "usuarios") return "Usuarios y permisos";
+  if (section === "usuarios" && leaf === "organizaciones") return t("Organizaciones");
+  if (section === "usuarios") return t("Usuarios y permisos");
   if (section === "autenticacion" && leaf === "ldap") return "LDAP";
-  if (section === "autenticacion" && leaf === "oauth") return "OAuth";
+  if (section === "autenticacion" && leaf === "oauth") return t("OAuth");
   if (section === "autenticacion" && leaf === "sso") return "SSO";
-  if (section === "apariencia" && leaf === "temas") return "Temas";
-  if (section === "apariencia") return "Apariencia";
-  if (section === "monitor" && leaf === "monitor") return "Monitor de sistema";
-  if (section === "monitor" && leaf === "logs") return "Logs de sistema";
-  if (section === "monitor" && leaf === "espacio") return "Espacio";
-  if (section === "monitor" && leaf === "fuentes") return "Fuentes";
-  if (section === "monitor") return "Monitorización y logs";
-  return NAV.find((item) => item.id === section)?.label ?? "Administración";
+  if (section === "apariencia" && leaf === "temas") return t("Temas");
+  if (section === "apariencia") return t("Apariencia");
+  if (section === "monitor" && leaf === "monitor") return t("Monitor de sistema");
+  if (section === "monitor" && leaf === "logs") return t("Logs de sistema");
+  if (section === "monitor" && leaf === "espacio") return t("Espacio");
+  if (section === "monitor" && leaf === "fuentes") return t("Fuentes");
+  if (section === "monitor") return t("Monitorización y logs");
+  return t(NAV.find((item) => item.id === section)?.label ?? "Administración");
 }
 
 function Sources({
@@ -355,7 +356,7 @@ function Sources({
         {view.sources.map((source) => (
           <li key={source.id} className="flex items-center gap-4 border-b border-line px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="text-sm">{source.label}</p>
+              <p className="text-sm">{t(source.label)}</p>
               <p className="mt-0.5 text-xs text-muted">
                 {engineLabel(source.id, view.engines)}
                 {source.id === "documents" ? ` · ${view.indexed}` : ""}
@@ -363,7 +364,7 @@ function Sources({
             </div>
             <Switch
               checked={source.enabled}
-              ariaLabel={source.label}
+              ariaLabel={t(source.label)}
               onChange={(enabled) => void setSourceEnabled({ data: { id: source.id, enabled } }).then(reload)}
             />
           </li>
@@ -371,7 +372,7 @@ function Sources({
       </ul>
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <button type="button" onClick={onProbe} className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
-          Comprobar
+          {t("Comprobar")}
         </button>
         {probe ? (
           <div className="min-w-0 text-xs text-muted">
@@ -391,11 +392,11 @@ function Plugins({ view, reload }: { view: Extract<State, { isAdmin: true }>; re
         {view.plugins.map((plugin) => (
           <li key={plugin.id} className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0">
             <div className="min-w-0 flex-1">
-              <p className="text-sm">{plugin.name}</p>
+              <p className="text-sm">{t(plugin.name)}</p>
             </div>
             <Switch
               checked={plugin.enabled}
-              ariaLabel={plugin.name}
+              ariaLabel={t(plugin.name)}
               onChange={(enabled) => void setPluginEnabled({ data: { id: plugin.id, enabled } }).then(reload)}
             />
           </li>
@@ -423,13 +424,13 @@ function ThemesPanel() {
             className="theme-card"
           >
             <span className="theme-stage" data-preview={theme.id}>
-              <b>{theme.name}</b>
-              <span>Aa — nota, vínculo, archivo</span>
+              <b>{t(theme.name)}</b>
+              <span>{t("Aa — nota, vínculo, archivo")}</span>
             </span>
             <span className="theme-card-copy">
-              <strong className="text-sm">{theme.name}</strong>
-              {current === theme.id ? <em className="ml-2 text-xs text-accent not-italic">En uso</em> : null}
-              <small>{theme.blurb}</small>
+              <strong className="text-sm">{t(theme.name)}</strong>
+              {current === theme.id ? <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em> : null}
+              <small>{t(theme.blurb)}</small>
             </span>
           </button>
         ))}
@@ -459,8 +460,8 @@ function SessionPanel({ seconds }: { seconds: number }) {
               }`}
             >
               <span className={`size-2 rounded-full ${picked === item.seconds ? "bg-accent" : "bg-line"}`} />
-              {item.label}
-              {seconds === item.seconds ? <span className="ml-auto text-xs text-faint">Actual</span> : null}
+              {t(item.label)}
+              {seconds === item.seconds ? <span className="ml-auto text-xs text-faint">{t("Actual")}</span> : null}
             </button>
           </li>
         ))}
@@ -475,22 +476,22 @@ function SessionPanel({ seconds }: { seconds: number }) {
             void setSessionTtl({ data: { seconds: picked } })
               .then((result) => {
                 if (!result.ok) {
-                  setError("No se aplicó.");
+                  setError(t("No se aplicó."));
                   setBusy(false);
                   return;
                 }
                 void leaveApp();
               })
               .catch(() => {
-                setError("No se aplicó.");
+                setError(t("No se aplicó."));
                 setBusy(false);
               });
           }}
           className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
         >
-          {busy ? "Cerrando…" : "Aplicar y salir"}
+          {busy ? t("Cerrando…") : t("Aplicar y salir")}
         </button>
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       </div>
     </section>
   );
@@ -505,27 +506,27 @@ function SpacePanel() {
     void storageReport()
       .then((next) => {
         if (!next.ok) {
-          setError("Sin permiso.");
+          setError(t("Sin permiso."));
           return;
         }
         setStores(next.stores);
       })
-      .catch(() => setError("No se pudo medir."));
+      .catch(() => setError(t("No se pudo medir.")));
   };
 
   useEffect(() => {
     load();
   }, []);
 
-  if (error) return <p className="text-sm text-danger">{error}</p>;
-  if (!stores) return <p className="text-sm text-muted">Cargando…</p>;
-  if (stores.length === 0) return <p className="text-sm text-muted">Ninguna base conectada.</p>;
+  if (error) return <p className="text-sm text-danger">{t(error)}</p>;
+  if (!stores) return <p className="text-sm text-muted">{t("Cargando…")}</p>;
+  if (stores.length === 0) return <p className="text-sm text-muted">{t("Ninguna base conectada.")}</p>;
 
   return (
     <div className="space-y-4">
       <div className="flex">
         <button type="button" onClick={load} className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
-          Actualizar
+          {t("Actualizar")}
         </button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -536,20 +537,20 @@ function SpacePanel() {
             : 0;
           return (
             <div key={store.id} className="border border-line bg-surface p-4">
-              <p className="text-xs tracking-widest text-faint uppercase">{store.label}</p>
+              <p className="text-xs tracking-widest text-faint uppercase">{t(store.label)}</p>
               {measured ? (
                 <>
                   <p className="mt-1 font-serif text-3xl">{formatBytes(store.available!)}</p>
                   <p className="mt-1 text-xs text-muted">
-                    Disponible de {formatBytes(store.total!)}
+                    {t("Disponible de")}{" "}{formatBytes(store.total!)}
                     {store.used != null ? ` · base ${formatBytes(store.used)}` : ""}
                   </p>
-                  <UsageMeter percent={percent} label={`Uso de ${store.label}`} />
+                  <UsageMeter percent={percent} label={t("Uso de {0}", { 0: store.label })} />
                 </>
               ) : (
                 <>
                   <p className="mt-1 font-serif text-3xl">{store.used != null ? formatBytes(store.used) : "—"}</p>
-                  <p className="mt-1 text-xs text-muted">Ocupado</p>
+                  <p className="mt-1 text-xs text-muted">{t("Ocupado")}</p>
                 </>
               )}
             </div>
@@ -575,7 +576,7 @@ function formatBytes(bytes: number): string {
 }
 
 function engineLabel(id: string, engines: { relational: string; documents: string; files: string }): string {
-  if (id === "relational") return engines.relational === "postgres" ? "Postgres" : "Postgres embebido";
-  if (id === "documents") return engines.documents === "elasticsearch" ? "Elasticsearch" : "Índice de Postgres";
-  return engines.files === "minio" ? "MinIO" : "Postgres";
+  if (id === "relational") return engines.relational === "postgres" ? t("Postgres") : t("Postgres embebido");
+  if (id === "documents") return engines.documents === "elasticsearch" ? t("Elasticsearch") : t("Índice de Postgres");
+  return engines.files === "minio" ? t("MinIO") : t("Postgres");
 }
