@@ -6,6 +6,7 @@
 @import "@fontsource/literata/latin-ext-600.css";
 @import "@fontsource/literata/latin-ext-700.css";
 @import "tailwindcss";
+@import "./design-modern.css";
 @source inline("contents");
 
 @theme {
@@ -279,84 +280,81 @@ html[data-theme="folleto"] body {
     height: 100%;
   }
 
+  /*
+   * Texto y cursores (ambos diseños):
+   *  - Todo el texto de lectura se puede seleccionar y copiar.
+   *  - El puntero es la flecha salvo donde se escribe (cursor de texto) o se
+   *    pulsa (mano). Nunca aparece el cursor de edición fuera de un campo.
+   *  - Los controles (botones, menús, filas que se arrastran) no se
+   *    seleccionan al hacer clic.
+   */
   body {
     margin: 0;
     background: var(--color-bg);
     color: var(--color-fg);
     font-family: var(--font-sans);
     cursor: default;
+    caret-color: transparent;
     -webkit-font-smoothing: antialiased;
   }
 
   button,
   [role="button"],
-  aside,
-  nav,
-  header,
-  p,
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6,
-  li,
-  label,
-  span,
-  small,
-  dt,
-  dd {
-    caret-color: transparent;
+  [role="menuitem"],
+  [role="tab"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  select,
+  [draggable="true"],
+  svg {
     user-select: none;
   }
 
-  aside input,
-  aside textarea,
-  header input,
   input,
   textarea,
-  [contenteditable="true"] {
+  [contenteditable="true"],
+  [contenteditable=""] {
     user-select: text;
     caret-color: auto;
     cursor: text;
   }
 
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  input[type="color"],
+  input[type="file"],
+  input[type="submit"],
+  input[type="button"],
   select {
-    cursor: pointer;
     caret-color: transparent;
-    user-select: none;
-  }
-
-  article,
-  article * {
-    user-select: text;
-    cursor: auto;
-    caret-color: transparent;
-  }
-
-  article input,
-  article textarea,
-  article [contenteditable="true"] {
-    user-select: text;
-    caret-color: auto;
-    cursor: text;
-  }
-
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
     cursor: pointer;
   }
 
-  [data-home],
-  [data-home] * {
-    user-select: none;
+  input:disabled,
+  textarea:disabled,
+  input:read-only:not([type="checkbox"]):not([type="radio"]),
+  textarea:read-only {
     caret-color: transparent;
     cursor: default;
   }
 
-  [data-home] button,
-  [data-home] [role="button"] {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"],
+  [role="tab"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"],
+  a[href],
+  label[for],
+  summary {
     cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
   }
 
   :focus-visible {
@@ -578,6 +576,91 @@ html[data-tone="dark"] .theme-moon {
     radial-gradient(circle at 100% 0, rgba(37, 99, 235, 0.28), transparent 42%);
   color: #1a1a1a;
   font-family: Outfit, sans-serif;
+}
+
+/* Miniaturas de Administración → Apariencia → Diseño (con los colores del tema). */
+.design-preview {
+  position: relative;
+  display: grid;
+  height: 6.75rem;
+  grid-template-columns: 28% 1fr;
+  grid-template-rows: 18% 1fr;
+  gap: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.design-preview i {
+  display: block;
+}
+
+.design-preview [data-part="top"] {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.design-preview [data-part="side"] {
+  border-right: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.design-preview [data-part="main"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+}
+
+.design-preview [data-part="title"] {
+  height: 0.55rem;
+  width: 55%;
+  background: var(--color-fg);
+  opacity: 0.85;
+}
+
+.design-preview [data-part="line"] {
+  height: 0.3rem;
+  width: 85%;
+  background: var(--color-muted);
+  opacity: 0.6;
+}
+
+.design-preview [data-part="button"] {
+  margin-top: auto;
+  height: 0.75rem;
+  width: 34%;
+  background: var(--color-accent);
+}
+
+.design-preview[data-preview="modern"] {
+  gap: 6px;
+  padding: 6px;
+  background:
+    radial-gradient(140px 80px at 10% 0%, color-mix(in srgb, var(--color-accent) 22%, transparent), transparent 70%),
+    var(--color-bg);
+}
+
+.design-preview[data-preview="modern"] [data-part="top"] {
+  border: 0;
+  background: transparent;
+}
+
+.design-preview[data-preview="modern"] [data-part="side"],
+.design-preview[data-preview="modern"] [data-part="main"] {
+  border: 1px solid color-mix(in srgb, var(--color-line) 62%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
+}
+
+.design-preview[data-preview="modern"] [data-part="title"],
+.design-preview[data-preview="modern"] [data-part="line"] {
+  border-radius: 999px;
+}
+
+.design-preview[data-preview="modern"] [data-part="button"] {
+  border-radius: 999px;
+  background-image: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 72%, var(--color-fg)));
 }
 
 .pdf-host {

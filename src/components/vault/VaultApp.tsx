@@ -72,8 +72,8 @@ export function VaultApp() {
 
 function NoReadAccess() {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <span className="flex items-center gap-0.5">
           <Mark />
           <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
@@ -277,8 +277,8 @@ function VaultWorkspace() {
 
   return (
     <VisibilityProvider>
-    <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button
           type="button"
           aria-label={t("Inicio")}
@@ -331,7 +331,7 @@ function VaultWorkspace() {
         ) : null}
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div data-ui="panes" className="flex min-h-0 flex-1">
         {mobile ? (
           pane === "files" ? (
             <Sidebar
@@ -370,7 +370,7 @@ function VaultWorkspace() {
             ) : (
               <SidebarRail onExpand={toggleTree} />
             )}
-            <div className="min-h-0 min-w-0 flex-1">
+            <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
               <FileDrop enabled={canAddFiles} onAdded={openNote}>
                 {graph ? (
                   <GraphView onOpenNote={openNote} />
@@ -381,7 +381,7 @@ function VaultWorkspace() {
                 )}
               </FileDrop>
             </div>
-            <div className="hidden h-full lg:block">
+            <div data-ui="context-slot" className="hidden h-full lg:block">
               <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
             </div>
           </>
@@ -389,7 +389,7 @@ function VaultWorkspace() {
       </div>
 
       {mobile ? (
-        <nav className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}>
+        <nav data-ui="tabbar" className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}>
           <NavButton active={pane === "files"} label={t("Notas")} onClick={() => setPane("files")}>
             <Folder className="size-5" />
           </NavButton>

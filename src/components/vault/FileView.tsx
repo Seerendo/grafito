@@ -1,5 +1,5 @@
-import { Download, PenLine, X } from "lucide-react";
-import { useState } from "react";
+import { Download, PenLine } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useFileLinks, type FileLinks } from "@/app/files";
 import { isOfficeFile, useOfficeEnabled } from "@/app/office";
 import { useVault } from "@/app/vault/store";
@@ -75,7 +75,11 @@ function FileBody({
   const [failures, setFailures] = useState(0);
   const officeEnabled = useOfficeEnabled();
   const canOpen = Boolean(office) && officeEnabled && isOfficeFile(file.name);
-  const [editing, setEditing] = useState(false);
+  // Un documento de Office se abre directamente en el editor al seleccionarlo.
+  // Si se cierra desde el propio editor, queda un botón para volver a abrirlo.
+  const [closed, setClosed] = useState(false);
+  const editing = canOpen && !closed;
+  useEffect(() => setClosed(false), [office?.docId]);
   // Lo guardado en el editor cambia el archivo en el servidor: se baja a la bóveda.
   const pull = () => {
     const owner = useVault.getState().owner;
@@ -92,17 +96,14 @@ function FileBody({
       <div className="flex items-center gap-3 border-b border-line px-5 py-3 text-sm text-muted sm:px-6">
         <span className="min-w-0 flex-1 truncate">{file.name}</span>
         {file.size ? <span className="shrink-0 text-xs text-faint">{formatSize(file.size)}</span> : null}
-        {canOpen ? (
+        {canOpen && !editing ? (
           <button
             type="button"
-            onClick={() => {
-              if (editing) pull();
-              setEditing((open) => !open);
-            }}
+            onClick={() => setClosed(false)}
             className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-fg hover:bg-elevated"
           >
-            {editing ? <X className="size-4" /> : <PenLine className="size-4" />}
-            {editing ? t("Cerrar editor") : t("Abrir en el editor")}
+            <PenLine className="size-4" />
+            {t("Abrir en el editor")}
           </button>
         ) : null}
         {links?.downloadUrl ? (
@@ -124,7 +125,7 @@ function FileBody({
           onSaved={pull}
           onClose={() => {
             pull();
-            setEditing(false);
+            setClosed(true);
           }}
         />
       ) : (

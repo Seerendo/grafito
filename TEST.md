@@ -755,6 +755,27 @@ the same one tested for notes.
 | Back to Spanish | ✅ |
 | `npm test` | ✅ 35 tests (4 for translation, 1 for signed tokens) |
 
+## Round 15: Modern design, Classic option and text selection
+
+Tested on the development server (`.claude/launch.json` → `grafito-design`,
+PGLite, port 3100) and then on the production image in the isolated
+`grafito-e2e` stack with Collabora.
+
+| Case | Result |
+| --- | --- |
+| Default design | ✅ the server renders `<html data-design="modern">` (development and production) |
+| Administration → Apariencia → Diseño | ✅ two cards (Moderno, Clásico) with miniatures in the current theme's colors; switching applies immediately and survives a reload (stored in `app_setting`) |
+| Classic | ✅ identical to the previous interface (the Modern layer is scoped to `data-design="modern"`) |
+| Modern: vault, home, note, menus, share dialog, AI chat, graph, admin, forms, account, sign-in | ✅ floating glass panels, pill controls with an accent glow, segmented Edit / Split / Read control, blurred overlays |
+| Modern with the light themes (Papel, Folleto) | ✅ readable; one apparent glitch was a color transition caught mid-change while switching themes by hand, and the color transition was removed from directory rows |
+| Mobile (375 px), Modern | ✅ floating panel and floating tab bar, no horizontal scroll |
+| Switches in all 10 themes × 2 designs, on and off | ✅ the knob stays inside the track; contrast between knob and track ≥ 2:1 at rest |
+| Text selection | ✅ paragraphs, headings and panel text are selectable (`user-select: auto`); before, almost nothing could be selected |
+| Cursor audit (reading, split view, admin; both designs) | ✅ no element outside an editable field shows the text cursor or a caret |
+| Office: selecting a `.docx` | ✅ the editor opens directly, with no button; after closing it from the editor, «Abrir en el editor» reopens it |
+| Untranslated headings in the command palettes («Notas», «Acciones», «Documentos», «Etiquetas») | ✅ translated |
+| `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 35 tests |
+
 ## Useful commands
 
 ```bash

@@ -211,6 +211,7 @@ export function Sidebar({
 
   return (
     <aside
+      data-ui="sidebar"
       className="flex h-full min-h-0 w-full flex-col bg-surface md:w-72 md:border-r md:border-line"
       onDragOver={(event) => {
         if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
@@ -849,6 +850,7 @@ function RowContextMenu({
   return (
     <div
       role="menu"
+      data-ui="popover"
       className="fixed z-50 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl"
       style={{ left, top }}
       onMouseDown={(event) => event.stopPropagation()}
@@ -887,7 +889,7 @@ function MenuItem({
 /** Directorio plegado: un riel estrecho con una flecha para volver a desplegarlo. */
 export function SidebarRail({ onExpand }: { onExpand: () => void }) {
   return (
-    <div className="flex h-full w-9 shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
+    <div data-ui="rail" className="flex h-full w-9 shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
       <button
         type="button"
         aria-label={t("Desplegar el directorio")}

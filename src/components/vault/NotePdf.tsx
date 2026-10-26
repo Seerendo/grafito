@@ -201,7 +201,7 @@ export function NotePdfHost() {
   return (
     <>
       {notice ? (
-        <p className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-sm text-fg shadow-2xl">
+        <p data-ui="toast" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-sm text-fg shadow-2xl">
           {t(notice)}
         </p>
       ) : null}

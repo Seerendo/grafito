@@ -302,8 +302,9 @@ Public links are always read-only.
 
 ## Office documents
 
-Word, Excel, PowerPoint and OpenDocument files can be edited inside Grafito
-with **Abrir en el editor** ("Open in the editor"). The editor is
+Word, Excel, PowerPoint and OpenDocument files open straight into an editor
+inside Grafito as soon as you select them. If you close the editor, **Abrir en
+el editor** ("Open in the editor") opens it again. The editor is
 Collabora Online, which `docker compose up -d` starts by default. To turn it
 off, set `COLLABORA_URL=` in `.env` and run
 `docker compose up -d --scale collabora=0`.
@@ -344,7 +345,7 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Autenticación** | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains. |
 | **Inteligencia artificial** | Which AI providers users may connect |
 | **Plugins** | Turn the graph, Mermaid and links on or off |
-| **Apariencia** | Ten color themes |
+| **Apariencia** | **Diseño** (design): **Moderno** (modern, the default: floating panels, glass and rounded controls) or **Clásico** (classic, the original flat layout), for the whole installation. **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
 | **Monitorización y logs** | System monitor, audit log, storage usage and backend health checks |
 

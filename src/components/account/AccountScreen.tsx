@@ -89,7 +89,7 @@ export function AccountScreen() {
 
   return (
     <AppFrame>
-      <div className="flex min-h-0 flex-1">
+      <div data-ui="panes" className="flex min-h-0 flex-1">
         <SettingsNav
           title={t("Cuenta")}
           storageKey="grafito.account-nav"
@@ -99,7 +99,7 @@ export function AccountScreen() {
           onSelect={setSection}
           footer={profile.loginName}
         />
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div data-ui="workspace" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="grafito-in w-full px-4 py-6 sm:px-8">
             {current ? (
               <button type="button" onClick={() => setSection(null)} className="mb-3 text-sm text-accent md:hidden">

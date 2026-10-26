@@ -1,4 +1,4 @@
-import { Activity, Building2, Clock, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, Clock, LayoutTemplate, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -18,12 +18,13 @@ import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/
 import { setSessionTtl, storageReport } from "@/server/session.functions";
 import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
+import { DesignPanel } from "./DesignPanel";
 import { AiBoard } from "./AiBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -178,7 +179,7 @@ export function AdminScreen() {
 
   return (
     <AppFrame>
-      <div className="flex min-h-0 flex-1">
+      <div data-ui="panes" className="flex min-h-0 flex-1">
         <SettingsNav
           title={t("Ajustes")}
           storageKey="grafito.admin-nav"
@@ -195,7 +196,7 @@ export function AdminScreen() {
           }}
           footer={view.loginName}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div data-ui="workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="grafito-in w-full px-4 py-6 sm:px-8">
               {current ? (
@@ -301,11 +302,15 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "apariencia" && !leaf ? (
                   <OptionGrid
-                    items={[{ id: "temas", label: "Temas", icon: Palette }]}
+                    items={[
+                      { id: "diseno", label: "Diseño", icon: LayoutTemplate },
+                      { id: "temas", label: "Temas", icon: Palette },
+                    ]}
                     onPick={(id) => setLeaf(id)}
                   />
                 ) : null}
                 {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
+                {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
                 {current?.id === "ia" ? <AiBoard /> : null}
                 {current?.id === "plugins" ? <Plugins view={view} reload={load} /> : null}
                 {current?.id === "sesion" ? <SessionPanel seconds={view.sessionTtl} /> : null}
@@ -330,6 +335,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
   if (section === "autenticacion" && leaf === "oauth") return t("OAuth");
   if (section === "autenticacion" && leaf === "sso") return "SSO";
   if (section === "apariencia" && leaf === "temas") return t("Temas");
+  if (section === "apariencia" && leaf === "diseno") return t("Diseño");
   if (section === "apariencia") return t("Apariencia");
   if (section === "monitor" && leaf === "monitor") return t("Monitor de sistema");
   if (section === "monitor" && leaf === "logs") return t("Logs de sistema");

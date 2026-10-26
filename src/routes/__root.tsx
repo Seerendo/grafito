@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { applyLocale, getLocale, LOCALE_COOKIE, localeFromCookie, useLocale } from "@/app/i18n";
 import { themeBootScript } from "@/app/theme";
 import { SessionWatch } from "@/components/session/SessionWatch";
+import { DEFAULT_DESIGN, isDesign, type Design } from "@/domain/design";
 import type { Locale } from "@/domain/i18n";
 import appCss from "../styles.css?url";
 
@@ -22,8 +23,24 @@ const requestLocale = createIsomorphicFn()
   })
   .client(async (): Promise<Locale> => localeFromCookie(document.cookie) ?? getLocale());
 
+/**
+ * Diseño de la instalación (Moderno o Clásico, `server/design.ts`). El
+ * servidor lo lee de la base y lo pinta en `<html data-design>`; en el
+ * navegador se conserva el de la página.
+ */
+const requestDesign = createIsomorphicFn()
+  .server(async (): Promise<Design> => {
+    const { getSql } = await import("@/lib/db");
+    const { readDesign } = await import("@/server/design");
+    return readDesign(await getSql());
+  })
+  .client(async (): Promise<Design> => {
+    const value = document.documentElement.dataset.design;
+    return isDesign(value) ? value : DEFAULT_DESIGN;
+  });
+
 export const Route = createRootRoute({
-  beforeLoad: async () => ({ locale: await requestLocale() }),
+  beforeLoad: async () => ({ locale: await requestLocale(), design: await requestDesign() }),
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -49,7 +66,7 @@ export const Route = createRootRoute({
 const noop = () => () => undefined;
 
 function RootDocument() {
-  const { locale: initial } = Route.useRouteContext();
+  const { locale: initial, design } = Route.useRouteContext();
   // El idioma de la petición se fija antes de pintar, para que el servidor y
   // el navegador hidraten el mismo texto.
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
@@ -57,7 +74,7 @@ function RootDocument() {
   const locale = useLocale();
 
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html lang={locale} data-design={design} suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />

@@ -40,7 +40,9 @@ behind the same HTTPS reverse proxy.
 
 ## How it works
 
-1. **Opening:** the browser asks Grafito for an editor session.
+1. **Opening:** selecting an Office file opens the editor right away. If it
+   is closed from the editor itself, a button reopens it. The browser asks
+   Grafito for an editor session.
    - Grafito checks the permission: the user's own file, or a file shared with
      them.
    - It signs a short-lived token (10 hours) and returns Collabora's URL.
@@ -124,7 +126,7 @@ lawyer review it.*
 
 | Symptom | Check |
 | --- | --- |
-| No "Open in the editor" button | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
+| The editor doesn't open when selecting the file | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
 | "The Office editor responded 404/502" | `docker compose logs collabora`; Collabora needs about 20 s to start |
 | The editor shows "127.0.0.1 refused to connect" or stays blank | Collabora refuses to be embedded from that address. Set `GRAFITO_PUBLIC_ORIGIN` to the address in the browser's address bar (for example `http://192.168.1.20:8080`) and run `docker compose up -d collabora`. |
 | The document opens but changes aren't saved | `GRAFITO_WOPI_URL` must be reachable from the Collabora container and match `aliasgroup1` |

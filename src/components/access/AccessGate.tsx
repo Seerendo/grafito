@@ -453,8 +453,8 @@ function ChangePassword({
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <main className="grid min-h-dvh place-items-center bg-bg px-4 py-8 text-fg">
-      <div className="w-full max-w-sm border border-line bg-surface p-6">{children}</div>
+    <main data-ui="auth" className="grid min-h-dvh place-items-center bg-bg px-4 py-8 text-fg">
+      <div data-ui="auth-card" className="w-full max-w-sm border border-line bg-surface p-6">{children}</div>
     </main>
   );
 }

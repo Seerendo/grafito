@@ -53,6 +53,7 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
           aria-label={t("Abrir chat de IA (Ctrl+B)")}
           title={t("Chat de IA (Ctrl+B)")}
           onClick={() => setOpen(true)}
+          data-ui="fab"
           className={`fixed right-4 z-30 grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105 ${
             mobile ? "bottom-20" : "bottom-5"
           }`}
@@ -105,6 +106,7 @@ function ChatPanel({
 
   return (
     <aside
+      data-ui="chat"
       role="dialog"
       aria-label={t("Chat de IA")}
       className={`fixed z-40 flex flex-col border border-line bg-surface shadow-2xl ${

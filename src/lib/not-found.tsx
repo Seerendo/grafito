@@ -5,7 +5,7 @@ import { t } from "@/app/i18n";
 /** Página 404 de cualquier ruta que no existe. */
 export function NotFound() {
   return (
-    <main className="grid min-h-dvh place-items-center bg-bg px-6 text-fg">
+    <main data-ui="auth" className="grid min-h-dvh place-items-center bg-bg px-6 text-fg">
       <div className="text-center">
         <span className="inline-flex items-center gap-0.5">
           <Mark />

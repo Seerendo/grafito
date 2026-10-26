@@ -25,7 +25,7 @@ export function ChromeHeader() {
 
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <Link
           to="/"
           aria-label={t("Inicio")}
@@ -95,7 +95,7 @@ export function AccountMenu() {
         </span>
       </button>
       {open ? (
-        <div role="menu" className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl">
+        <div role="menu" data-ui="popover" className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl">
           <p className="truncate px-3 py-2 text-sm font-medium">{profile.displayName}</p>
           {(profile.isAdmin || profile.canAdmin) && pathname !== "/admin" ? (
             <button
@@ -155,11 +155,12 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center bg-inset/80 px-4 pt-24" onMouseDown={onClose}>
+    <div data-ui="overlay" className="fixed inset-0 z-40 flex items-start justify-center bg-inset/80 px-4 pt-24" onMouseDown={onClose}>
       <Command
         label={t("Buscar notas")}
         vimBindings={false}
         onMouseDown={(event) => event.stopPropagation()}
+        data-ui="dialog"
         className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
       >
         <div className="flex items-center gap-2 border-b border-line px-3">
@@ -172,7 +173,7 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
           <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
-          <Command.Group heading="Notas">
+          <Command.Group heading={t("Notas")}>
             {documents.map((document) => (
               <Command.Item
                 key={document.id}

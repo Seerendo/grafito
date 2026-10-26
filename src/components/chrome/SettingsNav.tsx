@@ -57,7 +57,7 @@ export function SettingsNav<T extends string>({
 
   if (collapsed) {
     return (
-      <nav aria-label={title} className="hidden w-12 shrink-0 flex-col items-center gap-0.5 border-r border-line bg-surface pt-2 md:flex">
+      <nav data-ui="rail" aria-label={title} className="hidden w-12 shrink-0 flex-col items-center gap-0.5 border-r border-line bg-surface pt-2 md:flex">
         <button
           type="button"
           onClick={toggle}
@@ -89,7 +89,7 @@ export function SettingsNav<T extends string>({
   }
 
   return (
-    <nav aria-label={title} className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface md:flex">
+    <nav data-ui="sidebar" aria-label={title} className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface md:flex">
       <div className="flex items-center gap-2 pt-3 pr-2 pb-2 pl-4">
         <p className="flex-1 text-xs font-medium tracking-widest text-faint uppercase">{title}</p>
         <button

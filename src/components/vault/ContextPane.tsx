@@ -73,7 +73,7 @@ export function ContextPane({
 
   if (!document) {
     return (
-      <aside className="flex h-full items-center justify-center bg-surface p-6 text-sm text-faint select-none md:w-72 md:border-l md:border-line">
+      <aside data-ui="context" className="flex h-full items-center justify-center bg-surface p-6 text-sm text-faint md:w-72 md:border-l md:border-line">
         {t("Sin documento abierto")}
       </aside>
     );
@@ -126,7 +126,7 @@ export function ContextPane({
   };
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 select-none md:w-72 md:border-l md:border-line">
+    <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
       {document.kind === "markdown" ? (
         <Section
           title={t("Esquema")}

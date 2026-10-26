@@ -678,7 +678,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2 select-none">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <div className="min-w-0">
           <h2 className="font-serif text-xl">{t("Grafo")}</h2>
           <p className="text-xs text-faint">
@@ -769,8 +769,9 @@ function NodeCard() {
   const wikis = document.kind === "markdown" ? extractWikiLinks(document.content) : [];
   return (
     <aside
+      data-ui="inspector"
       data-graph-inspector
-      className="max-h-52 overflow-y-auto border-b border-line bg-surface px-4 py-3 select-none md:absolute md:top-3 md:right-3 md:z-10 md:max-h-96 md:w-72 md:border"
+      className="max-h-52 overflow-y-auto border-b border-line bg-surface px-4 py-3 md:absolute md:top-3 md:right-3 md:z-10 md:max-h-96 md:w-72 md:border"
     >
       <p className="text-xs text-faint">
         {document.kind === "file" ? t("Archivo") : t("Nota")} · {portfolio}

@@ -590,6 +590,48 @@ The interface is in Spanish and English.
   2. Create its catalog next to `en.ts`.
   3. Register the catalog in `catalogs`.
 
+## Designs and themes
+
+The look has two independent axes:
+
+- **Theme** (`app/theme.ts`): colors, fonts and the theme's own radii.
+  - Ten themes, chosen per browser.
+  - Applied as `<html data-theme>` by the boot script, with no flash.
+- **Design** (`domain/design.ts`): `modern` (the default) or `classic`, for
+  the whole installation.
+  - The administrator chooses it in Administration → Appearance → Design. It
+    is stored in `app_setting.ui_design` (`server/design.ts`, cached 15 s).
+  - The root route reads it on the server (`createIsomorphicFn`) and renders
+    `<html data-design>`, so the first paint is already correct.
+
+**Classic** is the base interface. **Modern** is a separate CSS layer,
+`src/design-modern.css`, active only under `html[data-design="modern"]`.
+
+- **What Modern changes:** shapes, depth, spacing and layout:
+  - floating glass panels,
+  - pill controls,
+  - an accent glow,
+  - a segmented Edit / Split / Read control,
+  - blurred overlays.
+- **What it keeps from the theme:** colors and fonts always come from the
+  theme's tokens, so every theme works in both designs.
+- **No `@layer`:** the rules sit outside any `@layer`, so they win over
+  Tailwind utilities without `!important`.
+- **Targets:** components expose stable `data-ui` markers: `shell`, `topbar`,
+  `panes`, `sidebar`, `rail`, `workspace`, `editor`, `modebar`, `context`,
+  `context-slot`, `inspector`, `dialog`, `popover`, `overlay`, `auth`,
+  `auth-card`, `chat`, `fab`, `tabbar`, `toast`. Use these instead of utility
+  classes when styling a design.
+
+**Text and cursors** (`styles.css`, both designs):
+
+- Reading text can be selected and copied.
+- The pointer is the arrow, except in editable fields (text cursor) and on
+  controls (hand).
+- The caret is hidden everywhere except in editable fields.
+- Buttons, menu items, switches and draggable rows aren't selectable, so
+  clicking them doesn't start a selection.
+
 ## Security headers
 
 `src/start.ts` registers a request middleware that adds these headers to every

@@ -274,7 +274,7 @@ export function EditorPane({
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div data-ui="editor" className="flex h-full min-h-0 min-w-0 flex-col">
       {history ? (
         <HistoryDialog
           docId={document.id}
@@ -337,7 +337,7 @@ export function EditorPane({
               <MoreHorizontal className="size-4" />
             </button>
             {menu ? (
-              <div className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl">
+              <div data-ui="popover" className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl">
                 {can(PERMISSION.notesShare) ? (
                   <MenuButton
                     icon={<Share2 className="size-4" />}
@@ -416,7 +416,7 @@ export function EditorPane({
       </div>
 
       {isFile ? null : (
-        <div className="flex items-center gap-1 border-b border-line px-3 py-1">
+        <div data-ui="modebar" className="flex items-center gap-1 border-b border-line px-3 py-1">
           <ModeButton active={viewMode === "edit"} label={t("Editar")} disabled={!canEdit} onClick={() => setMode("edit")}>
             <PenLine className="size-4" />
           </ModeButton>
@@ -451,7 +451,7 @@ export function EditorPane({
                   <Plus className="size-4" />
                 </ToolButton>
                 {insertOpen ? (
-                  <div className="absolute right-0 z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl">
+                  <div data-ui="popover" className="absolute right-0 z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl">
                     <MenuButton icon={<Table className="size-4" />} label={t("Tabla")} onClick={() => applyBlock(TABLE, TABLE_AT)} />
                     <MenuButton icon={<Code className="size-4" />} label={t("Bloque de código")} onClick={applyFence} />
                     <MenuButton icon={<Heading2 className="size-4" />} label={t("Encabezado")} onClick={() => applyPrefix("## ")} />
@@ -603,6 +603,7 @@ function ModeButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={active}
       title={disabled ? t("Tu rol no permite editar") : undefined}
       className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${className} ${
         active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"

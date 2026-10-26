@@ -24,6 +24,9 @@ from them.
   `docker-compose.yml` and switchable off: WOPI, file versions, and read-only
   or editable access by permission and share.
 - English interface, selectable in Account → User preferences.
+- A Modern design (default) with the original kept as Classic, chosen by the
+  administrator; themes apply to both. Text is selectable everywhere, with no
+  stray text cursors.
 
 ## 1. Office documents (Collabora Online) — done
 

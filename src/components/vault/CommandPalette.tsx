@@ -52,6 +52,7 @@ export function CommandPalette({
 
   return (
     <div
+      data-ui="overlay"
       className="fixed inset-0 z-40 flex items-start justify-center bg-inset/80 px-4 pt-24"
       onMouseDown={close}
     >
@@ -59,6 +60,7 @@ export function CommandPalette({
         label={t("Paleta de comandos")}
         vimBindings={false}
         onMouseDown={(event) => event.stopPropagation()}
+        data-ui="dialog"
         className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
       >
         <div className="flex items-center gap-2 border-b border-line px-3">
@@ -71,7 +73,7 @@ export function CommandPalette({
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
           <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
-          <Command.Group heading="Acciones">
+          <Command.Group heading={t("Acciones")}>
             {can(PERMISSION.notesCreate) ? (
             <Command.Item
               value="crear nota nueva"
@@ -118,7 +120,7 @@ export function CommandPalette({
               </Command.Item>
             ) : null}
           </Command.Group>
-          <Command.Group heading="Documentos">
+          <Command.Group heading={t("Documentos")}>
             {documents.map((document) => (
               <Command.Item
                 key={document.id}
@@ -134,7 +136,7 @@ export function CommandPalette({
               </Command.Item>
             ))}
           </Command.Group>
-          <Command.Group heading="Etiquetas">
+          <Command.Group heading={t("Etiquetas")}>
             {[...tags.values()].map((tag) => (
               <Command.Item key={tag} value={`etiqueta ${tag}`} onSelect={() => setTag(tag)}>
                 <Row icon={<span className="text-xs text-accent">#</span>} label={tag} />

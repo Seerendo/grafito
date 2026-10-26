@@ -79,8 +79,8 @@ export function PublicShareScreen({ token }: { token: string }) {
     if (title) document.title = t("{0} · Grafito", { 0: title });
   }, [title]);
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <span className="flex items-center gap-0.5">
           <Mark />
           <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
