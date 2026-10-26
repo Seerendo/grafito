@@ -126,6 +126,7 @@ lawyer review it.*
 
 | Symptom | Check |
 | --- | --- |
+| Text in the document is hard to read with a dark theme | Fixed in Grafito: browsers pass the page's dark color scheme to the editor's iframe, and Collabora's dark mode left dark text on a dark page. The editor is now always shown in light mode, like a printed page. |
 | The editor doesn't open when selecting the file | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
 | "The Office editor responded 404/502" | `docker compose logs collabora`; Collabora needs about 20 s to start |
 | The editor shows "127.0.0.1 refused to connect" or stays blank | Collabora refuses to be embedded from that address. Set `GRAFITO_PUBLIC_ORIGIN` to the address in the browser's address bar (for example `http://192.168.1.20:8080`) and run `docker compose up -d collabora`. |

@@ -4,6 +4,9 @@ import { t } from "@/app/i18n";
 
 type Session = Extract<Awaited<ReturnType<typeof officeSession>>, { ok: true }>;
 
+/** Reintentos si el servidor aún no conoce el documento (recién subido). */
+const SESSION_RETRIES = 6;
+
 /**
  * Documento de Office abierto en el editor (Collabora) dentro de un iframe.
  * El editor se abre con un formulario POST que lleva la ficha firmada, como
@@ -30,17 +33,29 @@ export function OfficeEditor({
 
   useEffect(() => {
     let cancelled = false;
-    void officeSession({ data: { docId, shareId, origin: window.location.origin, lang } })
-      .then((result) => {
-        if (cancelled) return;
-        if (result.ok) setSession(result);
-        else setError(result.error);
-      })
-      .catch(() => {
-        if (!cancelled) setError(t("No se pudo abrir el editor."));
-      });
+    let timer = 0;
+    setSession(null);
+    setError("");
+    // Un documento recién subido tarda un instante en llegar al servidor: se
+    // reintenta unas veces antes de mostrar el error.
+    const attempt = (left: number) => {
+      void officeSession({ data: { docId, shareId, origin: window.location.origin, lang } })
+        .then((result) => {
+          if (cancelled) return;
+          if (result.ok) setSession(result);
+          else if (left > 0) timer = window.setTimeout(() => attempt(left - 1), 1500);
+          else setError(result.error);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (left > 0) timer = window.setTimeout(() => attempt(left - 1), 1500);
+          else setError(t("No se pudo abrir el editor."));
+        });
+    };
+    attempt(SESSION_RETRIES);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [docId, shareId, lang]);
 
@@ -84,7 +99,11 @@ export function OfficeEditor({
         name={frameName}
         title={t("Editor de Office")}
         allow="clipboard-read; clipboard-write; fullscreen"
-        className="min-h-0 w-full flex-1 border-0 bg-surface"
+        // El navegador pasa el modo oscuro del tema al iframe, y Collabora en
+        // modo oscuro deja el texto oscuro sobre la página oscura: el editor
+        // siempre en claro, como un documento impreso.
+        style={{ colorScheme: "light" }}
+        className="min-h-0 w-full flex-1 border-0 bg-white"
       />
     </div>
   );

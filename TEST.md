@@ -773,6 +773,8 @@ PGLite, port 3100) and then on the production image in the isolated
 | Text selection | ✅ paragraphs, headings and panel text are selectable (`user-select: auto`); before, almost nothing could be selected |
 | Cursor audit (reading, split view, admin; both designs) | ✅ no element outside an editable field shows the text cursor or a caret |
 | Office: selecting a `.docx` | ✅ the editor opens directly, with no button; after closing it from the editor, «Abrir en el editor» reopens it |
+| Office with a dark theme (reported after the round) | ❌→✅ Collabora followed the theme's dark mode (browsers pass it to the iframe) and the text was dark on a dark page. The editor is now always light (`color-scheme: light` on its iframe); checked with Grafito, Cine and Terminal (dark) and Papel (light). |
+| Office right after uploading a document | ❌→✅ the editor opened before the document reached the server («Ese documento no se puede abrir en el editor»). It now retries for a few seconds; a freshly uploaded `.docx` opens directly. |
 | Untranslated headings in the command palettes («Notas», «Acciones», «Documentos», «Etiquetas») | ✅ translated |
 | `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 35 tests |
 
