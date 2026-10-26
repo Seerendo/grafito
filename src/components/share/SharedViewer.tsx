@@ -212,7 +212,7 @@ export function SharedViewer({
             El contenido todavía no está disponible. Vuelve a intentarlo en unos segundos.
           </p>
         ) : active.kind === "file" && active.file ? (
-          <FileView title={active.title} file={active.file} />
+          <FileView title={active.title} file={active.file} docId={active.id} links={active.file} />
         ) : editing ? (
           <textarea
             value={draft}

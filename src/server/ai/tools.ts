@@ -2,7 +2,8 @@ import type { Sql } from "@/lib/db";
 import { PERMISSION } from "@/domain/permissions";
 import type { Portfolio } from "@/domain/vault/types";
 import type { UserProfile } from "@/server/profile";
-import { createNote, createPortfolio, fileText, getDoc, listDocs, listPortfolios, updateNote, VaultError } from "@/server/vault";
+import { fileText } from "@/server/files";
+import { createNote, createPortfolio, getDoc, listDocs, listPortfolios, updateNote, VaultError } from "@/server/vault";
 import type { ToolCall, ToolSpec } from "./types.ts";
 
 /**
@@ -166,7 +167,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
             ? doc.content.length > MAX_NOTE
               ? `${doc.content.slice(0, MAX_NOTE)}\n…(recortado)`
               : doc.content
-            : (fileText(doc) ?? `(archivo binario ${doc.file?.mime ?? ""}, no se puede leer como texto)`);
+            : ((await fileText(sql, doc)) ?? `(archivo binario ${doc.file?.mime ?? ""}, no se puede leer como texto)`);
         return {
           result: {
             id: doc.id,

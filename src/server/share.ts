@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
+import { signedFileUrl } from "./file-links";
 
 /**
  * Acceso a datos de lo compartido (solo servidor). Ver `migrations/0006_share.sql`
@@ -29,16 +30,25 @@ export type ShareRow = {
   publicToken: string | null;
 };
 
+/**
+ * Un documento visible a través de lo compartido. `file.url` lo muestra y
+ * `file.downloadUrl` lo descarga (null si el rol no puede descargar).
+ */
 export type PublishedDoc = {
   id: string;
   title: string;
   kind: "markdown" | "file";
   portfolioId: string | null;
   content: string;
-  file: { name: string; mime: string; dataUrl: string } | null;
+  file: { name: string; mime: string; url: string; downloadUrl: string | null } | null;
   updatedBy: string;
   updatedAt: string;
 };
+
+type FileLinks = (docId: string) => { url: string; downloadUrl: string | null };
+
+/** Lo que manda `ShareMirror` del navegador del dueño (copia de respaldo). */
+export type PublishInput = Omit<PublishedDoc, "file"> & { file: { name: string; mime: string; dataUrl?: string } | null };
 
 export type PublishedPortfolio = { id: string; name: string; parentId: string | null };
 
@@ -181,7 +191,7 @@ export async function writeShare(
 export async function writePublished(
   sql: Sql,
   ownerId: string,
-  vault: { documentIds: string[]; portfolios: PublishedPortfolio[]; documents: PublishedDoc[] },
+  vault: { documentIds: string[]; portfolios: PublishedPortfolio[]; documents: PublishInput[] },
 ): Promise<void> {
   const known = new Set(vault.documentIds);
   const portfolioIds = new Set(vault.portfolios.map((portfolio) => portfolio.id));
@@ -208,7 +218,7 @@ export async function writePublished(
       values (
         ${ownerId}, ${document.id}, ${document.title}, ${document.kind}, ${document.portfolioId},
         ${document.content}, ${document.file?.name ?? null}, ${document.file?.mime ?? null},
-        ${document.file?.dataUrl ?? null}, ${document.updatedBy}, now()
+        ${document.file?.dataUrl || null}, ${document.updatedBy}, now()
       )
     `;
   }
@@ -271,7 +281,9 @@ async function readDocs(sql: Sql, ownerId: string, withFiles: boolean): Promise<
     kind: row.kind,
     portfolioId: row.portfolio_id,
     content: row.content,
-    file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", dataUrl: row.file_data ?? "" } : null,
+    file: row.file_name
+      ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", url: row.file_data ?? "", downloadUrl: row.file_data }
+      : null,
     updatedBy: row.updated_by,
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   }));
@@ -314,15 +326,19 @@ async function vaultContent(
       kind: row.kind,
       portfolioId: row.portfolio_id,
       content: row.content,
-      file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", dataUrl: "" } : null,
+      file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", url: "", downloadUrl: null } : null,
       updatedBy: row.updated_by,
       updatedAt: new Date(Number(row.updated_at)).toISOString(),
     })),
   };
 }
 
-/** Contenido de un elemento compartido, listo para el visor. */
-async function treeFor(sql: Sql, item: ItemRecord): Promise<SharedTree> {
+/**
+ * Contenido de un elemento compartido, listo para el visor. Los archivos se
+ * sirven por `/api/files/:id` con los enlaces que da `links`: firmados para
+ * quien tiene sesión, o con el token del enlace público.
+ */
+async function treeFor(sql: Sql, item: ItemRecord, links?: FileLinks): Promise<SharedTree> {
   const vault = await vaultContent(sql, item.owner_id);
   const portfolios = vault?.portfolios ?? (await readPortfolios(sql, item.owner_id));
   const documents = vault?.documents ?? (await readDocs(sql, item.owner_id, true));
@@ -330,11 +346,7 @@ async function treeFor(sql: Sql, item: ItemRecord): Promise<SharedTree> {
   const shown = documents.filter((document) => covered.documentIds.has(document.id));
   if (vault) {
     for (const document of shown) {
-      if (!document.file) continue;
-      const data = await sql<{ file_data: string | null }>`
-        select file_data from vault_doc where user_id = ${item.owner_id} and id = ${document.id} limit 1
-      `;
-      document.file = { ...document.file, dataUrl: data[0]?.file_data ?? "" };
+      if (document.file && links) document.file = { ...document.file, ...links(document.id) };
     }
   }
   return {
@@ -383,9 +395,26 @@ export async function sharedWith(
 }
 
 /** Un elemento compartido, si `userId` es su dueño o fue invitado. */
-export async function openForUser(sql: Sql, userId: string, shareId: string): Promise<SharedTree | null> {
+export async function openForUser(
+  sql: Sql,
+  userId: string,
+  shareId: string,
+  canDownload: boolean,
+): Promise<SharedTree | null> {
   const item = await grantedItem(sql, userId, shareId);
-  return item ? treeFor(sql, item) : null;
+  if (!item) return null;
+  return treeFor(sql, item, (docId) => ({
+    url: signedFileUrl(docId, item.owner_id),
+    downloadUrl: canDownload ? signedFileUrl(docId, item.owner_id, true) : null,
+  }));
+}
+
+/** Dueño de `docId` si un enlace público (`token`) lo incluye. */
+export async function publicDocOwner(sql: Sql, token: string, docId: string): Promise<string | null> {
+  const item = await publicItem(sql, token);
+  if (!item) return null;
+  const tree = await treeFor(sql, item);
+  return tree.documents.some((document) => document.id === docId) ? item.owner_id : null;
 }
 
 /**
@@ -430,12 +459,21 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
 
 /** Un elemento público, por su enlace. Sin sesión. */
 export async function openByToken(sql: Sql, token: string): Promise<SharedTree | null> {
+  const item = await publicItem(sql, token);
+  if (!item) return null;
+  return treeFor(sql, item, (docId) => {
+    const url = `/api/files/${encodeURIComponent(docId)}?token=${encodeURIComponent(token)}`;
+    return { url, downloadUrl: `${url}&download=1` };
+  });
+}
+
+async function publicItem(sql: Sql, token: string): Promise<ItemRecord | null> {
   const rows = await sql<ItemRecord>`
     select id, owner_id, kind, target_id, title, visibility, access, public_token
     from share_item where public_token = ${token} and visibility = 'public'
     limit 1
   `;
-  return rows[0] ? treeFor(sql, rows[0]) : null;
+  return rows[0] ?? null;
 }
 
 /** Organizaciones con las que se puede compartir. */

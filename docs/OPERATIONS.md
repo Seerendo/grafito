@@ -26,16 +26,22 @@ The internal services (Postgres, Elasticsearch, Redis, MinIO) only listen on
 
 | Service | Holds | Needs a backup? |
 | --- | --- | --- |
-| Postgres (`grafito_pg`) | Accounts, roles, every vault (notes and files), sharing, versions, trash, API tokens, encrypted AI keys | **Yes**: it is the source of truth |
+| Postgres (`grafito_pg`) | Accounts, roles, every vault (notes, file metadata), sharing, versions, trash, API tokens, encrypted AI keys; file bytes too when there is no MinIO | **Yes**: it is the source of truth |
+| MinIO (`grafito_s3`) | The bytes of uploaded files | **Yes** |
 | Elasticsearch (`grafito_es`) | The search index | No: it is rebuilt from Postgres |
 | Redis (`grafito_redis`) | Session deadlines | No: users only have to sign in again |
-| MinIO (`grafito_s3`) | Reserved for object storage (see ROADMAP.md) | Not yet |
 
 ## Scheduled backups
 
-The `backup` service runs `pg_dump` in custom format, writes the dump to
-`./backups/grafito-<UTC date>.dump`, and deletes dumps older than
-`BACKUP_KEEP_DAYS`.
+Two services run on the same interval:
+
+- **`backup`** runs `pg_dump` in custom format, writes the dump to
+  `./backups/grafito-<UTC date>.dump`, and deletes dumps older than
+  `BACKUP_KEEP_DAYS`.
+- **`backup-files`** mirrors the MinIO bucket into `./backups/files`
+  (`mc mirror`). It only adds files, never deletes them, so any retained
+  database dump can still find the files it refers to. Prune it by hand if
+  it grows too large.
 
 | Variable | Default |
 | --- | --- |
@@ -45,8 +51,8 @@ The `backup` service runs `pg_dump` in custom format, writes the dump to
 Check that it is working:
 
 ```bash
-docker compose logs --tail 20 backup
-ls -lh backups/
+docker compose logs --tail 20 backup backup-files
+ls -lh backups/ backups/files/
 ```
 
 Copy `backups/` off the machine regularly, for example with rsync, restic or a
@@ -71,7 +77,10 @@ docker compose stop app
 # 2. Restore the chosen dump.
 docker compose exec -T backup pg_restore --clean --if-exists --no-owner -d grafito < backups/grafito-20261025-030000.dump
 
-# 3. Start the app again.
+# 3. Put the files back (only needed if MinIO's volume was lost).
+docker compose run --rm --entrypoint sh backup-files -c 'mc alias set local http://minio:9000 grafito "$S3_SECRET_KEY" && mc mirror --overwrite /backups/files local/grafito'
+
+# 4. Start the app again.
 docker compose start app
 ```
 

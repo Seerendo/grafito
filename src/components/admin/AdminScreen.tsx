@@ -577,5 +577,5 @@ function formatBytes(bytes: number): string {
 function engineLabel(id: string, engines: { relational: string; documents: string; files: string }): string {
   if (id === "relational") return engines.relational === "postgres" ? "Postgres" : "Postgres embebido";
   if (id === "documents") return engines.documents === "elasticsearch" ? "Elasticsearch" : "Índice de Postgres";
-  return engines.files === "minio" ? "MinIO" : "Bóveda local";
+  return engines.files === "minio" ? "MinIO" : "Postgres";
 }

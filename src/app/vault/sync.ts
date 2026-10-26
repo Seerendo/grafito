@@ -32,7 +32,7 @@ function docSignature(doc: Document): string {
     doc.pinned ? 1 : 0,
     JSON.stringify(doc.links),
     doc.content.length,
-    doc.file?.dataUrl.length ?? 0,
+    doc.file?.key ?? doc.file?.dataUrl?.length ?? 0,
   ].join("|");
 }
 

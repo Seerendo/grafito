@@ -112,6 +112,8 @@ services:
       GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-grafito-dev-encryption-key-cambia-esto-0001}
       GRAFITO_ENCRYPTION_KEY_PREVIOUS: ${GRAFITO_ENCRYPTION_KEY_PREVIOUS:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
+      # Tope por archivo en MB (100 por defecto con MinIO).
+      GRAFITO_MAX_UPLOAD_MB: ${GRAFITO_MAX_UPLOAD_MB:-100}
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,6 +160,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Copia de los archivos (bucket de MinIO) en ./backups/files, con la misma
+  # frecuencia. Es un espejo que solo añade: lo borrado en Grafito se conserva
+  # aquí, para que una copia antigua de la base encuentre sus archivos.
+  backup-files:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    environment:
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-grafito-secret}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - ./backups/files:/backups/files
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 grafito "$$S3_SECRET_KEY" >/dev/null; do sleep 5; done
+        while true; do
+          if mc mirror --overwrite --quiet local/grafito /backups/files; then
+            echo "copia de archivos: $$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          else
+            echo "copia de archivos: FALLÓ" >&2
+          fi
+          sleep "$$BACKUP_INTERVAL_SECONDS"
+        done
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
 
   # --- Solo para probar la autenticación externa (no se levantan por defecto) ---
   # docker compose --profile auth-test up -d

@@ -39,7 +39,8 @@ export function ShareMirror() {
           kind: document.kind,
           portfolioId: document.portfolioId,
           content: document.kind === "markdown" ? document.content : "",
-          file: document.file,
+          // La copia de respaldo no lleva los bytes: se sirven desde el almacén.
+          file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
           updatedBy: document.updatedBy,
           updatedAt: new Date(document.updatedAt).toISOString(),
         })),

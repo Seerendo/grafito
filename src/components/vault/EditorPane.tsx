@@ -32,6 +32,7 @@ import { readingLabel, unclosedWiki, wordCount } from "@/domain/vault/links";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
+import { downloadFile } from "@/app/files";
 import { syncVault } from "@/app/vault/sync";
 import { FileView } from "./FileView";
 import { HistoryDialog } from "./HistoryDialog";
@@ -257,10 +258,7 @@ export function EditorPane({
 
   const exportNote = () => {
     if (isFile && document.file) {
-      const link = window.document.createElement("a");
-      link.href = document.file.dataUrl;
-      link.download = document.file.name;
-      link.click();
+      void downloadFile(document);
       setMenu(false);
       return;
     }
@@ -550,7 +548,7 @@ export function EditorPane({
             ) : null}
           </div>
         ) : null}
-        {showPreview && isFile && document.file ? <FileView title={document.title} file={document.file} /> : null}
+        {showPreview && isFile && document.file ? <FileView title={document.title} file={document.file} docId={document.id} /> : null}
         {showPreview && !isFile ? (
           <div className="min-h-0 overflow-y-auto">
             <MarkdownView

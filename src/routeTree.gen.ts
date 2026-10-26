@@ -18,9 +18,13 @@ import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$sh
 import { Route as PTokenRouteImport } from './routes/p/$token'
 import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiFilesIdRouteImport } from './routes/api/files/$id'
+import { Route as ApiFilesUploadsRouteImport } from './routes/api/files/uploads'
 import { Route as ApiV1MeRouteImport } from './routes/api/v1/me'
 import { Route as ApiV1NotesRouteImport } from './routes/api/v1/notes'
 import { Route as ApiV1PortfoliosRouteImport } from './routes/api/v1/portfolios'
+import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/uploads.complete'
+import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
 import { Route as ApiV1NotesIdRouteImport } from './routes/api/v1/notes.$id'
 import { Route as ApiV1NotesIdFileRouteImport } from './routes/api/v1/notes.$id.file'
 
@@ -69,6 +73,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiFilesIdRoute = ApiFilesIdRouteImport.update({
+  id: '/api/files/$id',
+  path: '/api/files/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFilesUploadsRoute = ApiFilesUploadsRouteImport.update({
+  id: '/api/files/uploads',
+  path: '/api/files/uploads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1MeRoute = ApiV1MeRouteImport.update({
   id: '/api/v1/me',
   path: '/api/v1/me',
@@ -83,6 +97,16 @@ const ApiV1PortfoliosRoute = ApiV1PortfoliosRouteImport.update({
   id: '/api/v1/portfolios',
   path: '/api/v1/portfolios',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiFilesUploadsCompleteRoute = ApiFilesUploadsCompleteRouteImport.update({
+  id: '/complete',
+  path: '/complete',
+  getParentRoute: () => ApiFilesUploadsRoute,
+} as any)
+const ApiFilesUploadsPartRoute = ApiFilesUploadsPartRouteImport.update({
+  id: '/part',
+  path: '/part',
+  getParentRoute: () => ApiFilesUploadsRoute,
 } as any)
 const ApiV1NotesIdRoute = ApiV1NotesIdRouteImport.update({
   id: '/$id',
@@ -105,9 +129,13 @@ export interface FileRoutesByFullPath {
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$id': typeof ApiFilesIdRoute
+  '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
+  '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
@@ -121,9 +149,13 @@ export interface FileRoutesByTo {
   '/compartidos': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$id': typeof ApiFilesIdRoute
+  '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
+  '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
@@ -138,9 +170,13 @@ export interface FileRoutesById {
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/files/$id': typeof ApiFilesIdRoute
+  '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
+  '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
 }
@@ -156,9 +192,13 @@ export interface FileRouteTypes {
     | '/compartidos/'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/files/$id'
+    | '/api/files/uploads'
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/files/uploads/complete'
+    | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
     | '/api/v1/notes/$id/file'
   fileRoutesByTo: FileRoutesByTo
@@ -172,9 +212,13 @@ export interface FileRouteTypes {
     | '/compartidos'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/files/$id'
+    | '/api/files/uploads'
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/files/uploads/complete'
+    | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
     | '/api/v1/notes/$id/file'
   id:
@@ -188,9 +232,13 @@ export interface FileRouteTypes {
     | '/compartidos/'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/files/$id'
+    | '/api/files/uploads'
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/files/uploads/complete'
+    | '/api/files/uploads/part'
     | '/api/v1/notes/$id'
     | '/api/v1/notes/$id/file'
   fileRoutesById: FileRoutesById
@@ -205,6 +253,8 @@ export interface RootRouteChildren {
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   ApiAiChatRoute: typeof ApiAiChatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiFilesIdRoute: typeof ApiFilesIdRoute
+  ApiFilesUploadsRoute: typeof ApiFilesUploadsRouteWithChildren
   ApiV1MeRoute: typeof ApiV1MeRoute
   ApiV1NotesRoute: typeof ApiV1NotesRouteWithChildren
   ApiV1PortfoliosRoute: typeof ApiV1PortfoliosRoute
@@ -275,6 +325,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/files/$id': {
+      id: '/api/files/$id'
+      path: '/api/files/$id'
+      fullPath: '/api/files/$id'
+      preLoaderRoute: typeof ApiFilesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/files/uploads': {
+      id: '/api/files/uploads'
+      path: '/api/files/uploads'
+      fullPath: '/api/files/uploads'
+      preLoaderRoute: typeof ApiFilesUploadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/me': {
       id: '/api/v1/me'
       path: '/api/v1/me'
@@ -296,6 +360,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1PortfoliosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/files/uploads/complete': {
+      id: '/api/files/uploads/complete'
+      path: '/complete'
+      fullPath: '/api/files/uploads/complete'
+      preLoaderRoute: typeof ApiFilesUploadsCompleteRouteImport
+      parentRoute: typeof ApiFilesUploadsRoute
+    }
+    '/api/files/uploads/part': {
+      id: '/api/files/uploads/part'
+      path: '/part'
+      fullPath: '/api/files/uploads/part'
+      preLoaderRoute: typeof ApiFilesUploadsPartRouteImport
+      parentRoute: typeof ApiFilesUploadsRoute
+    }
     '/api/v1/notes/$id': {
       id: '/api/v1/notes/$id'
       path: '/$id'
@@ -312,6 +390,20 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ApiFilesUploadsRouteChildren {
+  ApiFilesUploadsCompleteRoute: typeof ApiFilesUploadsCompleteRoute
+  ApiFilesUploadsPartRoute: typeof ApiFilesUploadsPartRoute
+}
+
+const ApiFilesUploadsRouteChildren: ApiFilesUploadsRouteChildren = {
+  ApiFilesUploadsCompleteRoute: ApiFilesUploadsCompleteRoute,
+  ApiFilesUploadsPartRoute: ApiFilesUploadsPartRoute,
+}
+
+const ApiFilesUploadsRouteWithChildren = ApiFilesUploadsRoute._addFileChildren(
+  ApiFilesUploadsRouteChildren,
+)
 
 interface ApiV1NotesIdRouteChildren {
   ApiV1NotesIdFileRoute: typeof ApiV1NotesIdFileRoute
@@ -347,6 +439,8 @@ const rootRouteChildren: RootRouteChildren = {
   CompartidosIndexRoute: CompartidosIndexRoute,
   ApiAiChatRoute: ApiAiChatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiFilesIdRoute: ApiFilesIdRoute,
+  ApiFilesUploadsRoute: ApiFilesUploadsRouteWithChildren,
   ApiV1MeRoute: ApiV1MeRoute,
   ApiV1NotesRoute: ApiV1NotesRouteWithChildren,
   ApiV1PortfoliosRoute: ApiV1PortfoliosRoute,
@@ -356,10 +450,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

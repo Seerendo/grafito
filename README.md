@@ -38,7 +38,8 @@ Open <http://127.0.0.1:8080>. Compose starts:
 - The app, as a production build.
 - Postgres 16, Elasticsearch 8, Redis 7 and MinIO. They are only reachable
   from the machine itself (`127.0.0.1`).
-- A `backup` service that writes a daily database dump to `./backups`.
+- Two backup services: a daily database dump in `./backups`, and a copy of
+  the uploaded files in `./backups/files`.
 
 Migrations run automatically when the app starts.
 
@@ -104,8 +105,11 @@ After that, the start screen is a normal sign-in.
   rename, move or delete them, or drag notes and portfolios onto them.
 - Drop files from your computer onto a portfolio:
   - A `.md` file becomes a note.
-  - Anything else is stored as a file (up to about 700 KB) and previewed when
-    possible.
+  - Anything else is uploaded to the server in parts, with progress at the
+    bottom of the directory. The limit is 100 MB per file by default
+    (`GRAFITO_MAX_UPLOAD_MB`).
+  - Images, PDFs, video and audio are previewed. Everything else can be
+    downloaded.
 - On a phone, or without drag and drop, use **Subir archivo** in the
   right-click (long-press) menu. It accepts several files and treats `.md` the
   same way.
@@ -248,6 +252,16 @@ curl -H "Authorization: Bearer gft_..." http://127.0.0.1:8080/api/v1/notes
 | `DELETE /api/v1/notes/:id` | Delete a note or file |
 | `GET /api/v1/notes/:id/file` | Download a file |
 
+To upload a file through the API, use the same three steps as the app:
+
+1. `POST /api/files/uploads` with `{ name, mime, size }` returns
+   `{ key, uploadId, partSize }`.
+2. Send each part with `PUT /api/files/uploads/part?key=…&uploadId=…&part=1…`
+   (raw bytes, up to `partSize`). Each call returns an `etag`.
+3. `POST /api/files/uploads/complete` with `{ key, uploadId, parts }`.
+
+The returned `key` can then be referenced by a file document.
+
 Tokens carry your role's permissions. Errors are JSON `{ "error": "..." }` with
 status 400, 401, 403, 404 or 409.
 
@@ -260,7 +274,8 @@ Inside Docker Compose they are already set in `docker-compose.yml`.
 | --- | --- | --- |
 | `DATABASE_URL` | Postgres for accounts, vaults and sharing | Embedded PGLite (development only) |
 | `ELASTICSEARCH_URL` | Full-text search | Search index in Postgres |
-| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO or S3 for files | Files kept in the vault |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO or S3 for uploaded files | Files stored in Postgres (20 MB limit by default) |
+| `GRAFITO_MAX_UPLOAD_MB` | Per-file upload limit | 100 with S3, 20 without |
 | `REDIS_URL` | Session deadlines | Stored in Postgres |
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session signing and public URL | Required in production |
 | `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys (32+ characters) | AI keys can't be saved |

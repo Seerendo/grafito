@@ -9,7 +9,7 @@ export function emailForUsername(username: string): string | null {
   return `${name}@grafito.app`;
 }
 
-export type EngineName = "postgres" | "pglite" | "elasticsearch" | "minio" | "vault";
+export type EngineName = "postgres" | "pglite" | "elasticsearch" | "minio";
 
 export function elasticUrl(): string | null {
   const value = process.env.ELASTICSEARCH_URL?.trim();
@@ -45,6 +45,7 @@ export function documentEngine(): "elasticsearch" | "postgres" {
   return elasticUrl() ? "elasticsearch" : "postgres";
 }
 
-export function fileEngine(): "minio" | "vault" {
-  return objectStorageEnv() ? "minio" : "vault";
+/** Dónde se guardan los bytes de los archivos (ver `server/blobs.ts`). */
+export function fileEngine(): "minio" | "postgres" {
+  return objectStorageEnv() ? "minio" : "postgres";
 }

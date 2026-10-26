@@ -5,7 +5,7 @@ export async function probeBucket(): Promise<{ ok: boolean; detail: string }> {
   if (!storage) {
     return {
       ok: false,
-      detail: "No hay bucket configurado. Los archivos siguen en la bóveda del navegador.",
+      detail: "No hay bucket configurado. Los archivos se guardan en Postgres.",
     };
   }
   try {
@@ -13,7 +13,7 @@ export async function probeBucket(): Promise<{ ok: boolean; detail: string }> {
     if (!response.ok) return { ok: false, detail: `El bucket respondió ${response.status}.` };
     return { ok: true, detail: `MinIO listo. Cubo «${storage.bucket}».` };
   } catch {
-    return { ok: false, detail: "MinIO no responde. Los archivos siguen en la bóveda." };
+    return { ok: false, detail: "MinIO no responde: no se pueden subir ni abrir archivos." };
   }
 }
 

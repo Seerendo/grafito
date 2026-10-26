@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "re
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
+import { downloadFile, useUploads } from "@/app/files";
 import { usePermissions } from "@/app/permissions";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
@@ -39,10 +40,7 @@ function readDrag(data: DataTransfer): { kind: "document" | "portfolio"; id: str
 
 function downloadDocument(document: Document) {
   if (document.kind === "file" && document.file) {
-    const link = window.document.createElement("a");
-    link.href = document.file.dataUrl;
-    link.download = document.file.name;
-    link.click();
+    void downloadFile(document);
     return;
   }
   const blob = new Blob([document.content], { type: "text/markdown" });
@@ -392,6 +390,7 @@ export function Sidebar({
         )}
       </div>
 
+      <UploadProgress />
       <input
         ref={uploadRef}
         type="file"
@@ -898,5 +897,29 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }) {
         <ChevronsRight className="size-4" />
       </button>
     </div>
+  );
+}
+
+/** Subidas en curso, con su avance. */
+function UploadProgress() {
+  const uploads = useUploads((state) => state.uploads);
+  if (uploads.length === 0) return null;
+  return (
+    <ul className="space-y-2 border-t border-line px-3 py-2" aria-live="polite">
+      {uploads.map((upload) => {
+        const percent = upload.total > 0 ? Math.round((upload.sent / upload.total) * 100) : 100;
+        return (
+          <li key={upload.id} className="text-xs text-muted">
+            <span className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{upload.name}</span>
+              <span className="shrink-0 tabular-nums">{percent}%</span>
+            </span>
+            <span className="mt-1 block h-1 overflow-hidden rounded-full bg-inset">
+              <span className="block h-full bg-accent transition-[width]" style={{ width: `${percent}%` }} />
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

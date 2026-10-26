@@ -15,7 +15,7 @@ that it has an administrator, roles and an administration panel.
 | Authentication | Better Auth: local username and password, plus LDAP, OAuth and OIDC |
 | Relational database | Postgres (`DATABASE_URL`), or PGLite embedded in `.data/pglite` |
 | Search | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres |
-| Files | MinIO / S3 (`S3_*`), or the vault itself |
+| Files | MinIO / S3 (`S3_*`), or the `file_blob` table in Postgres |
 | Sessions | Redis (`REDIS_URL`) holds session deadlines, or Postgres does |
 | Build | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel) |
 
@@ -106,6 +106,8 @@ routes ─▶ components ─▶ app ─▶ domain
 | `p/$token.tsx` | `/p/<token>` | Public viewer by link, **without a session** (skips `AccessGate`) |
 | `api/v1/*.ts` | `/api/v1/…` | Vault REST API (see [REST API](#rest-api)) |
 | `api/ai/chat.ts` | `/api/ai/chat` | AI chat (NDJSON response) |
+| `api/files/$id.ts` | `/api/files/<id>` | A document's file: signed link, public `token`, or API token / session |
+| `api/files/uploads*.ts` | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort) |
 
 ### `src/components/`
 
@@ -158,6 +160,7 @@ The `vault/` pieces:
 | `theme.ts` | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES` |
 | `account-profile.ts` | Profile of the signed-in account (name, initials, role) |
 | `ai-chat.ts` | AI chat state: open or closed, chosen model, conversation and NDJSON reading |
+| `files.ts` | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile` |
 | `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
 | `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`). Opening an own note, Raíz or signing out closes it. |
 | `trash-view.ts` | Whether the trash fills the main area (`useTrashView`), with the same closing rules |
@@ -202,7 +205,10 @@ The `vault/` pieces:
 | `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
 | `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
 | `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `openShared`, `openPublic` (the last one without a session) |
-| `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients |
+| `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
+| `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
+| `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
+| `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
 
 ### `src/lib/`
 
@@ -246,6 +252,7 @@ The `vault/` pieces:
 | `0007_orgs_auth.sql` | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` and the `orgs.manage` / `auth.manage` permissions |
 | `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions |
 | `0009_ai_local_per_user.sql` | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`) |
+| `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
 | `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note) |
 
 ## Access flow
@@ -311,10 +318,11 @@ every open session. They are centralized in `lib/auth/cookies.ts` and
 - PGLite isn't included in the production build (its `.wasm` isn't bundled),
   so the image always needs `DATABASE_URL`. To try it without Postgres, use
   `npm run dev` with `GRAFITO_INTERNAL_DEV=1`.
-- Files are still stored in Postgres as data URLs; moving them to MinIO is on
-  the roadmap. MinIO's capacity shows in the storage panel because the compose
-  file sets `MINIO_PROMETHEUS_AUTH_TYPE=public`, reachable only inside the
-  Docker network and on `127.0.0.1`.
+- Uploads that never reach a document (an abandoned tab mid-upload) leave
+  orphan objects. A periodic sweep is on the roadmap.
+- MinIO's capacity shows in the storage panel because the compose file sets
+  `MINIO_PROMETHEUS_AUTH_TYPE=public`, reachable only inside the Docker
+  network and on `127.0.0.1`.
 - `migrations/0001_auth.sql` still has a comment that mentions Grok. Applied
   migrations aren't edited.
 
@@ -386,7 +394,8 @@ Limitations:
 
 - Recipients see the last version the owner published from their browser.
   Edits made offline are published when the owner reconnects.
-- Shared files are stored in Postgres as data URLs, up to about 1.5 MB each.
+- Shared files are served from storage through signed links (see
+  [Files](#files)).
 
 ## Organizations
 
@@ -485,6 +494,45 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
     is deleted.
   - Legacy tombstones (from before migration 0010) have no `deleted_at` and
     never appear in the trash.
+
+## Files
+
+File bytes no longer travel inside notes. A file document carries
+`{ name, mime, key, size }`; the bytes live in MinIO / S3 under
+`vault/<userId>/<uuid>`, or in `file_blob` when no object storage is
+configured.
+
+- **Upload:** the browser sends the file to `/api/files/uploads` in 8 MiB
+  parts. That becomes an S3 multipart upload, or appends to the Postgres row.
+  The upload is capped by `GRAFITO_MAX_UPLOAD_MB` (100 MB with S3, 20 MB
+  without). The client then creates the document with the returned key, and
+  sync sends it. The server rejects keys outside the user's own prefix.
+- **Viewing and downloading:** the app asks the server for **signed links**
+  (`server/file-links.ts`): an HMAC over document, owner, expiry (one hour)
+  and download flag. The permission check happens when the link is issued
+  (`notes.read` to view, `files.download` to download; for shared content, the
+  share grant).
+  - Links work in `<img>`, `<iframe>` and `<video>` even without the session
+    cookie (plain http outside localhost).
+  - Public links use the share token instead.
+  - API clients can use their token or session directly.
+- **Response headers** (`fileResponse`):
+  - Images, PDF, audio and video are served inline. Everything else is an
+    attachment.
+  - SVG, HTML, XML and JavaScript are always attachments with a
+    `sandbox` CSP, so an uploaded file can't run script in Grafito's origin.
+  - All files are served with `nosniff` and support `Range`.
+- **Legacy files:** older vaults kept files as data URLs (`file_data`, plus the
+  browser cache).
+  - On a user's first sync, `migrateLegacyFiles` moves them to storage and
+    bumps their revision, so browsers drop the cached bytes.
+  - A browser that still sends a data URL (old cache, sample notes) has it
+    stored by `storeIncomingFile`.
+- **Deletion:** purging from the trash deletes the object. Deleting a user
+  deletes their objects.
+- **Backups:** `pg_dump` covers documents and, without S3, the bytes. The
+  `backup-files` service mirrors the bucket into `./backups/files` without
+  deleting, so older dumps still find their files.
 
 ## Security headers
 

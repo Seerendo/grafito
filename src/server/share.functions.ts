@@ -28,7 +28,9 @@ const publishedDoc = z.object({
   kind: z.enum(["markdown", "file"]),
   portfolioId: id.nullable(),
   content: z.string().max(400_000),
-  file: z.object({ name: z.string().max(200), mime: z.string().max(120), dataUrl: z.string().max(MAX_FILE_DATA) }).nullable(),
+  file: z
+    .object({ name: z.string().max(200), mime: z.string().max(120), dataUrl: z.string().max(MAX_FILE_DATA).optional() })
+    .nullable(),
   updatedBy: z.string().max(80),
   updatedAt: z.string().max(40),
 });
@@ -125,7 +127,8 @@ export const openShared = createServerFn({ method: "GET" })
   .validator((input: unknown) => z.object({ shareId: id }).parse(input))
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
-    return openForUser(sql, context.userId, data.shareId);
+    const profile = await readUserProfile(sql, context.userId);
+    return openForUser(sql, context.userId, data.shareId, allows(profile, PERMISSION.filesDownload));
   });
 
 /** Abre un elemento público por su enlace. No requiere sesión. */

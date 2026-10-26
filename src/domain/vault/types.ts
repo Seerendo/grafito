@@ -13,10 +13,17 @@ export type Portfolio = {
   parentId: string | null;
 };
 
+/**
+ * Un archivo de la bóveda. Los bytes viven en el servidor (MinIO / S3 o
+ * Postgres) bajo `key`; `dataUrl` solo lo traen los archivos antiguos o las
+ * notas de ejemplo hasta que el servidor los guarda y les da clave.
+ */
 export type VaultFile = {
   name: string;
   mime: string;
-  dataUrl: string;
+  key?: string;
+  size?: number;
+  dataUrl?: string;
 };
 
 export type Document = {
@@ -55,4 +62,3 @@ export type DialogState =
   | { type: "reset" }
   | null;
 
-export const MAX_UPLOAD_BYTES = 700_000;

@@ -16,7 +16,17 @@ const docSchema = z.object({
   kind: z.enum(["markdown", "file"]),
   portfolioId: id.nullable(),
   content: z.string().max(MAX_CONTENT),
-  file: z.object({ name: z.string().max(200), mime: z.string().max(120), dataUrl: z.string().max(1_500_000) }).nullable(),
+  // Los archivos nuevos solo traen su clave; `dataUrl` es de cachés antiguas y
+  // de las notas de ejemplo, y el servidor lo pasa al almacén (server/files.ts).
+  file: z
+    .object({
+      name: z.string().max(200),
+      mime: z.string().max(120),
+      key: z.string().max(200).optional(),
+      size: z.number().int().min(0).optional(),
+      dataUrl: z.string().max(1_500_000).optional(),
+    })
+    .nullable(),
   links: z.array(z.object({ targetId: id, kind: z.enum(["referencia", "llama"]) })).max(200),
   pinned: z.boolean(),
   createdAt: z.number(),

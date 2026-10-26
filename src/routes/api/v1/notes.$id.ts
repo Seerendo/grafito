@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { PERMISSION, deletePermission } from "@/domain/permissions";
 import { apiCaller, apiError, failure, json, readJson, requirePermission } from "@/server/api";
-import { MAX_CONTENT, deleteDoc, fileText, getDoc, updateNote } from "@/server/vault";
+import { fileText } from "@/server/files";
+import { MAX_CONTENT, deleteDoc, getDoc, updateNote } from "@/server/vault";
 
 const patchBody = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -24,7 +25,15 @@ export const Route = createFileRoute("/api/v1/notes/$id")({
           return json({
             note: {
               ...rest,
-              file: file ? { name: file.name, mime: file.mime, url: `/api/v1/notes/${doc.id}/file`, text: fileText(doc) } : null,
+              file: file
+                ? {
+                    name: file.name,
+                    mime: file.mime,
+                    size: file.size ?? null,
+                    url: `/api/v1/notes/${doc.id}/file`,
+                    text: await fileText(sql, doc),
+                  }
+                : null,
             },
           });
         } catch (error) {

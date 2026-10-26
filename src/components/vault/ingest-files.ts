@@ -1,5 +1,6 @@
+import { uploadVaultFile } from "@/app/files";
 import { useVault } from "@/app/vault/store";
-import { MAX_UPLOAD_BYTES } from "@/domain/vault/types";
+import { syncVault } from "@/app/vault/sync";
 
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -12,19 +13,16 @@ export function isExternalFileDrag(data: DataTransfer | null): boolean {
   return true;
 }
 
-function readDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error("lectura"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function isMarkdownFile(file: File) {
   return /\.(md|markdown)$/i.test(file.name) || file.type === "text/markdown";
 }
 
+/**
+ * Archivos que llegan desde el equipo (arrastrar o «Subir archivo»): un `.md`
+ * entra como nota; el resto se sube al servidor por partes y queda como
+ * documento de tipo archivo. Al final se sincroniza para que el servidor
+ * conozca la nota que apunta al archivo subido.
+ */
 export async function ingestExternalFiles(files: FileList | File[], portfolioId: string | null) {
   const list = [...files];
   if (list.length === 0) return;
@@ -32,28 +30,23 @@ export async function ingestExternalFiles(files: FileList | File[], portfolioId:
   if (portfolioId && vault.collapsed[portfolioId]) vault.toggleCollapsed(portfolioId);
   vault.setSelectedPortfolio(portfolioId);
   let error: string | null = null;
+  let uploaded = false;
   for (const file of list) {
-    if (file.size > MAX_UPLOAD_BYTES) {
-      error = `«${file.name}» supera unos 700 KB. Prueba con uno más pequeño.`;
-      continue;
-    }
     if (isMarkdownFile(file)) {
       const text = await file.text();
       useVault.getState().importNote(file.name, text, portfolioId);
       continue;
     }
     try {
-      const dataUrl = await readDataUrl(file);
-      const result = useVault.getState().uploadFile(
-        portfolioId,
-        file.name,
-        file.type || "application/octet-stream",
-        dataUrl,
-      );
+      const stored = await uploadVaultFile(file);
+      const result = useVault.getState().uploadFile(portfolioId, file.name, file.type || "application/octet-stream", stored);
       if (result) error = result;
-    } catch {
-      error = `No se pudo leer «${file.name}».`;
+      else uploaded = true;
+    } catch (failure) {
+      error = failure instanceof Error ? failure.message : `No se pudo subir «${file.name}».`;
     }
   }
+  const owner = useVault.getState().owner;
+  if (uploaded && owner) await syncVault(owner);
   if (error) useVault.getState().setDialog({ type: "upload-error", message: error });
 }

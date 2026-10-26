@@ -1,6 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
+import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { recordVersion } from "./history";
 
 /**
@@ -27,6 +28,8 @@ type DocRow = {
   file_name: string | null;
   file_mime: string | null;
   file_data: string | null;
+  file_key: string | null;
+  file_size: unknown;
   links_json: string;
   pinned: unknown;
   created_at: unknown;
@@ -56,7 +59,14 @@ function toDocument(row: DocRow): Document {
     kind: row.kind,
     portfolioId: row.portfolio_id,
     content: row.content,
-    file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", dataUrl: row.file_data ?? "" } : null,
+    file: row.file_name
+      ? {
+          name: row.file_name,
+          mime: row.file_mime ?? "application/octet-stream",
+          ...(row.file_key ? { key: row.file_key, size: Number(row.file_size ?? 0) } : {}),
+          ...(row.file_data ? { dataUrl: row.file_data } : {}),
+        }
+      : null,
     links: parseLinks(row.links_json),
     pinned: flag(row.pinned),
     createdAt: Number(row.created_at),
@@ -114,14 +124,15 @@ async function upsertDoc(sql: Sql, userId: string, doc: Document, rev: number, o
     // Gana el cambio más reciente: un navegador atrasado no pisa lo que hizo la IA.
     await sql`
       insert into vault_doc (user_id, id, title, kind, portfolio_id, content, file_name, file_mime, file_data,
-        links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
+        file_key, file_size, links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
       values (${userId}, ${doc.id}, ${doc.title}, ${doc.kind}, ${doc.portfolioId}, ${doc.content},
-        ${file?.name ?? null}, ${file?.mime ?? null}, ${file?.dataUrl ?? null}, ${links}, ${doc.pinned},
+        ${file?.name ?? null}, ${file?.mime ?? null}, ${file?.key ? null : (file?.dataUrl ?? null)},
+        ${file?.key ?? null}, ${file?.size ?? null}, ${links}, ${doc.pinned},
         ${doc.createdAt}, ${doc.updatedAt}, ${doc.createdBy}, ${doc.updatedBy}, ${rev}, false)
       on conflict (user_id, id) do update set
         title = excluded.title, kind = excluded.kind, portfolio_id = excluded.portfolio_id,
         content = excluded.content, file_name = excluded.file_name, file_mime = excluded.file_mime,
-        file_data = excluded.file_data, links_json = excluded.links_json, pinned = excluded.pinned,
+        file_data = excluded.file_data, file_key = excluded.file_key, file_size = excluded.file_size, links_json = excluded.links_json, pinned = excluded.pinned,
         updated_at = excluded.updated_at, updated_by = excluded.updated_by, rev = excluded.rev, deleted = false,
         deleted_at = null
       where vault_doc.deleted or vault_doc.updated_at <= excluded.updated_at
@@ -130,14 +141,15 @@ async function upsertDoc(sql: Sql, userId: string, doc: Document, rev: number, o
   }
   await sql`
     insert into vault_doc (user_id, id, title, kind, portfolio_id, content, file_name, file_mime, file_data,
-      links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
+      file_key, file_size, links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
     values (${userId}, ${doc.id}, ${doc.title}, ${doc.kind}, ${doc.portfolioId}, ${doc.content},
-      ${file?.name ?? null}, ${file?.mime ?? null}, ${file?.dataUrl ?? null}, ${links}, ${doc.pinned},
+      ${file?.name ?? null}, ${file?.mime ?? null}, ${file?.key ? null : (file?.dataUrl ?? null)},
+      ${file?.key ?? null}, ${file?.size ?? null}, ${links}, ${doc.pinned},
       ${doc.createdAt}, ${doc.updatedAt}, ${doc.createdBy}, ${doc.updatedBy}, ${rev}, false)
     on conflict (user_id, id) do update set
       title = excluded.title, kind = excluded.kind, portfolio_id = excluded.portfolio_id,
       content = excluded.content, file_name = excluded.file_name, file_mime = excluded.file_mime,
-      file_data = excluded.file_data, links_json = excluded.links_json, pinned = excluded.pinned,
+      file_data = excluded.file_data, file_key = excluded.file_key, file_size = excluded.file_size, links_json = excluded.links_json, pinned = excluded.pinned,
       updated_at = excluded.updated_at, updated_by = excluded.updated_by, rev = excluded.rev, deleted = false,
       deleted_at = null
   `;
@@ -174,7 +186,13 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
       where user_id = ${userId} and id = ${id} and not deleted
     `;
   }
-  for (const doc of changes.docs) await writeDoc(sql, userId, doc, rev, true);
+  const converted: string[] = [];
+  for (const incoming of changes.docs) {
+    const stored = incoming.kind === "file" ? await storeIncomingFile(sql, userId, incoming.file) : null;
+    const doc = stored ? { ...incoming, file: stored.file } : incoming;
+    if (stored?.converted) converted.push(doc.id);
+    await writeDoc(sql, userId, doc, rev, true);
+  }
   // A la papelera: el contenido se conserva hasta vaciarla o que venza.
   for (const id of changes.deletedDocs) {
     await sql`
@@ -183,14 +201,20 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
     `;
   }
   if (changes.deletedDocs.length > 0) await purgeExpired(sql, userId);
-  return rev;
+  if (converted.length === 0) return rev;
+  // El navegador mandó contenido y el servidor lo guardó aparte: una revisión
+  // más para que baje la versión con clave y suelte el contenido de su caché.
+  const after = await nextRevision(sql, userId);
+  for (const id of converted) await sql`update vault_doc set rev = ${after} where user_id = ${userId} and id = ${id}`;
+  return after;
 }
 
 /** Cambios posteriores a `since` (incluidas las bajas). */
 export async function pullChanges(sql: Sql, userId: string, since: number): Promise<VaultChanges & { revision: number }> {
+  await migrateLegacyFiles(sql, userId, () => nextRevision(sql, userId));
   const revision = await currentRevision(sql, userId);
   const docs = await sql<DocRow>`
-    select id, title, kind, portfolio_id, content, file_name, file_mime, file_data, links_json, pinned,
+    select id, title, kind, portfolio_id, content, file_name, file_mime, file_data, file_key, file_size, links_json, pinned,
       created_at, updated_at, created_by, updated_by, deleted
     from vault_doc where user_id = ${userId} and rev > ${since}
   `;
@@ -270,7 +294,7 @@ export async function listDocs(
 
 export async function getDoc(sql: Sql, userId: string, id: string): Promise<Document | null> {
   const rows = await sql<DocRow>`
-    select id, title, kind, portfolio_id, content, file_name, file_mime, file_data, links_json, pinned,
+    select id, title, kind, portfolio_id, content, file_name, file_mime, file_data, file_key, file_size, links_json, pinned,
       created_at, updated_at, created_by, updated_by, deleted
     from vault_doc where user_id = ${userId} and id = ${id} and not deleted limit 1
   `;
@@ -487,8 +511,13 @@ export async function restoreFromTrash(sql: Sql, userId: string, id: string, act
 export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Promise<void> {
   const targets = ids ?? (await listTrash(sql, userId)).map((item) => item.id);
   for (const id of targets) {
+    const keys = await sql<{ file_key: string | null }>`
+      select file_key from vault_doc where user_id = ${userId} and id = ${id} and deleted
+    `;
+    await removeFile(sql, keys[0]?.file_key);
     await sql`
-      update vault_doc set content = '', file_data = null, links_json = '[]', deleted_at = null
+      update vault_doc set content = '', file_data = null, file_key = null, file_size = null, links_json = '[]',
+        deleted_at = null
       where user_id = ${userId} and id = ${id} and deleted
     `;
     await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
@@ -506,42 +535,4 @@ async function purgeExpired(sql: Sql, userId: string): Promise<void> {
     update vault_portfolio set deleted_at = null
     where user_id = ${userId} and deleted and deleted_at is not null and deleted_at < ${cutoff}
   `;
-}
-
-/**
- * Decodifica un data URL (`data:<mime>[;param…][;base64],<datos>`). Sin
- * `;base64` los datos van como texto, normalmente con %-escapes.
- */
-function decodeDataUrl(dataUrl: string): { mime: string; bytes: Buffer } | null {
-  const match = /^data:([^;,]*)((?:;[^;,]*)*),(.*)$/s.exec(dataUrl);
-  if (!match) return null;
-  const data = match[3] ?? "";
-  if (/;base64/i.test(match[2] ?? "")) return { mime: match[1] ?? "", bytes: Buffer.from(data, "base64") };
-  let text = data;
-  try {
-    text = decodeURIComponent(data);
-  } catch {
-    /* sin escapes válidos: tal cual */
-  }
-  return { mime: match[1] ?? "", bytes: Buffer.from(text, "utf8") };
-}
-
-/** Texto legible de un archivo, si es de texto (Markdown, JSON, SVG, CSV…). */
-export function fileText(doc: Document, max = 20_000): string | null {
-  if (!doc.file?.dataUrl) return null;
-  const decoded = decodeDataUrl(doc.file.dataUrl);
-  if (!decoded) return null;
-  const mime = (decoded.mime || doc.file.mime || "").toLowerCase();
-  const textual =
-    mime.startsWith("text/") || /json|xml|svg|csv|markdown|javascript|yaml/.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(doc.file.name);
-  if (!textual) return null;
-  const raw = decoded.bytes.toString("utf8");
-  return raw.length > max ? `${raw.slice(0, max)}\n…(recortado)` : raw;
-}
-
-/** Bytes de un archivo, para descargarlo por la API. */
-export function fileBytes(doc: Document): { mime: string; bytes: Buffer } | null {
-  if (!doc.file?.dataUrl) return null;
-  const decoded = decodeDataUrl(doc.file.dataUrl);
-  return decoded ? { mime: decoded.mime || doc.file.mime, bytes: decoded.bytes } : null;
 }

@@ -5,7 +5,6 @@ import { migrateLegacyVault, nestSamplePortfolios } from "@/domain/vault/migrate
 import { PERMISSION, deletePermission } from "@/domain/permissions";
 import { descendantIds } from "@/domain/vault/portfolios";
 import {
-  MAX_UPLOAD_BYTES,
   type DialogState,
   type Document,
   type ManualKind,
@@ -82,7 +81,7 @@ function normalize(document: Document): Document {
       document.file &&
       typeof document.file.name === "string" &&
       typeof document.file.mime === "string" &&
-      typeof document.file.dataUrl === "string"
+      (typeof document.file.key === "string" || typeof document.file.dataUrl === "string")
         ? document.file
         : null,
     links,
@@ -252,7 +251,7 @@ type VaultState = Persisted & {
   togglePin: (id: string) => void;
   toggleTask: (id: string, line: number) => void;
   createDocument: (portfolioId?: string | null, title?: string, content?: string) => string;
-  uploadFile: (portfolioId: string | null, name: string, mime: string, dataUrl: string) => string | null;
+  uploadFile: (portfolioId: string | null, name: string, mime: string, stored: { key: string; size: number }) => string | null;
   createPortfolio: (parentId: string | null, name: string) => void;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
@@ -468,11 +467,8 @@ export const useVault = create<VaultState>((set, get) => ({
     return document.id;
   },
 
-  uploadFile: (portfolioId, name, mime, dataUrl) => {
+  uploadFile: (portfolioId, name, mime, stored) => {
     if (!can(PERMISSION.filesUpload)) return "Tu rol no permite subir archivos.";
-    if (dataUrl.length > Math.ceil(MAX_UPLOAD_BYTES * 1.4)) {
-      return "El archivo supera el límite de unos 700 KB.";
-    }
     const base = name.replace(/\.[^.]+$/, "") || name;
     const title = uniqueTitle(get().documents, base, portfolioId, "file");
     const document: Document = {
@@ -481,7 +477,7 @@ export const useVault = create<VaultState>((set, get) => ({
       portfolioId,
       kind: "file",
       content: "",
-      file: { name, mime: mime || "application/octet-stream", dataUrl },
+      file: { name, mime: mime || "application/octet-stream", key: stored.key, size: stored.size },
       links: [],
       ...born(),
       pinned: false,

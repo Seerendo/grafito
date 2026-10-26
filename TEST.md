@@ -687,6 +687,42 @@ data.
 | Conflict: the note changes on the server while Lectora edits | ✅ «Administrador cambió la nota mientras la editabas.» with «Usar la suya» / «Guardar la mía»; «Guardar la mía» saves on top |
 | Lectora restores an older version from the shared view | ✅ new version by Lectora; her previous version stays |
 
+## Round 13: files in object storage
+
+New image on the isolated `grafito-e2e` stack with an empty database (both
+backup services scaled to 0), with MinIO. A final pass ran without `S3_*`
+against the same database.
+
+| Case | Result |
+| --- | --- |
+| Sample file «Plano del obrador» on the first sync | ✅ the browser sent it as a data URL; the server stored it in MinIO (719 B), set `file_key`, cleared `file_data`, and the browser pulled the keyed version |
+| Image from a signed link | ✅ `/api/files/<id>?o&e&s`, rendered (320 px wide PNG) |
+| Tampered signature | ✅ 403 «El enlace caducó…» |
+| Upload a PNG and a 20 MB file (old limit: ~700 KB) | ✅ 3 parts of 8 MiB to MinIO in about 2 s; progress shown at the bottom of the directory |
+| Download the 20 MB file | ✅ 200, `attachment`, 20,971,520 bytes |
+| `Range: bytes=0-99` | ✅ 206 with `content-range` |
+| Legacy row with `file_data` (inserted by hand) | ✅ moved to MinIO on the next sync; content readable («Hola desde el formato antiguo.») |
+| Public link to «Atlas» without a session | ✅ page 200, image 200 through `?token=`; a file outside the share 404; no token 401 |
+| SVG response headers | ✅ `attachment`, CSP with `sandbox`, `X-Frame-Options: SAMEORIGIN` |
+| Lectora opens the shared «Plano del obrador» | ✅ image from a link signed for the owner; separate signed download link |
+| Lectora deletes her own copy and purges it from the trash | ✅ object removed from MinIO (5 → 4), `file_key` cleared |
+| Without MinIO (no `S3_*`): upload a 10.5 MB text file | ✅ 2 parts appended to `file_blob`; download identical byte for byte |
+| `npm test` | ✅ 30 tests (4 new for signed links) |
+
+Fixed during the round:
+
+- The sync validator still required `dataUrl`, so new key-only file
+  documents were rejected.
+- A failed link request was cached for 50 minutes. Now only successful links
+  are cached, and the viewer retries while a new upload syncs.
+
+After the round, the normal stack was rebuilt:
+
+- Migration `0011` applied.
+- Both backup services running.
+- The one older file in your data moves to MinIO the first time its owner
+  opens Grafito.
+
 ## Useful commands
 
 ```bash

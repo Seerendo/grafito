@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { removeUserFiles } from "@/server/files";
 import { requireLease, readTtl } from "@/server/lease";
 import { ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD, STRONG_PASSWORD, documentEngine, emailForUsername, fileEngine, relationalEngine } from "@/server/platform";
 import { allows, readUserProfile } from "@/server/profile";
@@ -518,6 +519,7 @@ export const deleteVaultUser = createServerFn({ method: "POST" })
         return { ok: false as const, error: "Tiene que quedar al menos un administrador." };
       }
     }
+    await removeUserFiles(sql, data.userId);
     await sql`delete from "user" where id = ${data.userId}`;
     await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Elimina a ${row.name}`);
     return { ok: true as const };

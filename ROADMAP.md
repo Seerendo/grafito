@@ -17,6 +17,9 @@ from them.
 - CI on GitHub Actions (typecheck, lint, tests, build, Docker image).
 - AGPL-3.0 license.
 - MinIO capacity in the storage panel.
+- Files in object storage (item 4 below): chunked uploads up to a
+  configurable limit (100 MB by default), signed links, migration of older
+  files, a bucket backup, and a Postgres fallback without MinIO.
 
 ## 1. Office documents (decided: Collabora Online)
 
@@ -31,8 +34,9 @@ Goal: edit Word, Excel, PowerPoint and OpenDocument files (`.docx`, `.xlsx`,
 - **Permissions:** the Grafito role and share access decide whether Collabora
   opens a document read-only or editable.
 - **Versions:** every `PutFile` creates a version in the document history.
-- **Prerequisite:** item 4 (files in object storage). Office files exceed
-  today's upload limit of about 700 KB.
+- **Prerequisite (done):** item 4, files in object storage. Office files now
+  fit within the upload limit, and Collabora reads and writes them through
+  `server/blobs.ts`.
 
 ## 2. Team spaces
 
@@ -50,12 +54,16 @@ Goal: edit Word, Excel, PowerPoint and OpenDocument files (`.docx`, `.xlsx`,
 - Single logout (OIDC RP-initiated logout).
 - Multi-factor authentication for local accounts (TOTP).
 
-## 4. Files in object storage
+## 4. Files in object storage (mostly done)
 
-- Store file bytes in MinIO / S3 instead of Postgres data URLs.
-- Raise the upload limit from about 700 KB to configurable sizes, with
-  resumable uploads.
-- Antivirus scanning on upload (ClamAV).
+Done: storage in MinIO / S3 (or Postgres), chunked uploads with a configurable
+limit, signed links, migration of older files, and a bucket backup.
+
+Still open:
+
+- Resumable uploads across page reloads.
+- A sweep for orphan uploads (started but never attached to a document).
+- Antivirus scanning on upload (ClamAV), as an optional profile.
 - Previews for Office files, generated as PDF through Collabora's convert API.
 
 ## 5. Search and API
