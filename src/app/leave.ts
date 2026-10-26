@@ -2,6 +2,7 @@ import { clearAccountProfile } from "@/app/account-profile";
 import { clearPermissions } from "@/app/permissions";
 import { clearMyShares } from "@/app/shares";
 import { useSharedView } from "@/app/shared-view";
+import { useTrashView } from "@/app/trash-view";
 import { clearHeldAdmin } from "@/app/vault-hold";
 import { useVault } from "@/app/vault/store";
 import { signOut } from "@/lib/auth/client";
@@ -17,6 +18,7 @@ export async function leaveApp(): Promise<void> {
   clearPermissions();
   clearMyShares();
   useSharedView.getState().closeShared();
+  useTrashView.getState().setOpen(false);
   clearHeldAdmin();
   clearAccountProfile();
   try {

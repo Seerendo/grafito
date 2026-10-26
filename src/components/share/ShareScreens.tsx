@@ -25,7 +25,6 @@ export function SharedWithMeScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl px-4 py-8">
           <h1 className="font-serif text-3xl tracking-tight">Compartidos conmigo</h1>
-          <p className="mt-1 text-sm text-muted">Notas y portafolios que otros usuarios te dejaron ver, en solo lectura.</p>
           {error ? <p className="mt-6 text-sm text-danger">{error}</p> : null}
           {!items && !error ? <p className="mt-6 text-sm text-muted">Cargando…</p> : null}
           {items && items.length === 0 ? (

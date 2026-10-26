@@ -10,7 +10,14 @@ import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/dom
  * directamente (`share_grant`) o si pertenece a una organización invitada o a
  * cualquiera de sus sub-organizaciones (`share_org_grant`). Esto último se
  * resuelve subiendo desde las organizaciones del usuario hasta sus raíces.
+ *
+ * Acceso: `read` (por defecto) o `edit`. Lo público siempre es de solo
+ * lectura. Desde la migración 0008 el contenido se lee directamente de la
+ * bóveda del dueño en el servidor (`vault_doc`); la copia publicada
+ * (`published_*`) solo queda como respaldo para dueños sin bóveda en el servidor.
  */
+
+export type ShareAccess = "read" | "edit";
 
 export type ShareRow = {
   id: string;
@@ -18,6 +25,7 @@ export type ShareRow = {
   targetId: string;
   title: string;
   visibility: "shared" | "public";
+  access: ShareAccess;
   publicToken: string | null;
 };
 
@@ -36,7 +44,14 @@ export type PublishedPortfolio = { id: string; name: string; parentId: string | 
 
 /** Lo que ve quien abre un elemento compartido: el elemento y su contenido. */
 export type SharedTree = {
-  share: { id: string; kind: ShareKind; title: string; ownerName: string; visibility: "shared" | "public" };
+  share: {
+    id: string;
+    kind: ShareKind;
+    title: string;
+    ownerName: string;
+    visibility: "shared" | "public";
+    access: ShareAccess;
+  };
   portfolios: PublishedPortfolio[];
   documents: PublishedDoc[];
 };
@@ -48,8 +63,13 @@ type ItemRecord = {
   target_id: string;
   title: string;
   visibility: "shared" | "public";
+  access: ShareAccess;
   public_token: string | null;
 };
+
+function accessOf(item: ItemRecord): ShareAccess {
+  return item.visibility === "shared" && item.access === "edit" ? "edit" : "read";
+}
 
 function toRow(item: ItemRecord): ShareRow {
   return {
@@ -58,6 +78,7 @@ function toRow(item: ItemRecord): ShareRow {
     targetId: item.target_id,
     title: item.title,
     visibility: item.visibility,
+    access: accessOf(item),
     publicToken: item.public_token,
   };
 }
@@ -72,7 +93,7 @@ export async function ownerShares(
   ownerId: string,
 ): Promise<(ShareRow & { userIds: string[]; orgIds: string[] })[]> {
   const items = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, public_token
+    select id, owner_id, kind, target_id, title, visibility, access, public_token
     from share_item where owner_id = ${ownerId}
   `;
   const grants = await sql<{ share_id: string; user_id: string }>`
@@ -99,12 +120,13 @@ export async function writeShare(
   input: ShareTarget & {
     title: string;
     visibility: "private" | "shared" | "public";
+    access: ShareAccess;
     userIds: string[];
     orgIds: string[];
   },
 ): Promise<void> {
   const existing = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, public_token from share_item
+    select id, owner_id, kind, target_id, title, visibility, access, public_token from share_item
     where owner_id = ${ownerId} and kind = ${input.kind} and target_id = ${input.targetId}
     limit 1
   `;
@@ -115,17 +137,19 @@ export async function writeShare(
     return;
   }
   const token = input.visibility === "public" ? (current?.public_token ?? newPublicToken()) : null;
+  const access: ShareAccess = input.visibility === "shared" ? input.access : "read";
   const id = current?.id ?? randomUUID();
   if (current) {
     await sql`
       update share_item
-      set title = ${input.title}, visibility = ${input.visibility}, public_token = ${token}, updated_at = now()
+      set title = ${input.title}, visibility = ${input.visibility}, access = ${access}, public_token = ${token},
+        updated_at = now()
       where id = ${id}
     `;
   } else {
     await sql`
-      insert into share_item (id, owner_id, kind, target_id, title, visibility, public_token)
-      values (${id}, ${ownerId}, ${input.kind}, ${input.targetId}, ${input.title}, ${input.visibility}, ${token})
+      insert into share_item (id, owner_id, kind, target_id, title, visibility, access, public_token)
+      values (${id}, ${ownerId}, ${input.kind}, ${input.targetId}, ${input.title}, ${input.visibility}, ${access}, ${token})
     `;
   }
   await sql`delete from share_grant where share_id = ${id}`;
@@ -258,11 +282,61 @@ async function ownerName(sql: Sql, ownerId: string): Promise<string> {
   return rows[0]?.name?.trim() || "Alguien";
 }
 
-/** Contenido de un elemento compartido, listo para la vista de solo lectura. */
+/** La bóveda del dueño en el servidor, sin los datos de los archivos; null si no la tiene. */
+async function vaultContent(
+  sql: Sql,
+  ownerId: string,
+): Promise<{ portfolios: PublishedPortfolio[]; documents: PublishedDoc[] } | null> {
+  const state = await sql<{ user_id: string }>`select user_id from vault_state where user_id = ${ownerId} limit 1`;
+  if (!state[0]) return null;
+  const portfolios = await sql<{ id: string; name: string; parent_id: string | null }>`
+    select id, name, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
+  `;
+  const docs = await sql<{
+    id: string;
+    title: string;
+    kind: "markdown" | "file";
+    portfolio_id: string | null;
+    content: string;
+    file_name: string | null;
+    file_mime: string | null;
+    updated_by: string;
+    updated_at: unknown;
+  }>`
+    select id, title, kind, portfolio_id, content, file_name, file_mime, updated_by, updated_at
+    from vault_doc where user_id = ${ownerId} and not deleted
+  `;
+  return {
+    portfolios: portfolios.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id })),
+    documents: docs.map((row) => ({
+      id: row.id,
+      title: row.title,
+      kind: row.kind,
+      portfolioId: row.portfolio_id,
+      content: row.content,
+      file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", dataUrl: "" } : null,
+      updatedBy: row.updated_by,
+      updatedAt: new Date(Number(row.updated_at)).toISOString(),
+    })),
+  };
+}
+
+/** Contenido de un elemento compartido, listo para el visor. */
 async function treeFor(sql: Sql, item: ItemRecord): Promise<SharedTree> {
-  const portfolios = await readPortfolios(sql, item.owner_id);
-  const documents = await readDocs(sql, item.owner_id, true);
+  const vault = await vaultContent(sql, item.owner_id);
+  const portfolios = vault?.portfolios ?? (await readPortfolios(sql, item.owner_id));
+  const documents = vault?.documents ?? (await readDocs(sql, item.owner_id, true));
   const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, portfolios, documents);
+  const shown = documents.filter((document) => covered.documentIds.has(document.id));
+  if (vault) {
+    for (const document of shown) {
+      if (!document.file) continue;
+      const data = await sql<{ file_data: string | null }>`
+        select file_data from vault_doc where user_id = ${item.owner_id} and id = ${document.id} limit 1
+      `;
+      document.file = { ...document.file, dataUrl: data[0]?.file_data ?? "" };
+    }
+  }
   return {
     share: {
       id: item.id,
@@ -270,9 +344,10 @@ async function treeFor(sql: Sql, item: ItemRecord): Promise<SharedTree> {
       title: item.title,
       ownerName: await ownerName(sql, item.owner_id),
       visibility: item.visibility,
+      access: accessOf(item),
     },
     portfolios: portfolios.filter((portfolio) => covered.portfolioIds.has(portfolio.id)),
-    documents: documents.filter((document) => covered.documentIds.has(document.id)),
+    documents: shown,
   };
 }
 
@@ -280,14 +355,14 @@ async function treeFor(sql: Sql, item: ItemRecord): Promise<SharedTree> {
 export async function sharedWith(
   sql: Sql,
   userId: string,
-): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string }[]> {
-  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string }>`
+): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess }[]> {
+  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; access: ShareAccess }>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
-    select s.id, s.kind, s.title, u.name as owner_name
+    select s.id, s.kind, s.title, s.access, u.name as owner_name
     from share_item s
     join "user" u on u.id = s.owner_id
     where s.visibility = 'shared'
@@ -298,18 +373,47 @@ export async function sharedWith(
       )
     order by u.name, s.title
   `;
-  return rows.map((row) => ({ id: row.id, kind: row.kind, title: row.title, ownerName: row.owner_name?.trim() || "Alguien" }));
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    ownerName: row.owner_name?.trim() || "Alguien",
+    access: row.access === "edit" ? "edit" : "read",
+  }));
 }
 
 /** Un elemento compartido, si `userId` es su dueño o fue invitado. */
 export async function openForUser(sql: Sql, userId: string, shareId: string): Promise<SharedTree | null> {
+  const item = await grantedItem(sql, userId, shareId);
+  return item ? treeFor(sql, item) : null;
+}
+
+/**
+ * Dueño de un documento que `userId` puede editar a través de `shareId`: el
+ * elemento tiene que estar compartido con él con acceso de edición y cubrir
+ * ese documento.
+ */
+export async function editableTarget(
+  sql: Sql,
+  userId: string,
+  shareId: string,
+  docId: string,
+): Promise<{ ownerId: string } | null> {
+  const item = await grantedItem(sql, userId, shareId);
+  if (!item || item.owner_id === userId || accessOf(item) !== "edit") return null;
+  const tree = await treeFor(sql, item);
+  return tree.documents.some((document) => document.id === docId) ? { ownerId: item.owner_id } : null;
+}
+
+/** El elemento, si `userId` es su dueño o fue invitado (directamente o por organización). */
+async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<ItemRecord | null> {
   const rows = await sql<ItemRecord>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
-    select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.public_token
+    select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.access, s.public_token
     from share_item s
     where s.id = ${shareId}
       and (
@@ -321,13 +425,13 @@ export async function openForUser(sql: Sql, userId: string, shareId: string): Pr
       )
     limit 1
   `;
-  return rows[0] ? treeFor(sql, rows[0]) : null;
+  return rows[0] ?? null;
 }
 
 /** Un elemento público, por su enlace. Sin sesión. */
 export async function openByToken(sql: Sql, token: string): Promise<SharedTree | null> {
   const rows = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, public_token
+    select id, owner_id, kind, target_id, title, visibility, access, public_token
     from share_item where public_token = ${token} and visibility = 'public'
     limit 1
   `;

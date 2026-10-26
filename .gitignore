@@ -12,3 +12,4 @@ _respaldo-grok/
 .DS_Store
 Thumbs.db
 coverage/
+backups/

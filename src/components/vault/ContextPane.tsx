@@ -131,7 +131,6 @@ export function ContextPane({
           title="Esquema"
           icon={<ListTree className="size-3.5" />}
           count={headings.length}
-          hint="Encabezados de esta nota."
           fold={{ open: openSections.esquema, onToggle: () => toggleSection("esquema") }}
         >
           {outline.length === 0 ? (
@@ -151,7 +150,6 @@ export function ContextPane({
         title="Vínculos"
         icon={<Link2 className="size-3.5" />}
         count={manual.length}
-        hint="Relaciones que declaraste a mano con otros documentos."
         fold={{ open: openSections.vinculos, onToggle: () => toggleSection("vinculos") }}
         action={
           canLink ? (
@@ -207,7 +205,6 @@ export function ContextPane({
           title="Enlaces en el texto"
           icon={<ArrowUpRight className="size-3.5" />}
           count={outgoingWiki.length}
-          hint="Notas a las que esta apunta con [[enlace]]."
           fold={{ open: openSections.escritos, onToggle: () => toggleSection("escritos") }}
         >
           {outgoingWiki.length === 0 ? (
@@ -249,7 +246,6 @@ export function ContextPane({
         title="Menciones"
         icon={<ArrowDownLeft className="size-3.5" />}
         count={incomingWiki.length + incomingManual.length}
-        hint="Documentos que apuntan a este."
         fold={{ open: openSections.menciones, onToggle: () => toggleSection("menciones") }}
       >
         {incomingWiki.length + incomingManual.length === 0 ? (
@@ -277,7 +273,7 @@ export function ContextPane({
       </Section>
 
       {document.kind === "markdown" ? (
-        <Section title="Etiquetas" icon={<Hash className="size-3.5" />} count={tags.length} hint="Toca una para filtrar el directorio.">
+        <Section title="Etiquetas" icon={<Hash className="size-3.5" />} count={tags.length}>
           {tags.length === 0 ? (
             <Empty>Sin etiquetas. Prueba con #atlas.</Empty>
           ) : (
@@ -361,7 +357,6 @@ function Section({
   title,
   icon,
   count,
-  hint,
   action,
   children,
   fold,
@@ -369,7 +364,6 @@ function Section({
   title: string;
   icon: ReactNode;
   count?: number;
-  hint?: string;
   action?: ReactNode;
   children: ReactNode;
   fold?: { open: boolean; onToggle: () => void };
@@ -404,7 +398,6 @@ function Section({
       </div>
       {open ? (
         <div className="mt-1 pl-5">
-          {hint ? <p className="mb-2 text-xs text-faint">{hint}</p> : null}
           {children}
         </div>
       ) : null}

@@ -15,7 +15,7 @@ import {
   writeShare,
 } from "@/server/share";
 
-/** Funciones de servidor para compartir en solo lectura (ver `server/share.ts`). */
+/** Funciones de servidor para compartir (ver `server/share.ts`). */
 
 const id = z.string().min(1).max(80);
 
@@ -77,6 +77,7 @@ export const setShare = createServerFn({ method: "POST" })
         targetId: id,
         title: z.string().max(200),
         visibility: z.enum(["private", "shared", "public"]),
+        access: z.enum(["read", "edit"]).default("read"),
         userIds: z.array(id).max(200),
         orgIds: z.array(id).max(200).default([]),
       })

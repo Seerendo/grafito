@@ -31,15 +31,10 @@ export function ApiTokens() {
   }, []);
 
   if (hidden) return null;
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
   return (
     <section>
-      <p className="text-sm text-muted">
-        Tokens personales para la API REST de tu bóveda. Úsalos con la cabecera{" "}
-        <code className="text-xs">Authorization: Bearer gft_…</code>. Tienen tus mismos permisos.
-      </p>
       <form
-        className="mt-4 flex flex-wrap gap-2"
+        className="flex flex-wrap gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void createApiToken({ data: { name } }).then(async (result) => {
@@ -78,9 +73,6 @@ export function ApiTokens() {
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             </button>
           </div>
-          <p className="mt-2 text-xs text-faint break-all">
-            Prueba: <code>curl -H "Authorization: Bearer {fresh.slice(0, 10)}…" {origin}/api/v1/notes</code>
-          </p>
         </div>
       ) : null}
       {tokens && tokens.length > 0 ? (

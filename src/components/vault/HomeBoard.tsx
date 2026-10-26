@@ -1,66 +1,66 @@
-import { Plus } from "lucide-react";
+import { File, FileText, Plus } from "lucide-react";
+import { useMemo } from "react";
+import { useVault } from "@/app/vault/store";
 
-const QUADS: { kicker: string; title: string; lines: string[] }[] = [
-  {
-    kicker: "Teclado",
-    title: "Atajos",
-    lines: [
-      "Ctrl K buscar",
-      "Ctrl N nota nueva",
-      "Ctrl E cambiar de vista",
-      "Ctrl G grafo",
-      "Ctrl B chat de IA",
-      "Esc cierra lo abierto",
-    ],
-  },
-  {
-    kicker: "Escritura",
-    title: "Notas",
-    lines: ["Markdown, [[enlaces]] y #etiquetas.", "El esquema de la derecha se pliega por apartados.", "Descarga la nota en PDF desde el menú."],
-  },
-  {
-    kicker: "Fuera",
-    title: "Archivos",
-    lines: ["Arrastra desde el computador a un portafolio.", "Un .md entra como nota.", "El resto queda como archivo."],
-  },
-  {
-    kicker: "Mapa",
-    title: "Portafolios",
-    lines: ["Repliega la barra para escribir con más ancho.", "Raíz vuelve a esta página.", "Clic derecho para crear o mover."],
-  },
-];
+const RECENT = 12;
 
-export function HomeBoard({ empty, onCreate }: { empty: boolean; onCreate?: () => void }) {
+/** Raíz: lo último que se tocó en la bóveda. */
+export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
+  const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const setActive = useVault((state) => state.setActive);
+  const recent = useMemo(
+    () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
+    [documents],
+  );
+  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? "Raíz";
+
   return (
     <div data-home className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8">
       <div className="mx-auto w-full max-w-3xl">
-        <p className="text-xs font-medium tracking-widest text-faint uppercase">Bóveda</p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight">Raíz</h1>
-        {empty ? <p className="mt-2 max-w-md text-sm text-muted">Todavía no hay documentos. Esto es lo esencial.</p> : null}
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          {QUADS.map((quad) => (
-            <section key={quad.title} className="border border-line bg-surface px-4 py-4">
-              <p className="text-xs font-medium tracking-widest text-faint uppercase">{quad.kicker}</p>
-              <h2 className="mt-1 font-serif text-2xl">{quad.title}</h2>
-              <ul className="mt-3 space-y-1.5 text-sm text-muted">
-                {quad.lines.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-            </section>
-          ))}
+        <div className="flex flex-wrap items-end gap-3">
+          <h1 className="font-serif text-4xl font-semibold tracking-tight">Raíz</h1>
+          {onCreate ? (
+            <button
+              type="button"
+              onClick={onCreate}
+              className="ml-auto inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+            >
+              <Plus className="size-4" />
+              Nueva nota
+            </button>
+          ) : null}
         </div>
-        {onCreate ? (
-          <button
-            type="button"
-            onClick={onCreate}
-            className="mt-5 inline-flex h-11 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
-          >
-            <Plus className="size-4" />
-            Nueva nota
-          </button>
+        {recent.length > 0 ? (
+          <section className="mt-6">
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">Recientes</h2>
+            <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+              {recent.map((document) => {
+                const Icon = document.kind === "file" ? File : FileText;
+                return (
+                  <li key={document.id} className="border-b border-line last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setActive(document.id)}
+                      className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
+                    >
+                      <Icon className="size-4 shrink-0 text-faint" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{document.title}</span>
+                      <span className="hidden shrink-0 text-xs text-faint sm:inline">{place(document.portfolioId)}</span>
+                      <span className="shrink-0 text-xs text-faint">{formatWhen(document.updatedAt)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         ) : null}
       </div>
     </div>
   );
+}
+
+function formatWhen(ms: number): string {
+  if (!ms) return "";
+  return new Intl.DateTimeFormat("es", { day: "numeric", month: "short" }).format(new Date(ms));
 }

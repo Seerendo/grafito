@@ -31,11 +31,6 @@ export function AiSettings() {
   if (hidden) return null;
   return (
     <section>
-      <p className="text-sm text-muted">
-        Conecta tus proveedores para usar el chat (<kbd className="rounded border border-line px-1 text-xs">Ctrl</kbd>{" "}
-        <kbd className="rounded border border-line px-1 text-xs">B</kbd> en la bóveda). Tu clave se guarda cifrada y solo
-        se usa para tus conversaciones.
-      </p>
       {!state ? <p className="mt-4 text-sm text-muted">Cargando…</p> : null}
       {state && state.providers.length === 0 ? (
         <p className="mt-4 text-sm text-muted">El administrador todavía no ha activado ningún proveedor de IA.</p>
@@ -137,10 +132,6 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
                 spellCheck={false}
                 className="h-10 w-full rounded-md border border-line bg-inset px-3 text-sm"
               />
-              <p className="w-full text-xs text-faint">
-                Tu propia instancia, accesible desde el servidor de Grafito: su IP o nombre en la red, o
-                host.docker.internal si Grafito corre con Docker en tu equipo.
-              </p>
             </>
           ) : null}
           <input

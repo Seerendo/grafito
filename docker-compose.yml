@@ -1,6 +1,10 @@
 # Grafito y sus servicios. En la máquina: docker compose up --build
 # La app habla con los nombres de servicio (postgres, elasticsearch, redis, minio),
 # no con 127.0.0.1. El navegador entra por http://127.0.0.1:8080.
+#
+# Secretos y direcciones: se leen de un archivo .env junto a este (ver
+# .env.example). Los valores por defecto solo sirven para probar en local.
+# Los puertos de los servicios internos quedan solo en 127.0.0.1.
 
 services:
   postgres:
@@ -8,10 +12,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: grafito
-      POSTGRES_PASSWORD: grafito
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grafito}
       POSTGRES_DB: grafito
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - grafito_pg:/var/lib/postgresql/data
     healthcheck:
@@ -28,7 +32,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - grafito_es:/usr/share/elasticsearch/data
     healthcheck:
@@ -42,7 +46,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - grafito_redis:/data
     healthcheck:
@@ -57,11 +61,13 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: grafito
-      MINIO_ROOT_PASSWORD: grafito-secret
-      MC_HOST_local: http://grafito:grafito-secret@127.0.0.1:9000
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-grafito-secret}
+      MC_HOST_local: http://grafito:${S3_SECRET_KEY:-grafito-secret}@127.0.0.1:9000
+      # Grafito lee la capacidad del cubo en Administración → Espacio.
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - grafito_s3:/data
     healthcheck:
@@ -73,12 +79,14 @@ services:
 
   minio-init:
     image: cgr.dev/chainguard/minio:latest
+    environment:
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-grafito-secret}
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 grafito grafito-secret; do sleep 2; done;
+      until mc alias set local http://minio:9000 grafito $${S3_SECRET_KEY}; do sleep 2; done;
       mc mb -p local/grafito || true;
       "
 
@@ -89,19 +97,21 @@ services:
       - "8080:8080"
     environment:
       GRAFITO_FROM_DOCKER: "1"
-      DATABASE_URL: postgres://grafito:grafito@postgres:5432/grafito
+      DATABASE_URL: postgres://grafito:${POSTGRES_PASSWORD:-grafito}@postgres:5432/grafito
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: grafito
       S3_ACCESS_KEY: grafito
-      S3_SECRET_KEY: grafito-secret
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-grafito-secret}
       S3_REGION: us-east-1
-      BETTER_AUTH_SECRET: grafito-dev-secret-cambia-esto
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-grafito-dev-secret-cambia-esto}
       # Cifra las claves de IA de cada usuario. Cámbiala (32+ caracteres) y no la
-      # pierdas: sin ella no se pueden leer las claves ya guardadas.
-      GRAFITO_ENCRYPTION_KEY: grafito-dev-encryption-key-cambia-esto-0001
-      BETTER_AUTH_URL: http://127.0.0.1:8080
+      # pierdas: sin ella no se pueden leer las claves ya guardadas. Para
+      # rotarla, la anterior va en GRAFITO_ENCRYPTION_KEY_PREVIOUS.
+      GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-grafito-dev-encryption-key-cambia-esto-0001}
+      GRAFITO_ENCRYPTION_KEY_PREVIOUS: ${GRAFITO_ENCRYPTION_KEY_PREVIOUS:-}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +123,41 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+
+  # Copia de la base cada día (formato custom de pg_dump) en ./backups, con
+  # retención. Las notas y los archivos viven en Postgres, así que esto basta
+  # para restaurar; Elasticsearch se reconstruye y Redis no guarda nada
+  # imprescindible. Restaurar: docs/OPERATIONS.md.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: grafito
+      PGDATABASE: grafito
+      PGPASSWORD: ${POSTGRES_PASSWORD:-grafito}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          file=/backups/grafito-$$(date -u +%Y%m%d-%H%M%S).dump
+          if pg_dump -Fc -f "$$file.tmp"; then
+            mv "$$file.tmp" "$$file"
+            echo "copia: $$file"
+          else
+            rm -f "$$file.tmp"
+            echo "copia: FALLÓ" >&2
+          fi
+          find /backups -name 'grafito-*.dump' -mtime +$$BACKUP_KEEP_DAYS -delete
+          sleep "$$BACKUP_INTERVAL_SECONDS"
+        done
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   # --- Solo para probar la autenticación externa (no se levantan por defecto) ---
   # docker compose --profile auth-test up -d

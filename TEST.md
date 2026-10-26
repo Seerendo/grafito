@@ -627,6 +627,66 @@ portfolio and the «Ritual de la mañana» note with her.
 | Signing out | ✅ closes the shared view (`leaveApp`) |
 | `/compartidos` and `/compartidos/$id` | ✅ still work for direct links |
 
+## Round 12: history, trash, shared editing and operations
+
+New image on the isolated `grafito-e2e` stack with an empty database (its
+`backup` service scaled to 0). The test used the administrator and a Member,
+«Lectora». The administrator shared the «Atlas» portfolio with her with
+**Puede editar** (can edit). Afterwards the stack was torn down with `down -v`
+and the normal stack was rebuilt: migration `0010` applied over the existing
+data.
+
+### Operations and security
+
+| Case | Result |
+| --- | --- |
+| Response headers on `/` | ✅ `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` |
+| CSP violations in the console (sign-in, vault, admin, history) | ✅ none |
+| `GET /no-existe` | ✅ status 404, custom page with «Volver a la bóveda» (back to the vault) |
+| Internal service ports | ✅ Postgres, Elasticsearch, Redis and MinIO bound to `127.0.0.1` only |
+| `backup` service | ✅ wrote `backups/grafito-<date>.dump` on startup |
+| Restore the dump into a scratch database (`pg_restore`) | ✅ 13 documents; the scratch database was then dropped |
+| MinIO metrics for the storage panel | ✅ `minio_cluster_capacity_usable_*` readable without credentials inside the stack |
+| Encryption key rotation | ✅ unit test: data encrypted with the previous key is read and flagged `stale`; without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` it fails |
+| `npm test` | ✅ 26 tests (5 new for the diff, 1 for key rotation) |
+
+### Interface cleanup
+
+| Case | Result |
+| --- | --- |
+| Help texts | ✅ removed: first-run explanation, AI and API intros, curl example, plugin and permission descriptions, admin AI/auth intros, field hints, details-panel hints, share-dialog descriptions |
+| Directory footer | ✅ no «Subir archivo» or «Importar Markdown» buttons; right-click «Subir archivo» accepts several files and imports `.md` as notes |
+| Raíz | ✅ «Recientes» (recent): the 12 most recently changed documents, with portfolio and date |
+
+### History
+
+| Case | Result |
+| --- | --- |
+| Admin edits «Hipótesis de Atlas», then opens «Historial» | ✅ two versions (seed and edit); diff `+3 −1` with the changed line struck through and the new lines highlighted; unchanged runs folded («4 líneas sin cambios») |
+| Restore the older version | ✅ the note reverts and the open editor updates through sync |
+| A restore within 10 minutes of an edit by the same person | ✅ creates its own version (fixed during the round: it used to merge with the edit) |
+
+### Trash
+
+| Case | Result |
+| --- | --- |
+| Delete «Ritual de la mañana» | ✅ the dialog says it goes to the trash |
+| Papelera | ✅ lists it with its portfolio, date and «30 días» left |
+| Recuperar (recover) | ✅ back in «Personal» with its content, and opened |
+| Delete «2026-03-18», then delete it for good from the trash | ✅ «La papelera está vacía.» (the trash is empty); in the database the content is gone and its 0 versions remain |
+
+### Shared editing (as Lectora)
+
+| Case | Result |
+| --- | --- |
+| Share dialog | ✅ «Solo lectura» / «Puede editar»; `share_item.access = edit` |
+| Compartidos conmigo → Atlas → Hipótesis de Atlas | ✅ bar shows «Puedes editar» (you can edit) |
+| Editar → add a line → Guardar | ✅ «Guardado»; the bar shows «Lectora» as last editor |
+| History from the shared view | ✅ Lectora's version with `+2 −0`, then the administrator's versions |
+| Owner's note on the server | ✅ versions by Administrador and Lectora on the owner's document |
+| Conflict: the note changes on the server while Lectora edits | ✅ «Administrador cambió la nota mientras la editabas.» with «Usar la suya» / «Guardar la mía»; «Guardar la mía» saves on top |
+| Lectora restores an older version from the shared view | ✅ new version by Lectora; her previous version stays |
+
 ## Useful commands
 
 ```bash

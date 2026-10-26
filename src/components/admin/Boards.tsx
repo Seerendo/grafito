@@ -449,10 +449,7 @@ function RoleGrid({
                         </svg>
                       ) : null}
                     </span>
-                    <span>
-                      <span className="block text-sm">{permission.label}</span>
-                      <span className="block text-xs text-muted">{permission.description}</span>
-                    </span>
+                    <span className="text-sm">{permission.label}</span>
                   </button>
                 );
               })}

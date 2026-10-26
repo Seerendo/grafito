@@ -1,4 +1,4 @@
-import { Building2, Check, Globe, Link2, Lock, User, Users } from "lucide-react";
+import { Building2, Check, Eye, Globe, Link2, Lock, Pencil, User, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { publicUrl, setMyShares, shareOf, useMyShares } from "@/app/shares";
 import { useVault } from "@/app/vault/store";
@@ -11,7 +11,7 @@ import { setShare, shareOrgs, shareUsers } from "@/server/share.functions";
 type Candidate = Awaited<ReturnType<typeof shareUsers>>[number];
 type OrgCandidate = Awaited<ReturnType<typeof shareOrgs>>[number];
 
-/** Elegir quién ve una nota o un portafolio: privada, con usuarios o pública por enlace. */
+/** Elegir quién ve una nota o un portafolio (privada, con usuarios u organizaciones, pública) y si pueden editarla. */
 export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string; onClose: () => void }) {
   const shares = useMyShares();
   const title = useVault((state) =>
@@ -21,6 +21,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   );
   const current = shareOf(shares, kind, id);
   const [visibility, setVisibility] = useState<Visibility>(current?.visibility ?? "private");
+  const [access, setAccess] = useState<"read" | "edit">(current?.access ?? "read");
   const [selected, setSelected] = useState<Set<string>>(new Set(current?.userIds ?? []));
   const [selectedOrgs, setSelectedOrgs] = useState<Set<string>>(new Set(current?.orgIds ?? []));
   const [people, setPeople] = useState<Candidate[] | null>(null);
@@ -66,7 +67,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
     setError("");
     try {
       const result = await setShare({
-        data: { kind, targetId: id, title, visibility, userIds: [...selected], orgIds: [...selectedOrgs] },
+        data: { kind, targetId: id, title, visibility, access, userIds: [...selected], orgIds: [...selectedOrgs] },
       });
       if (!result.ok) {
         setError(result.error);
@@ -82,32 +83,34 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   };
 
   const link = current?.visibility === "public" && current.publicToken ? publicUrl(current.publicToken) : null;
-  const what = kind === "portfolio" ? "este portafolio y todo lo que contiene" : "esta nota";
 
   return (
     <Modal title={`Compartir «${title}»`} onClose={onClose}>
       <div className="space-y-2" role="radiogroup" aria-label="Visibilidad">
         <Choice active={visibility === "private"} onClick={() => setVisibility("private")} icon={<Lock className="size-4" />}>
           <strong className="font-medium">Privada</strong>
-          <span className="block text-xs text-muted">Solo tú ves {what}.</span>
         </Choice>
         <Choice active={visibility === "shared"} onClick={() => setVisibility("shared")} icon={<Users className="size-4" />}>
           <strong className="font-medium">Compartida</strong>
-          <span className="block text-xs text-muted">
-            Los usuarios u organizaciones que elijas la ven en «Compartidos conmigo», en solo lectura.
-          </span>
         </Choice>
         <Choice active={visibility === "public"} onClick={() => setVisibility("public")} icon={<Globe className="size-4" />}>
           <strong className="font-medium">Pública</strong>
-          <span className="block text-xs text-muted">Cualquiera con el enlace la ve sin iniciar sesión, en solo lectura.</span>
         </Choice>
       </div>
 
       {visibility === "shared" ? (
         <div className="mt-4 space-y-2">
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Permiso">
+            <Choice active={access === "read"} onClick={() => setAccess("read")} icon={<Eye className="size-4" />}>
+              Solo lectura
+            </Choice>
+            <Choice active={access === "edit"} onClick={() => setAccess("edit")} icon={<Pencil className="size-4" />}>
+              Puede editar
+            </Choice>
+          </div>
           <SearchField value={query} onChange={setQuery} placeholder="Buscar usuario u organización" />
           <ul className="max-h-56 overflow-y-auto rounded-md border border-line">
-            {filteredOrgs.length > 0 ? <ListHeading>Organizaciones · incluye sus sub-organizaciones</ListHeading> : null}
+            {filteredOrgs.length > 0 ? <ListHeading>Organizaciones</ListHeading> : null}
             {filteredOrgs.map((org) => (
               <CheckRow
                 key={org.id}
@@ -192,11 +195,11 @@ function Choice({
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`flex w-full items-start gap-3 rounded-md border px-3 py-3 text-left text-sm ${
+      className={`flex w-full items-center gap-3 rounded-md border px-3 py-3 text-left text-sm ${
         active ? "border-accent bg-elevated" : "border-line hover:bg-elevated"
       }`}
     >
-      <span className={`mt-0.5 ${active ? "text-accent" : "text-faint"}`}>{icon}</span>
+      <span className={active ? "text-accent" : "text-faint"}>{icon}</span>
       <span>{children}</span>
     </button>
   );

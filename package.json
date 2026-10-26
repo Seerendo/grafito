@@ -1,6 +1,7 @@
 {
   "name": "grafito",
   "private": true,
+  "license": "AGPL-3.0-only",
   "sideEffects": false,
   "type": "module",
   "overrides": {

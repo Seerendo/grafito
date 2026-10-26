@@ -126,9 +126,7 @@ export function OrgsBoard({ view }: { view: AdminView }) {
             }}
           />
         ) : (
-          <p className="rounded-lg border border-dashed border-line px-4 py-8 text-center text-sm text-muted">
-            Elige una organización para ver sus miembros y sub-organizaciones.
-          </p>
+null
         )}
       </div>
     </div>

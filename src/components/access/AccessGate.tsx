@@ -214,10 +214,6 @@ function SetupForm({
     <Shell>
       <p className="text-xs font-medium tracking-widest text-faint uppercase">Grafito</p>
       <h1 className="mt-2 font-serif text-3xl">Primera vez</h1>
-      <p className="mt-2 text-sm text-muted">
-        Crea la cuenta de administrador. Con una contraseña de menos de {STRONG_PASSWORD} caracteres te pedirá
-        cambiarla al entrar.
-      </p>
       <form onSubmit={submit} className="mt-5 space-y-3">
         <TextField label="Usuario" value={username} onChange={setUsername} autoComplete="off" autoFocus />
         <TextField label="Contraseña" value={password} onChange={setPassword} autoComplete="new-password" secret />

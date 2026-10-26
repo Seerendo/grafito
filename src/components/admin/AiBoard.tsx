@@ -29,10 +29,6 @@ export function AiBoard() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">
-        Activa los proveedores que se pueden usar. Cada persona conecta el suyo en Cuenta → IA: con su propia clave, o
-        con la dirección de su propia instancia en Ollama y LM Studio.
-      </p>
       {!state.encryption ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
           Falta <code>GRAFITO_ENCRYPTION_KEY</code> (32 caracteres o más) en el servidor: nadie podrá guardar claves hasta

@@ -1,4 +1,4 @@
-import { ChevronRight, File, FileText, FolderOpen, Users } from "lucide-react";
+import { ChevronRight, File, FileText, FolderOpen, Pencil, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
 import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
@@ -55,8 +55,8 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
     if (next) void refresh();
   };
 
-  const loadTree = async (shareId: string): Promise<SharedTree | null> => {
-    if (trees[shareId] !== undefined) return trees[shareId];
+  const loadTree = async (shareId: string, fresh = false): Promise<SharedTree | null> => {
+    if (!fresh && trees[shareId] !== undefined) return trees[shareId];
     const tree = await openShared({ data: { shareId } }).catch(() => null);
     setTrees((current) => ({ ...current, [shareId]: tree }));
     return tree;
@@ -70,7 +70,10 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
       return next;
     });
 
-  const openDoc = (tree: SharedTree, docId: string) => {
+  // Se vuelve a leer al abrir: otra persona con permiso de edición pudo cambiarlo.
+  const openDoc = async (shareId: string, docId: string) => {
+    const tree = await loadTree(shareId, true);
+    if (!tree?.documents.some((document) => document.id === docId)) return;
     showShared(tree, docId);
     onOpen();
   };
@@ -113,7 +116,7 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                     }
                     const loaded = await loadTree(item.id);
                     const doc = loaded?.documents[0];
-                    if (loaded && doc) openDoc(loaded, doc.id);
+                    if (doc) await openDoc(item.id, doc.id);
                   }}
                   className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${PAD[0]} ${
                     single && single.id === activeDoc ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
@@ -126,6 +129,9 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                   )}
                   <Icon className="size-3.5 shrink-0 text-faint" />
                   <span className="truncate">{item.title || "Sin título"}</span>
+                  {item.access === "edit" ? (
+                    <Pencil className="size-3 shrink-0 text-faint" aria-label="Puedes editar" />
+                  ) : null}
                   <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
                 </button>
                 {portfolio && isOpen ? (
@@ -142,7 +148,7 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                       expanded={expanded}
                       activeDoc={activeDoc}
                       onToggle={toggle}
-                      onOpenDoc={(docId) => openDoc(tree, docId)}
+                      onOpenDoc={(docId) => void openDoc(item.id, docId)}
                     />
                   )
                 ) : null}

@@ -14,6 +14,7 @@ The interface is in Spanish; this guide quotes on-screen labels as they appear
 - [First run](#first-run)
 - [Using the vault](#using-the-vault)
 - [Sharing](#sharing)
+- [History and trash](#history-and-trash)
 - [Account](#account)
 - [Administration](#administration)
 - [AI assistant](#ai-assistant)
@@ -32,15 +33,21 @@ cd grafito
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:8080>. Compose starts five services: the app (a
-production build), Postgres 16, Elasticsearch 8, Redis 7 and MinIO. Migrations
-run automatically when the app starts.
+Open <http://127.0.0.1:8080>. Compose starts:
 
-> Before exposing Grafito to anyone, replace `BETTER_AUTH_SECRET` and
-> `GRAFITO_ENCRYPTION_KEY` in `docker-compose.yml` with your own random values
-> (for example `openssl rand -base64 32`), and set `BETTER_AUTH_URL` to the
-> public address. Keep the encryption key safe: without it, saved AI keys can't
-> be read.
+- The app, as a production build.
+- Postgres 16, Elasticsearch 8, Redis 7 and MinIO. They are only reachable
+  from the machine itself (`127.0.0.1`).
+- A `backup` service that writes a daily database dump to `./backups`.
+
+Migrations run automatically when the app starts.
+
+> Before exposing Grafito to anyone, create a `.env` file next to
+> `docker-compose.yml` with your own secrets (`BETTER_AUTH_SECRET`,
+> `GRAFITO_ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, `S3_SECRET_KEY`) and the
+> public address (`BETTER_AUTH_URL`). See
+> [docs/OPERATIONS.md](docs/OPERATIONS.md). Keep the encryption key safe:
+> without it, saved AI keys can't be read.
 
 Useful commands:
 
@@ -69,8 +76,10 @@ After that, the start screen is a normal sign-in.
 ### Layout
 
 - **Left: the directory.** It has two roots:
-  - **Raíz** holds your own (private) notes, portfolios and files.
+  - **Raíz** holds your own (private) notes, portfolios and files. Its page
+    lists your recent documents.
   - **Compartidos conmigo** holds what others shared with you.
+  - **Papelera** (trash) holds what you deleted.
   - Collapse the directory with the « arrow to get a wider editor.
 - **Center: the open note.**
 - **Right: the details panel.** It shows the outline, manual links, links
@@ -86,8 +95,8 @@ After that, the start screen is a normal sign-in.
 - **Tags:** `#tags` become filters. Click a tag to filter the directory.
 - **View modes:** each note has three: **Editar** (edit), **Dividir** (side by
   side) and **Leer** (read).
-- **Menu:** the "more actions" menu pins a note, downloads it as Markdown or
-  PDF, shares it or deletes it.
+- **Menu:** the "more actions" menu pins a note, shows its history,
+  downloads it as Markdown or PDF, shares it or deletes it.
 
 ### Portfolios and files
 
@@ -97,8 +106,9 @@ After that, the start screen is a normal sign-in.
   - A `.md` file becomes a note.
   - Anything else is stored as a file (up to about 700 KB) and previewed when
     possible.
-- **Importar Markdown** and **Subir archivo**, at the bottom of the directory,
-  do the same from a file picker.
+- On a phone, or without drag and drop, use **Subir archivo** in the
+  right-click (long-press) menu. It accepts several files and treats `.md` the
+  same way.
 
 ### Graph
 
@@ -129,18 +139,36 @@ portfolio. Your role needs the share permission.
 | Option | Who can see it |
 | --- | --- |
 | **Privada** | Only you |
-| **Compartida** | The users and organizations you pick. Sharing with an organization includes its sub-organizations. |
+| **Compartida** | The users and organizations you pick, either **Solo lectura** (read-only) or **Puede editar** (can edit). Sharing with an organization includes its sub-organizations. |
 | **Pública** | Anyone with the link (`/p/<token>`), without signing in |
 
-Shared content is always read-only.
+Public links are always read-only.
 
 - **Portfolios:** sharing a portfolio includes everything inside it.
 - **Markers:** the directory marks shared (👥) and public (🌐) items.
 - **What recipients see:** shared items appear under **Compartidos conmigo** in
   the recipient's directory. Shared portfolios expand in place, and documents
-  open in the main area.
+  open in the main area. Items they can edit carry a pencil.
+- **Editing a shared note:** **Editar**, then **Guardar** (or Ctrl+S). If the
+  owner or someone else changed the note in the meantime, Grafito warns you
+  instead of overwriting. You can keep their version (**Usar la suya**) or save
+  yours on top (**Guardar la mía**). Both versions stay in the history.
 - **Revoking:** setting an item back to private, or deleting it, revokes access
   immediately.
+
+## History and trash
+
+- **History:** every note keeps its versions: who changed it, when, and what
+  changed (a line-by-line diff). Open it from the "more actions" menu, or with
+  the clock icon on a shared note you can edit. **Restaurar esta versión**
+  restores any version. A restore is itself a new version, so you can undo it.
+  Consecutive edits by the same person within 10 minutes are grouped into one
+  version.
+- **Trash:** deleting a note, file or portfolio moves it to **Papelera**.
+  - From there you can **Recuperar** it. A note returns to its portfolio, which
+    is recovered too if it was deleted.
+  - Or you can delete it for good.
+  - Items are removed automatically after 30 days.
 
 ## Account
 
@@ -272,6 +300,15 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 
 ## Further reading
 
+- [docs/OPERATIONS.md](docs/OPERATIONS.md): backups, restore, secret rotation
+  and what to do when something is down.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,
   sharing, sync, authentication and AI internals.
 - [TEST.md](TEST.md): the end-to-end test log for each round of changes.
+- [ROADMAP.md](ROADMAP.md): what is planned next.
+
+## License
+
+Grafito is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+If you run a modified version as a network service, you must offer its source
+code to the users of that service.

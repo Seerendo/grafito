@@ -392,7 +392,6 @@ function Plugins({ view, reload }: { view: Extract<State, { isAdmin: true }>; re
           <li key={plugin.id} className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0">
             <div className="min-w-0 flex-1">
               <p className="text-sm">{plugin.name}</p>
-              <p className="mt-0.5 text-xs text-muted">{plugin.description}</p>
             </div>
             <Switch
               checked={plugin.enabled}

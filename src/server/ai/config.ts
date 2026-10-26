@@ -1,6 +1,6 @@
 import type { Sql } from "@/lib/db";
 import { AI_PROVIDERS, aiProvider, type AiProviderId, type AiProviderInfo } from "@/domain/ai";
-import { decrypt, encrypt } from "@/server/crypto";
+import { encrypt, open } from "@/server/crypto";
 import { checkLocalUrl } from "./local-url.ts";
 import type { Endpoint } from "./types.ts";
 
@@ -83,7 +83,15 @@ export async function endpointFor(sql: Sql, userId: string, provider: AiProvider
     select api_key, base_url from ai_credential where user_id = ${userId} and provider = ${provider} limit 1
   `;
   if (!rows[0]) throw new AiUnavailable(`Conecta ${policy.label} en tu cuenta (Cuenta → IA).`);
-  const apiKey = rows[0].api_key ? decrypt(rows[0].api_key) : "";
+  let apiKey = "";
+  if (rows[0].api_key) {
+    const opened = open(rows[0].api_key);
+    apiKey = opened.value;
+    // Rotación de GRAFITO_ENCRYPTION_KEY: se vuelve a cifrar con la clave nueva.
+    if (opened.stale) {
+      await sql`update ai_credential set api_key = ${encrypt(apiKey)} where user_id = ${userId} and provider = ${provider}`;
+    }
+  }
   if (!policy.local) {
     if (!apiKey) throw new AiUnavailable(`Falta tu clave de ${policy.label}.`);
     return { policy, endpoint: { baseUrl: policy.baseUrl, apiKey } };

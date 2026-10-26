@@ -38,7 +38,6 @@ export function LdapPanel() {
     <ProviderForm
       provider={provider}
       roles={state.roles}
-      intro="Las personas entran con su usuario y contraseña del directorio (OpenLDAP, Active Directory…). La cuenta de servicio busca a la persona y luego se verifica su contraseña con su propio DN."
       fields={[
         { key: "url", label: "Servidor", placeholder: "ldap://ldap.empresa.com:389 o ldaps://…:636" },
         { key: "bindDn", label: "DN de la cuenta de servicio", placeholder: "cn=lector,dc=empresa,dc=com (vacío: anónimo)" },
@@ -48,7 +47,6 @@ export function LdapPanel() {
           key: "userFilter",
           label: "Filtro de usuario",
           placeholder: "(uid={{username}})",
-          hint: "{{username}} es lo que escribe la persona. Active Directory: (sAMAccountName={{username}}). Para limitar a un grupo: (&(uid={{username}})(memberOf=cn=grafito,ou=groups,dc=…)).",
         },
         { key: "nameAttr", label: "Atributo del nombre", placeholder: "cn o displayName" },
         { key: "emailAttr", label: "Atributo del correo", placeholder: "mail" },
@@ -98,10 +96,10 @@ function LdapTest({ config }: { config: Config }) {
 export function OAuthPanel() {
   const { state, error } = useAuthState();
   if (!state) return <Loading error={error} />;
-  const items: { id: "google" | "github" | "microsoft"; name: string; console: string }[] = [
-    { id: "google", name: "Google", console: "Google Cloud Console → APIs y servicios → Credenciales" },
-    { id: "github", name: "GitHub", console: "GitHub → Settings → Developer settings → OAuth Apps" },
-    { id: "microsoft", name: "Microsoft", console: "Microsoft Entra ID → Registros de aplicaciones" },
+  const items: { id: "google" | "github" | "microsoft"; name: string }[] = [
+    { id: "google", name: "Google" },
+    { id: "github", name: "GitHub" },
+    { id: "microsoft", name: "Microsoft" },
   ];
   return (
     <div className="space-y-8">
@@ -112,7 +110,6 @@ export function OAuthPanel() {
             provider={state.providers.find((provider) => provider.id === item.id)!}
             roles={state.roles}
             callback={state.callbacks[item.id]}
-            intro={`Crea una aplicación OAuth en ${item.console} y registra esta dirección de retorno.`}
             fields={[
               { key: "clientId", label: "Client ID" },
               { key: "clientSecret", label: "Client secret", secret: true },
@@ -135,14 +132,12 @@ export function SsoPanel() {
       provider={state.providers.find((provider) => provider.id === "sso")!}
       roles={state.roles}
       callback={state.callbacks.sso}
-      intro="Inicio de sesión único con cualquier proveedor OpenID Connect: Keycloak, Authentik, Okta, Auth0, Entra ID… Crea un cliente confidencial con esta dirección de retorno."
       fields={[
         { key: "label", label: "Texto del botón", placeholder: "Keycloak" },
         {
           key: "issuer",
           label: "Emisor (issuer)",
           placeholder: "https://sso.empresa.com/realms/grafito",
-          hint: "Se lee su /.well-known/openid-configuration.",
         },
         { key: "clientId", label: "Client ID" },
         { key: "clientSecret", label: "Client secret", secret: true },
@@ -182,7 +177,6 @@ type FieldSpec = {
   key: string;
   label: string;
   placeholder?: string;
-  hint?: string;
   secret?: boolean;
   toggle?: boolean;
 };
@@ -190,14 +184,12 @@ type FieldSpec = {
 function ProviderForm({
   provider,
   roles,
-  intro,
   fields,
   callback,
   test,
 }: {
   provider: Provider;
   roles: State["roles"];
-  intro: string;
   fields: FieldSpec[];
   callback?: string;
   test?: (config: Config) => ReactNode;
@@ -239,7 +231,6 @@ function ProviderForm({
         void save();
       }}
     >
-      <p className="text-sm text-muted">{intro}</p>
       <Switch label="Activado" checked={enabled} onChange={setEnabled} />
       {callback ? <CopyLine label="Dirección de retorno" value={callback} /> : null}
       <div className="grid gap-3 md:grid-cols-2">
@@ -253,7 +244,7 @@ function ProviderForm({
               />
             </div>
           ) : (
-            <label key={field.key} className={`block text-sm ${field.hint ? "md:col-span-2" : ""}`}>
+            <label key={field.key} className="block text-sm">
               <span className="text-muted">{field.label}</span>
               <input
                 type={field.secret ? "password" : "text"}
@@ -264,7 +255,6 @@ function ProviderForm({
                 spellCheck={false}
                 className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 text-fg"
               />
-              {field.hint ? <span className="mt-1 block text-xs text-faint">{field.hint}</span> : null}
             </label>
           ),
         )}

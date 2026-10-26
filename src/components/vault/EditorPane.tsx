@@ -7,6 +7,7 @@ import {
   Download,
   Heading2,
   Highlighter,
+  History,
   Italic,
   Lightbulb,
   Link,
@@ -31,7 +32,9 @@ import { readingLabel, unclosedWiki, wordCount } from "@/domain/vault/links";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
+import { syncVault } from "@/app/vault/sync";
 import { FileView } from "./FileView";
+import { HistoryDialog } from "./HistoryDialog";
 import { HomeBoard } from "./HomeBoard";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
@@ -102,6 +105,7 @@ export function EditorPane({
   const [title, setTitle] = useState("");
   const [titleError, setTitleError] = useState("");
   const [menu, setMenu] = useState(false);
+  const [history, setHistory] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
 
@@ -109,6 +113,7 @@ export function EditorPane({
     setTitle(document?.title ?? "");
     setTitleError("");
     setMenu(false);
+    setHistory(false);
     setInsertOpen(false);
   }, [document?.id, document?.title]);
 
@@ -138,7 +143,6 @@ export function EditorPane({
   if (!document) {
     return (
       <HomeBoard
-        empty={documents.length === 0}
         onCreate={can(PERMISSION.notesCreate) ? () => createDocument() : undefined}
       />
     );
@@ -272,6 +276,17 @@ export function EditorPane({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
+      {history ? (
+        <HistoryDialog
+          docId={document.id}
+          canRestore={canEdit}
+          onRestored={() => {
+            const owner = useVault.getState().owner;
+            if (owner) void syncVault(owner);
+          }}
+          onClose={() => setHistory(false)}
+        />
+      ) : null}
       <div className="flex items-start gap-2 border-b border-line px-4 py-2 sm:px-5">
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs text-faint">{portfolioName}</p>
@@ -341,6 +356,18 @@ export function EditorPane({
                     onClick={() => {
                       setMenu(false);
                       setDialog({ type: "link", sourceId: document.id });
+                    }}
+                  />
+                ) : null}
+                {!isFile ? (
+                  <MenuButton
+                    icon={<History className="size-4" />}
+                    label="Historial"
+                    onClick={() => {
+                      setMenu(false);
+                      // Primero se sube lo último escrito, para que esté en el historial.
+                      const owner = useVault.getState().owner;
+                      void (owner ? syncVault(owner) : Promise.resolve()).finally(() => setHistory(true));
                     }}
                   />
                 ) : null}

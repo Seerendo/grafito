@@ -20,7 +20,9 @@ import { VaultSync } from "./VaultSync";
 import { AiChat } from "@/components/ai/AiChat";
 import { useAiChat } from "@/app/ai-chat";
 import { useSharedView } from "@/app/shared-view";
+import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
+import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
@@ -93,6 +95,7 @@ function VaultWorkspace() {
   const activeId = useVault((state) => state.activeId);
   const sharedTree = useSharedView((state) => state.tree);
   const sharedDoc = useSharedView((state) => state.docId);
+  const trashOpen = useTrashView((state) => state.open);
   const setGraph = useVault((state) => state.setGraph);
   const setPalette = useVault((state) => state.setPalette);
   const createDocument = useVault((state) => state.createDocument);
@@ -116,24 +119,37 @@ function VaultWorkspace() {
 
   const showFiles = () => setPane("files");
 
-  // Un documento compartido conmigo ocupa el área principal hasta que se abre
-  // una nota propia o se vuelve a la raíz.
+  // Un documento compartido conmigo, o la papelera, ocupa el área principal
+  // hasta que se abre una nota propia o se vuelve a la raíz.
   const openSharedDoc = () => {
+    useTrashView.getState().setOpen(false);
     useVault.getState().closeActive();
     setPane("note");
   };
 
+  const openTrash = () => {
+    useSharedView.getState().closeShared();
+    useVault.getState().closeActive();
+    useTrashView.getState().setOpen(true);
+    setPane("note");
+  };
+
   useEffect(() => {
-    if (activeId) useSharedView.getState().closeShared();
+    if (!activeId) return;
+    useSharedView.getState().closeShared();
+    useTrashView.getState().setOpen(false);
   }, [activeId]);
 
-  const sharedPane = sharedTree ? (
+  const sharedPane = trashOpen ? (
+    <TrashBoard />
+  ) : sharedTree ? (
     <div className="flex h-full min-h-0 flex-col">
       <SharedViewer
         tree={sharedTree}
         docId={sharedDoc}
         index={false}
         onOpenDoc={(id) => useSharedView.getState().openShared(sharedTree, id)}
+        onChange={(next) => useSharedView.getState().openShared(next, sharedDoc)}
       />
     </div>
   ) : null;
@@ -241,6 +257,7 @@ function VaultWorkspace() {
 
   const showHome = () => {
     useSharedView.getState().closeShared();
+    useTrashView.getState().setOpen(false);
     const state = useVault.getState();
     state.setPalette(false);
     state.setDialog(null);
@@ -252,6 +269,7 @@ function VaultWorkspace() {
 
   const goHome = () => {
     useSharedView.getState().closeShared();
+    useTrashView.getState().setOpen(false);
     useVault.getState().showStart();
     setPane("note");
   };
@@ -315,7 +333,14 @@ function VaultWorkspace() {
       <div className="flex min-h-0 flex-1">
         {mobile ? (
           pane === "files" ? (
-            <Sidebar onOpenNote={openNote} onInspect={inspect} onHome={showHome} onOpenShared={openSharedDoc} holdGraph={holdGraph} />
+            <Sidebar
+              onOpenNote={openNote}
+              onInspect={inspect}
+              onHome={showHome}
+              onOpenShared={openSharedDoc}
+              onOpenTrash={openTrash}
+              holdGraph={holdGraph}
+            />
           ) : pane === "graph" ? (
             <FileDrop enabled={canAddFiles} onAdded={openNote}>
               <GraphView onOpenNote={openNote} />
@@ -337,6 +362,7 @@ function VaultWorkspace() {
                 onInspect={inspect}
                 onHome={showHome}
                 onOpenShared={openSharedDoc}
+                onOpenTrash={openTrash}
                 onCollapse={toggleTree}
                 holdGraph={holdGraph}
               />
@@ -623,7 +649,7 @@ function VaultDialogs() {
     return (
       <Modal title="Eliminar documento" onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          Se borrará «{document?.title ?? "este documento"}». Los vínculos que apunten a él quedarán sin destino.
+          «{document?.title ?? "Este documento"}» irá a la papelera.
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>
@@ -638,8 +664,7 @@ function VaultDialogs() {
     return (
       <Modal title="Eliminar portafolio" onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          Se borrará «{portfolio?.name ?? "este portafolio"}» con todas sus notas, archivos y portafolios
-          anidados. No se puede deshacer.
+          «{portfolio?.name ?? "Este portafolio"}» y todo lo que contiene irán a la papelera.
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>Cancelar</Ghost>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decrypt, encrypt, EncryptionUnavailable, encryptionReady } from "./crypto.ts";
+import { decrypt, encrypt, EncryptionUnavailable, encryptionReady, open } from "./crypto.ts";
 
 /** Cifrado de las claves de IA: ida y vuelta, aleatoriedad, integridad y clave ausente. */
 
@@ -37,4 +37,15 @@ test("sin GRAFITO_ENCRYPTION_KEY (o demasiado corta) no cifra", () => {
   assert.throws(() => encrypt("x"), EncryptionUnavailable);
   process.env.GRAFITO_ENCRYPTION_KEY = "corta";
   assert.equal(encryptionReady(), false);
+});
+
+test("rotación: lo cifrado con la clave anterior se lee y avisa que hay que volver a cifrarlo", () => {
+  process.env.GRAFITO_ENCRYPTION_KEY = KEY;
+  const sealed = encrypt("sk-secreta");
+  process.env.GRAFITO_ENCRYPTION_KEY = `${KEY}-nueva`;
+  process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS = KEY;
+  assert.deepEqual(open(sealed), { value: "sk-secreta", stale: true });
+  assert.deepEqual(open(encrypt("sk-otra")), { value: "sk-otra", stale: false });
+  delete process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS;
+  assert.throws(() => open(sealed));
 });

@@ -1,14 +1,15 @@
-import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Upload, X } from "lucide-react";
+import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
-import { MAX_UPLOAD_BYTES, type Document } from "@/domain/vault/types";
+import type { Document } from "@/domain/vault/types";
 import { usePermissions } from "@/app/permissions";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
 import { requestNotePdf } from "./NotePdf";
 import { SharedSection } from "./SharedSection";
+import { useTrashView } from "@/app/trash-view";
 import { VisibilityMark } from "./visibility";
 
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
@@ -59,10 +60,12 @@ export function Sidebar({
   onHome,
   onCollapse,
   onOpenShared,
+  onOpenTrash,
   holdGraph,
 }: {
   onOpenNote: (id: string) => void;
   onOpenShared: () => void;
+  onOpenTrash: () => void;
   onInspect: (id: string) => void;
   onHome: () => void;
   onCollapse?: () => void;
@@ -79,6 +82,7 @@ export function Sidebar({
   const canUpload = can(PERMISSION.filesUpload);
   const canImport = can(PERMISSION.notesCreate);
   const rootPicked = useVault((state) => state.rootPicked);
+  const trashOpen = useTrashView((state) => state.open);
   const collapsed = useVault((state) => state.collapsed);
   const setQuery = useVault((state) => state.setQuery);
   const setTag = useVault((state) => state.setTag);
@@ -86,13 +90,10 @@ export function Sidebar({
   const setSelectedPortfolio = useVault((state) => state.setSelectedPortfolio);
   const toggleCollapsed = useVault((state) => state.toggleCollapsed);
   const setDialog = useVault((state) => state.setDialog);
-  const importNote = useVault((state) => state.importNote);
-  const uploadFile = useVault((state) => state.uploadFile);
   const moveDocument = useVault((state) => state.moveDocument);
   const movePortfolio = useVault((state) => state.movePortfolio);
   const createDocument = useVault((state) => state.createDocument);
   const duplicate = useVault((state) => state.duplicate);
-  const fileRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadTo = useRef<string | null>(null);
   const [dropOver, setDropOver] = useState<string | null>(null);
@@ -376,74 +377,33 @@ export function Sidebar({
               />
             ))}
             <SharedSection onOpen={onOpenShared} />
+            <button
+              type="button"
+              onClick={onOpenTrash}
+              className={`mt-1 flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
+                trashOpen ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+              }`}
+            >
+              <Trash2 className={`size-4 shrink-0 ${trashOpen ? "text-accent" : "text-faint"}`} />
+              <span className="truncate font-medium">Papelera</span>
+            </button>
             <div className="min-h-16 flex-1" />
           </div>
         )}
       </div>
 
-      <div className="border-t border-line p-2">
-        {canUpload ? (
-        <button
-          type="button"
-          onClick={() => pickUpload(selectedId)}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-md text-sm text-muted hover:bg-elevated hover:text-fg"
-        >
-          <Upload className="size-4" />
-          Subir archivo
-        </button>
-        ) : null}
-        {canImport ? (
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-md text-sm text-muted hover:bg-elevated hover:text-fg"
-        >
-          <FileText className="size-4" />
-          Importar Markdown
-        </button>
-        ) : null}
-        <input
-          ref={uploadRef}
-          type="file"
-          tabIndex={-1}
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (!file) return;
-            if (file.size > MAX_UPLOAD_BYTES) {
-              setDialog({ type: "upload-error", message: "El archivo supera unos 700 KB. Prueba con uno más pequeño." });
-              return;
-            }
-            const portfolioId = uploadTo.current;
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = typeof reader.result === "string" ? reader.result : "";
-              const error = uploadFile(portfolioId, file.name, file.type, dataUrl);
-              if (error) setDialog({ type: "upload-error", message: error });
-              else onOpenNote(useVault.getState().activeId ?? "");
-            };
-            reader.readAsDataURL(file);
-          }}
-        />
-        <input
-          ref={fileRef}
-          type="file"
-          tabIndex={-1}
-          accept=".md,text/markdown,text/plain"
-          multiple
-          className="hidden"
-          onChange={(event) => {
-            const files = [...(event.target.files ?? [])];
-            void Promise.all(
-              files.map(async (file) => {
-                importNote(file.name, await file.text());
-              }),
-            ).then(() => onOpenNote(useVault.getState().activeId ?? ""));
-            event.target.value = "";
-          }}
-        />
-      </div>
+      <input
+        ref={uploadRef}
+        type="file"
+        tabIndex={-1}
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          event.target.value = "";
+          void ingestExternalFiles(files, uploadTo.current).then(() => onOpenNote(useVault.getState().activeId ?? ""));
+        }}
+      />
       {menu ? (
         <RowContextMenu
           menu={menu}
@@ -458,10 +418,6 @@ export function Sidebar({
             setDialog({ type: "portfolio", parentId });
           }}
           onUpload={pickUpload}
-          onImport={() => {
-            setMenu(null);
-            fileRef.current?.click();
-          }}
           onRenameDocument={(id) => {
             setMenu(null);
             setDialog({ type: "rename-document", id });
@@ -826,7 +782,6 @@ function RowContextMenu({
   onNewNote,
   onNewPortfolio,
   onUpload,
-  onImport,
   onRenameDocument,
   onRenamePortfolio,
   onDeleteDocument,
@@ -842,7 +797,6 @@ function RowContextMenu({
   onNewNote: (portfolioId: string | null) => void;
   onNewPortfolio: (parentId: string | null) => void;
   onUpload: (portfolioId: string | null) => void;
-  onImport: () => void;
   onRenameDocument: (id: string) => void;
   onRenamePortfolio: (id: string) => void;
   onDeleteDocument: (id: string) => void;
@@ -864,7 +818,6 @@ function RowContextMenu({
     items.push({ label: "Nuevo portafolio", onClick: () => onNewPortfolio(menu.kind === "portfolio" ? menu.id : null) });
   }
   if (can(PERMISSION.filesUpload)) items.push({ label: "Subir archivo", onClick: () => onUpload(portfolioId) });
-  if (menu.kind === "root" && can(PERMISSION.notesCreate)) items.push({ label: "Importar Markdown", onClick: onImport });
   if (menu.kind === "document" && document) {
     if (can(PERMISSION.notesShare)) items.push({ label: "Compartir…", onClick: () => onShare("document", document.id) });
     if (can(PERMISSION.notesEdit)) items.push({ label: "Renombrar", onClick: () => onRenameDocument(document.id) });
