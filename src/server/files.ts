@@ -110,8 +110,11 @@ export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<s
   const file = doc.file;
   if (!file) return null;
   const mime = (file.mime || "").toLowerCase();
-  const textual = mime.startsWith("text/") || TEXTUAL.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name);
   const office = /\.(docx|docm|pptx|xlsx|xlsm|odt|ods|odp)$/i.test(file.name);
+  // Antes que el tipo: el de Word o Excel lleva «xml» (`…openxmlformats…`) y
+  // no es texto, es un ZIP.
+  const textual =
+    !office && (mime.startsWith("text/") || TEXTUAL.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name));
   const pdf = mime === "application/pdf" || /\.pdf$/i.test(file.name);
   if (!textual && !office && !pdf) return null;
   let bytes: Uint8Array | null = null;

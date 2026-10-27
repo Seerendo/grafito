@@ -20,6 +20,14 @@ export function complete(protocol: Protocol, input: CompleteInput): Promise<Comp
   return ADAPTERS[protocol].complete(input);
 }
 
-export function listModels(protocol: Protocol, endpoint: Endpoint, fetcher?: typeof fetch): Promise<string[]> {
-  return ADAPTERS[protocol].listModels(endpoint, fetcher);
+/** Modelos de embeddings (`text-embedding-…`, `nomic-embed-text`…): no conversan. */
+const EMBEDDING = /embed/i;
+
+export async function listModels(protocol: Protocol, endpoint: Endpoint, fetcher?: typeof fetch): Promise<string[]> {
+  return chatModels(await ADAPTERS[protocol].listModels(endpoint, fetcher));
+}
+
+/** Solo los modelos que sirven para el chat. */
+export function chatModels(names: string[]): string[] {
+  return names.filter((name) => !EMBEDDING.test(name));
 }

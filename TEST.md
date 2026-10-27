@@ -999,6 +999,22 @@ Test stack with the `gateway` service and no address variables
 | AI chat streaming through the gateway | ⚠️ not run: LM Studio and Ollama were off |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 48 tests |
 
+## Round 29: AI chat with a local model
+
+Test stack, LM Studio on the host at `http://localhost:1235/v1` (reached as
+`host.docker.internal`), model `google/gemma-4-e4b`.
+
+| Case | Result |
+| --- | --- |
+| Connect LM Studio in Account → Conexiones de IA | ✅ connected |
+| Model picker | ❌→✅ offered LM Studio's embedding model (`text-embedding-nomic-embed-text-v1.5`), which can't chat; embedding models are now left out |
+| «Crea un portafolio llamado Recetas y dentro una nota…» | ✅ creates the portfolio and the note inside it (checked in the database), with the recipe as content |
+| A note in an existing nested portfolio by name («Atlas», inside «Documentación») | ✅ appears under Atlas in the directory |
+| Read a note by its title and summarize it | ✅ |
+| Read an uploaded PDF | ✅ quotes the file number |
+| Read an uploaded Word and Excel file | ❌→✅ their type (`…openxmlformats…`) contains «xml», so they were sent to the model as raw text of the ZIP and it said it couldn't read them; Office files are now read first. It now gives the budget, the person in charge and the sum of the amounts (5,450) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
+
 ## Useful commands
 
 ```bash

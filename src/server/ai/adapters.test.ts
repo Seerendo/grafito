@@ -4,6 +4,7 @@ import * as anthropic from "./anthropic.ts";
 import * as gemini from "./gemini.ts";
 import * as ollama from "./ollama.ts";
 import * as openai from "./openai.ts";
+import { chatModels } from "./providers.ts";
 import type { ChatMessage, ToolSpec } from "./types.ts";
 
 /**
@@ -156,5 +157,12 @@ test("errores del proveedor con un mensaje legible", async () => {
   await assert.rejects(
     openai.complete({ endpoint: { baseUrl: "https://api.openai.com/v1", apiKey: "x" }, model: "m", messages: [], tools: [], fetcher }),
     /401\. La clave no es válida o no tiene permiso\. Incorrect API key/,
+  );
+});
+
+test("el selector no ofrece modelos de embeddings", () => {
+  assert.deepEqual(
+    chatModels(["google/gemma-4-e4b", "text-embedding-nomic-embed-text-v1.5", "nomic-embed-text:latest", "llama3.2"]),
+    ["google/gemma-4-e4b", "llama3.2"],
   );
 });
