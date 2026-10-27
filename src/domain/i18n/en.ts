@@ -127,6 +127,7 @@ export const en: Record<string, string> = {
   "El servidor no tiene configurada la clave de cifrado: por ahora no se pueden guardar claves de la nube.":
     "The server has no encryption key configured: cloud keys can't be saved for now.",
   "Conectado. {0} modelos disponibles.": "Connected. {0} models available.",
+  "Conectado. 1 modelo disponible.": "Connected. 1 model available.",
   "Conectado": "Connected",
   "Clave guardada {0}": "Key saved {0}",
   "Sin conectar": "Not connected",

@@ -71,7 +71,11 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
       }
       setKey("");
       setEditing(false);
-      setNote({ ok: true, text: t("Conectado. {0} modelos disponibles.", { 0: result.models.length }) });
+      const count = result.models.length;
+      setNote({
+        ok: true,
+        text: count === 1 ? t("Conectado. 1 modelo disponible.") : t("Conectado. {0} modelos disponibles.", { 0: count }),
+      });
       await reload();
     } catch {
       setNote({ ok: false, text: t("No se pudo guardar.") });

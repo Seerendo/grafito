@@ -39,6 +39,9 @@ type ChatState = {
   model: ModelRef | null;
   busy: boolean;
   controller: AbortController | null;
+  /** Lo escrito y aún no enviado: sigue ahí al minimizar y volver a abrir. */
+  draft: string;
+  setDraft: (draft: string) => void;
   bind: (userId: string) => void;
   setOpen: (open: boolean) => void;
   toggle: () => void;
@@ -138,6 +141,9 @@ export const useAiChat = create<ChatState>((set, get) => {
     model: null,
     busy: false,
     controller: null,
+    draft: "",
+
+    setDraft: (draft) => set({ draft }),
 
     bind: (userId) => {
       if (get().userId === userId) return;
@@ -148,6 +154,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         turns: [],
         conversations: null,
         model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
+        draft: "",
       });
       if (current) void get().openChat(current);
     },

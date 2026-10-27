@@ -1015,6 +1015,19 @@ Test stack, LM Studio on the host at `http://localhost:1235/v1` (reached as
 | Read an uploaded Word and Excel file | ❌→✅ their type (`…openxmlformats…`) contains «xml», so they were sent to the model as raw text of the ZIP and it said it couldn't read them; Office files are now read first. It now gives the budget, the person in charge and the sum of the amounts (5,450) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
 
+## Round 30: AI chat draft, history, long tool labels and dropdown options
+
+Test stack, LM Studio (`google/gemma-4-e4b`), Cristal design.
+
+| Case | Result |
+| --- | --- |
+| Type in the chat, minimize it (Ctrl+B) and open it again | ❌→✅ the text was lost; it's now kept in the chat state until it's sent or a new conversation starts |
+| Send a message with the history open | ❌→✅ the history stayed over the answer; sending now goes back to the conversation |
+| A tool label with a long note title («Creó «Informe extremadamente detallado…»») | ❌→✅ ran past the panel's edges; it now wraps inside its chip |
+| Hovering the options of a dropdown | ❌→✅ the Cristal design's focus ring (`html[data-design="modern"] :focus-visible`) beat the rule that removes it from options, so an option under the mouse sometimes got a border; the option rule now wins (checked in the page's styles) |
+| Connect LM Studio with one chat model | ❌→✅ said «1 modelos disponibles»; now «1 modelo disponible» |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
+
 ## Useful commands
 
 ```bash

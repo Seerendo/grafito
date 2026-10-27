@@ -828,8 +828,9 @@ html[data-tone="dark"] .theme-moon {
     cursor: pointer;
   }
 
-  select option:hover,
-  select option:focus-visible {
+  /* La opción bajo el ratón toma el foco: solo fondo, sin el anillo de los
+     diseños (`:is(html, html[data-design])` gana a su `:focus-visible`). */
+  :is(html, html[data-design]) select option:is(:hover, :focus, :focus-visible) {
     background: var(--color-elevated);
     outline: none;
   }

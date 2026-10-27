@@ -107,7 +107,8 @@ function ChatPanel({
   const send = useAiChat((state) => state.send);
   const stop = useAiChat((state) => state.stop);
   const newChat = useAiChat((state) => state.newChat);
-  const [draft, setDraft] = useState("");
+  const draft = useAiChat((state) => state.draft);
+  const setDraft = useAiChat((state) => state.setDraft);
   const [view, setView] = useState<"chat" | "history">("chat");
   const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -148,6 +149,8 @@ function ChatPanel({
     if (!draft.trim() || busy || !modelReady) return;
     void send(draft);
     setDraft("");
+    // La respuesta se ve en la conversación, no detrás del historial.
+    setView("chat");
   };
 
   return (
@@ -501,17 +504,18 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
       {turn.tools && turn.tools.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
           {turn.tools.map((tool, index) => (
-            <li key={index}>
+            // Un rótulo largo pasa a otra línea dentro de su etiqueta, sin salirse del chat.
+            <li key={index} className="max-w-full min-w-0">
               <button
                 type="button"
                 disabled={!tool.docId}
                 onClick={() => tool.docId && onOpenNote(tool.docId)}
-                className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${
+                className={`inline-flex max-w-full items-start gap-1 rounded-xl border px-2 py-0.5 text-left text-[11px] ${
                   tool.ok ? "border-line text-muted enabled:hover:text-fg" : "border-danger/40 text-danger"
                 }`}
               >
-                {tool.ok ? <CheckCircle2 className="size-3 shrink-0" /> : <CircleAlert className="size-3 shrink-0" />}
-                <span className="truncate">{t(tool.label)}</span>
+                {tool.ok ? <CheckCircle2 className="mt-px size-3 shrink-0" /> : <CircleAlert className="mt-px size-3 shrink-0" />}
+                <span className="min-w-0 [overflow-wrap:anywhere]">{t(tool.label)}</span>
               </button>
             </li>
           ))}
