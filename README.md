@@ -34,7 +34,7 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - **Memory:** about 1.7 GB when idle; plan for 4 GB or more. Each document
   open in the Office editor adds some.
 - **Disk:** about 5 GB for the images, plus your data and backups.
-- **Ports:** `8080` (Grafito) and `9980` (the Office editor) must be free.
+- **Ports:** `8080` (Grafito and the Office editor) and, on the machine itself, `9980` must be free.
 - **Internet:** needed only for the first download. After that, everything
   runs locally (see [Offline installation](#offline-installation)).
 
@@ -53,12 +53,13 @@ This starts:
 
 | Service | What it does | Reachable at |
 | --- | --- | --- |
-| `app` | Grafito (production build) | `http://127.0.0.1:8080` |
+| `gateway` | One port for Grafito and the Office editor (nginx) | `http://127.0.0.1:8080` |
+| `app` | Grafito (production build) | through `gateway` |
 | `postgres` | Accounts, vaults, sharing, versions | this machine only |
 | `elasticsearch` | Full-text search | this machine only |
 | `redis` | Session deadlines | this machine only |
 | `minio` | Uploaded files | this machine only |
-| `collabora` | Office editor (Collabora Online) | `http://127.0.0.1:9980` |
+| `collabora` | Office editor (Collabora Online) | through `gateway` |
 | `backup`, `backup-files` | Daily copies of the database and the files in `./backups` | — |
 
 Migrations run automatically when the app starts. This setup works as is on
@@ -86,7 +87,7 @@ Uncomment and fill in what you need, then apply it with
 | `BETTER_AUTH_SECRET` | Always, outside your own computer | Signs sessions. Changing it later only signs everyone out. |
 | `GRAFITO_ENCRYPTION_KEY` | Before anyone saves AI keys | 32+ characters. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
 | `POSTGRES_PASSWORD`, `S3_SECRET_KEY` | **Before the first start** | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md). |
-| `COLLABORA_ADMIN_PASSWORD` | Always, outside your own computer | Password of Collabora's own admin console (user `admin`). Port 9980 is reachable from the network. |
+| `COLLABORA_ADMIN_PASSWORD` | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980. |
 | `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito | See [On a server or a network](#on-a-server-or-a-network). |
 | `GRAFITO_MAX_UPLOAD_MB` | To change the upload limit | 100 MB by default. |
 | `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS` | To change the backup schedule | Daily, keeping 14 days. |
@@ -95,14 +96,39 @@ Uncomment and fill in what you need, then apply it with
 
 #### On a server or a network
 
-When people use Grafito from other machines, it needs the addresses they will
-use. For example, behind `https://notes.example.com`, with the editor at
-`https://office.example.com`:
+Everything is served on one port, `8080`: the `gateway` service passes the
+Office editor's paths to Collabora and the rest to Grafito. So the same setup
+works in both ways people usually run it:
+
+- **Directly by IP:** open `http://192.168.1.20:8080` (the server's IP) from
+  any machine. Open port `8080` in the server's firewall.
+- **Behind a reverse proxy with HTTPS** (nginx, Caddy, Traefik, Apache…):
+  point it at port `8080`, for example `https://notes.example.com` →
+  `http://127.0.0.1:8080`. The proxy must pass WebSocket upgrades, which the
+  editor uses. Caddy and Traefik do it by default. For nginx:
+
+  ```nginx
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 1h;
+    client_max_body_size 0;
+  }
+  ```
+
+Both can be used at once. Grafito accepts sign-ins from the address each
+request was sent to, and the editor follows the page's address, `ws://` on
+http and `wss://` on https. Neither needs extra variables.
+
+Set your own secrets in `.env`, and `BETTER_AUTH_URL` to the main address
+(links in emails and external sign-in use it):
 
 ```dotenv
 BETTER_AUTH_URL=https://notes.example.com
-GRAFITO_PUBLIC_ORIGIN=https://notes.example.com
-COLLABORA_URL=https://office.example.com
 BETTER_AUTH_SECRET=...
 GRAFITO_ENCRYPTION_KEY=...
 POSTGRES_PASSWORD=...
@@ -110,10 +136,13 @@ S3_SECRET_KEY=...
 COLLABORA_ADMIN_PASSWORD=...
 ```
 
-Put a reverse proxy with HTTPS (for example Caddy or nginx) in front of port
-`8080` and, for the editor, port `9980`. On a local network without a domain,
-use the machine's IP instead, for example `http://192.168.1.20:8080` and
-`http://192.168.1.20:9980`.
+- **Plain http on a network:** works. The session then travels as a token
+  instead of a cookie, since browsers only keep secure cookies on `https://`
+  and `localhost`.
+- **Upgrading from a version with Collabora on port 9980:** remove
+  `COLLABORA_URL`, `GRAFITO_PUBLIC_ORIGIN` and `COLLABORA_SSL_TERMINATION`
+  from `.env`, and the proxy rule for the editor's own domain. Port `9980` now
+  only listens on the server itself.
 
 #### Without the Office editor
 
@@ -332,7 +361,9 @@ Open the avatar menu → **Cuenta**. Settings are split into sections:
 
 - **Datos de la cuenta:** display name.
 - **Correo:** your email address, and whether to get an email when something
-  you share, or that was shared with you, changes.
+  you share, or that was shared with you, changes. Accounts that sign in with
+  LDAP, OAuth or SSO get the provider's address on every sign-in and can't
+  change it here.
 - **Preferencias de usuario:** the interface language (Español / English). It
   is saved to the account, so it follows you to other browsers.
 - **Contraseña:** change your password. Accounts that sign in with LDAP, OAuth
@@ -388,7 +419,9 @@ initial administrator always keeps every permission.
    - Clicking outside the chat minimizes it to its button.
 
 The assistant can list portfolios, search, read, create and edit notes, within
-the permissions of your role. The chat lists each tool it used, and you can
+the permissions of your role. It finds notes and portfolios by name as well as
+by id, and it reads the text of uploaded files: plain text, Word, Excel,
+PowerPoint, OpenDocument and PDFs with text (not scanned ones). The chat lists each tool it used, and you can
 click one to open the note.
 
 To try it with a local open model, install Ollama (or LM Studio and start its
@@ -450,7 +483,9 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session signing and public URL | Required in production |
 | `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys (32+ characters) | AI keys can't be saved |
 | `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Previous key during a rotation | — |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Other sites allowed to send sign-ins, comma-separated | The address each request was sent to, `BETTER_AUTH_URL` and localhost |
 | `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md)) | Editor off |
+| `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION` | Only for a `COLLABORA_URL` on an address of its own (see [docs/OFFICE.md](docs/OFFICE.md#servers-and-https)) | `localhost:*`; `false` |
 
 ### Testing external sign-in locally
 

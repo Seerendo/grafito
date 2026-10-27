@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import { create } from "zustand";
 import { actorName } from "@/app/actor";
 import { findByTitle, replaceWikiTitle } from "@/domain/vault/links";
@@ -480,7 +481,7 @@ export const useVault = create<VaultState>((set, get) => ({
     // Sin contenido dado, la nota nace en blanco y es un borrador (`Draft`).
     const blank = content === undefined;
     const document: Document = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       title: name,
       portfolioId: target,
       kind: "markdown",
@@ -507,7 +508,7 @@ export const useVault = create<VaultState>((set, get) => ({
     const base = name.replace(/\.[^.]+$/, "") || name;
     const title = uniqueTitle(get().documents, base, portfolioId, "file");
     const document: Document = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       title,
       portfolioId,
       kind: "file",
@@ -532,7 +533,7 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.portfoliosManage)) return;
     const clean = name.trim().replace(/[\\/]/g, "");
     if (!clean) return;
-    const id = crypto.randomUUID();
+    const id = uuid();
     set({
       portfolios: [...get().portfolios, { id, name: clean, parentId }],
       selectedPortfolioId: id,
@@ -740,7 +741,7 @@ export const useVault = create<VaultState>((set, get) => ({
       return;
     }
     const existing = get().portfolios.find((portfolio) => portfolio.name === "Importadas" && !portfolio.parentId);
-    const importedId = existing?.id ?? crypto.randomUUID();
+    const importedId = existing?.id ?? uuid();
     if (!existing) {
       set({ portfolios: [...get().portfolios, { id: importedId, name: t("Importadas"), parentId: null }] });
     }

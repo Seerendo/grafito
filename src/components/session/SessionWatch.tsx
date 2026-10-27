@@ -4,7 +4,9 @@ import { clearPermissions, setPermissions } from "@/app/permissions";
 import { clearMyShares } from "@/app/shares";
 import { clearHeldAdmin } from "@/app/vault-hold";
 import { useVault } from "@/app/vault/store";
+import { setBearerToken } from "@/lib/auth/bearer";
 import { signOut } from "@/lib/auth/client";
+import { writeSessionUser } from "@/lib/auth/session-sync";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { sessionPulse } from "@/server/session.functions";
 
@@ -33,7 +35,11 @@ export function SessionWatch() {
       clearMyShares();
       clearHeldAdmin();
       clearAccountProfile();
+      // La sesión venció o la cerraron: todas las pestañas vuelven al ingreso.
+      writeSessionUser("");
       void signOut("/").catch(() => {
+        // El servidor ya no reconoce la sesión: se borra el token igual.
+        setBearerToken(null);
         window.location.replace("/");
       });
     };

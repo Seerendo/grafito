@@ -47,7 +47,7 @@ export function OfficeEditor({
         .then((result) => {
           if (cancelled) return;
           if (result.ok) setSession(result);
-          else if (left > 0) timer = window.setTimeout(() => attempt(left - 1), 1500);
+          else if (left > 0 && !("setup" in result)) timer = window.setTimeout(() => attempt(left - 1), 1500);
           else setError(result.error);
         })
         .catch(() => {

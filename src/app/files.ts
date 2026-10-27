@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import type { Document, VaultFile } from "@/domain/vault/types";
@@ -35,7 +36,7 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
 
 /** Sube un archivo por partes. Devuelve su clave y tamaño, o lanza un Error con el motivo. */
 export async function uploadVaultFile(file: File): Promise<{ key: string; size: number }> {
-  const id = crypto.randomUUID();
+  const id = uuid();
   const mime = file.type || "application/octet-stream";
   track({ id, name: file.name, sent: 0, total: file.size }, id);
   let started: { key: string; uploadId: string; partSize: number } | null = null;

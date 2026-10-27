@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Select } from "@/components/ui/Select";
@@ -301,7 +302,7 @@ function CopyLine({ label, value }: { label: string; value: string }) {
         <button
           type="button"
           onClick={() => {
-            void navigator.clipboard?.writeText(value).then(() => {
+            void copyText(value).then(() => {
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1500);
             });

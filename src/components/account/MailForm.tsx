@@ -11,6 +11,8 @@ export function MailForm() {
   const [email, setEmail] = useState<string | null>(null);
   const [notify, setNotify] = useState(true);
   const [mailOn, setMailOn] = useState(true);
+  // LDAP, OAuth o SSO: el correo lo da el proveedor y no se edita aquí.
+  const [provider, setProvider] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,6 +23,7 @@ export function MailForm() {
         setEmail(next.email);
         setNotify(next.notifyChanges);
         setMailOn(next.mailOn);
+        setProvider(next.provider);
       })
       .catch(() => setError(t("No se pudo leer la configuración.")));
   }, []);
@@ -49,7 +52,16 @@ export function MailForm() {
 
   return (
     <form onSubmit={(event) => void submit(event)} className="max-w-lg space-y-4">
-      <TextField label={t("Correo")} value={email} onChange={setEmail} autoComplete="email" type="email" optional />
+      {provider ? (
+        <div className="text-sm">
+          <span className="text-muted">{t("Correo")}</span>
+          <p className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-fg">
+            {email || <span className="text-faint">{t("Tu proveedor no da un correo")}</span>}
+          </p>
+        </div>
+      ) : (
+        <TextField label={t("Correo")} value={email} onChange={setEmail} autoComplete="email" type="email" optional />
+      )}
       <div className="flex items-center gap-4 rounded-lg border border-line bg-surface px-4 py-2">
         <span className="min-w-0 flex-1 text-sm">{t("Avisarme por correo cuando cambien algo que comparto o que me compartieron")}</span>
         <Switch checked={notify} ariaLabel={t("Avisos de cambios por correo")} onChange={setNotify} />

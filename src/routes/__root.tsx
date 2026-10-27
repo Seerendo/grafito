@@ -4,6 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { installBlankClickGuard } from "@/app/blank-click";
 import { applyLocale, getLocale, LOCALE_COOKIE, localeFromCookie, useLocale } from "@/app/i18n";
 import { themeBootScript } from "@/app/theme";
+import { SessionSync } from "@/components/session/SessionSync";
 import { SessionWatch } from "@/components/session/SessionWatch";
 import { DEFAULT_DESIGN, isDesign, type Design } from "@/domain/design";
 import type { Locale } from "@/domain/i18n";
@@ -83,6 +84,7 @@ function RootDocument() {
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body>
+        <SessionSync />
         <SessionWatch />
         {/* Cambiar de idioma vuelve a montar la aplicación con los textos nuevos. */}
         <Outlet key={locale} />

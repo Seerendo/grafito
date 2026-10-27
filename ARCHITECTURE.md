@@ -273,6 +273,24 @@ The `vault/` pieces:
 4. Server functions use `authMiddleware`, which checks the request origin
    (`isolation.server.ts`) and the session (`verify.server.ts`).
 
+**One session per browser.** All tabs share it:
+
+- The bearer token (`lib/auth/bearer.ts`) lives in `localStorage`. It is the
+  fallback where the `__Host-` cookie isn't kept (plain http on a network).
+- `SessionSync` writes the signed-in user id to `grafito.session-user`.
+  Another tab hears it through the `storage` event. An empty value (sign-out or
+  an expired session) sends every tab to the sign-in screen and drops the
+  token. A different user reloads the tab, so a browser never shows two
+  accounts at once.
+- `lib/uuid.ts` and `lib/clipboard.ts` cover `crypto.randomUUID` and
+  `navigator.clipboard`, which browsers only offer on `https://` and
+  `localhost`.
+- `trustedOrigins` is a function (`lib/auth/server.ts`). It accepts the
+  `Origin` of a request sent to that same host (`Host`, or
+  `X-Forwarded-Host`), so the server's IP and a proxy's domain work without
+  being listed. `BETTER_AUTH_TRUSTED_ORIGINS` adds other sites. Better Auth's
+  "Invalid origin" is shown as a message naming that variable.
+
 ## Cleanup performed (origin: the Grok App Builder template)
 
 The project started in the Grok sandbox. Everything that belonged to that
@@ -446,6 +464,13 @@ email matches. Better Auth uses `disableImplicitLinking`, and LDAP rejects it
 with «Ya existe otra cuenta con ese correo» ("another account already uses that
 email"). LDAP accounts without an email use `<uid>@ldap.grafito.app`.
 
+The contact email of an external account is the provider's. The
+`session.create.after` hook calls `syncExternalEmail`, which copies it to
+`app_profile.contact_email` on every sign-in (empty for the synthetic
+addresses). Account → Correo shows it read-only. The server functions that
+write that field (`saveMailPreferences`, `updateAccount`, `updateVaultUser`)
+skip it when `app_user_role.source` isn't `local`.
+
 To test locally, use any reachable LDAP directory or OpenID Connect provider.
 `dev/auth-test/` has a sample Keycloak realm and LDAP users. The test services
 themselves aren't in `docker-compose.yml`: they live in a local test compose
@@ -553,13 +578,25 @@ On by default in `docker-compose.yml` (the `collabora` service). It is
 turned off by setting `COLLABORA_URL` to empty (`server/office.ts`,
 `docs/OFFICE.md`).
 
+- **Gateway** (`docker/gateway.conf`, the `gateway` service on port 8080):
+  nginx sends `/browser/`, `/hosting/` and `/cool/` to Collabora and the rest
+  to the app. With `COLLABORA_URL=same-origin` the editor URL is the page's
+  own origin plus Collabora's path, so the CSP needs nothing beyond `'self'`.
+  The gateway rewrites Collabora's `data-host` and CSP to the page's address
+  (`ws://` or `wss://`), taken from the `Origin` of the POST that opens the
+  editor. Docker DNS is resolved per request, so the app and Collabora can be
+  recreated or stopped without restarting it.
+- **Own address** (any other `COLLABORA_URL`): `server/office-reach.ts`
+  derives the editor host and reports settings the browser would block.
+
 - **`officeSession`** (`office.functions.ts`):
   - Checks access (own file, or a share via `editableTarget` /
     `grantedDocOwner`).
   - Signs a 10-hour token with `signToken` (`server/file-links.ts`). The token
     carries document, owner, editor, write flag, browser origin and share id.
   - Returns the editor URL from Collabora's `/hosting/discovery`, rewritten to
-    the public `COLLABORA_URL`, with `WOPISrc` and `lang`.
+    the page's origin (`same-origin`) or the public `COLLABORA_URL`, with
+    `WOPISrc` and `lang`.
 - **WOPI endpoints:**
   - `routes/wopi/files/$id.ts` implements `CheckFileInfo`.
   - `$id.contents.ts` implements `GetFile` and `PutFile`.
@@ -759,7 +796,14 @@ to 8 steps.
 
 - **Tools:** only those the role allows, out of `list_portfolios`,
   `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note` and
-  `create_portfolio`. The read and edit tools accept an id or a title.
+  `create_portfolio`. The read and edit tools accept an id, an exact title
+  or a part of a title that matches only one document. Portfolios are found
+  by id, name or path («Proyectos › Atlas»). On a miss, the tool returns the
+  close matches or the list of portfolios, so the model can retry.
+- **Files:** `read_note` returns the text of uploaded files
+  (`server/files.ts` → `fileText`): plain text, Office and OpenDocument
+  (`server/office-text.ts`, a small ZIP reader without dependencies) and PDF
+  (`unpdf`). Images and scanned PDFs give no text.
 - **Response:** streamed as NDJSON. The chat shows each tool used, and you can
   click one to open the note.
 

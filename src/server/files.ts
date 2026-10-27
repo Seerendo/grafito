@@ -1,3 +1,4 @@
+import { officeText } from "./office-text.ts";
 import type { Sql } from "@/lib/db";
 import type { Document, VaultFile } from "@/domain/vault/types";
 import { deleteBlob, getBlob, putBlob, readBlob } from "./blobs";
@@ -101,19 +102,42 @@ export async function removeUserFiles(sql: Sql, userId: string): Promise<void> {
 
 const TEXTUAL = /json|xml|svg|csv|markdown|javascript|yaml/;
 
-/** Texto legible de un archivo, si es de texto (Markdown, JSON, SVG, CSV…). */
+/**
+ * Texto legible de un archivo: los de texto (Markdown, JSON, SVG, CSV…), los
+ * documentos de Office y OpenDocument, y los PDF con texto.
+ */
 export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<string | null> {
   const file = doc.file;
   if (!file) return null;
   const mime = (file.mime || "").toLowerCase();
   const textual = mime.startsWith("text/") || TEXTUAL.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name);
-  if (!textual) return null;
+  const office = /\.(docx|docm|pptx|xlsx|xlsm|odt|ods|odp)$/i.test(file.name);
+  const pdf = mime === "application/pdf" || /\.pdf$/i.test(file.name);
+  if (!textual && !office && !pdf) return null;
   let bytes: Uint8Array | null = null;
   if (file.key) bytes = await readBlob(sql, file.key);
   else if (file.dataUrl) bytes = decodeDataUrl(file.dataUrl)?.bytes ?? null;
   if (!bytes) return null;
-  const raw = Buffer.from(bytes).toString("utf8");
+  let raw: string | null;
+  if (textual) raw = Buffer.from(bytes).toString("utf8");
+  // Word, Excel, PowerPoint y OpenDocument: su texto (ver `office-text.ts`).
+  else if (office) raw = officeText(file.name, bytes);
+  else raw = await pdfText(bytes);
+  if (!raw) return null;
   return raw.length > max ? `${raw.slice(0, max)}\n…(recortado)` : raw;
+}
+
+/** El texto de un PDF (con PDF.js, vía `unpdf`); `null` si no tiene texto, p. ej. un escaneado. */
+async function pdfText(bytes: Uint8Array): Promise<string | null> {
+  try {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const document = await getDocumentProxy(new Uint8Array(bytes));
+    const { text } = await extractText(document, { mergePages: true });
+    const value = (Array.isArray(text) ? text.join("\n\n") : text).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
 }
 
 /** Tipos que el navegador podría ejecutar si se abren directamente: siempre como descarga y aislados. */

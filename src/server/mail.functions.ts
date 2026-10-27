@@ -108,7 +108,10 @@ export const mailPreferences = createServerFn({ method: "GET" })
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
     const settings = await readMailSettings(sql);
-    return { email: profile.contactEmail, notifyChanges: profile.notifyChanges, mailOn: mailReady(settings) };
+    const { externalEmail } = await import("@/lib/auth/provision.server");
+    // Con LDAP, OAuth o SSO el correo lo da el proveedor y no se cambia aquí.
+    const provider = await externalEmail(sql, context.userId);
+    return { email: profile.contactEmail, notifyChanges: profile.notifyChanges, mailOn: mailReady(settings), provider };
   });
 
 export const saveMailPreferences = createServerFn({ method: "POST" })
@@ -119,6 +122,16 @@ export const saveMailPreferences = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     if (data.email && !emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
     const sql = await requireLease(context.userId);
+    const { externalEmail } = await import("@/lib/auth/provision.server");
+    if (await externalEmail(sql, context.userId)) {
+      // El correo lo fija el proveedor: solo se guardan los avisos.
+      await sql`
+        insert into app_profile (user_id, notify_changes) values (${context.userId}, ${data.notifyChanges})
+        on conflict (user_id) do update set notify_changes = excluded.notify_changes
+      `;
+      const rows = await sql<{ contact_email: string | null }>`select contact_email from app_profile where user_id = ${context.userId}`;
+      return { ok: true as const, email: rows[0]?.contact_email ?? "", notifyChanges: data.notifyChanges };
+    }
     const email = data.email || null;
     await sql`
       insert into app_profile (user_id, contact_email, notify_changes)

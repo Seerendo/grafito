@@ -34,11 +34,6 @@ function text(args: Record<string, unknown>, key: string): string {
   return typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
 }
 
-function optionalId(args: Record<string, unknown>, key: string): string | null {
-  const value = text(args, key).trim();
-  return value && value !== "null" && value !== "root" ? value : null;
-}
-
 function path(portfolios: Portfolio[], id: string | null): string {
   if (!id) return "Carpeta Personal";
   const names: string[] = [];
@@ -52,15 +47,55 @@ function path(portfolios: Portfolio[], id: string | null): string {
   return names.join(" › ") || "Carpeta Personal";
 }
 
-/** Un documento por su id o, si no, por su título exacto (sin distinguir mayúsculas). */
+function clean(ref: string): string {
+  return ref.trim().replace(/^\[\[|\]\]$/g, "").replace(/^[«"']|[»"']$/g, "").trim();
+}
+
+/**
+ * Un documento por su id, su título exacto o, si solo uno lo contiene, parte
+ * de su título (sin distinguir mayúsculas). Los modelos suelen dar el título
+ * en vez del id, o un título aproximado.
+ */
 async function findDoc(sql: Sql, userId: string, ref: string) {
-  const key = ref.trim().replace(/^\[\[|\]\]$/g, "").replace(/^«|»$/g, "");
+  const key = clean(ref);
   if (!key) return null;
   const byId = await getDoc(sql, userId, key);
   if (byId) return byId;
-  const candidates = await listDocs(sql, userId, { query: key, limit: 20 });
-  const match = candidates.find((doc) => doc.title.toLowerCase() === key.toLowerCase());
-  return match ? getDoc(sql, userId, match.id) : null;
+  const lower = key.toLowerCase();
+  const candidates = await listDocs(sql, userId, { query: key, limit: 50 });
+  const exact = candidates.find((doc) => doc.title.toLowerCase() === lower);
+  if (exact) return getDoc(sql, userId, exact.id);
+  const partial = candidates.filter((doc) => doc.title.toLowerCase().includes(lower));
+  return partial.length === 1 ? getDoc(sql, userId, partial[0]!.id) : null;
+}
+
+/** Documentos cuyo título se parece a `ref`, para ayudar al modelo a elegir. */
+async function similarDocs(sql: Sql, userId: string, ref: string) {
+  const key = clean(ref);
+  const docs = key ? await listDocs(sql, userId, { query: key, limit: 8 }) : [];
+  return docs.map((doc) => ({ id: doc.id, title: doc.title }));
+}
+
+/**
+ * Un portafolio por su id, su nombre o su ruta («Proyectos › Atlas»), sin
+ * distinguir mayúsculas. `undefined` si no se pidió ninguno; `null` para la
+ * Carpeta Personal; `false` si no existe.
+ */
+function resolvePortfolio(portfolios: Portfolio[], ref: string): string | null | false | undefined {
+  const key = clean(ref);
+  if (!key) return undefined;
+  const lower = key.toLowerCase();
+  if (["root", "null", "raíz", "raiz", "carpeta personal", "personal"].includes(lower)) return null;
+  const byId = portfolios.find((portfolio) => portfolio.id === key);
+  if (byId) return byId.id;
+  const byPath = portfolios.find((portfolio) => path(portfolios, portfolio.id).toLowerCase() === lower.replace(/\s*[›>/]\s*/g, " › "));
+  if (byPath) return byPath.id;
+  const byName = portfolios.filter((portfolio) => portfolio.name.toLowerCase() === lower);
+  return byName.length === 1 ? byName[0]!.id : false;
+}
+
+function portfolioChoices(portfolios: Portfolio[]) {
+  return portfolios.map((portfolio) => ({ id: portfolio.id, name: portfolio.name, path: path(portfolios, portfolio.id) }));
 }
 
 export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
@@ -89,21 +124,27 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
       spec: {
         name: "list_notes",
         description:
-          "Lista notas y archivos (sin su contenido). Filtra por portafolio (id, o 'root' para la Carpeta Personal (la raíz)) y/o por texto.",
+          "Lista notas y archivos (sin su contenido). Filtra por portafolio (su id, su nombre o 'root' para la Carpeta Personal) y/o por texto.",
         parameters: {
           type: "object",
           properties: {
-            portfolio_id: { type: "string", description: "Id del portafolio, 'root' para la Carpeta Personal (la raíz); vacío para todos" },
+            portfolio_id: { type: "string", description: "Id o nombre del portafolio, 'root' para la Carpeta Personal; vacío para todos" },
             query: { type: "string", description: "Texto a buscar en el título o el contenido" },
           },
           required: [],
         },
       },
       run: async (args) => {
-        const raw = text(args, "portfolio_id").trim();
         const portfolios = await listPortfolios(sql, userId);
+        const portfolioId = resolvePortfolio(portfolios, text(args, "portfolio_id"));
+        if (portfolioId === false) {
+          return {
+            result: { error: "Ese portafolio no existe. Estos son los que hay:", portfolios: portfolioChoices(portfolios) },
+            event: { label: "No encontró el portafolio", ok: false },
+          };
+        }
         const docs = await listDocs(sql, userId, {
-          portfolioId: raw ? (raw === "root" ? null : raw) : undefined,
+          portfolioId,
           query: text(args, "query") || undefined,
           limit: 100,
         });
@@ -146,7 +187,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
       spec: {
         name: "read_note",
         description:
-          "Lee una nota (Markdown) o un archivo por su id. De los archivos de texto devuelve su contenido; de los demás, sus datos.",
+          "Lee una nota (Markdown) o un archivo por su id o su título. Devuelve el texto de las notas, de los archivos de texto, de Word, Excel, PowerPoint, OpenDocument y de los PDF con texto; de los demás, sus datos.",
         parameters: {
           type: "object",
           properties: { id: { type: "string", description: "Id de la nota o archivo (o su título exacto)" } },
@@ -157,7 +198,10 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
         const doc = await findDoc(sql, userId, text(args, "id"));
         if (!doc) {
           return {
-            result: { error: "No existe. Usa list_notes o search_notes para ver los ids." },
+            result: {
+              error: "No lo encontré. Usa el id de uno de estos, o list_notes / search_notes:",
+              similar: await similarDocs(sql, userId, text(args, "id")),
+            },
             event: { label: "No encontró el documento", ok: false },
           };
         }
@@ -167,7 +211,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
             ? doc.content.length > MAX_NOTE
               ? `${doc.content.slice(0, MAX_NOTE)}\n…(recortado)`
               : doc.content
-            : ((await fileText(sql, doc)) ?? `(archivo binario ${doc.file?.mime ?? ""}, no se puede leer como texto)`);
+            : ((await fileText(sql, doc)) ?? `(archivo ${doc.file?.mime ?? ""} sin texto legible: una imagen, un PDF escaneado o un formato no soportado)`);
         return {
           result: {
             id: doc.id,
@@ -193,20 +237,34 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
           properties: {
             title: { type: "string", description: "Título (si existe, se le añade un número)" },
             content: { type: "string", description: "Contenido en Markdown" },
-            portfolio_id: { type: "string", description: "Id del portafolio; vacío para la Carpeta Personal (la raíz)" },
+            portfolio_id: {
+              type: "string",
+              description: "Id o nombre del portafolio donde crearla (también uno que acabas de crear); vacío para la Carpeta Personal",
+            },
           },
           required: ["title", "content"],
         },
       },
       run: async (args) => {
+        const portfolios = await listPortfolios(sql, userId);
+        const portfolioId = resolvePortfolio(portfolios, text(args, "portfolio_id") || text(args, "portfolio"));
+        if (portfolioId === false) {
+          return {
+            result: {
+              error: "Ese portafolio no existe. Usa el id de uno de estos, o créalo antes con create_portfolio:",
+              portfolios: portfolioChoices(portfolios),
+            },
+            event: { label: "No encontró el portafolio", ok: false },
+          };
+        }
         const doc = await createNote(sql, userId, {
           title: text(args, "title"),
           content: text(args, "content"),
-          portfolioId: optionalId(args, "portfolio_id"),
+          portfolioId: portfolioId ?? null,
           actor,
         });
         return {
-          result: { id: doc.id, title: doc.title },
+          result: { id: doc.id, title: doc.title, portfolio: path(portfolios, doc.portfolioId) },
           event: { label: `Creó «${doc.title}»`, ok: true, docId: doc.id, changed: true },
         };
       },
@@ -232,7 +290,10 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
         const current = await findDoc(sql, userId, text(args, "id"));
         if (!current) {
           return {
-            result: { error: "No existe. Usa list_notes o search_notes para ver los ids." },
+            result: {
+              error: "No la encontré. Usa el id de una de estas, o list_notes / search_notes:",
+              similar: await similarDocs(sql, userId, text(args, "id")),
+            },
             event: { label: "No encontró la nota", ok: false },
           };
         }
@@ -256,15 +317,23 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
           type: "object",
           properties: {
             name: { type: "string", description: "Nombre" },
-            parent_id: { type: "string", description: "Id del portafolio padre; vacío para la Carpeta Personal (la raíz)" },
+            parent_id: { type: "string", description: "Id o nombre del portafolio padre; vacío para la Carpeta Personal" },
           },
           required: ["name"],
         },
       },
       run: async (args) => {
-        const portfolio = await createPortfolio(sql, userId, { name: text(args, "name"), parentId: optionalId(args, "parent_id") });
+        const portfolios = await listPortfolios(sql, userId);
+        const parentId = resolvePortfolio(portfolios, text(args, "parent_id"));
+        if (parentId === false) {
+          return {
+            result: { error: "Ese portafolio padre no existe. Estos son los que hay:", portfolios: portfolioChoices(portfolios) },
+            event: { label: "No encontró el portafolio padre", ok: false },
+          };
+        }
+        const portfolio = await createPortfolio(sql, userId, { name: text(args, "name"), parentId: parentId ?? null });
         return {
-          result: portfolio,
+          result: { ...portfolio, note: "Para crear notas dentro, usa este id en portfolio_id." },
           event: { label: `Creó el portafolio «${portfolio.name}»`, ok: true, changed: true },
         };
       },

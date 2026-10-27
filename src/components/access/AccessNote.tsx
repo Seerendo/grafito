@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard";
 import { useEffect, useRef, useState } from "react";
 import { Copy, Check, KeyRound } from "lucide-react";
 import { revealAccessNote } from "@/server/mail.functions";
@@ -68,7 +69,7 @@ export function AccessNoteScreen() {
                   </code>
                   <button
                     type="button"
-                    onClick={() => void navigator.clipboard?.writeText(state.password).then(() => setCopied(true))}
+                    onClick={() => void copyText(state.password).then(() => setCopied(true))}
                     aria-label={t("Copiar")}
                     title={t("Copiar")}
                     className="grid size-10 shrink-0 place-items-center rounded-md border border-line hover:bg-elevated"

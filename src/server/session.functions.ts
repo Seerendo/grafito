@@ -82,7 +82,9 @@ export const updateAccount = createServerFn({ method: "POST" })
     }
     const sql = await requireLease(context.userId);
     await sql`update "user" set name = ${data.name}, "updatedAt" = now() where id = ${context.userId}`;
-    if (data.contactEmail !== undefined) {
+    const { externalEmail } = await import("@/lib/auth/provision.server");
+    // Con LDAP, OAuth o SSO el correo lo fija el proveedor (`syncExternalEmail`).
+    if (data.contactEmail !== undefined && !(await externalEmail(sql, context.userId))) {
       const email = data.contactEmail || null;
       await sql`
         insert into app_profile (user_id, contact_email)

@@ -474,6 +474,8 @@ export const en: Record<string, string> = {
   "Limpiar búsqueda": "Clear search",
   "Plegar el directorio": "Collapse the directory",
   "Plegar los detalles": "Collapse the details",
+  "Grafito no acepta ingresos desde {0}. En el servidor, pon BETTER_AUTH_URL={0} (o añádela a BETTER_AUTH_TRUSTED_ORIGINS) en el .env y reinicia.": "Grafito doesn't accept sign-ins from {0}. On the server, set BETTER_AUTH_URL={0} (or add it to BETTER_AUTH_TRUSTED_ORIGINS) in .env and restart.",
+  "Tu proveedor no da un correo": "Your provider doesn't give an email",
   "Paneles flotantes de vidrio, formas de píldora y un brillo del acento.": "Floating glass panels, pill shapes and an accent glow.",
   "La interfaz original, plana y sin capas.": "The original interface, flat and unlayered.",
   "Cristal": "Glass",

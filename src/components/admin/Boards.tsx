@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard";
 import { useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
@@ -216,7 +217,7 @@ function AccessNotice({ name, access, onClose }: { name: string; access: AccessO
             <button
               type="button"
               onClick={() => {
-                void navigator.clipboard?.writeText(access.link).then(() => setCopied(true));
+                void copyText(access.link).then(() => setCopied(true));
               }}
               className="h-10 shrink-0 rounded-md border border-line px-3 text-sm hover:bg-elevated"
             >
@@ -307,8 +308,10 @@ function UserForm({
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required={!person}
+          // Con LDAP, OAuth o SSO el correo lo da el proveedor.
+          readOnly={Boolean(person && person.source !== "local")}
           autoComplete="off"
-          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3"
+          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 read-only:text-muted"
         />
       </label>
       <label className="block text-sm">

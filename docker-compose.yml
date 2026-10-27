@@ -93,8 +93,9 @@ services:
   app:
     build: .
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    # Reached through the gateway (port 8080), not directly.
+    expose:
+      - "8080"
     environment:
       GRAFITO_FROM_DOCKER: "1"
       DATABASE_URL: postgres://grafito:${POSTGRES_PASSWORD:-grafito}@postgres:5432/grafito
@@ -112,13 +113,21 @@ services:
       GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-grafito-dev-encryption-key-cambia-esto-0001}
       GRAFITO_ENCRYPTION_KEY_PREVIOUS: ${GRAFITO_ENCRYPTION_KEY_PREVIOUS:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
+      # Other addresses people open Grafito with (its IP and its domain, for
+      # example), comma-separated. Sign-ins from any other address are refused.
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-}
       # Upload limit per file, in MB (100 by default with MinIO).
       GRAFITO_MAX_UPLOAD_MB: ${GRAFITO_MAX_UPLOAD_MB:-100}
       # Office editor (on by default). An empty COLLABORA_URL= turns it off.
-      # See docs/OFFICE.md.
-      COLLABORA_URL: ${COLLABORA_URL-http://127.0.0.1:9980}
+      # same-origin: the gateway serves it on Grafito's own address, directly or
+      # behind any HTTPS proxy. See docs/OFFICE.md.
+      COLLABORA_URL: ${COLLABORA_URL-same-origin}
       COLLABORA_INTERNAL_URL: ${COLLABORA_INTERNAL_URL:-http://collabora:9980}
       GRAFITO_WOPI_URL: ${GRAFITO_WOPI_URL:-http://app:8080}
+      # Only for a COLLABORA_URL on an address of its own: the same two values
+      # Collabora uses, so Grafito can explain a blank editor.
+      GRAFITO_PUBLIC_ORIGIN: ${GRAFITO_PUBLIC_ORIGIN:-localhost:*}
+      COLLABORA_SSL_TERMINATION: ${COLLABORA_SSL_TERMINATION:-false}
       # Ollama and LM Studio run outside this compose (installed on the machine or
       # in a compose of their own). A "localhost" address in Account → AI (e.g.
       # http://localhost:11434 or http://localhost:1234/v1) is called on this
@@ -216,19 +225,31 @@ services:
     environment:
       # Grafito as Collabora sees it (WOPISrc).
       aliasgroup1: ${GRAFITO_WOPI_URL:-http://app:8080}
-      # frame_ancestors (below) is who may embed the editor: one value, no spaces.
-      # 127.0.0.1 is always allowed; by default localhost too. On a server, set
-      # GRAFITO_PUBLIC_ORIGIN to the address people open Grafito with.
+      # Through the gateway, the editor is on Grafito's address and these two
+      # don't matter. They're for a COLLABORA_URL on an address of its own.
       extra_params: >-
-        --o:ssl.enable=false --o:ssl.termination=false
+        --o:ssl.enable=false --o:ssl.termination=${COLLABORA_SSL_TERMINATION:-false}
         --o:net.frame_ancestors=${GRAFITO_PUBLIC_ORIGIN:-localhost:*}
         --o:home_mode.enable=true --o:mount_jail_tree=false
       username: admin
       password: ${COLLABORA_ADMIN_PASSWORD:-grafito-office-cambia-esto}
       dictionaries: es_ES en_US
       DONT_GEN_SSL_CERT: "1"
+    # The browser reaches it through the gateway; this port is for this machine.
     ports:
-      - "9980:9980"
+      - "127.0.0.1:9980:9980"
+
+  # The front door: Grafito and the Office editor on one port (docker/gateway.conf).
+  # Point your reverse proxy, or the browser, at this port.
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
 
 volumes:
   grafito_pg:

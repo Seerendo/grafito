@@ -958,6 +958,47 @@ Development server (`grafito-design`).
 | Layout | ✅ fits in the directory and as the page title; in a narrow window «Nueva nota» wraps under the title |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
 
+## Round 27: shared session, AI tools, editor on servers, locked email
+
+Test stack (`docker-compose.test.yml`) opened from the LAN address
+`http://192.168.100.8:8080` (plain http, no secure cookie) and from
+`http://127.0.0.1:8080`.
+
+| Case | Result |
+| --- | --- |
+| Two tabs on localhost; sign out in one | ✅ the other goes to the sign-in screen at once |
+| Sign in from the first tab | ✅ the second reloads, signed in |
+| Two tabs on the LAN address (token, no cookie) | ✅ the second tab is signed in; signing out in one signs out both and removes the token |
+| Vault on the LAN address | ❌→✅ crashed with "crypto.randomUUID is not a function"; now uses `lib/uuid.ts` |
+| Copy buttons on the LAN address | ✅ `lib/clipboard.ts` fallback |
+| Sign in from an address not in `BETTER_AUTH_URL` | ❌→✅ showed "wrong password" for Better Auth's "Invalid origin"; now names `BETTER_AUTH_TRUSTED_ORIGINS`, and listing the address lets the sign-in through |
+| Office file on the LAN address, default `GRAFITO_PUBLIC_ORIGIN` | ✅ says to set `GRAFITO_PUBLIC_ORIGIN=192.168.100.8:8080` instead of a blank editor |
+| Same, with it set | ✅ the form posts to `http://192.168.100.8:9980/…`, the page's CSP allows it and Collabora's `frame-ancestors` includes the address. The browser pane didn't render the frame at that address (unverified there) |
+| HTTPS page with an `http://` editor, or an `https://` editor without `COLLABORA_SSL_TERMINATION` | ✅ unit tests: each one gives its message (`office-reach.test.ts`) |
+| Text of docx, xlsx, pptx (slides in order) and odt | ✅ unit tests (`office-text.test.ts`) |
+| AI chat with a local model | ⚠️ not run: LM Studio and Ollama were off |
+| LDAP user «carla» signs in | ✅ Account → Correo shows `carla@empresa.test`, read-only, with no field to type in |
+| Saving Account → Correo or Datos de la cuenta, or the admin user form, for an LDAP account | ✅ the email stays the provider's (server code); the admin field is read-only |
+
+## Round 28: one port for Grafito and the editor (gateway)
+
+Test stack with the `gateway` service and no address variables
+(`BETTER_AUTH_TRUSTED_ORIGINS` empty, `GRAFITO_PUBLIC_ORIGIN` at its default,
+`COLLABORA_URL=same-origin`). Fresh database.
+
+| Case | Result |
+| --- | --- |
+| `http://127.0.0.1:8080`, `http://192.168.100.8:8080` and `/hosting/discovery` through the gateway | ✅ 200 |
+| Collabora's admin console (`/browser/dist/admin/admin.html`) through the gateway | ✅ 404 |
+| First run and sign-in at `http://192.168.100.8:8080` with no variables | ✅ (before: «Invalid origin» unless the address was listed) |
+| Upload a `.docx` and open it at the LAN address | ✅ the editor loads the document in edit mode (before: blank); its WebSocket upgrades (101) |
+| Editor page for an http page / an https page (`Origin` header) | ✅ `data-host` is `ws://192.168.100.8:8080` / `wss://notas.ejemplo.test`; `frame-ancestors 'self'`; `connect-src` has that address |
+| No `Origin`, `X-Forwarded-Proto: https` | ✅ `wss://` |
+| Caddy with HTTPS in front of the gateway (`https://localhost:8443`) | ✅ pages 200; editor page with `wss://localhost:8443`; the editor's real WebSocket URL replayed through it upgrades (101). The browser pane refuses Caddy's self-signed certificate, so the editor wasn't seen there |
+| Sign-in through that proxy: own origin / `Origin: https://evil.test` | ✅ reaches the password check (401) / 403 «Invalid origin» |
+| AI chat streaming through the gateway | ⚠️ not run: LM Studio and Ollama were off |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 48 tests |
+
 ## Useful commands
 
 ```bash

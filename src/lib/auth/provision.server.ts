@@ -48,3 +48,31 @@ export async function provisionExternalUser(
     values (${crypto.randomUUID()}, ${input.source}, 'Usuarios', ${`Alta automática de ${login} (${input.source})`})
   `;
 }
+
+/** Direcciones que Grafito se inventa (usuario local, LDAP sin correo): no son de nadie. */
+const SYNTHETIC = /@(?:ldap\.)?grafito\.app$/i;
+
+/**
+ * El correo de una cuenta que entra por LDAP, OAuth o SSO es el que da su
+ * proveedor: se copia al correo de la cuenta en cada ingreso y no se puede
+ * cambiar en Grafito (ver `externalEmail`). Las cuentas locales no se tocan.
+ */
+export async function syncExternalEmail(sql: Sql, userId: string): Promise<void> {
+  const rows = await sql<{ email: string; source: string | null }>`
+    select u.email, m.source from "user" u left join app_user_role m on m.user_id = u.id where u.id = ${userId} limit 1
+  `;
+  const row = rows[0];
+  if (!row?.source || row.source === "local") return;
+  const email = SYNTHETIC.test(row.email) ? null : row.email;
+  await sql`
+    insert into app_profile (user_id, contact_email) values (${userId}, ${email})
+    on conflict (user_id) do update set contact_email = excluded.contact_email
+  `;
+}
+
+/** Si el correo de la cuenta lo fija su proveedor externo (y cuál es el proveedor). */
+export async function externalEmail(sql: Sql, userId: string): Promise<string | null> {
+  const rows = await sql<{ source: string | null }>`select source from app_user_role where user_id = ${userId} limit 1`;
+  const source = rows[0]?.source;
+  return source && source !== "local" ? source : null;
+}

@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import { create } from "zustand";
 import type { AiProviderId } from "@/domain/ai";
 import { bearerHeader } from "@/lib/auth/bearer";
@@ -143,7 +144,7 @@ export const useAiChat = create<ChatState>((set, get) => {
       const current = load<string | null>(session, CURRENT_KEY + userId, null);
       set({
         userId,
-        conversationId: current ?? crypto.randomUUID(),
+        conversationId: current ?? uuid(),
         turns: [],
         conversations: null,
         model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
@@ -164,7 +165,7 @@ export const useAiChat = create<ChatState>((set, get) => {
 
     newChat: () => {
       get().controller?.abort();
-      select(crypto.randomUUID(), []);
+      select(uuid(), []);
     },
 
     openChat: async (id) => {
@@ -174,7 +175,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         const result = await aiConversation({ data: { id } });
         if (get().conversationId !== id) return;
         if (result.ok) set({ turns: result.turns });
-        else select(crypto.randomUUID(), []);
+        else select(uuid(), []);
       } catch {
         /* se queda vacía */
       }
@@ -203,8 +204,8 @@ export const useAiChat = create<ChatState>((set, get) => {
       const { model, userId, busy, conversationId } = get();
       const content = text.trim();
       if (!model || !userId || busy || !content) return;
-      const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", content };
-      const answer: ChatTurn = { id: crypto.randomUUID(), role: "assistant", content: "", tools: [], pending: true };
+      const userTurn: ChatTurn = { id: uuid(), role: "user", content };
+      const answer: ChatTurn = { id: uuid(), role: "assistant", content: "", tools: [], pending: true };
       const history = contextOf([...get().turns, userTurn]);
       const controller = new AbortController();
       // Los turnos de esta conversación, aunque la persona abra otra mientras responde.

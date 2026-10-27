@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard";
 import { Building2, Check, Eye, Globe, Link2, Lock, Pencil, User, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { publicUrl, setMyShares, shareOf, useMyShares } from "@/app/shares";
@@ -149,7 +150,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
           <button
             type="button"
             onClick={() => {
-              void navigator.clipboard?.writeText(link).then(() => {
+              void copyText(link).then(() => {
                 setCopied(true);
                 window.setTimeout(() => setCopied(false), 1500);
               });

@@ -1,6 +1,7 @@
 import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { getBearerToken, setBearerToken } from "./bearer";
+import { writeSessionUser } from "./session-sync";
 
 /**
  * Cliente de Better Auth para el navegador. Habla con `/api/auth/*` del mismo
@@ -49,5 +50,7 @@ export async function signOut(redirectTo = "/"): Promise<void> {
     );
   }
   setBearerToken(null);
+  // Las demás pestañas también salen (ver `session-sync.ts`).
+  writeSessionUser("");
   window.location.replace(redirectTo);
 }

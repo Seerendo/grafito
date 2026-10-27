@@ -565,11 +565,15 @@ export const updateVaultUser = createServerFn({ method: "POST" })
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     await sql`update "user" set name = ${data.name.trim()}, "updatedAt" = now() where id = ${data.userId}`;
     await sql`update app_user_role set role_id = ${data.roleId} where user_id = ${data.userId}`;
-    const contact = data.email || null;
-    await sql`
-      insert into app_profile (user_id, contact_email) values (${data.userId}, ${contact})
-      on conflict (user_id) do update set contact_email = excluded.contact_email
-    `;
+    // Con LDAP, OAuth o SSO el correo lo fija el proveedor (`syncExternalEmail`).
+    const { externalEmail } = await import("@/lib/auth/provision.server");
+    if (!(await externalEmail(sql, data.userId))) {
+      const contact = data.email || null;
+      await sql`
+        insert into app_profile (user_id, contact_email) values (${data.userId}, ${contact})
+        on conflict (user_id) do update set contact_email = excluded.contact_email
+      `;
+    }
     await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Actualiza a ${data.name.trim()}`);
     return { ok: true as const };
   });

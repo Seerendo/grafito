@@ -27,7 +27,7 @@ import {
   type ProviderRow,
   type SsoConfig,
 } from "./providers.server";
-import { provisionExternalUser } from "./provision.server";
+import { provisionExternalUser, syncExternalEmail } from "./provision.server";
 
 // Arranca (y comparte) la preparación de PGLite en cuanto carga este módulo.
 void ensureDbReady();
@@ -67,9 +67,37 @@ const baseURL = explicitBaseURL ?? {
   protocol: "auto" as const,
   fallback: "http://localhost:8080",
 };
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_ORIGINS]
-  : LOCAL_ORIGINS;
+// Otras direcciones por las que se entra al mismo servidor (su IP y su dominio,
+// por ejemplo), separadas por comas. Sin ellas, Better Auth rechaza el ingreso
+// con «Invalid origin» (ver `AccessGate`).
+const extraOrigins: string[] = (env("BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+const fixedOrigins: string[] = [
+  ...(explicitBaseURL ? [explicitBaseURL] : []),
+  ...extraOrigins,
+  ...LOCAL_ORIGINS,
+];
+
+/**
+ * El Origin de una petición hecha desde la misma dirección a la que va (la IP
+ * del servidor, o el dominio de un proxy que conserva Host o manda
+ * X-Forwarded-Host): no es de otro sitio, así que se acepta sin listarla.
+ */
+function sameSiteOrigin(request?: Request): string | null {
+  const origin = request?.headers.get("origin");
+  if (!origin) return null;
+  const forwarded = request?.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = (forwarded || request?.headers.get("host") || "").toLowerCase();
+  try {
+    return host && new URL(origin).host.toLowerCase() === host ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+const trustedOrigins = (request?: Request) => [...fixedOrigins, sameSiteOrigin(request)];
 
 /** Una sola conexión de Better Auth por proceso, aunque la instancia se rehaga. */
 function database() {
@@ -135,6 +163,10 @@ function buildAuth(providers: ProviderRow[]) {
             const state = await claimTempAccess(await getSql(), session.userId);
             if (state === "expired") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_EXPIRED" });
             if (state === "used") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_USED" });
+          },
+          // LDAP, OAuth o SSO: el correo de la cuenta es el de su proveedor.
+          after: async (session) => {
+            await syncExternalEmail(await getSql(), session.userId).catch(() => undefined);
           },
         },
       },

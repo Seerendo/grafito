@@ -1,3 +1,4 @@
+import { copyText } from "@/lib/clipboard";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TextAction } from "@/components/ui/TextAction";
@@ -67,7 +68,7 @@ export function ApiTokens() {
               type="button"
               aria-label={t("Copiar token")}
               onClick={() => {
-                void navigator.clipboard?.writeText(fresh).then(() => setCopied(true));
+                void copyText(fresh).then(() => setCopied(true));
               }}
               className="shrink-0 text-faint hover:text-fg"
             >

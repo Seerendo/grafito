@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
-import { displayNameOf, editorUrl, isOfficeName, issueOfficeToken, officeEnabled } from "@/server/office";
+import { displayNameOf, editorUrl, isOfficeName, issueOfficeToken, officeEnabled, officeReachProblem } from "@/server/office";
 import { allows, readUserProfile } from "@/server/profile";
 import { editableTarget, grantedDocOwner } from "@/server/share";
 import { getDoc } from "@/server/vault";
@@ -44,8 +44,12 @@ export const officeSession = createServerFn({ method: "POST" })
     if (!ownerId || !doc?.file?.key || !isOfficeName(doc.file.name)) {
       return { ok: false as const, error: "Ese documento no se puede abrir en el editor." };
     }
+    // Un ajuste del servidor que el navegador va a bloquear: se dice cuál, en
+    // vez de un editor en blanco (y sin reintentar: no se arregla solo).
+    const problem = officeReachProblem(new URL(data.origin).origin);
+    if (problem) return { ok: false as const, error: problem, setup: true as const };
     try {
-      const url = await editorUrl(doc.id, doc.file.name, canWrite, data.lang);
+      const url = await editorUrl(doc.id, doc.file.name, canWrite, data.lang, new URL(data.origin).origin);
       const session = issueOfficeToken({
         d: doc.id,
         o: ownerId,

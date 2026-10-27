@@ -277,6 +277,11 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
       }
       const result = await signInDetailed(email, password);
       if (!result.ok) {
+        // El servidor no acepta ingresos desde esta dirección: no es la contraseña.
+        if (result.code === "Invalid origin") {
+          setError(t("Grafito no acepta ingresos desde {0}. En el servidor, pon BETTER_AUTH_URL={0} (o añádela a BETTER_AUTH_TRUSTED_ORIGINS) en el .env y reinicia.", { 0: window.location.origin }));
+          return;
+        }
         setError(TEMP_ACCESS_ERRORS[result.code] ?? "Usuario o contraseña incorrectos.");
         return;
       }

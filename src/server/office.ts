@@ -1,3 +1,4 @@
+import { editorOrigin, isSameOrigin, officeProblem } from "./office-reach.ts";
 import type { Sql } from "@/lib/db";
 import { readToken, signToken } from "./file-links";
 
@@ -7,7 +8,8 @@ import { readToken, signToken } from "./file-links";
  * de docker-compose): Grafito no incluye su código, solo le pasa el archivo y
  * recibe lo guardado. Sin `COLLABORA_URL` la función está apagada.
  *
- *  - `COLLABORA_URL`: dirección de Collabora para el navegador (el iframe).
+ *  - `COLLABORA_URL`: dirección de Collabora para el navegador (el iframe);
+ *    `same-origin`, la misma de Grafito (la sirve `docker/gateway.conf`).
  *  - `COLLABORA_INTERNAL_URL`: para el servidor de Grafito (discovery).
  *  - `GRAFITO_WOPI_URL`: cómo llega Collabora a Grafito.
  */
@@ -44,12 +46,31 @@ export function officeEnabled(): boolean {
   return Boolean(env("COLLABORA_URL"));
 }
 
-/** Origen del editor, para la CSP (`frame-src`, `form-action`). */
-export function officeOrigin(): string | null {
+/**
+ * Origen del editor para una página abierta en `pageOrigin`, para la CSP
+ * (`frame-src`, `form-action`) y la URL del editor (ver `office-reach.ts`).
+ */
+export function officeOrigin(pageOrigin?: string | null): string | null {
+  const url = env("COLLABORA_URL");
+  if (!url || isSameOrigin(url)) return null;
+  try {
+    return editorOrigin(url, pageOrigin);
+  } catch {
+    return null;
+  }
+}
+
+/** Lo que impedirá ver el editor desde `pageOrigin`, con el ajuste que lo arregla, o `null`. */
+export function officeReachProblem(pageOrigin: string): string | null {
   const url = env("COLLABORA_URL");
   if (!url) return null;
   try {
-    return new URL(url).origin;
+    return officeProblem({
+      collaboraUrl: url,
+      pageOrigin,
+      frameAncestors: process.env.GRAFITO_PUBLIC_ORIGIN?.trim() || "localhost:*",
+      sslTermination: process.env.COLLABORA_SSL_TERMINATION?.trim().toLowerCase() === "true",
+    });
   } catch {
     return null;
   }
@@ -61,7 +82,8 @@ let discovery: Discovery | null = null;
 /** Qué abre Collabora y con qué URL (`/hosting/discovery`), una hora en caché. */
 async function readDiscovery(): Promise<Discovery> {
   if (discovery && Date.now() - discovery.at < 60 * 60_000) return discovery;
-  const base = env("COLLABORA_INTERNAL_URL") ?? env("COLLABORA_URL");
+  const configured = env("COLLABORA_URL");
+  const base = env("COLLABORA_INTERNAL_URL") ?? (configured && !isSameOrigin(configured) ? configured : null);
   if (!base) throw new Error("El editor de Office no está configurado.");
   const response = await fetch(`${base}/hosting/discovery`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`El editor de Office respondió ${response.status}.`);
@@ -82,14 +104,21 @@ async function readDiscovery(): Promise<Discovery> {
 }
 
 /** La URL del editor para un archivo, con la dirección pública de Collabora y el WOPISrc. */
-export async function editorUrl(docId: string, fileName: string, canWrite: boolean, lang: string): Promise<string> {
+export async function editorUrl(
+  docId: string,
+  fileName: string,
+  canWrite: boolean,
+  lang: string,
+  pageOrigin?: string,
+): Promise<string> {
   const ext = /\.([^.]+)$/.exec(fileName)?.[1]?.toLowerCase() ?? "";
   const entry = (await readDiscovery()).actions.get(ext);
   const urlsrc = (canWrite ? (entry?.edit ?? entry?.view) : (entry?.view ?? entry?.edit)) ?? null;
   if (!urlsrc) throw new Error("El editor de Office no abre ese tipo de archivo.");
-  const pub = env("COLLABORA_URL")!;
+  const configured = env("COLLABORA_URL")!;
+  const prefix = isSameOrigin(configured) ? "" : new URL(configured).pathname.replace(/\/+$/, "");
   const source = new URL(urlsrc);
-  const target = new URL(`${pub}${source.pathname}`);
+  const target = new URL(`${editorOrigin(configured, pageOrigin)}${prefix}${source.pathname}`);
   const wopiBase = env("GRAFITO_WOPI_URL") ?? env("BETTER_AUTH_URL") ?? "http://app:8080";
   target.searchParams.set("WOPISrc", `${wopiBase}/wopi/files/${encodeURIComponent(docId)}`);
   target.searchParams.set("lang", lang);
