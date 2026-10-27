@@ -225,6 +225,13 @@ function withTitle(documents: Document[], id: string, title: string): Document[]
 type VaultState = Persisted & {
   selectedPortfolioId: string | null;
   rootPicked: boolean;
+  /**
+   * Si lo último que se eligió en el directorio fue una carpeta (la raíz o un
+   * portafolio) y no un documento: solo entonces se resalta la carpeta. La
+   * carpeta elegida (`selectedPortfolioId`) sigue decidiendo dónde se crean
+   * las notas nuevas y dónde caen los archivos subidos.
+   */
+  folderPicked: boolean;
   collapsed: Record<string, boolean>;
   query: string;
   tag: string | null;
@@ -297,6 +304,7 @@ function freshVault(saved: Persisted | null) {
     draft: saved?.draft ?? null,
     selectedPortfolioId: "p-inicio" as string | null,
     rootPicked: false,
+    folderPicked: false,
     collapsed: {} as Record<string, boolean>,
     query: "",
     tag: null,
@@ -387,8 +395,8 @@ export const useVault = create<VaultState>((set, get) => ({
     });
   },
 
-  setActive: (id) => set({ activeId: id, graph: false, palette: false }),
-  selectInGraph: (id) => set({ activeId: id, palette: false }),
+  setActive: (id) => set({ activeId: id, graph: false, palette: false, folderPicked: false }),
+  selectInGraph: (id) => set({ activeId: id, palette: false, folderPicked: false }),
   closeActive: () => set({ activeId: null, graph: false }),
   setMode: (mode) => {
     if (mode !== "read" && !can(PERMISSION.notesEdit)) return;
@@ -403,14 +411,16 @@ export const useVault = create<VaultState>((set, get) => ({
   toggleGraph: () => get().setGraph(!get().graph),
   setPalette: (palette) => set({ palette }),
   setDialog: (dialog) => set({ dialog, palette: false }),
-  setSelectedPortfolio: (id) => set({ selectedPortfolioId: id, rootPicked: id === null }),
-  clearSelection: () => set({ activeId: null, graph: false, selectedPortfolioId: null, rootPicked: false }),
+  setSelectedPortfolio: (id) => set({ selectedPortfolioId: id, rootPicked: id === null, folderPicked: true }),
+  clearSelection: () =>
+    set({ activeId: null, graph: false, selectedPortfolioId: null, rootPicked: false, folderPicked: false }),
   showStart: () =>
     set({
       activeId: null,
       graph: false,
       selectedPortfolioId: null,
       rootPicked: false,
+      folderPicked: false,
       palette: false,
       dialog: null,
       query: "",
@@ -483,6 +493,7 @@ export const useVault = create<VaultState>((set, get) => ({
     set({
       documents: [document, ...get().documents],
       activeId: document.id,
+      folderPicked: false,
       graph: false,
       palette: false,
       selectedPortfolioId: target,
@@ -509,6 +520,7 @@ export const useVault = create<VaultState>((set, get) => ({
     set({
       documents: [document, ...get().documents],
       activeId: document.id,
+      folderPicked: false,
       graph: false,
       palette: false,
       selectedPortfolioId: portfolioId,

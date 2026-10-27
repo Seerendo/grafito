@@ -608,17 +608,18 @@ The look has two independent axes:
 - **Theme** (`app/theme.ts`): colors, fonts and the theme's own radii.
   - Ten themes, chosen per browser.
   - Applied as `<html data-theme>` by the boot script, with no flash.
-- **Design** (`domain/design.ts`): `modern` (the default) or `classic`, for
-  the whole installation.
+- **Design** (`domain/design.ts`), for the whole installation: `modern`
+  («Cristal», the default; it was called «Moderno», and the id stays so stored
+  settings keep working) or `classic` («Clásico»).
   - The administrator chooses it in Administration → Appearance → Design. It
     is stored in `app_setting.ui_design` (`server/design.ts`, cached 15 s).
   - The root route reads it on the server (`createIsomorphicFn`) and renders
     `<html data-design>`, so the first paint is already correct.
 
-**Classic** is the base interface. **Modern** is a separate CSS layer,
+**Classic** is the base interface. **Cristal** is a separate CSS layer,
 `src/design-modern.css`, active only under `html[data-design="modern"]`.
 
-- **What Modern changes:** shapes, depth, spacing and layout:
+- **What Cristal changes:** shapes, depth, spacing and layout:
   - floating glass panels,
   - pill controls,
   - an accent glow,
@@ -642,36 +643,19 @@ The look has two independent axes:
 - The caret is hidden everywhere except in editable fields.
 - Buttons, menu items, switches and draggable rows aren't selectable, so
   clicking them doesn't start a selection.
-
-## Email
-
-Server modules (details in [docs/MAIL.md](docs/MAIL.md)):
-
-- `mail.ts`: the SMTP settings in `app_setting` (`mail_*`, password encrypted
-  with `GRAFITO_ENCRYPTION_KEY`), sending with nodemailer, and the email
-  templates in the recipient's language.
-- `temp-access.ts`: a new user's temporary password.
-  - It's random, stored only as a hash, expires, works for a single sign-in,
-    and must be changed on that sign-in.
-  - The session hook in `lib/auth/server.ts` enforces expiry and single use.
-- `secret-note.ts`: the one-time note that carries that password.
-  - It's encrypted with a key derived from the token in the link's `#`.
-  - It's stored in Redis (or Postgres) by a hash of the token, and read and
-    deleted in one step.
-  - The public page is `routes/acceso.tsx`.
-- `notify.ts`: change notifications.
-  - **Trigger:** `writeDoc` and `replaceFile` call `noteChange` with whoever
-    made the change.
-  - **Recipients:** those with access are the owner plus share grants and
-    organization members (sub-organizations included), for the document or
-    any portfolio above it.
-  - **Sending:** an interval per process (started by `requireLease`) sends
-    one email per person after 5 minutes without changes, and purges expired
-    notes.
-
-Without email configured, nothing is queued or sent. A new user's link is
-shown to the administrator to hand over manually, so installations without
-email (or offline) keep working.
+- **No stray text cursor** (`app/blank-click.ts`, installed once by the root
+  route): browsers move the text selection to the nearest spot on any click,
+  often the end of a field or its label, and some draw a blinking bar there.
+  - A click on blank space (top bar, gaps between panels or between form
+    fields, a dialog's background) or on a text field's label doesn't move the
+    selection and releases the focused field. Labels of text fields no longer
+    focus them; checkboxes and the pill-shaped search fields
+    (`label[data-field]`) still do.
+  - When focus moves to something that isn't a text field (a button, a
+    selector), a caret left parked between elements is removed.
+  - Opening the vault clears a stray caret carried over from another screen.
+  - Reading text (`article`), drawings, draggable rows and scrollbars are left
+    alone, so text can still be selected.
 
 ## Security headers
 

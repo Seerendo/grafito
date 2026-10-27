@@ -30,7 +30,10 @@ export function ChromeHeader() {
           to="/"
           aria-label={t("Inicio")}
           onClick={() => useVault.getState().showStart()}
-          className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity hover:opacity-80"
+          // Sin dejar un cursor de texto en el logo: al cambiar de pantalla, el
+          // navegador lo trasladaría a un campo (p. ej. «Filtrar»).
+          onMouseDown={(event) => event.preventDefault()}
+          className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity select-none hover:opacity-80"
         >
           <Mark />
           <span className="font-semibold tracking-tight">{t("Grafito")}</span>

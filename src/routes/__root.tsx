@@ -1,6 +1,7 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { createIsomorphicFn } from "@tanstack/react-start";
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { installBlankClickGuard } from "@/app/blank-click";
 import { applyLocale, getLocale, LOCALE_COOKIE, localeFromCookie, useLocale } from "@/app/i18n";
 import { themeBootScript } from "@/app/theme";
 import { SessionWatch } from "@/components/session/SessionWatch";
@@ -72,6 +73,8 @@ function RootDocument() {
   const hydrated = useSyncExternalStore(noop, () => true, () => false);
   if (!hydrated) applyLocale(initial);
   const locale = useLocale();
+  // Clics en huecos y etiquetas: sin barra de texto suelta (ver `app/blank-click.ts`).
+  useEffect(() => installBlankClickGuard(), []);
 
   return (
     <html lang={locale} data-design={design} suppressHydrationWarning>

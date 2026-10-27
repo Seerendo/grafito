@@ -6,7 +6,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { releaseFocus, releaseOnBlankFrame } from "@/app/blank-click";
+import { clearStrayCaret, releaseFocus } from "@/app/blank-click";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Mark } from "@/components/brand/Mark";
 import { Modal } from "@/components/ui/Modal";
@@ -162,6 +162,13 @@ function VaultWorkspace() {
     setPane("files");
   };
 
+  // Al volver desde Cuenta o Administración, sin un cursor suelto en «Filtrar».
+  useEffect(() => {
+    clearStrayCaret();
+    const frame = requestAnimationFrame(clearStrayCaret);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   useEffect(() => {
     if (pluginFlagsFresh()) return;
     void listPlugins()
@@ -275,7 +282,7 @@ function VaultWorkspace() {
 
   return (
     <VisibilityProvider>
-    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg" onMouseDown={releaseOnBlankFrame}>
+    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
       <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button
           type="button"

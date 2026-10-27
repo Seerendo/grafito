@@ -355,7 +355,7 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Inteligencia artificial** | Which AI providers users may connect |
 | **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
 | **Plugins** | Turn the graph, Mermaid and links on or off |
-| **Apariencia** | **Diseño** (design): **Moderno** (modern, the default: floating panels, glass and rounded controls) or **Clásico** (classic, the original flat layout), for the whole installation. **Temas**: ten color themes, which apply to both designs. |
+| **Apariencia** | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
 | **Monitorización y logs** | System monitor, audit log, storage usage and backend health checks |
 

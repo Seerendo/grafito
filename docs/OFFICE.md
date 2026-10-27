@@ -133,7 +133,7 @@ lawyer review it.*
 
 | Symptom | Check |
 | --- | --- |
-| Text in the document is hard to read with a dark theme | Fixed in Grafito: without an explicit preference, Collabora follows the system's dark mode and left dark text on a dark page. Grafito now asks for the light theme (`ui_defaults=UITheme=light` on the editor URL), so the editor is shown like a printed page. Someone who switched to dark mode inside the editor (View → Dark mode) keeps that choice. |
+| Text in the document is hard to read with a dark theme | Fixed in Grafito: without an explicit preference, Collabora follows the system's dark mode and left dark text on a dark page. Grafito now asks for the light theme (`ui_defaults=UITheme=light;SavedUIState=false` on the editor URL), so the editor is shown like a printed page with every Grafito theme and design. `SavedUIState=false` makes this win over a dark mode the browser remembered from an earlier session. |
 | The editor doesn't open when selecting the file | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
 | "The Office editor responded 404/502" | `docker compose logs collabora`; Collabora needs about 20 s to start |
 | The editor shows "127.0.0.1 refused to connect" or stays blank | Collabora refuses to be embedded from that address. Set `GRAFITO_PUBLIC_ORIGIN` to the address in the browser's address bar (for example `http://192.168.1.20:8080`) and run `docker compose up -d collabora`. |

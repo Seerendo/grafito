@@ -887,6 +887,55 @@ Development server (`grafito-design`) with the window visible.
 | New note with text, then Esc | ✅ kept and synced («Idea guardada» is there after a reload) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
 
+## Round 22: two new designs, labels, stray cursor and Collabora
+
+Development server (`grafito-design`) with the window visible; production
+build checked for the new CSS.
+
+| Case | Result |
+| --- | --- |
+| Account or Administration → click the Grafito logo | ❌→✅ a cursor blinked in Filtrar: the logo text kept a text caret that the browser carried into the vault. The logo no longer takes a caret, and the vault clears a stray one when it opens; back in the vault there is no selection at all |
+| Administration → Correo electrónico (and LDAP, OAuth…): click a field's label or the space beside it | ❌→✅ it focused the field with the cursor at the end of its text. Labels of text fields no longer do that; checkboxes and the search pills still do |
+| Design picker | ✅ four cards with miniatures in the current theme: Cristal (was «Moderno»), Empresarial, Amigable, Clásico; each with a one-line description, which also fills the card (it had an empty band) |
+| Empresarial, Grafito theme (dark) and Papel (light) | ✅ ruled frame, flat surfaces, 6px corners, 24px sans-serif titles, neutral active row, underline tabs, sentence-case group labels; the primary action in the theme's accent (an ink-coloured version made near-black blocks on light themes and was dropped) |
+| Amigable, Grafito, Papel and Terminal | ✅ the top bar in the theme's accent with its contrast text; avatar and «+» as a veil of the bar (they first came out as near-black blocks); the profile menu keeps its own colours inside the bar |
+| Switches, 4 designs × 10 themes, on and off | ✅ knob against track at least 2.09:1 everywhere |
+| Phone (375 px), Amigable and Empresarial | ✅ no horizontal scroll; bar, tabs and tab bar fit |
+| Collabora | ✅ the editor URL now also sends `SavedUIState=false` (the page receives `data-saved-ui-state="false"` and `darkTheme: false`), so the light theme wins over a remembered dark mode |
+| Production CSS | ✅ `base-select`, `:is(html, html[data-design])`, `color-mix` and the popover exclusion survive the build |
+| `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 39 tests |
+
+## Round 23: back to two designs, and no cursor beside fields
+
+Development server (`grafito-design`), Papel theme, with the window visible.
+
+| Case | Result |
+| --- | --- |
+| Designs | ✅ Empresarial and Amigable removed (their CSS files, previews and strings); Cristal (was «Moderno») and Clásico remain. An installation saved with a removed design falls back to Cristal |
+| Administración → Correo: type in a field, then click just right of it (where the reported screenshot shows the bar) | ❌→✅ the browser left its caret parked after the field, in its label. Now no selection and no focus remain |
+| Same, clicking the label text, or the gap between two fields | ✅ no selection, no focus. The first fix missed label text: a scrollbar check misfired on inline elements; it now applies only to elements that scroll |
+| Type in a field, then click «Guardar» | ✅ no caret left parked beside the field |
+| Clicks inside a field | ✅ it focuses and the cursor shows as usual |
+| Filtrar pill (its magnifier) | ✅ still focuses the field |
+| Note text | ✅ still selectable (double-click selects a word); clicks on paragraphs aren't cancelled |
+| One guard for the whole app | ✅ replaces the per-screen handlers in the vault, the account and admin frame, and dialogs |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
+## Round 24: one highlighted row in the directory
+
+Development server (`grafito-design`).
+
+| Case | Result |
+| --- | --- |
+| Open a note stored in the root | ❌→✅ Raíz lit up too (opening it also marks the root as the current folder). Now only the note is highlighted |
+| Click Raíz | ✅ only Raíz |
+| Open a note inside a portfolio | ✅ only the note |
+| With that note open, click its portfolio | ✅ only the portfolio; the note stays open in the editor |
+| Open another note | ✅ only that note |
+| «+» after choosing a portfolio | ✅ the new note is created in that portfolio (the current folder still decides where notes go) and only it is highlighted |
+| Esc | ✅ nothing highlighted |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
 ## Useful commands
 
 ```bash

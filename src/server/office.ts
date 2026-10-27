@@ -95,9 +95,10 @@ export async function editorUrl(docId: string, fileName: string, canWrite: boole
   target.searchParams.set("lang", lang);
   // Sin preferencia explícita, Collabora sigue el modo oscuro del sistema y,
   // con un tema oscuro, deja el texto oscuro sobre la página oscura. El editor
-  // se abre siempre en claro, como un documento impreso; quien quiera puede
-  // cambiarlo desde el propio editor (Ver → Modo oscuro).
-  target.searchParams.set("ui_defaults", "UITheme=light");
+  // se abre siempre en claro, como un documento impreso, con cualquier tema
+  // de Grafito. `SavedUIState=false` hace que valga esto y no un modo oscuro
+  // que el navegador recordara de una sesión anterior.
+  target.searchParams.set("ui_defaults", "UITheme=light;SavedUIState=false");
   return target.toString();
 }
 

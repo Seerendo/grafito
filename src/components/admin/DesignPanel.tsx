@@ -56,6 +56,7 @@ export function DesignPanel() {
             <span className="theme-card-copy">
               <strong className="text-sm">{t(design.label)}</strong>
               {current === design.id ? <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em> : null}
+              <small>{t(design.description)}</small>
             </span>
           </button>
         ))}

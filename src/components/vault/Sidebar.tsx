@@ -62,6 +62,11 @@ export function Sidebar({
   const canUpload = can(PERMISSION.filesUpload);
   const canImport = can(PERMISSION.notesCreate);
   const rootPicked = useVault((state) => state.rootPicked);
+  // Una carpeta solo se resalta si fue lo último que se eligió (ver `folderPicked`).
+  const folderPicked = useVault((state) => state.folderPicked);
+  const rootLit = selectedId === null && rootPicked && folderPicked;
+  // Una sola fila resaltada: la carpeta si fue lo último elegido, si no el documento abierto.
+  const litId = folderPicked ? null : activeId;
   const trashOpen = useTrashView((state) => state.open);
   const collapsed = useVault((state) => state.collapsed);
   const setQuery = useVault((state) => state.setQuery);
@@ -178,7 +183,7 @@ export function Sidebar({
       }}
     >
       <div className="flex items-center gap-2 px-2 pt-2">
-        <label className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md bg-inset px-3 text-sm text-muted">
+        <label data-field className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md bg-inset px-3 text-sm text-muted">
           <Search className="size-4 shrink-0" />
           <input
             value={query}
@@ -251,7 +256,7 @@ export function Sidebar({
                 <li key={document.id}>
                   <DocButton
                     document={document}
-                    active={document.id === activeId}
+                    active={document.id === litId}
                     depth={0}
                     onOpen={open}
                     onOpenContent={openContent}
@@ -280,18 +285,18 @@ export function Sidebar({
               className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
                 dropOver === "root"
                   ? "bg-accent/15 text-fg ring-1 ring-accent"
-                  : selectedId === null && rootPicked
+                  : rootLit
                     ? "bg-inset text-fg"
                     : "text-muted hover:bg-elevated hover:text-fg"
               }`}
             >
-              <House className={`size-4 shrink-0 ${selectedId === null && rootPicked ? "text-accent" : "text-faint"}`} />
+              <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
               <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la raíz") : t("Raíz")}</span>
             </button>
             <GroupedDocs
               documents={forest.loose}
               scope="root"
-              activeId={activeId}
+              activeId={litId}
               depth={0}
               collapsed={collapsed}
               onOpen={open}
@@ -305,8 +310,8 @@ export function Sidebar({
                 key={node.portfolio.id}
                 node={node}
                 depth={0}
-                activeId={activeId}
-                selectedId={selectedId}
+                activeId={litId}
+                selectedId={folderPicked ? selectedId : null}
                 collapsed={collapsed}
                 dropOver={dropOver}
                 onOpen={open}

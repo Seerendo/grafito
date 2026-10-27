@@ -15,7 +15,7 @@ export function SearchField({
   placeholder: string;
 }) {
   return (
-    <label className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-line bg-inset px-3 text-sm">
+    <label data-field className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-line bg-inset px-3 text-sm">
       <Search className="size-4 shrink-0 text-faint" aria-hidden="true" />
       <input
         type="search"
