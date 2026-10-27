@@ -228,7 +228,7 @@ function ChatPanel({
             // Una sola caja: el texto arriba y, en la misma, el modelo y enviar.
             <form
               data-ui="composer"
-              className="m-2 flex shrink-0 flex-col rounded-lg border border-line bg-inset focus-within:border-accent/60"
+              className="m-2 flex shrink-0 flex-col rounded-lg border border-line bg-inset"
               onSubmit={(event) => {
                 event.preventDefault();
                 submit();

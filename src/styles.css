@@ -775,10 +775,75 @@ html[data-tone="dark"] .theme-moon {
 }
 
 /*
- * Caja del chat de IA: el foco se marca en el borde de toda la caja
- * (`focus-within`), no con un anillo propio alrededor del texto, que la
- * partía en dos. Fuera de capas, para ganar al anillo general.
+ * Donde se escribe (buscadores, filtros, títulos, el cuerpo de la nota, los
+ * campos de los formularios), el foco no dibuja anillo ni resalta el borde:
+ * basta el cursor de texto. Los botones, interruptores y demás controles
+ * conservan su anillo al llegar con el teclado. Fuera de capas, para ganar al
+ * anillo general de los dos diseños (`:is(html, html[data-design])` iguala su
+ * especificidad con o sin diseño).
  */
-html [data-ui="composer"] textarea:focus-visible {
+:is(html, html[data-design]) input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="submit"], [type="button"]):is(:focus, :focus-visible),
+:is(html, html[data-design]) textarea:is(:focus, :focus-visible),
+:is(html, html[data-design]) [contenteditable]:is(:focus, :focus-visible),
+:is(html, html[data-design]) select:is(:focus, :focus-visible) {
   outline: none;
+  box-shadow: none;
+}
+
+/*
+ * Selectores: la lista desplegable con esquinas redondeadas, del color del
+ * tema, donde el navegador deja darle estilo (`appearance: base-select`,
+ * Chrome y Edge 135+). En los demás queda la lista nativa.
+ */
+@supports (appearance: base-select) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+
+  select {
+    display: flex;
+    align-items: center;
+  }
+
+  /* La flecha la dibuja el componente `Select`. */
+  select::picker-icon {
+    display: none;
+  }
+
+  ::picker(select) {
+    margin-block: 6px;
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: var(--color-surface);
+    color: var(--color-fg);
+    padding: 4px;
+    box-shadow: 0 18px 40px rgb(0 0 0 / 0.35);
+  }
+
+  select option {
+    border-radius: 10px;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  select option:hover,
+  select option:focus-visible {
+    background: var(--color-elevated);
+    outline: none;
+  }
+
+  select option:checked {
+    color: var(--color-accent);
+  }
+
+  select option::checkmark {
+    display: none;
+  }
+
+  select option:disabled {
+    color: var(--color-faint);
+    cursor: default;
+  }
 }

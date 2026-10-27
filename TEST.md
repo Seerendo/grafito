@@ -858,6 +858,21 @@ accounts and passwords only, on the throwaway stack.
 | Secret note unit tests | ✅ read once, nothing readable stored, wrong token, expired and cancelled |
 | `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 39 tests |
 
+## Round 20: text fields, dropdowns and dialogs
+
+Development server (`grafito-design`), Modern design, Grafito theme, with the
+window visible.
+
+| Case | Result |
+| --- | --- |
+| Typing in Filtrar, the command palette, a note title and the note body | ❌→✅ an accent outline (and, in Modern, a highlighted border) appeared around the field while typing. Text fields no longer draw a focus ring or change their border; the text cursor is enough. Buttons and switches keep their keyboard focus ring |
+| Note body in Modern | ❌→✅ the Modern focus ring still won by specificity; the rule now matches with or without a design (`:is(html, html[data-design])`), computed outline `none` |
+| New portfolio dialog: click the dialog's empty space | ❌→✅ the click left a text cursor in the empty space; now it leaves none |
+| Filtrar: text cursor next to the magnifier (reported after the round) | ❌→✅ the cursor sat right against the icon and was hard to see; the field now has more room (`gap-2.5` and `pl-1`), also in the admin search fields |
+| New portfolio dialog: click the dialog's empty space (reported after the round) | ❌→✅ the blinking cursor stayed in the field. Now an empty-space click takes the focus out of the field (`blur`), the cursor disappears and the typed text stays |
+| Dropdowns (e.g. Cuenta → Preferencias → Idioma) | ✅ the list opens with rounded corners, the theme's surface and border, rounded options and the chosen one in the accent color (`appearance: base-select`, Chrome and Edge 135+; other browsers keep the native list) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
 ## Useful commands
 
 ```bash

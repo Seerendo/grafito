@@ -178,13 +178,13 @@ export function Sidebar({
       }}
     >
       <div className="flex items-center gap-2 px-2 pt-2">
-        <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-md bg-inset px-3 text-sm text-muted">
+        <label className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md bg-inset px-3 text-sm text-muted">
           <Search className="size-4 shrink-0" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("Filtrar")}
-            className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-faint"
+            className="min-w-0 flex-1 bg-transparent pl-1 text-fg outline-none placeholder:text-faint"
           />
           {query ? (
             <button type="button" aria-label={t("Limpiar filtro")} onClick={() => setQuery("")} className="text-faint hover:text-fg">

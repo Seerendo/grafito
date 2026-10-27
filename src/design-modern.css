@@ -24,7 +24,6 @@ html[data-design="modern"] {
   --m-border: color-mix(in srgb, var(--color-line) 62%, transparent);
   --m-hover: color-mix(in srgb, var(--color-fg) 6%, transparent);
   --m-active: color-mix(in srgb, var(--color-accent) 16%, transparent);
-  --m-ring: color-mix(in srgb, var(--color-accent) 32%, transparent);
   --m-shadow:
     0 1px 0 0 color-mix(in srgb, var(--color-fg) 5%, transparent) inset,
     0 24px 48px -28px rgb(0 0 0 / 0.55);
@@ -292,24 +291,13 @@ html[data-design="modern"] [data-ui="topbar"] > button.bg-accent {
   border-radius: 999px;
 }
 
-/* Campos con borde: esquinas suaves y un anillo de foco del acento. */
+/* Campos con borde: esquinas suaves. Sin resaltado al escribir (ver styles.css). */
 html[data-design="modern"] input.border,
 html[data-design="modern"] textarea.border,
 html[data-design="modern"] select.border,
 html[data-design="modern"] label input,
 html[data-design="modern"] label select {
   border-radius: 0.8rem;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-html[data-design="modern"] input.border:focus,
-html[data-design="modern"] textarea.border:focus,
-html[data-design="modern"] select.border:focus,
-html[data-design="modern"] label input:focus,
-html[data-design="modern"] label select:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px var(--m-ring);
-  outline: none;
 }
 
 html[data-design="modern"] :focus-visible {
