@@ -154,12 +154,10 @@ providers. Self-hosted Ollama or LM Studio also work offline.
 
 #### Test services
 
-Not started by default:
-
-- `docker compose --profile auth-test up -d`: Keycloak and OpenLDAP with
-  sample users, to try external sign-in.
-- `docker compose --profile mail-test up -d`: Mailpit, a fake mail server
-  that keeps every message (inbox at http://127.0.0.1:8025), to try email.
+`docker-compose.yml` only has what Grafito needs to run. The services used
+to test connections and integrations (Keycloak and OpenLDAP for external
+sign-in, Mailpit for email) live in a separate test compose that isn't part
+of the repository.
 
 Ollama and LM Studio aren't part of the compose. Run them yourself, installed
 on the machine or in a compose of your own, and expose their port. See
@@ -222,6 +220,8 @@ After that, the start screen is a normal sign-in.
 
 ### Notes
 
+- **New notes** start blank. A new note that you leave without writing
+  anything (and without renaming it) is discarded: it's never saved.
 - **Markdown:** notes support Markdown, Mermaid diagrams (including C4) and
   task checkboxes (`- [ ]`).
 - **Links:** type `[[` to link to another note. If the target doesn't exist
@@ -454,13 +454,9 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 
 ### Testing external sign-in locally
 
-```bash
-docker compose --profile auth-test up -d
-```
-
-This starts Keycloak on `127.0.0.1:8180` and OpenLDAP with sample users from
-`dev/auth-test/`. The comments in `docker-compose.yml` list the test
-credentials to enter in **Administración → Autenticación**.
+Point **Administración → Autenticación** at any LDAP directory or OpenID
+Connect provider you can reach. `dev/auth-test/` has a sample Keycloak realm
+and LDAP users to load into your own test servers.
 
 ## Development
 

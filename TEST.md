@@ -873,6 +873,20 @@ window visible.
 | Dropdowns (e.g. Cuenta → Preferencias → Idioma) | ✅ the list opens with rounded corners, the theme's surface and border, rounded options and the chosen one in the accent color (`appearance: base-select`, Chrome and Edge 135+; other browsers keep the native list) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
 
+## Round 21: email settings layout, stray cursor, Esc and blank new notes
+
+Development server (`grafito-design`) with the window visible.
+
+| Case | Result |
+| --- | --- |
+| Administración → Correo electrónico | ❌→✅ the form was a narrow column; it now fills the width like the other settings panels, with two columns per group (server, sender, links, test) |
+| Click a blank part of the top bar | ❌→✅ the browser put the text selection inside the Filtrar label (the nearest text spot), so a cursor blinked there. Blank clicks on the app frame (top bar, gaps between panels, directory header) no longer move the selection and release any focused field (`app/blank-click.ts`, shared with dialogs) |
+| Select a note, press Esc | ❌→✅ it went to Raíz but the row kept a focus border (Esc is a key press, so the browser drew the focus ring on the clicked row). The row now lets go of focus |
+| New note | ✅ starts with an empty body (no «# Sin título» line); the title is «Sin título» |
+| New note left blank (Esc) | ✅ removed when leaving it; it never reached the server (not back after a reload, not in the trash) |
+| New note with text, then Esc | ✅ kept and synced («Idea guardada» is there after a reload) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
 ## Useful commands
 
 ```bash
@@ -880,8 +894,11 @@ docker compose build --no-cache app
 docker compose up -d
 docker compose ps
 docker compose logs -f app
-docker compose -p grafito-e2e up -d --build
-docker compose -p grafito-e2e down -v
+# Test stack: all services plus OpenLDAP, Keycloak and Mailpit, in its own
+# project and volumes. docker-compose.test.yml is local and not versioned.
+docker compose stop
+docker compose -f docker-compose.test.yml --profile auth-test --profile mail-test up -d --build
+docker compose -f docker-compose.test.yml --profile auth-test --profile mail-test down -v
 npm run typecheck
 npm test
 ```

@@ -6,6 +6,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
+import { releaseFocus, releaseOnBlankFrame } from "@/app/blank-click";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Mark } from "@/components/brand/Mark";
 import { Modal } from "@/components/ui/Modal";
@@ -196,6 +197,9 @@ function VaultWorkspace() {
         }
         const hadChrome = state.graph || state.activeId || state.selectedPortfolioId || state.rootPicked;
         state.clearSelection();
+        // La fila que se había pulsado conserva el foco, y Esc (teclado) le
+        // dibujaría el anillo de foco: se suelta junto con la selección.
+        releaseFocus();
         if (hadChrome) setPane("files");
         return;
       }
@@ -271,7 +275,7 @@ function VaultWorkspace() {
 
   return (
     <VisibilityProvider>
-    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg" onMouseDown={releaseOnBlankFrame}>
       <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button
           type="button"

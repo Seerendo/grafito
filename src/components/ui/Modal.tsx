@@ -1,10 +1,5 @@
 import type { ReactNode } from "react";
-
-/** Un hueco: ni un control ni un elemento con texto propio. */
-function isBlank(target: HTMLElement): boolean {
-  if (target.closest("input, textarea, select, button, a, label, [contenteditable], [role=button], [tabindex]")) return false;
-  return ![...target.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
-}
+import { isBlank, releaseFocus } from "@/app/blank-click";
 
 /** Diálogo modal: abajo en móvil, centrado en escritorio. Clic fuera lo cierra. */
 export function Modal({
@@ -32,7 +27,7 @@ export function Modal({
           // cursor de texto suelto en el hueco.
           if (!isBlank(event.target as HTMLElement)) return;
           event.preventDefault();
-          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          releaseFocus();
         }}
         className={`w-full rounded-lg border border-line bg-surface p-4 shadow-2xl ${wide ? "max-w-4xl" : "max-w-md"}`}
       >

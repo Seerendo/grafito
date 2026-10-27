@@ -101,7 +101,10 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
   };
 
   return (
-    <form onSubmit={(event) => void save(event)} className="max-w-xl space-y-5">
+    <form
+      onSubmit={(event) => void save(event)}
+      className="space-y-5 rounded-lg border border-line bg-surface p-4"
+    >
       {!state.encryption ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
           {t("Falta")}{" "}<code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}{t("(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.")}
@@ -111,8 +114,7 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
         {state.ready ? t("El correo está activo.") : t("El correo está apagado.")}
       </p>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-1 text-xs font-medium tracking-widest text-faint uppercase">{t("Servidor SMTP")}</legend>
+      <Section title={t("Servidor SMTP")}>
         <TextField label={t("Servidor")} value={host} onChange={setHost} autoComplete="off" optional />
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">
@@ -135,33 +137,33 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
           <TextField label={t("Puerto")} value={port} onChange={setPort} autoComplete="off" type="number" />
         </div>
         <TextField label={t("Usuario")} value={user} onChange={setUser} autoComplete="off" optional />
-        <TextField
-          label={initial.hasPassword ? t("Contraseña (vacío = la guardada)") : t("Contraseña")}
-          value={password}
-          onChange={(value) => {
-            setPassword(value);
-            if (value) setClearPassword(false);
-          }}
-          autoComplete="new-password"
-          secret
-          optional
-        />
-        {initial.hasPassword && !password ? (
-          <label className="flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" checked={clearPassword} onChange={(event) => setClearPassword(event.target.checked)} />
-            {t("Quitar la contraseña guardada")}
-          </label>
-        ) : null}
-      </fieldset>
+        <div>
+          <TextField
+            label={initial.hasPassword ? t("Contraseña (vacío = la guardada)") : t("Contraseña")}
+            value={password}
+            onChange={(value) => {
+              setPassword(value);
+              if (value) setClearPassword(false);
+            }}
+            autoComplete="new-password"
+            secret
+            optional
+          />
+          {initial.hasPassword && !password ? (
+            <label className="mt-2 flex items-center gap-2 text-sm text-muted">
+              <input type="checkbox" checked={clearPassword} onChange={(event) => setClearPassword(event.target.checked)} />
+              {t("Quitar la contraseña guardada")}
+            </label>
+          ) : null}
+        </div>
+      </Section>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-1 text-xs font-medium tracking-widest text-faint uppercase">{t("Remitente")}</legend>
+      <Section title={t("Remitente")}>
         <TextField label={t("Correo del remitente")} value={from} onChange={setFrom} autoComplete="off" type="email" optional />
         <TextField label={t("Nombre del remitente")} value={fromName} onChange={setFromName} autoComplete="off" optional />
-      </fieldset>
+      </Section>
 
-      <fieldset className="space-y-3">
-        <legend className="mb-1 text-xs font-medium tracking-widest text-faint uppercase">{t("Enlaces y accesos")}</legend>
+      <Section title={t("Enlaces y accesos")}>
         <TextField label={t("Dirección de Grafito")} value={publicUrl} onChange={setPublicUrl} autoComplete="off" type="url" optional />
         <TextField
           label={t("Validez del acceso de un usuario nuevo (horas)")}
@@ -170,11 +172,23 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
           autoComplete="off"
           type="number"
         />
-      </fieldset>
+      </Section>
 
-      {message ? <p className={`text-sm ${message.ok ? "text-accent" : "text-danger"}`}>{t(message.text)}</p> : null}
+      <Section title={t("Prueba")}>
+        <TextField label={t("Enviar prueba a")} value={testTo} onChange={setTestTo} autoComplete="email" type="email" optional />
+        <div className="flex items-end">
+          <button
+            type="button"
+            disabled={busy !== null || !testTo}
+            onClick={() => void test()}
+            className="h-11 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated disabled:opacity-50"
+          >
+            {busy === "test" ? t("Enviando…") : t("Probar")}
+          </button>
+        </div>
+      </Section>
 
-      <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
         <button
           type="submit"
           disabled={busy !== null}
@@ -182,20 +196,18 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
         >
           {busy === "save" ? t("Guardando…") : t("Guardar")}
         </button>
-        <div className="ml-auto flex min-w-0 items-end gap-2">
-          <div className="w-56 min-w-0">
-            <TextField label={t("Enviar prueba a")} value={testTo} onChange={setTestTo} autoComplete="email" type="email" optional />
-          </div>
-          <button
-            type="button"
-            disabled={busy !== null || !testTo}
-            onClick={() => void test()}
-            className="h-11 shrink-0 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated disabled:opacity-50"
-          >
-            {busy === "test" ? t("Enviando…") : t("Probar")}
-          </button>
-        </div>
+        {message ? <p className={`text-sm ${message.ok ? "text-accent" : "text-danger"}`}>{t(message.text)}</p> : null}
       </div>
     </form>
+  );
+}
+
+/** Un grupo de campos con su título, en dos columnas en pantallas anchas. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset>
+      <legend className="mb-2 text-xs font-medium tracking-widest text-faint uppercase">{title}</legend>
+      <div className="grid gap-3 md:grid-cols-2">{children}</div>
+    </fieldset>
   );
 }

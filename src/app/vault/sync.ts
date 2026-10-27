@@ -1,6 +1,6 @@
 import type { Document, Portfolio } from "@/domain/vault/types";
 import { pullVault, pushVault } from "@/server/vault.functions";
-import { useVault } from "./store";
+import { isBlankDraft, useVault } from "./store";
 
 /**
  * Sincronización de la bóveda del navegador con la del servidor.
@@ -153,7 +153,8 @@ async function syncOnce(userId: string): Promise<void> {
   // 2. Subir lo que cambió aquí.
   const now = useVault.getState();
   const changes = {
-    docs: now.documents.filter((doc) => meta!.docs[doc.id] !== docSignature(doc)),
+    // La nota nueva en blanco no se sube: si se deja así, se descarta (`Draft`).
+    docs: now.documents.filter((doc) => meta!.docs[doc.id] !== docSignature(doc) && !isBlankDraft(now.draft, doc)),
     deletedDocs: Object.keys(meta.docs).filter((id) => !now.documents.some((doc) => doc.id === id)),
     portfolios: now.portfolios.filter((portfolio) => meta!.portfolios[portfolio.id] !== portfolioSignature(portfolio)),
     deletedPortfolios: Object.keys(meta.portfolios).filter((id) => !now.portfolios.some((portfolio) => portfolio.id === id)),

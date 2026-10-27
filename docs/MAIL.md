@@ -105,14 +105,16 @@ If Redis restarts, notes not opened yet are lost. The administrator then uses
 
 ## Trying it locally
 
-The compose file has a fake mail server that keeps every message:
+Run a fake mail server that keeps every message, such as Mailpit, next to
+Grafito:
 
 ```bash
-docker compose --profile mail-test up -d
+docker run -d --name mailpit -p 127.0.0.1:1025:1025 -p 127.0.0.1:8025:8025 axllent/mailpit:v1.20.4
 ```
 
-In **Administración → Correo electrónico**, set server `mailpit`, port `1025`
-and security **Ninguna**. Messages appear at http://127.0.0.1:8025.
+In **Administración → Correo electrónico**, set server `host.docker.internal`,
+port `1025` and security **Ninguna**. Messages appear at
+http://127.0.0.1:8025.
 
 ## Troubleshooting
 

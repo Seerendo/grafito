@@ -474,6 +474,7 @@ export const en: Record<string, string> = {
   "Limpiar búsqueda": "Clear search",
   "Plegar el directorio": "Collapse the directory",
   "Plegar los detalles": "Collapse the details",
+  "Prueba": "Test",
   "Abrir Grafito": "Open Grafito",
   "Acceso enviado: vence {0}": "Access sent: expires {0}",
   "Avisarme por correo cuando cambien algo que comparto o que me compartieron": "Email me when something I share, or that was shared with me, changes",

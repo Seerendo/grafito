@@ -230,51 +230,6 @@ services:
     ports:
       - "9980:9980"
 
-  # --- Only for testing external sign-in (not started by default) ---
-  # docker compose --profile auth-test up -d
-  # Test data in dev/auth-test/. Settings for Administration → Authentication:
-  #   LDAP: ldap://openldap:389 · cn=admin,dc=grafito,dc=test / grafito-ldap
-  #         base ou=people,dc=grafito,dc=test · filter (uid={{username}})
-  #   SSO:  issuer http://keycloak:8080/realms/grafito · client grafito / grafito-sso-secret
-  openldap:
-    image: osixia/openldap:1.5.0
-    profiles: ["auth-test"]
-    command: --copy-service
-    environment:
-      LDAP_ORGANISATION: Grafito
-      LDAP_DOMAIN: grafito.test
-      LDAP_ADMIN_PASSWORD: grafito-ldap
-    ports:
-      - "3389:389"
-    volumes:
-      - ./dev/auth-test/ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom:ro
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    profiles: ["auth-test"]
-    command: start-dev --import-realm
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: grafito-keycloak
-      # The browser uses 127.0.0.1:8180; the app talks to keycloak:8080.
-      KC_HOSTNAME: http://127.0.0.1:8180
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
-      KC_HTTP_ENABLED: "true"
-    ports:
-      - "8180:8080"
-    volumes:
-      - ./dev/auth-test/keycloak:/opt/keycloak/data/import:ro
-
-  # --- Only for testing email (not started by default) ---
-  # docker compose --profile mail-test up -d
-  # A fake mail server that keeps every message. In Administration → Email:
-  # server "mailpit", port 1025, security "None". Inbox: http://127.0.0.1:8025
-  mailpit:
-    image: axllent/mailpit:v1.20.4
-    profiles: ["mail-test"]
-    ports:
-      - "127.0.0.1:8025:8025"
-
 volumes:
   grafito_pg:
   grafito_es:

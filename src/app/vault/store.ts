@@ -29,12 +29,27 @@ function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
 }
 
+/**
+ * Nota recién creada que aún no se guardó: vive solo en este navegador hasta
+ * que se le escribe algo. Si se deja en blanco (sin texto y con el título con
+ * el que nació), al salir de ella se descarta. Ver `isBlankDraft`.
+ */
+export type Draft = { id: string; title: string };
+
 type Persisted = {
   documents: Document[];
   portfolios: Portfolio[];
   activeId: string | null;
   mode: ViewMode;
+  draft?: Draft | null;
 };
+
+/** Si `document` es la nota nueva y sigue en blanco (no se sube ni se guarda). */
+export function isBlankDraft(draft: Draft | null | undefined, document: Document): boolean {
+  return Boolean(
+    draft && draft.id === document.id && document.kind === "markdown" && !document.content.trim() && document.title === draft.title,
+  );
+}
 
 function isDocument(value: unknown): value is Document {
   if (!value || typeof value !== "object") return false;
@@ -111,7 +126,9 @@ function parseSaved(raw: string): Persisted | null {
     : documents[0]!.id;
   const mode: ViewMode =
     data.mode === "edit" || data.mode === "split" || data.mode === "read" ? data.mode : "read";
-  return { documents, portfolios, activeId, mode };
+  const draft =
+    data.draft && typeof data.draft.id === "string" && typeof data.draft.title === "string" ? data.draft : null;
+  return { documents, portfolios, activeId, mode, draft };
 }
 
 /** Bóveda compartida de versiones anteriores (sin usuario), si la hay. */
@@ -277,6 +294,7 @@ function freshVault(saved: Persisted | null) {
     portfolios: saved?.portfolios ?? seed.portfolios,
     activeId: saved?.activeId ?? seed.activeId,
     mode: saved?.mode ?? ("read" as ViewMode),
+    draft: saved?.draft ?? null,
     selectedPortfolioId: "p-inicio" as string | null,
     rootPicked: false,
     collapsed: {} as Record<string, boolean>,
@@ -295,6 +313,7 @@ function persist(state: Pick<VaultState, "owner" | "hydrated" | keyof Persisted>
     portfolios: state.portfolios,
     activeId: state.activeId,
     mode: state.mode,
+    draft: state.draft,
   };
   try {
     localStorage.setItem(storageKey(state.owner), JSON.stringify(payload));
@@ -321,6 +340,7 @@ export const useVault = create<VaultState>((set, get) => ({
       hydrated: true,
       seeded: !saved,
     });
+    settleDraft();
     if (nested) persist(get());
     if (adopted) {
       persist(get());
@@ -447,12 +467,14 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.notesCreate)) return "";
     const target = portfolioId === undefined ? get().selectedPortfolioId : portfolioId;
     const name = uniqueTitle(get().documents, title?.trim() || t("Sin título"), target, "markdown");
+    // Sin contenido dado, la nota nace en blanco y es un borrador (`Draft`).
+    const blank = content === undefined;
     const document: Document = {
       id: crypto.randomUUID(),
       title: name,
       portfolioId: target,
       kind: "markdown",
-      content: content ?? `# ${name}\n\n`,
+      content: content ?? "",
       file: null,
       links: [],
       ...born(),
@@ -464,6 +486,7 @@ export const useVault = create<VaultState>((set, get) => ({
       graph: false,
       palette: false,
       selectedPortfolioId: target,
+      ...(blank ? { draft: { id: document.id, title: name } } : {}),
     });
     return document.id;
   },
@@ -682,7 +705,7 @@ export const useVault = create<VaultState>((set, get) => ({
       return;
     }
     const portfolioId = get().documents.find((document) => document.id === get().activeId)?.portfolioId ?? null;
-    get().createDocument(portfolioId, title, `# ${title}\n\n`);
+    get().createDocument(portfolioId, title);
   },
 
   duplicate: (id) => {
@@ -724,6 +747,26 @@ subscribePermissions(() => {
   if (state.mode !== "read" && !can(PERMISSION.notesEdit)) patch.mode = "read";
   if (state.graph && !can(PERMISSION.graphView)) patch.graph = false;
   if (Object.keys(patch).length > 0) useVault.setState(patch);
+});
+
+/**
+ * Al salir de la nota nueva (otra nota, la raíz, Esc, recargar en otra): si
+ * sigue en blanco se descarta; si ya tiene algo, deja de ser borrador.
+ */
+function settleDraft(): void {
+  const state = useVault.getState();
+  const draft = state.draft;
+  if (!draft || state.activeId === draft.id) return;
+  const document = state.documents.find((item) => item.id === draft.id);
+  if (document && isBlankDraft(draft, document)) {
+    useVault.setState({ documents: state.documents.filter((item) => item.id !== draft.id), draft: null });
+  } else {
+    useVault.setState({ draft: null });
+  }
+}
+
+useVault.subscribe((state, previous) => {
+  if (state.activeId !== previous.activeId && previous.draft && previous.activeId === previous.draft.id) settleDraft();
 });
 
 const persistFlag = "__grafitoPersistV3";

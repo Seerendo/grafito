@@ -58,7 +58,7 @@ grafito/
 ├── migrations/          Versioned SQL (applied once, by file name)
 ├── public/              Static assets: favicon, icon, PWA manifest, OG image
 ├── scripts/             Node utilities: launch guard, migrations and their test
-├── dev/                 Test fixtures for the auth-test profile (Keycloak realm, LDAP users)
+├── dev/                 Test fixtures for external sign-in (Keycloak realm, LDAP users)
 ├── docs/OPERATIONS.md   Runbook: backups, restore, secret rotation, incidents
 ├── src/
 │   ├── routes/          Routes (file = URL), kept as thin as possible
@@ -446,9 +446,10 @@ email matches. Better Auth uses `disableImplicitLinking`, and LDAP rejects it
 with «Ya existe otra cuenta con ese correo» ("another account already uses that
 email"). LDAP accounts without an email use `<uid>@ldap.grafito.app`.
 
-To test locally, run `docker compose --profile auth-test up -d`. It starts
-Keycloak (`127.0.0.1:8180`) and OpenLDAP with data from `dev/auth-test/` (see
-the comments in `docker-compose.yml`).
+To test locally, use any reachable LDAP directory or OpenID Connect provider.
+`dev/auth-test/` has a sample Keycloak realm and LDAP users. The test services
+themselves aren't in `docker-compose.yml`: they live in a local test compose
+that isn't versioned.
 
 **Lockfile:** after `npm install <package>` with a different npm than the
 image's (Node 22 / npm 10), regenerate `package-lock.json` like this so the
