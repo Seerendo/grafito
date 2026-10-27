@@ -7,7 +7,7 @@ import { t } from "@/app/i18n";
  * Cuenta). Se pliega a un riel estrecho, como el directorio de notas: el riel
  * conserva los iconos de las secciones y una flecha para volver a desplegarla.
  * Al volver a la pantalla aparece desplegada otra vez. En móvil no se muestra: la pantalla
- * usa tarjetas (`OptionGrid`) y un «Atrás».
+ * usa un mosaico de iconos (`OptionGrid`) y un «Atrás».
  */
 
 export type SettingsItem<T extends string> = { id: T; label: string; icon: LucideIcon };

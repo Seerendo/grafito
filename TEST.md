@@ -936,6 +936,19 @@ Development server (`grafito-design`).
 | Esc | ✅ nothing highlighted |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
 
+## Round 25: admin menus as icon tiles
+
+Development server (`grafito-design`).
+
+| Case | Result |
+| --- | --- |
+| Administración (overview and submenus) | ✅ each option is a tile in its own box: a 32px icon centred, the name centred under it; a grid of equal tiles filled from the left (8 options in rows of 4 on desktop; 3 in «Usuarios y permisos») |
+| Cristal (Grafito theme) and Clásico (Papel theme) | ✅ both read well |
+| Phone (375 px) | ✅ two columns, no sideways scroll |
+| A two-line name («Monitorización y logs») | ❌→✅ its icon sat higher than its neighbour's; the name area now always has room for two lines, so icons line up in every row (measured: same top in each row) |
+| Cuenta overview | ✅ uses the same tiles (same component) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
 ## Useful commands
 
 ```bash
