@@ -41,9 +41,18 @@ export const Route = createFileRoute("/wopi/files/$id/contents")({
         }
         const doc = await getDoc(sql, token.o, params.id);
         if (!doc?.file?.key) return new Response("Not found", { status: 404 });
+        // El editor manda la fecha del archivo que abrió. Si desde entonces
+        // cambió (se restauró una versión), no se pisa: Collabora avisa y deja
+        // elegir entre recargar o sobrescribir (este último sin la cabecera).
+        const opened = request.headers.get("x-cool-wopi-timestamp") ?? request.headers.get("x-lool-wopi-timestamp");
+        if (opened && Date.parse(opened) !== doc.updatedAt) {
+          return Response.json({ COOLStatusCode: 1010 }, { status: 409 });
+        }
         const key = newFileKey(token.o);
         await putBlob(sql, key, bytes, doc.file.mime);
-        const saved = await replaceFile(sql, token.o, params.id, { key, size: bytes.byteLength, actor: token.n });
+        // El autoguardado del editor se agrupa en el historial; un guardado de la persona, no.
+        const autosave = (request.headers.get("x-cool-wopi-isautosave") ?? request.headers.get("x-lool-wopi-isautosave")) === "true";
+        const saved = await replaceFile(sql, token.o, params.id, { key, size: bytes.byteLength, actor: token.n, actorId: token.u, autosave });
         return Response.json(
           { LastModifiedTime: new Date(saved.updatedAt).toISOString() },
           { headers: { "x-wopi-itemversion": key } },

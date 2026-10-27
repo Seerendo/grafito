@@ -1,7 +1,7 @@
 import { Download, PenLine } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useFileLinks, type FileLinks } from "@/app/files";
-import { isOfficeFile, useOfficeEnabled } from "@/app/office";
+import { isOfficeFile, useOfficeEnabled, useOfficeReload } from "@/app/office";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import type { VaultFile } from "@/domain/vault/types";
@@ -79,7 +79,8 @@ function FileBody({
   // Si se cierra desde el propio editor, queda un botón para volver a abrirlo.
   const [closed, setClosed] = useState(false);
   const editing = canOpen && !closed;
-  useEffect(() => setClosed(false), [office?.docId]);
+  const generation = useOfficeReload((state) => (office ? (state.generation[office.docId] ?? 0) : 0));
+  useEffect(() => setClosed(false), [office?.docId, generation]);
   // Lo guardado en el editor cambia el archivo en el servidor: se baja a la bóveda.
   const pull = () => {
     const owner = useVault.getState().owner;
@@ -119,6 +120,7 @@ function FileBody({
       </div>
       {editing && office ? (
         <OfficeEditor
+          key={generation}
           docId={office.docId}
           shareId={office.shareId}
           lang={getLocale()}

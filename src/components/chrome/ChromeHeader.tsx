@@ -57,7 +57,17 @@ export function AccountMenu() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  // Abierto con el ratón: al cerrarse, el botón suelta el foco para que no
+  // quede recuadrado (con el teclado sí conserva el foco y su anillo).
+  const byPointer = useRef(false);
   const letters = initials(profile.displayName);
+
+  useEffect(() => {
+    if (open || !byPointer.current) return;
+    byPointer.current = false;
+    if (document.activeElement === button.current) button.current?.blur();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,12 +93,16 @@ export function AccountMenu() {
   return (
     <div ref={root} className="relative">
       <button
+        ref={button}
         type="button"
         aria-label={t("Cuenta")}
         aria-expanded={open}
         aria-haspopup="menu"
+        onPointerDown={() => {
+          byPointer.current = true;
+        }}
         onClick={() => setOpen((value) => !value)}
-        className={`grid h-11 w-11 place-items-center rounded-md transition-opacity hover:opacity-80 ${open ? "opacity-80" : ""}`}
+        className="grid h-11 w-11 place-items-center rounded-md [-webkit-tap-highlight-color:transparent]"
       >
         <span className="grid size-8 place-items-center rounded-full bg-accent text-xs font-semibold text-accent-fg">
           {letters}
@@ -102,7 +116,7 @@ export function AccountMenu() {
               type="button"
               role="menuitem"
               onClick={() => go("/admin")}
-              className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg hover:bg-elevated"
+              className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg"
             >
               <Shield className="size-4 text-muted" />
               {t("Administración")}
@@ -113,7 +127,7 @@ export function AccountMenu() {
               type="button"
               role="menuitem"
               onClick={() => go("/cuenta")}
-              className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg hover:bg-elevated"
+              className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg"
             >
               <UserRound className="size-4 text-muted" />
               {t("Cuenta")}
@@ -126,7 +140,7 @@ export function AccountMenu() {
               setOpen(false);
               void leaveApp();
             }}
-            className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg hover:bg-elevated"
+            className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg"
           >
             <LogOut className="size-4 text-muted" />
             {t("Salir")}

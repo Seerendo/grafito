@@ -10,6 +10,7 @@
  * cliente: arrastra `pg` y los secretos.
  */
 import { betterAuth, type GenericEndpointContext } from "better-auth";
+import { APIError } from "better-auth/api";
 import { bearer, genericOAuth } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { randomBytes } from "node:crypto";
@@ -125,6 +126,18 @@ function buildAuth(providers: ProviderRow[]) {
     account: { accountLinking: { disableImplicitLinking: true } },
 
     databaseHooks: {
+      // Acceso temporal por correo (`server/temp-access.ts`): la contraseña ya
+      // se comprobó; si venció o ya se usó una vez, no se abre la sesión.
+      session: {
+        create: {
+          before: async (session) => {
+            const { claimTempAccess } = await import("@/server/temp-access");
+            const state = await claimTempAccess(await getSql(), session.userId);
+            if (state === "expired") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_EXPIRED" });
+            if (state === "used") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_USED" });
+          },
+        },
+      },
       user: {
         create: {
           // Filtro de dominios del proveedor (vacío = cualquiera).

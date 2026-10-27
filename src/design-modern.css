@@ -90,6 +90,7 @@ html[data-design="modern"] [data-ui="panes"] > [data-ui="rail"],
 html[data-design="modern"] [data-ui="panes"] > [data-ui="workspace"],
 html[data-design="modern"] [data-ui="panes"] > [data-ui="context"],
 html[data-design="modern"] [data-ui="context-slot"] > [data-ui="context"],
+html[data-design="modern"] [data-ui="context-slot"] > [data-ui="rail"],
 html[data-design="modern"] [data-ui="panes"] > [data-ui="editor"],
 html[data-design="modern"] [data-ui="panes"] > div:not([data-ui]) {
   overflow: hidden;

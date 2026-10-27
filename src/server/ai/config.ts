@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { AI_PROVIDERS, aiProvider, type AiProviderId, type AiProviderInfo } from "@/domain/ai";
 import { encrypt, open } from "@/server/crypto";
-import { checkLocalUrl } from "./local-url.ts";
+import { checkLocalUrl, localhostAlias } from "./local-url.ts";
 import type { Endpoint } from "./types.ts";
 
 /**
@@ -97,7 +97,7 @@ export async function endpointFor(sql: Sql, userId: string, provider: AiProvider
     return { policy, endpoint: { baseUrl: policy.baseUrl, apiKey } };
   }
   // Se vuelve a validar al usarla: la lista de direcciones prohibidas puede haber crecido.
-  const checked = checkLocalUrl(rows[0].base_url);
+  const checked = checkLocalUrl(rows[0].base_url, localhostAlias());
   if (!checked.ok) throw new AiUnavailable(`${checked.error} Revísala en Cuenta → IA.`);
-  return { policy, endpoint: { baseUrl: checked.url, apiKey } };
+  return { policy, endpoint: { baseUrl: checked.target, apiKey } };
 }

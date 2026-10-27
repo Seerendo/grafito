@@ -1,22 +1,26 @@
-import { Bot, CheckCircle2, CircleAlert, Loader2, MessageCircle, Send, Square, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, Bot, Check, CheckCircle2, ChevronDown, CircleAlert, History, Loader2, MessageCircle, Minus, SquarePen, Square, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useAiChat, type ChatTurn } from "@/app/ai-chat";
 import { useVault } from "@/app/vault/store";
 import { MarkdownView } from "@/components/vault/MarkdownView";
-import { Select } from "@/components/ui/Select";
 import { findByTitle } from "@/domain/vault/links";
 import type { AiProviderId } from "@/domain/ai";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { aiChatState, aiModels } from "@/server/ai.functions";
-import { t } from "@/app/i18n";
+import { intl, t } from "@/app/i18n";
 
 /**
  * Chat de IA de la bóveda: botón flotante (o Ctrl+B) que abre un panel para
- * hablar con el modelo elegido sobre las notas, portafolios y archivos.
+ * hablar con el modelo elegido sobre las notas, portafolios y archivos. Guarda
+ * cada conversación en el historial; un clic fuera del panel lo minimiza.
  */
 
 type ChatInfo = Awaited<ReturnType<typeof aiChatState>>;
+type Provider = { id: AiProviderId; label: string };
+
+/** Duración de la animación al abrir y minimizar (igual que en el CSS). */
+const MOTION_MS = 200;
 
 export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (id: string) => void }) {
   const userId = useCurrentUser()?.id;
@@ -24,6 +28,9 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
   const bind = useAiChat((state) => state.bind);
   const setOpen = useAiChat((state) => state.setOpen);
   const [info, setInfo] = useState<ChatInfo | null>(null);
+  // El panel se queda montado mientras se anima al minimizarse.
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
 
   useEffect(() => {
     if (userId) bind(userId);
@@ -43,37 +50,53 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
       .catch(() => setInfo({ ok: false, providers: [] }));
   }, []);
 
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      // Un instante después de montarlo, para que el navegador pinte primero el
+      // estado cerrado y la apertura se anime.
+      const timer = window.setTimeout(() => setShown(true), 20);
+      return () => window.clearTimeout(timer);
+    }
+    setShown(false);
+    const timer = window.setTimeout(() => setMounted(false), MOTION_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
   if (info && !info.ok) return null;
 
   return (
     <>
-      {!open ? (
-        <button
-          type="button"
-          aria-label={t("Abrir chat de IA (Ctrl+B)")}
-          title={t("Chat de IA (Ctrl+B)")}
-          onClick={() => setOpen(true)}
-          data-ui="fab"
-          className={`fixed right-4 z-30 grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105 ${
-            mobile ? "bottom-20" : "bottom-5"
-          }`}
-        >
-          <MessageCircle className="size-5" />
-        </button>
-      ) : (
-        <ChatPanel mobile={mobile} info={info} onOpenNote={onOpenNote} onClose={() => setOpen(false)} />
-      )}
+      <button
+        type="button"
+        aria-label={t("Abrir chat de IA (Ctrl+B)")}
+        title={t("Chat de IA (Ctrl+B)")}
+        onClick={() => setOpen(true)}
+        data-ui="fab"
+        data-state={mounted ? "hidden" : "shown"}
+        tabIndex={mounted ? -1 : 0}
+        className={`ai-fab fixed right-4 z-30 grid size-12 place-items-center rounded-full bg-accent text-accent-fg shadow-lg ${
+          mobile ? "bottom-20" : "bottom-5"
+        }`}
+      >
+        <MessageCircle className="size-5" />
+      </button>
+      {mounted ? (
+        <ChatPanel mobile={mobile} shown={shown} info={info} onOpenNote={onOpenNote} onClose={() => setOpen(false)} />
+      ) : null}
     </>
   );
 }
 
 function ChatPanel({
   mobile,
+  shown,
   info,
   onOpenNote,
   onClose,
 }: {
   mobile: boolean;
+  shown: boolean;
   info: ChatInfo | null;
   onOpenNote: (id: string) => void;
   onClose: () => void;
@@ -83,20 +106,43 @@ function ChatPanel({
   const model = useAiChat((state) => state.model);
   const send = useAiChat((state) => state.send);
   const stop = useAiChat((state) => state.stop);
-  const clear = useAiChat((state) => state.clear);
+  const newChat = useAiChat((state) => state.newChat);
   const [draft, setDraft] = useState("");
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const providers = info?.ok ? info.providers : [];
+  const providers: Provider[] = info?.ok ? info.providers : [];
   const modelReady = Boolean(model && providers.some((provider) => provider.id === model.provider));
+  const title = turns.find((turn) => turn.role === "user")?.content.replace(/\s+/g, " ").trim() || t("Nueva conversación");
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [turns]);
+  }, [turns, view]);
 
   useEffect(() => {
-    if (modelReady) inputRef.current?.focus();
-  }, [modelReady]);
+    if (modelReady && view === "chat") inputRef.current?.focus();
+  }, [modelReady, view]);
+
+  // Un clic fuera del panel lo minimiza al botón del chat (no en móvil, donde ocupa la pantalla).
+  useEffect(() => {
+    if (mobile) return;
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target || panelRef.current?.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    return () => document.removeEventListener("pointerdown", onPointer);
+  }, [mobile, onClose]);
+
+  // La caja de texto crece con lo escrito, hasta un tope.
+  useEffect(() => {
+    const area = inputRef.current;
+    if (!area) return;
+    area.style.height = "auto";
+    area.style.height = `${Math.min(area.scrollHeight, 160)}px`;
+  }, [draft]);
 
   const submit = () => {
     if (!draft.trim() || busy || !modelReady) return;
@@ -106,160 +152,339 @@ function ChatPanel({
 
   return (
     <aside
+      ref={panelRef}
       data-ui="chat"
+      data-state={shown ? "open" : "closed"}
       role="dialog"
       aria-label={t("Chat de IA")}
-      className={`fixed z-40 flex flex-col border border-line bg-surface shadow-2xl ${
+      className={`ai-panel fixed z-40 flex flex-col border border-line bg-surface shadow-2xl ${
         mobile ? "inset-0" : "right-4 bottom-4 h-[min(640px,calc(100dvh-6rem))] w-[min(420px,calc(100vw-2rem))] rounded-lg"
       }`}
     >
-      <header className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <Bot className="size-4 text-accent" />
-        <span className="text-sm font-medium">{t("Asistente")}</span>
-        <span className="ml-auto flex items-center">
-          {turns.length > 0 ? (
-            <button type="button" onClick={clear} aria-label={t("Nueva conversación")} title={t("Nueva conversación")} className="grid size-9 place-items-center text-muted hover:text-fg">
-              <Trash2 className="size-4" />
-            </button>
-          ) : null}
-          <button type="button" onClick={onClose} aria-label={t("Cerrar chat (Ctrl+B)")} title={t("Cerrar (Ctrl+B)")} className="grid size-9 place-items-center text-muted hover:text-fg">
-            <X className="size-4" />
-          </button>
+      <header className="flex items-center gap-2 border-b border-line py-1.5 pr-1.5 pl-3">
+        <Bot className="size-4 shrink-0 text-accent" />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={view === "chat" ? title : undefined}>
+          {view === "history" ? t("Historial") : title}
         </span>
+        <HeaderButton
+          label={t("Historial de conversaciones")}
+          pressed={view === "history"}
+          onClick={() => setView((value) => (value === "history" ? "chat" : "history"))}
+        >
+          <History className="size-4" />
+        </HeaderButton>
+        <HeaderButton
+          label={t("Nueva conversación")}
+          onClick={() => {
+            newChat();
+            setView("chat");
+            setDraft("");
+          }}
+        >
+          <SquarePen className="size-4" />
+        </HeaderButton>
+        <HeaderButton label={t("Minimizar (Ctrl+B)")} onClick={onClose}>
+          <Minus className="size-4" />
+        </HeaderButton>
       </header>
 
       {info === null ? (
         <Centered>
           <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
         </Centered>
-      ) : providers.length === 0 ? (
-        <Centered>
-          <span>
-            {info.ok && info.anyAllowed
-              ? t("Todavía no has conectado ningún proveedor de IA.")
-              : t("El administrador todavía no ha activado proveedores de IA.")}
-          </span>
-          {info.ok && info.anyAllowed ? (
-            <Link to="/cuenta" className="text-accent underline-offset-4 hover:underline">
-              {t("Conectar uno en Cuenta → IA")}
-            </Link>
-          ) : null}
-        </Centered>
       ) : (
         <>
-          <ModelPicker providers={providers} />
-          <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
-            {!modelReady ? (
-              <Hint>{t("Selecciona un modelo para empezar.")}</Hint>
-            ) : turns.length === 0 ? (
-              <Hint>
-                {t("Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el portafolio Atlas?»")}
-              </Hint>
-            ) : null}
-            {turns.map((turn) => (
-              <Turn key={turn.id} turn={turn} onOpenNote={onOpenNote} />
-            ))}
-          </div>
-          <form
-            className="flex items-end gap-2 border-t border-line p-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
-          >
-            <textarea
-              ref={inputRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  submit();
-                }
+          {/* El historial ocupa la zona de los mensajes; la caja de texto sigue debajo. */}
+          {view === "history" ? (
+            <HistoryList onPick={() => setView("chat")} />
+          ) : providers.length === 0 ? (
+            <Centered>
+              <span>
+                {info.ok && info.anyAllowed
+                  ? t("Todavía no has conectado ningún proveedor de IA.")
+                  : t("El administrador todavía no ha activado proveedores de IA.")}
+              </span>
+              {info.ok && info.anyAllowed ? (
+                <Link to="/cuenta" className="text-accent underline-offset-4 hover:underline">
+                  {t("Conectar uno en Cuenta → IA")}
+                </Link>
+              ) : null}
+            </Centered>
+          ) : (
+            <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
+              {!modelReady ? (
+                <Hint>{t("Elige un modelo abajo para empezar.")}</Hint>
+              ) : turns.length === 0 ? (
+                <Hint>
+                  {t("Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el portafolio Atlas?»")}
+                </Hint>
+              ) : null}
+              {turns.map((turn) => (
+                <Turn key={turn.id} turn={turn} onOpenNote={onOpenNote} />
+              ))}
+            </div>
+          )}
+          {providers.length > 0 ? (
+            // Una sola caja: el texto arriba y, en la misma, el modelo y enviar.
+            <form
+              data-ui="composer"
+              className="m-2 flex shrink-0 flex-col rounded-lg border border-line bg-inset focus-within:border-accent/60"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submit();
               }}
-              disabled={!modelReady}
-              rows={2}
-              aria-label={t("Mensaje para la IA")}
-              placeholder={modelReady ? t("Escribe… (Enter envía, Mayús+Enter salta de línea)") : t("Selecciona un modelo")}
-              className="max-h-40 min-h-11 flex-1 resize-none rounded-md border border-line bg-inset px-3 py-2 text-sm text-fg outline-none disabled:opacity-60"
-            />
-            {busy ? (
-              <button type="button" onClick={stop} aria-label={t("Detener")} className="grid size-11 shrink-0 place-items-center rounded-md border border-line text-fg">
-                <Square className="size-4" />
-              </button>
-            ) : (
-              <button
-                type="submit"
-                disabled={!modelReady || !draft.trim()}
-                aria-label={t("Enviar")}
-                className="grid size-11 shrink-0 place-items-center rounded-md bg-accent text-accent-fg disabled:opacity-50"
-              >
-                <Send className="size-4" />
-              </button>
-            )}
-          </form>
+              onClick={(event) => {
+                if (event.target === event.currentTarget) inputRef.current?.focus();
+              }}
+            >
+              <textarea
+                ref={inputRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                disabled={!modelReady}
+                rows={1}
+                aria-label={t("Mensaje para la IA")}
+                placeholder={modelReady ? t("Escribe un mensaje…") : t("Elige un modelo abajo")}
+                className="block max-h-40 min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-0.5 text-sm text-fg outline-none placeholder:text-faint disabled:opacity-60"
+              />
+              <span className="flex items-center gap-1 px-1.5 pb-1.5">
+                <ModelPicker providers={providers} />
+                <span className="ml-auto hidden text-[11px] text-faint sm:inline">{t("Mayús+Enter: nueva línea")}</span>
+                {busy ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    aria-label={t("Detener")}
+                    title={t("Detener")}
+                    className="grid size-7 shrink-0 place-items-center rounded-md border border-line text-fg"
+                  >
+                    <Square className="size-3" />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={!modelReady || !draft.trim()}
+                    aria-label={t("Enviar")}
+                    title={t("Enviar (Enter)")}
+                    className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-accent-fg disabled:opacity-40"
+                  >
+                    <ArrowUp className="size-4" />
+                  </button>
+                )}
+              </span>
+            </form>
+          ) : null}
         </>
       )}
     </aside>
   );
 }
 
-function ModelPicker({ providers }: { providers: { id: AiProviderId; label: string }[] }) {
-  const model = useAiChat((state) => state.model);
-  const setModel = useAiChat((state) => state.setModel);
-  const [provider, setProvider] = useState<AiProviderId | "">(
-    model && providers.some((item) => item.id === model.provider) ? model.provider : "",
+function HeaderButton({
+  label,
+  pressed,
+  onClick,
+  children,
+}: {
+  label: string;
+  pressed?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      className={`grid size-8 shrink-0 place-items-center rounded-md ${pressed ? "bg-elevated text-fg" : "text-muted hover:text-fg"}`}
+    >
+      {children}
+    </button>
   );
-  const [models, setModels] = useState<string[] | null>(null);
-  const [error, setError] = useState("");
+}
+
+/** Historial: las conversaciones guardadas, de la más reciente a la más antigua. */
+function HistoryList({ onPick }: { onPick: () => void }) {
+  const conversations = useAiChat((state) => state.conversations);
+  const current = useAiChat((state) => state.conversationId);
+  const load = useAiChat((state) => state.loadConversations);
+  const openChat = useAiChat((state) => state.openChat);
+  const deleteChat = useAiChat((state) => state.deleteChat);
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!provider) return;
-    setModels(null);
-    setError("");
-    void aiModels({ data: { provider } })
-      .then((result) => {
-        if (!result.ok) setError(result.error);
-        setModels(result.models);
-      })
-      .catch(() => setError(t("No se pudieron leer los modelos.")));
-  }, [provider]);
+    void load();
+  }, [load]);
 
-  const current = model?.provider === provider ? model.model : "";
-  const options = useMemo(() => (models && current && !models.includes(current) ? [current, ...models] : (models ?? [])), [models, current]);
+  if (conversations === null) {
+    return (
+      <Centered>
+        <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
+      </Centered>
+    );
+  }
+  if (conversations.length === 0) return <Centered>{t("Todavía no hay conversaciones.")}</Centered>;
+  const when = (ms: number) =>
+    new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  return (
+    <ul className="min-h-0 flex-1 overflow-y-auto p-1.5">
+      {conversations.map((item) => (
+        <li key={item.id} className="group flex items-center gap-1 rounded-md hover:bg-elevated">
+          <button
+            type="button"
+            onClick={() => {
+              void openChat(item.id);
+              onPick();
+            }}
+            className="flex min-w-0 flex-1 flex-col px-2.5 py-2 text-left"
+          >
+            <span className={`truncate text-sm ${item.id === current ? "text-accent" : "text-fg"}`}>
+              {item.title || t("Sin título")}
+            </span>
+            <span className="text-[11px] text-faint">{when(item.updatedAt)}</span>
+          </button>
+          {confirming === item.id ? (
+            <span className="flex shrink-0 items-center gap-2 pr-2 text-xs">
+              <button type="button" onClick={() => void deleteChat(item.id)} className="text-danger">
+                {t("Eliminar")}
+              </button>
+              <button type="button" onClick={() => setConfirming(null)} className="text-muted hover:text-fg">
+                {t("No")}
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(item.id)}
+              aria-label={t("Eliminar conversación")}
+              title={t("Eliminar conversación")}
+              className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Selector de modelo compacto, bajo la caja de texto: muestra el modelo en uso
+ * y abre hacia arriba la lista de modelos de cada proveedor conectado.
+ */
+function ModelPicker({ providers }: { providers: Provider[] }) {
+  const model = useAiChat((state) => state.model);
+  const setModel = useAiChat((state) => state.setModel);
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<Partial<Record<AiProviderId, { list: string[]; error: string } | null>>>({});
+  const rootRef = useRef<HTMLDivElement>(null);
+  const ready = Boolean(model && providers.some((provider) => provider.id === model.provider));
+  const providerLabel = providers.find((provider) => provider.id === model?.provider)?.label;
+
+  useEffect(() => {
+    if (!open) return;
+    for (const provider of providers) {
+      if (models[provider.id] !== undefined) continue;
+      setModels((state) => ({ ...state, [provider.id]: null }));
+      void aiModels({ data: { provider: provider.id } })
+        .then((result) =>
+          setModels((state) => ({ ...state, [provider.id]: { list: result.models, error: result.ok ? "" : result.error } })),
+        )
+        .catch(() =>
+          setModels((state) => ({ ...state, [provider.id]: { list: [], error: "No se pudieron leer los modelos." } })),
+        );
+    }
+  }, [open, providers, models]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
 
   return (
-    <div className="grid grid-cols-2 gap-2 border-b border-line px-3 py-2">
-      <Select
-        value={provider}
-        onChange={(value) => {
-          setProvider(value as AiProviderId);
-          setModel(null);
-        }}
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("Modelo")}
+        title={ready && model ? `${providerLabel} · ${model.model}` : t("Elegir modelo")}
+        className={`flex h-7 max-w-56 min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
+          ready ? "text-muted hover:text-fg" : "text-accent"
+        }`}
       >
-        <option value="" disabled>
-          {t("Proveedor")}
-        </option>
-        {providers.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.label}
-          </option>
-        ))}
-      </Select>
-      <Select
-        value={current}
-        onChange={(value) => provider && setModel(value ? { provider, model: value } : null)}
-      >
-        <option value="" disabled>
-          {!provider ? t("Modelo") : models === null && !error ? t("Cargando…") : options.length ? t("Modelo") : t("Sin modelos")}
-        </option>
-        {options.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </Select>
-      {error ? <p className="col-span-2 text-xs text-danger">{t(error)}</p> : null}
+        <span className="truncate">{ready && model ? model.model : t("Elegir modelo")}</span>
+        <ChevronDown className="size-3 shrink-0" />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          data-ui="popover"
+          className="absolute bottom-full left-0 z-10 mb-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+        >
+          {providers.map((provider) => {
+            const entry = models[provider.id];
+            return (
+              <div key={provider.id} className="py-0.5">
+                <p className="px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-faint uppercase">{provider.label}</p>
+                {entry === null || entry === undefined ? (
+                  <p className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted">
+                    <Loader2 className="size-3 animate-spin" />
+                    {t("Cargando…")}
+                  </p>
+                ) : entry.error ? (
+                  <p className="px-2 py-1.5 text-xs text-danger">{t(entry.error)}</p>
+                ) : entry.list.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-muted">{t("Sin modelos")}</p>
+                ) : (
+                  entry.list.map((name) => {
+                    const on = model?.provider === provider.id && model.model === name;
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={on}
+                        onClick={() => {
+                          setModel({ provider: provider.id, model: name });
+                          setOpen(false);
+                        }}
+                        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg hover:bg-elevated"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{name}</span>
+                        {on ? <Check className="size-3.5 shrink-0 text-accent" /> : null}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

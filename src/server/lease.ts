@@ -97,10 +97,35 @@ export async function assertLease(sql: Sql, userId: string): Promise<{ ok: true;
   return { ok: true, expiresAt: expiresAt.toISOString() };
 }
 
+/** Cada cuánto se guarda la última conexión (no en cada petición). */
+const SEEN_EVERY_MS = 60_000;
+const seenAt = new Map<string, number>();
+
+/**
+ * Primer ingreso y última conexión (Administración → Usuarios). En memoria se
+ * recuerda cuándo se escribió por última vez, para no escribir en cada petición.
+ */
+export async function markSeen(sql: Sql, userId: string): Promise<void> {
+  const now = Date.now();
+  if (now - (seenAt.get(userId) ?? 0) < SEEN_EVERY_MS) return;
+  seenAt.set(userId, now);
+  const at = new Date(now).toISOString();
+  await sql`
+    insert into app_profile (user_id, first_login_at, last_seen_at) values (${userId}, ${at}, ${at})
+    on conflict (user_id) do update
+      set last_seen_at = excluded.last_seen_at,
+        first_login_at = coalesce(app_profile.first_login_at, excluded.first_login_at)
+  `;
+}
+
 export async function requireLease(userId: string): Promise<Sql> {
   const { getSql } = await import("@/lib/db");
   const sql = await getSql();
   const lease = await assertLease(sql, userId);
   if (!lease.ok) throw new UnauthorizedError();
+  await markSeen(sql, userId).catch(() => undefined);
+  // Envío periódico de avisos por correo (una vez por proceso).
+  const { startNotifier } = await import("@/server/notify");
+  startNotifier();
   return sql;
 }

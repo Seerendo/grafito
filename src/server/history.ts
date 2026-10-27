@@ -12,7 +12,10 @@ import { deleteBlob } from "./blobs";
  *
  * Los archivos editados con el editor de Office guardan en cada versión la
  * clave de su objeto (`file_key`, migración 0012). La primera versión de un
- * archivo es el original subido y nunca se agrupa ni se borra al agrupar.
+ * archivo es el original subido y nunca se agrupa ni se borra al agrupar. De
+ * un archivo solo se agrupan las versiones del autoguardado del editor
+ * (`autosave`, migración 0014): cada vez que la persona guarda queda una
+ * versión propia, que ningún guardado posterior sustituye.
  */
 
 const GROUP_MS = 10 * 60_000;
@@ -86,38 +89,50 @@ export async function ensureFileBaseline(
 }
 
 /**
- * Versión nueva de un archivo. Si la anterior es de la misma persona hace
- * menos de `GROUP_MS` (y no es el original), la sustituye y se borra el objeto
- * que ya nadie usa.
+ * Versión nueva de un archivo. Si la anterior es un autoguardado de la misma
+ * persona hace menos de `GROUP_MS` (y no es el original), la sustituye y se
+ * borra el objeto que ya nadie usa.
  */
 export async function recordFileVersion(
   sql: Sql,
   userId: string,
-  doc: { id: string; title: string; key: string; size: number; author: string; at: number; separate?: boolean },
+  doc: {
+    id: string;
+    title: string;
+    key: string;
+    size: number;
+    author: string;
+    at: number;
+    separate?: boolean;
+    autosave?: boolean;
+  },
 ): Promise<void> {
-  const last = await sql<{ id: string; author: string; created_at: unknown; file_key: string | null }>`
-    select id, author, created_at, file_key from vault_doc_version
+  const last = await sql<{ id: string; author: string; created_at: unknown; file_key: string | null; autosave: unknown }>`
+    select id, author, created_at, file_key, autosave from vault_doc_version
     where user_id = ${userId} and doc_id = ${doc.id}
     order by created_at desc limit 2
   `;
   const previous = last[0];
+  const autosave = Boolean(doc.autosave) && !doc.separate;
   const groupable =
     !doc.separate &&
     last.length === 2 &&
     previous?.file_key &&
+    (previous.autosave === true || previous.autosave === "t") &&
     previous.author === doc.author &&
     doc.at - Number(previous.created_at) < GROUP_MS;
   if (groupable && previous?.file_key) {
     await sql`
-      update vault_doc_version set title = ${doc.title}, file_key = ${doc.key}, file_size = ${doc.size}, created_at = ${doc.at}
+      update vault_doc_version set title = ${doc.title}, file_key = ${doc.key}, file_size = ${doc.size}, created_at = ${doc.at},
+        autosave = ${autosave}
       where id = ${previous.id}
     `;
     await deleteBlob(sql, previous.file_key);
     return;
   }
   await sql`
-    insert into vault_doc_version (id, user_id, doc_id, title, content, author, created_at, file_key, file_size)
-    values (${crypto.randomUUID()}, ${userId}, ${doc.id}, ${doc.title}, '', ${doc.author}, ${doc.at}, ${doc.key}, ${doc.size})
+    insert into vault_doc_version (id, user_id, doc_id, title, content, author, created_at, file_key, file_size, autosave)
+    values (${crypto.randomUUID()}, ${userId}, ${doc.id}, ${doc.title}, '', ${doc.author}, ${doc.at}, ${doc.key}, ${doc.size}, ${autosave})
   `;
   await prune(sql, userId, doc.id);
 }

@@ -52,9 +52,16 @@ behind the same HTTPS reverse proxy.
    WOPI endpoints (`/wopi/files/:id`).
    - Every save is a new object in storage and a new version in the file's
      history (**Historial**).
-   - Consecutive saves by the same person within 10 minutes are grouped. The
-     original upload is always kept.
-   - Any version can be restored.
+   - Each time the person saves (the save button or Ctrl+S) a version of its
+     own is kept. Only Collabora's automatic saves by the same person within
+     10 minutes are grouped (`X-COOL-WOPI-IsAutosave`). The original upload is
+     always kept.
+   - Any version can be restored. After a restore, the open editor reloads
+     with the restored content.
+   - A save from an editor opened before the file changed (for example, before
+     a restore) isn't written over it. Grafito answers with a conflict
+     (`X-COOL-WOPI-Timestamp`), and Collabora asks whether to reload the
+     document or overwrite it.
 3. **Permissions:**
    - Without the `notes.edit` permission, or on a read-only share, the
      document opens read-only.
@@ -126,7 +133,7 @@ lawyer review it.*
 
 | Symptom | Check |
 | --- | --- |
-| Text in the document is hard to read with a dark theme | Fixed in Grafito: browsers pass the page's dark color scheme to the editor's iframe, and Collabora's dark mode left dark text on a dark page. The editor is now always shown in light mode, like a printed page. |
+| Text in the document is hard to read with a dark theme | Fixed in Grafito: without an explicit preference, Collabora follows the system's dark mode and left dark text on a dark page. Grafito now asks for the light theme (`ui_defaults=UITheme=light` on the editor URL), so the editor is shown like a printed page. Someone who switched to dark mode inside the editor (View → Dark mode) keeps that choice. |
 | The editor doesn't open when selecting the file | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
 | "The Office editor responded 404/502" | `docker compose logs collabora`; Collabora needs about 20 s to start |
 | The editor shows "127.0.0.1 refused to connect" or stays blank | Collabora refuses to be embedded from that address. Set `GRAFITO_PUBLIC_ORIGIN` to the address in the browser's address bar (for example `http://192.168.1.20:8080`) and run `docker compose up -d collabora`. |

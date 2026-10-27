@@ -3,9 +3,9 @@ import { test } from "node:test";
 import { checkLocalUrl } from "./local-url.ts";
 
 test("acepta instancias propias en la red o en internet", () => {
-  assert.deepEqual(checkLocalUrl(" http://192.168.1.20:11434/ "), { ok: true, url: "http://192.168.1.20:11434" });
-  assert.deepEqual(checkLocalUrl("http://host.docker.internal:1234/v1"), { ok: true, url: "http://host.docker.internal:1234/v1" });
-  assert.deepEqual(checkLocalUrl("https://ollama.mi-dominio.com"), { ok: true, url: "https://ollama.mi-dominio.com" });
+  assert.deepEqual(checkLocalUrl(" http://192.168.1.20:11434/ "), { ok: true, url: "http://192.168.1.20:11434", target: "http://192.168.1.20:11434" });
+  assert.deepEqual(checkLocalUrl("http://host.docker.internal:1234/v1"), { ok: true, url: "http://host.docker.internal:1234/v1", target: "http://host.docker.internal:1234/v1" });
+  assert.deepEqual(checkLocalUrl("https://ollama.mi-dominio.com"), { ok: true, url: "https://ollama.mi-dominio.com", target: "https://ollama.mi-dominio.com" });
 });
 
 test("rechaza el propio servidor y los servicios internos", () => {
@@ -30,4 +30,21 @@ test("rechaza otros esquemas, credenciales y texto que no es URL", () => {
   assert.equal(checkLocalUrl("http://usuario:clave@equipo:11434").ok, false);
   assert.equal(checkLocalUrl("no es una url").ok, false);
   assert.equal(checkLocalUrl("").ok, false);
+});
+
+test("con el alias de Docker, «localhost» llama al equipo anfitrión", () => {
+  assert.deepEqual(checkLocalUrl("http://localhost:1235/v1", "host.docker.internal"), {
+    ok: true,
+    url: "http://localhost:1235/v1",
+    target: "http://host.docker.internal:1235/v1",
+  });
+  assert.deepEqual(checkLocalUrl("http://127.0.0.1:11434", "host.docker.internal"), {
+    ok: true,
+    url: "http://127.0.0.1:11434",
+    target: "http://host.docker.internal:11434",
+  });
+  // Un alias que apunta al propio contenedor o a un servicio interno no vale.
+  assert.equal(checkLocalUrl("http://localhost:11434", "localhost").ok, false);
+  assert.equal(checkLocalUrl("http://localhost:11434", "postgres").ok, false);
+  assert.equal(checkLocalUrl("http://postgres:5432", "host.docker.internal").ok, false);
 });

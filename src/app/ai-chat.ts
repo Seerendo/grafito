@@ -3,11 +3,13 @@ import type { AiProviderId } from "@/domain/ai";
 import { bearerHeader } from "@/lib/auth/bearer";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
+import { aiConversation, aiConversations, removeAiConversation, saveAiConversation } from "@/server/ai.functions";
 
 /**
- * Estado del chat de IA (cliente): abierto o cerrado, modelo elegido y la
- * conversación. La conversación vive en la pestaña (sessionStorage); el modelo
- * elegido se recuerda en el navegador por usuario.
+ * Estado del chat de IA (cliente): abierto o cerrado, modelo elegido, la
+ * conversación abierta y el historial. Las conversaciones se guardan en el
+ * servidor (`ai_conversation`); la pestaña recuerda cuál estaba abierta y el
+ * navegador, el modelo elegido por usuario.
  */
 
 export type ToolChip = { label: string; ok: boolean; docId?: string };
@@ -23,10 +25,16 @@ export type ChatTurn = {
 
 export type ModelRef = { provider: AiProviderId; model: string };
 
+export type ConversationSummary = { id: string; title: string; updatedAt: number };
+
 type ChatState = {
   userId: string | null;
   open: boolean;
+  /** Conversación abierta (no se guarda mientras no tenga turnos). */
+  conversationId: string;
   turns: ChatTurn[];
+  /** Historial de conversaciones; `null` mientras no se ha leído. */
+  conversations: ConversationSummary[] | null;
   model: ModelRef | null;
   busy: boolean;
   controller: AbortController | null;
@@ -36,11 +44,47 @@ type ChatState = {
   setModel: (model: ModelRef | null) => void;
   send: (text: string) => Promise<void>;
   stop: () => void;
-  clear: () => void;
+  newChat: () => void;
+  openChat: (id: string) => Promise<void>;
+  deleteChat: (id: string) => Promise<void>;
+  loadConversations: () => Promise<void>;
 };
 
 const MODEL_KEY = "grafito.ai.model:";
-const TURNS_KEY = "grafito.ai.turns:";
+const CURRENT_KEY = "grafito.ai.current:";
+
+/**
+ * Contexto que se manda al modelo: los últimos turnos de la conversación
+ * abierta, hasta `CONTEXT_TURNS` y unos `CONTEXT_CHARS` caracteres (lo más
+ * antiguo se deja fuera). Cada conversación tiene el suyo.
+ */
+const CONTEXT_TURNS = 30;
+const CONTEXT_CHARS = 24_000;
+
+/** Título de una conversación: el comienzo de la primera pregunta. */
+function titleOf(turns: ChatTurn[]): string {
+  const first = turns.find((turn) => turn.role === "user")?.content.replace(/\s+/g, " ").trim() ?? "";
+  return first.length > 80 ? `${first.slice(0, 79)}…` : first;
+}
+
+function contextOf(turns: ChatTurn[]): { role: "user" | "assistant"; content: string }[] {
+  const usable = turns.filter((turn) => !turn.error && turn.content).slice(-CONTEXT_TURNS);
+  const picked: { role: "user" | "assistant"; content: string }[] = [];
+  let size = 0;
+  for (let index = usable.length - 1; index >= 0; index -= 1) {
+    const turn = usable[index]!;
+    size += turn.content.length;
+    if (picked.length > 0 && size > CONTEXT_CHARS) break;
+    picked.unshift({ role: turn.role, content: turn.content });
+  }
+  // La conversación que recibe el modelo empieza por la persona.
+  while (picked[0]?.role === "assistant") picked.shift();
+  return picked;
+}
+
+function stored(turns: ChatTurn[]): ChatTurn[] {
+  return turns.map(({ pending: _pending, ...turn }) => turn);
+}
 
 function load<T>(storage: () => Storage, key: string, fallback: T): T {
   try {
@@ -63,111 +107,168 @@ function save(storage: () => Storage, key: string, value: unknown): void {
 const local = () => window.localStorage;
 const session = () => window.sessionStorage;
 
-export const useAiChat = create<ChatState>((set, get) => ({
-  userId: null,
-  open: false,
-  turns: [],
-  model: null,
-  busy: false,
-  controller: null,
-
-  bind: (userId) => {
-    if (get().userId === userId) return;
-    set({
-      userId,
-      turns: load<ChatTurn[]>(session, TURNS_KEY + userId, []).filter((turn) => !turn.pending),
-      model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
-    });
-  },
-
-  setOpen: (open) => set({ open }),
-  toggle: () => set({ open: !get().open }),
-
-  setModel: (model) => {
-    const userId = get().userId;
-    if (userId) save(local, MODEL_KEY + userId, model);
-    set({ model });
-  },
-
-  clear: () => {
-    get().controller?.abort();
-    const userId = get().userId;
-    if (userId) save(session, TURNS_KEY + userId, null);
-    set({ turns: [], busy: false, controller: null });
-  },
-
-  stop: () => get().controller?.abort(),
-
-  send: async (text) => {
-    const { model, userId, busy } = get();
-    const content = text.trim();
-    if (!model || !userId || busy || !content) return;
-    const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", content };
-    const answer: ChatTurn = { id: crypto.randomUUID(), role: "assistant", content: "", tools: [], pending: true };
-    const history = [...get().turns, userTurn]
-      .filter((turn) => !turn.error && turn.content)
-      .slice(-30)
-      .map((turn) => ({ role: turn.role, content: turn.content }));
-    const controller = new AbortController();
-    set({ turns: [...get().turns, userTurn, answer], busy: true, controller });
-
-    const patch = (change: Partial<ChatTurn> | ((turn: ChatTurn) => Partial<ChatTurn>)) =>
-      set({
-        turns: get().turns.map((turn) =>
-          turn.id === answer.id ? { ...turn, ...(typeof change === "function" ? change(turn) : change) } : turn,
-        ),
-      });
-
-    let changed = false;
+export const useAiChat = create<ChatState>((set, get) => {
+  /** Guarda la conversación en el servidor y la pone primera en el historial. */
+  const persist = async (id: string, turns: ChatTurn[]) => {
+    if (turns.length === 0) return;
+    const title = titleOf(turns);
     try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json", ...bearerHeader() },
-        body: JSON.stringify({ provider: model.provider, model: model.model, messages: history }),
-        signal: controller.signal,
-      });
-      if (!response.ok || !response.body) {
-        const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error || t("El servidor respondió {0}.", { 0: response.status }));
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let index = buffer.indexOf("\n");
-        while (index >= 0) {
-          const line = buffer.slice(0, index).trim();
-          buffer = buffer.slice(index + 1);
-          index = buffer.indexOf("\n");
-          if (!line) continue;
-          const event = JSON.parse(line) as
-            | { type: "tool"; event: ToolChip & { changed?: boolean } }
-            | { type: "text"; text: string }
-            | { type: "error"; message: string }
-            | { type: "done"; changed: boolean };
-          if (event.type === "tool") {
-            if (event.event.changed) changed = true;
-            patch((turn) => ({
-              tools: [...(turn.tools ?? []), { label: event.event.label, ok: event.event.ok, docId: event.event.docId }],
-            }));
-          } else if (event.type === "text") patch((turn) => ({ content: turn.content + event.text }));
-          else if (event.type === "error") patch({ error: event.message });
-          else if (event.type === "done") changed = changed || event.changed;
-        }
-      }
-    } catch (error) {
-      const aborted = error instanceof DOMException && error.name === "AbortError";
-      patch({ error: aborted ? t("Detenido.") : error instanceof Error ? error.message : t("No se pudo enviar.") });
-    } finally {
-      patch({ pending: false });
-      set({ busy: false, controller: null });
-      save(session, TURNS_KEY + userId, get().turns);
-      // La IA cambió la bóveda en el servidor: traer los cambios ya.
-      if (changed) void syncVault(userId);
+      const result = await saveAiConversation({ data: { id, title, turns: stored(turns) } });
+      if (!result.ok) return;
+      const list = get().conversations;
+      if (list) set({ conversations: [{ id, title, updatedAt: result.updatedAt }, ...list.filter((item) => item.id !== id)] });
+    } catch {
+      /* sin conexión: queda en la pestaña */
     }
-  },
-}));
+  };
+
+  const select = (id: string, turns: ChatTurn[]) => {
+    const userId = get().userId;
+    if (userId) save(session, CURRENT_KEY + userId, id);
+    set({ conversationId: id, turns });
+  };
+
+  return {
+    userId: null,
+    open: false,
+    conversationId: "",
+    turns: [],
+    conversations: null,
+    model: null,
+    busy: false,
+    controller: null,
+
+    bind: (userId) => {
+      if (get().userId === userId) return;
+      const current = load<string | null>(session, CURRENT_KEY + userId, null);
+      set({
+        userId,
+        conversationId: current ?? crypto.randomUUID(),
+        turns: [],
+        conversations: null,
+        model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
+      });
+      if (current) void get().openChat(current);
+    },
+
+    setOpen: (open) => set({ open }),
+    toggle: () => set({ open: !get().open }),
+
+    setModel: (model) => {
+      const userId = get().userId;
+      if (userId) save(local, MODEL_KEY + userId, model);
+      set({ model });
+    },
+
+    stop: () => get().controller?.abort(),
+
+    newChat: () => {
+      get().controller?.abort();
+      select(crypto.randomUUID(), []);
+    },
+
+    openChat: async (id) => {
+      get().controller?.abort();
+      select(id, []);
+      try {
+        const result = await aiConversation({ data: { id } });
+        if (get().conversationId !== id) return;
+        if (result.ok) set({ turns: result.turns });
+        else select(crypto.randomUUID(), []);
+      } catch {
+        /* se queda vacía */
+      }
+    },
+
+    deleteChat: async (id) => {
+      set({ conversations: (get().conversations ?? []).filter((item) => item.id !== id) });
+      if (get().conversationId === id) get().newChat();
+      try {
+        await removeAiConversation({ data: { id } });
+      } catch {
+        /* reaparece al volver a leer el historial */
+      }
+    },
+
+    loadConversations: async () => {
+      try {
+        const result = await aiConversations();
+        set({ conversations: result.conversations });
+      } catch {
+        set({ conversations: get().conversations ?? [] });
+      }
+    },
+
+    send: async (text) => {
+      const { model, userId, busy, conversationId } = get();
+      const content = text.trim();
+      if (!model || !userId || busy || !content) return;
+      const userTurn: ChatTurn = { id: crypto.randomUUID(), role: "user", content };
+      const answer: ChatTurn = { id: crypto.randomUUID(), role: "assistant", content: "", tools: [], pending: true };
+      const history = contextOf([...get().turns, userTurn]);
+      const controller = new AbortController();
+      // Los turnos de esta conversación, aunque la persona abra otra mientras responde.
+      let turns = [...get().turns, userTurn, answer];
+      set({ turns, busy: true, controller });
+
+      const patch = (change: Partial<ChatTurn> | ((turn: ChatTurn) => Partial<ChatTurn>)) => {
+        turns = turns.map((turn) =>
+          turn.id === answer.id ? { ...turn, ...(typeof change === "function" ? change(turn) : change) } : turn,
+        );
+        if (get().conversationId === conversationId) set({ turns });
+      };
+
+      let changed = false;
+      try {
+        const response = await fetch("/api/ai/chat", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", ...bearerHeader() },
+          body: JSON.stringify({ provider: model.provider, model: model.model, messages: history }),
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          const body = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(body?.error || t("El servidor respondió {0}.", { 0: response.status }));
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let index = buffer.indexOf("\n");
+          while (index >= 0) {
+            const line = buffer.slice(0, index).trim();
+            buffer = buffer.slice(index + 1);
+            index = buffer.indexOf("\n");
+            if (!line) continue;
+            const event = JSON.parse(line) as
+              | { type: "tool"; event: ToolChip & { changed?: boolean } }
+              | { type: "text"; text: string }
+              | { type: "error"; message: string }
+              | { type: "done"; changed: boolean };
+            if (event.type === "tool") {
+              if (event.event.changed) changed = true;
+              patch((turn) => ({
+                tools: [...(turn.tools ?? []), { label: event.event.label, ok: event.event.ok, docId: event.event.docId }],
+              }));
+            } else if (event.type === "text") patch((turn) => ({ content: turn.content + event.text }));
+            else if (event.type === "error") patch({ error: event.message });
+            else if (event.type === "done") changed = changed || event.changed;
+          }
+        }
+      } catch (error) {
+        const aborted = error instanceof DOMException && error.name === "AbortError";
+        patch({ error: aborted ? t("Detenido.") : error instanceof Error ? error.message : t("No se pudo enviar.") });
+      } finally {
+        patch({ pending: false });
+        if (get().controller === controller) set({ busy: false, controller: null });
+        void persist(conversationId, turns);
+        // La IA cambió la bóveda en el servidor: traer los cambios ya.
+        if (changed) void syncVault(userId);
+      }
+    },
+  };
+});

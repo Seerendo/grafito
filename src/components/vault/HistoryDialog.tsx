@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { diffLines, diffStats, type DiffLine } from "@/domain/diff";
 import { docHistory, docVersion, restoreDocVersion } from "@/server/history.functions";
+import { prepareRestore, useOfficeReload } from "@/app/office";
 import { intl, t } from "@/app/i18n";
 
 type Version = Extract<Awaited<ReturnType<typeof docHistory>>, { ok: true }>["versions"][number];
@@ -74,11 +75,13 @@ export function HistoryDialog({
     setBusy(true);
     setError("");
     try {
+      if (current.file) await prepareRestore(docId);
       const result = await restoreDocVersion({ data: { docId, shareId, versionId: current.id } });
       if (!result.ok) {
         setError(result.error);
         return;
       }
+      if (current.file) useOfficeReload.getState().reload(docId);
       onRestored(result);
       onClose();
     } catch {

@@ -24,6 +24,8 @@ from them.
   `docker-compose.yml` and switchable off: WOPI, file versions, and read-only
   or editable access by permission and share.
 - English interface, selectable in Account → User preferences.
+- Email (SMTP): new users get a one-time temporary password by email, and
+  people with access get notified when shared documents change.
 - A Modern design (default) with the original kept as Classic, chosen by the
   administrator; themes apply to both. Text is selectable everywhere, with no
   stray text cursors.

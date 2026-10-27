@@ -88,3 +88,28 @@ export async function redisSpace(): Promise<{ total: number; available: number; 
     return null;
   }
 }
+
+// --- Notas secretas (`server/secret-note.ts`) -----------------------------------
+
+const NOTE_PREFIX = "grafito:note:";
+
+/** Guarda una nota que caduca sola. Devuelve si quedó en Redis. */
+export async function redisPutNote(id: string, sealed: string, seconds: number): Promise<boolean> {
+  const redis = await client();
+  if (!redis) return false;
+  await redis.set(NOTE_PREFIX + id, sealed, { EX: Math.max(1, Math.ceil(seconds)) });
+  return true;
+}
+
+/** Lee y borra la nota en un solo paso: nadie puede leerla dos veces. `null` si no hay Redis. */
+export async function redisTakeNote(id: string): Promise<{ found: boolean; sealed: string | null } | null> {
+  const redis = await client();
+  if (!redis) return null;
+  const sealed = await redis.getDel(NOTE_PREFIX + id);
+  return { found: sealed !== null, sealed };
+}
+
+export async function redisDropNote(id: string): Promise<void> {
+  const redis = await client();
+  if (redis) await redis.del(NOTE_PREFIX + id);
+}

@@ -158,8 +158,12 @@ Not started by default:
 
 - `docker compose --profile auth-test up -d`: Keycloak and OpenLDAP with
   sample users, to try external sign-in.
-- `docker compose --profile ai-test up -d`: Ollama with a small open model, to
-  try the AI assistant.
+- `docker compose --profile mail-test up -d`: Mailpit, a fake mail server
+  that keeps every message (inbox at http://127.0.0.1:8025), to try email.
+
+Ollama and LM Studio aren't part of the compose. Run them yourself, installed
+on the machine or in a compose of your own, and expose their port. See
+[AI assistant](#ai-assistant).
 
 #### Without Docker (development)
 
@@ -207,10 +211,13 @@ After that, the start screen is a normal sign-in.
     lists your recent documents.
   - **Compartidos conmigo** holds what others shared with you.
   - **Papelera** (trash) holds what you deleted.
-  - Collapse the directory with the « arrow to get a wider editor.
-- **Center: the open note.**
+  - Collapse the directory with the « arrow to get a wider editor. It opens
+    expanded again when you come back to the vault.
+- **Center: the open note.** On the Raíz page, right-click a recent document
+  (or the empty space) for the same menu as in the directory.
 - **Right: the details panel.** It shows the outline, manual links, links
-  written in the text, and mentions (backlinks).
+  written in the text, and mentions (backlinks). Collapse it with the »
+  arrow.
 - **On phones,** a bottom bar switches between Notes, Note, Graph and Links.
 
 ### Notes
@@ -323,7 +330,9 @@ Setup, offline use and licensing notes for commercial use are in
 
 Open the avatar menu → **Cuenta**. Settings are split into sections:
 
-- **Datos de la cuenta:** display name and contact email.
+- **Datos de la cuenta:** display name.
+- **Correo:** your email address, and whether to get an email when something
+  you share, or that was shared with you, changes.
 - **Preferencias de usuario:** the interface language (Español / English). It
   is saved to the account, so it follows you to other browsers.
 - **Contraseña:** change your password. Accounts that sign in with LDAP, OAuth
@@ -341,9 +350,10 @@ admin permissions. The section sidebar collapses to an icon rail.
 
 | Section | What it does |
 | --- | --- |
-| **Usuarios y permisos** | Users, roles with per-permission toggles, organizations and sub-organizations |
+| **Usuarios y permisos** | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one. |
 | **Autenticación** | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains. |
 | **Inteligencia artificial** | Which AI providers users may connect |
+| **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
 | **Plugins** | Turn the graph, Mermaid and links on or off |
 | **Apariencia** | **Diseño** (design): **Moderno** (modern, the default: floating panels, glass and rounded controls) or **Clásico** (classic, the original flat layout), for the whole installation. **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
@@ -360,23 +370,34 @@ initial administrator always keeps every permission.
 2. Each user connects their own provider in **Cuenta → Conexiones de IA**:
    - Cloud providers use the user's own API key. Keys are tested before saving,
      stored encrypted (AES-256-GCM) and never sent back to the browser.
-   - Ollama and LM Studio use the address of the user's own instance, for
-     example `http://host.docker.internal:11434`. For safety, Grafito's own
-     server and internal services are rejected.
-3. Open the chat with the floating button or **Ctrl+B**. Pick a model and ask.
+   - Ollama and LM Studio use the address of the user's own instance:
+     - On the same machine as Docker, use `localhost`, for example
+       `http://localhost:11434` (Ollama) or `http://localhost:1234/v1`
+       (LM Studio). Grafito calls it on the host machine through
+       `host.docker.internal`, so the model doesn't need to be in Docker or on
+       Grafito's network.
+     - On another machine, use its IP or name, for example
+       `http://192.168.1.20:11434`.
+     - For safety, Grafito's own services (`postgres`, `app`…) are rejected.
+3. Open the chat with the floating button or **Ctrl+B**.
+   - Pick the model with the small selector under the message box, then ask.
+   - **New conversation** (pen icon) starts a fresh chat at any time.
+   - **History** (clock icon) lists your past conversations. Open one to
+     continue it, or delete it. Each conversation keeps its own context.
+     Conversations are saved on the server, so they're there in any browser.
+   - Clicking outside the chat minimizes it to its button.
 
 The assistant can list portfolios, search, read, create and edit notes, within
 the permissions of your role. The chat lists each tool it used, and you can
 click one to open the note.
 
-To try it with a local open model:
+To try it with a local open model, install Ollama (or LM Studio and start its
+server), download a model, allow the provider in administration, and connect
+`http://localhost:11434` (or `http://localhost:1234/v1`) in your account.
 
-```bash
-docker compose --profile ai-test up -d
-```
-
-This starts Ollama with `qwen2.5:1.5b`. Allow Ollama in administration, then
-connect `http://ollama:11434` in your account.
+- **LM Studio:** it may listen only on `127.0.0.1`. Docker Desktop reaches
+  that. On Linux, enable "Serve on Local Network" so the container can reach it.
+- **Ollama on Linux:** start it with `OLLAMA_HOST=0.0.0.0`.
 
 ## REST API
 
@@ -470,6 +491,8 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
   and what to do when something is down.
 - [docs/OFFICE.md](docs/OFFICE.md): the Office editor (Collabora), offline use
   and licensing.
+- [docs/MAIL.md](docs/MAIL.md): email (SMTP), new users' one-time access and
+  change notifications.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,
   sharing, sync, authentication and AI internals.
 - [TEST.md](TEST.md): the end-to-end test log for each round of changes.

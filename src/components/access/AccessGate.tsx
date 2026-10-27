@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { changePassword, signInWithPassword as passwordSignIn } from "@/lib/auth/password";
+import { changePassword, signInDetailed, signInWithPassword as passwordSignIn } from "@/lib/auth/password";
 import { ldapSignIn, providerErrorMessage, signInWithProvider } from "@/lib/auth/external";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { authMethods } from "@/server/auth.functions";
@@ -29,6 +29,12 @@ type Account = {
 async function signInWithPassword(email: string, password: string): Promise<void> {
   if (!(await passwordSignIn(email, password))) throw new Error("rejected");
 }
+
+/** Por qué no se pudo entrar con una contraseña temporal del correo (`server/temp-access.ts`). */
+const TEMP_ACCESS_ERRORS: Record<string, string> = {
+  TEMP_ACCESS_EXPIRED: "Tu contraseña temporal venció. Pide al administrador que te envíe un acceso nuevo.",
+  TEMP_ACCESS_USED: "Esa contraseña temporal ya se usó. Pide al administrador que te envíe un acceso nuevo.",
+};
 
 export function AccessGate({ children }: { children: ReactNode }) {
   const { user, isPending } = useCurrentUserState();
@@ -92,7 +98,8 @@ export function AccessGate({ children }: { children: ReactNode }) {
             userId,
             isAdmin: false,
             canAdmin: next.canAdmin,
-            mustChangePassword: false,
+            // Entró con la contraseña temporal del correo: primero elige la suya.
+            mustChangePassword: next.mustChangePassword,
             loginName: next.loginName,
           });
           return;
@@ -155,9 +162,10 @@ export function AccessGate({ children }: { children: ReactNode }) {
       <ChangePassword
         loginName={live.loginName}
         userId={live.userId}
+        isAdmin={live.isAdmin}
         currentDefault={usedPassword}
         onChanged={() => {
-          rememberAdmin(live.userId);
+          if (live.isAdmin) rememberAdmin(live.userId);
           setAccount({ ...live, mustChangePassword: false });
         }}
       />
@@ -267,7 +275,11 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
         setError(t("Ese usuario no es válido."));
         return;
       }
-      await signInWithPassword(email, password);
+      const result = await signInDetailed(email, password);
+      if (!result.ok) {
+        setError(TEMP_ACCESS_ERRORS[result.code] ?? "Usuario o contraseña incorrectos.");
+        return;
+      }
       onSignedIn(password);
     } catch {
       setError(t("Usuario o contraseña incorrectos."));
@@ -363,11 +375,13 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
 function ChangePassword({
   loginName,
   userId,
+  isAdmin,
   currentDefault,
   onChanged,
 }: {
   loginName: string;
   userId: string;
+  isAdmin: boolean;
   currentDefault: string;
   onChanged: () => void;
 }) {
@@ -408,7 +422,7 @@ function ChangePassword({
       } catch {
         /* la sesión del cambio puede seguir valiendo */
       }
-      rememberAdmin(userId);
+      if (isAdmin) rememberAdmin(userId);
       onChanged();
     } catch {
       setError(t("No se pudo cambiar la contraseña."));

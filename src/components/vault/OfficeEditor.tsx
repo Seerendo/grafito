@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { onBeforeRestore } from "@/app/office";
 import { officeSession } from "@/server/office.functions";
 import { t } from "@/app/i18n";
 
@@ -6,6 +7,9 @@ type Session = Extract<Awaited<ReturnType<typeof officeSession>>, { ok: true }>;
 
 /** Reintentos si el servidor aún no conoce el documento (recién subido). */
 const SESSION_RETRIES = 6;
+
+/** Cuánto se espera a que el editor guarde y cierre antes de restaurar una versión. */
+const RESTORE_WAIT_MS = 8000;
 
 /**
  * Documento de Office abierto en el editor (Collabora) dentro de un iframe.
@@ -86,6 +90,38 @@ export function OfficeEditor({
     return () => window.removeEventListener("message", onMessage);
   }, [session, onClose, onSaved]);
 
+  useEffect(() => {
+    if (!session) return;
+    const editorOrigin = new URL(session.url).origin;
+    return onBeforeRestore(
+      docId,
+      () =>
+        new Promise<void>((resolve) => {
+          const done = () => {
+            window.clearTimeout(timer);
+            window.removeEventListener("message", onAck);
+            resolve();
+          };
+          const onAck = (event: MessageEvent) => {
+            if (event.origin !== editorOrigin) return;
+            let message: { MessageId?: string; Values?: { Status?: string } } = {};
+            try {
+              message = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+            } catch {
+              return;
+            }
+            if (message.MessageId === "App_VersionRestore" && message.Values?.Status === "Pre_Restore_Ack") done();
+          };
+          const timer = window.setTimeout(done, RESTORE_WAIT_MS);
+          window.addEventListener("message", onAck);
+          frameRef.current?.contentWindow?.postMessage(
+            JSON.stringify({ MessageId: "Host_VersionRestore", Values: { Status: "Pre_Restore" } }),
+            editorOrigin,
+          );
+        }),
+    );
+  }, [session, docId]);
+
   if (error) return <p className="p-6 text-sm text-danger">{t(error)}</p>;
   if (!session) return <p className="p-6 text-sm text-faint">{t("Cargando…")}</p>;
   return (
@@ -99,9 +135,8 @@ export function OfficeEditor({
         name={frameName}
         title={t("Editor de Office")}
         allow="clipboard-read; clipboard-write; fullscreen"
-        // El navegador pasa el modo oscuro del tema al iframe, y Collabora en
-        // modo oscuro deja el texto oscuro sobre la página oscura: el editor
-        // siempre en claro, como un documento impreso.
+        // El editor va siempre en claro (se pide así en `server/office.ts`);
+        // el marco también, para que no asome el fondo del tema al cargar.
         style={{ colorScheme: "light" }}
         className="min-h-0 w-full flex-1 border-0 bg-white"
       />

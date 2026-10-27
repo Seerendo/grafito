@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, FileText, Hash, Link2, ListTree, Plus, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, ChevronsLeft, ChevronsRight, FileText, Hash, Link2, ListTree, Plus, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
@@ -39,11 +39,14 @@ export function ContextPane({
   onOpenNote,
   onInspect,
   onFilter,
+  onCollapse,
   holdGraph,
 }: {
   onOpenNote: (id: string) => void;
   onInspect: (id: string) => void;
   onFilter: () => void;
+  /** En escritorio, pliega el panel a un riel (`ContextRail`). */
+  onCollapse?: () => void;
   holdGraph: boolean;
 }) {
   const document = useActiveDocument();
@@ -73,8 +76,9 @@ export function ContextPane({
 
   if (!document) {
     return (
-      <aside data-ui="context" className="flex h-full items-center justify-center bg-surface p-6 text-sm text-faint md:w-72 md:border-l md:border-line">
-        {t("Sin documento abierto")}
+      <aside data-ui="context" className="flex h-full flex-col bg-surface text-sm text-faint md:w-72 md:border-l md:border-line">
+        <CollapseButton onCollapse={onCollapse} />
+        <p className="flex flex-1 items-center justify-center p-6">{t("Sin documento abierto")}</p>
       </aside>
     );
   }
@@ -127,6 +131,7 @@ export function ContextPane({
 
   return (
     <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
+      <CollapseButton onCollapse={onCollapse} />
       {document.kind === "markdown" ? (
         <Section
           title={t("Esquema")}
@@ -408,4 +413,38 @@ function Section({
 
 function Empty({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted italic">{children}</p>;
+}
+
+function CollapseButton({ onCollapse }: { onCollapse?: () => void }) {
+  if (!onCollapse) return null;
+  return (
+    <div className="flex shrink-0 justify-end px-1 pt-2">
+      <button
+        type="button"
+        aria-label={t("Plegar los detalles")}
+        title={t("Plegar los detalles")}
+        onClick={onCollapse}
+        className="grid h-8 w-7 place-items-center rounded-md text-faint hover:text-fg"
+      >
+        <ChevronsRight className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+/** Detalles plegados: un riel estrecho a la derecha con una flecha para desplegarlos. */
+export function ContextRail({ onExpand }: { onExpand: () => void }) {
+  return (
+    <div data-ui="rail" className="flex h-full w-9 shrink-0 flex-col items-center border-l border-line bg-surface pt-2">
+      <button
+        type="button"
+        aria-label={t("Desplegar los detalles")}
+        title={t("Desplegar los detalles")}
+        onClick={onExpand}
+        className="grid h-11 w-7 place-items-center rounded-md text-faint hover:text-fg"
+      >
+        <ChevronsLeft className="size-4" />
+      </button>
+    </div>
+  );
 }

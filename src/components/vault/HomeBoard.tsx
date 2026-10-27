@@ -2,14 +2,16 @@ import { File, FileText, Plus } from "lucide-react";
 import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
+import { useRowMenu } from "./RowMenu";
 
 const RECENT = 12;
 
-/** Raíz: lo último que se tocó en la bóveda. */
-export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
+/** Raíz: lo último que se tocó en la bóveda, con el mismo menú contextual que el directorio. */
+export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onOpenNote: (id: string) => void }) {
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const setActive = useVault((state) => state.setActive);
+  const { openMenu, element: menu } = useRowMenu(onOpenNote);
   const recent = useMemo(
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
     [documents],
@@ -17,7 +19,14 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
   const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Raíz");
 
   return (
-    <div data-home className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8">
+    <div
+      data-home
+      className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8"
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest("button")) return;
+        openMenu(event, { kind: "root" });
+      }}
+    >
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Raíz")}</h1>
@@ -43,6 +52,7 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
                     <button
                       type="button"
                       onClick={() => setActive(document.id)}
+                      onContextMenu={(event) => openMenu(event, { kind: "document", id: document.id })}
                       className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                     >
                       <Icon className="size-4 shrink-0 text-faint" />
@@ -57,6 +67,7 @@ export function HomeBoard({ onCreate }: { onCreate?: () => void }) {
           </section>
         ) : null}
       </div>
+      {menu}
     </div>
   );
 }

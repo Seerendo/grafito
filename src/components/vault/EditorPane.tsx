@@ -146,6 +146,7 @@ export function EditorPane({
     return (
       <HomeBoard
         onCreate={can(PERMISSION.notesCreate) ? () => createDocument() : undefined}
+        onOpenNote={onOpenNote}
       />
     );
   }

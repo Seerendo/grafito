@@ -253,6 +253,9 @@ The `vault/` pieces:
 | `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions |
 | `0009_ai_local_per_user.sql` | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`) |
 | `0013_user_preferences.sql` | `app_profile.locale` (interface language) |
+| `0014_last_seen_autosave.sql` | `app_profile.first_login_at` and `last_seen_at` (Users list), and `vault_doc_version.autosave` (only Office autosaves are grouped) |
+| `0015_ai_conversations.sql` | `ai_conversation`: saved AI chat conversations per user |
+| `0016_mail.sql` | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
 | `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
 | `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note) |
@@ -434,6 +437,10 @@ On first sign-in, `provision.server.ts` creates the account with the default
 role and sets `app_user_role.source` to the provider. The Users list shows it as
 a badge.
 
+The Users list also shows each person's first sign-in and last activity
+(`app_profile.first_login_at` and `last_seen_at`). `requireLease` updates them
+on authenticated requests, at most once a minute per person.
+
 An external account **never** takes over an existing account just because the
 email matches. Better Auth uses `disableImplicitLinking`, and LDAP rejects it
 with «Ya existe otra cuenta con ese correo» ("another account already uses that
@@ -484,6 +491,9 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
   browser, a shared editor, the API or the AI.
   - Consecutive changes by the same author within 10 minutes are merged into
     one version.
+    - For Office files, only the editor's autosaves are merged
+      (`vault_doc_version.autosave`, migration 0014). Each save the person
+      makes keeps its own version.
   - A restore always creates its own version, so it can be undone.
   - Each note keeps its latest 200 versions.
 - **Trash:** a deletion sets `deleted` and `deleted_at` and keeps the content.
@@ -632,6 +642,36 @@ The look has two independent axes:
 - Buttons, menu items, switches and draggable rows aren't selectable, so
   clicking them doesn't start a selection.
 
+## Email
+
+Server modules (details in [docs/MAIL.md](docs/MAIL.md)):
+
+- `mail.ts`: the SMTP settings in `app_setting` (`mail_*`, password encrypted
+  with `GRAFITO_ENCRYPTION_KEY`), sending with nodemailer, and the email
+  templates in the recipient's language.
+- `temp-access.ts`: a new user's temporary password.
+  - It's random, stored only as a hash, expires, works for a single sign-in,
+    and must be changed on that sign-in.
+  - The session hook in `lib/auth/server.ts` enforces expiry and single use.
+- `secret-note.ts`: the one-time note that carries that password.
+  - It's encrypted with a key derived from the token in the link's `#`.
+  - It's stored in Redis (or Postgres) by a hash of the token, and read and
+    deleted in one step.
+  - The public page is `routes/acceso.tsx`.
+- `notify.ts`: change notifications.
+  - **Trigger:** `writeDoc` and `replaceFile` call `noteChange` with whoever
+    made the change.
+  - **Recipients:** those with access are the owner plus share grants and
+    organization members (sub-organizations included), for the document or
+    any portfolio above it.
+  - **Sending:** an interval per process (started by `requireLease`) sends
+    one email per person after 5 minutes without changes, and purges expired
+    notes.
+
+Without email configured, nothing is queued or sent. A new user's link is
+shown to the administrator to hand over manually, so installations without
+email (or offline) keep working.
+
 ## Security headers
 
 `src/start.ts` registers a request middleware that adds these headers to every
@@ -687,6 +727,12 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
   call, so these are restricted:
   - Only `http(s)` without credentials is accepted.
   - Grafito's own server (`localhost`, `127.x`, `::1`, `0.0.0.0`) is rejected.
+  - Exception in Docker: with `GRAFITO_LOCALHOST_ALIAS` (set to
+    `host.docker.internal` in `docker-compose.yml`, plus
+    `extra_hosts: host-gateway`), a `localhost` address points to the host
+    machine instead. The address is stored as typed, and the server calls the
+    alias. This lets a person use an Ollama or LM Studio installed on the same
+    machine.
   - The deployment's internal services (`postgres`, `redis`, `elasticsearch`,
     `minio`, `app`…) are rejected.
   - The address is validated again on every use, and adapters don't follow
@@ -698,6 +744,19 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
     editor, Ctrl+B stays bold, and Esc closes the chat.
   - With no provider connected, it says so and links to Account.
   - With a provider but no model, it asks you to pick one.
+  - **Model picker:** a compact button under the message box. It opens upward
+    with the models of each connected provider.
+  - **Conversations** (`server/ai/conversations.ts`, table `ai_conversation`,
+    migration 0015):
+    - Each one is saved after every answer, with a title taken from its first
+      question. Each person keeps up to 200 conversations.
+    - The tab remembers which conversation is open.
+    - **History** lists them, opens one or deletes it. **New conversation**
+      starts another.
+  - **Context:** each conversation sends only its own turns to the model: the
+    last 30, up to about 24,000 characters (`app/ai-chat.ts`).
+  - **Minimize:** a click outside the panel (on desktop) shrinks it toward its
+    button in 200 ms. Opening animates the other way.
 
 | Provider | Protocol | Address | Key |
 | --- | --- | --- | --- |
@@ -719,6 +778,7 @@ to 8 steps.
 - **Response:** streamed as NDJSON. The chat shows each tool used, and you can
   click one to open the note.
 
-To try it with an open model, run `docker compose --profile ai-test up -d`
-(Ollama with `qwen2.5:1.5b`). Enable Ollama in Administration → AI, then
-connect it in Account → AI with `http://ollama:11434`.
+Ollama and LM Studio aren't in the compose. Run them outside it with their
+port exposed. Enable the provider in Administration → AI, then connect it in
+Account → AI, for example with `http://localhost:11434` or
+`http://localhost:1234/v1`.

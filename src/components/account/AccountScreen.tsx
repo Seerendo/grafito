@@ -1,4 +1,4 @@
-import { Braces, KeyRound, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
+import { Braces, KeyRound, Mail, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -14,6 +14,7 @@ import { AiSettings } from "./AiSettings";
 import { ApiTokens } from "./ApiTokens";
 import { PasswordForm } from "./PasswordForm";
 import { PreferencesForm } from "./PreferencesForm";
+import { MailForm } from "./MailForm";
 import { ProfileForm } from "./ProfileForm";
 import { t } from "@/app/i18n";
 
@@ -22,12 +23,13 @@ import { t } from "@/app/i18n";
  * plegable en escritorio, tarjetas y «Atrás» en móvil).
  */
 
-type Section = "perfil" | "preferencias" | "contrasena" | "ia" | "api";
+type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "ia" | "api";
 
 type Profile = Awaited<ReturnType<typeof accountState>>;
 
 const SECTIONS: SettingsItem<Section>[] = [
   { id: "perfil", label: "Datos de la cuenta", icon: UserRound },
+  { id: "correo", label: "Correo", icon: Mail },
   { id: "preferencias", label: "Preferencias de usuario", icon: SlidersHorizontal },
   { id: "contrasena", label: "Contraseña", icon: KeyRound },
   { id: "ia", label: "Conexiones de IA", icon: Sparkles },
@@ -92,7 +94,6 @@ export function AccountScreen() {
       <div data-ui="panes" className="flex min-h-0 flex-1">
         <SettingsNav
           title={t("Cuenta")}
-          storageKey="grafito.account-nav"
           allLabel={t("Todas")}
           items={items}
           active={current?.id ?? null}
@@ -112,10 +113,11 @@ export function AccountScreen() {
               {current?.id === "perfil" ? (
                 <ProfileForm
                   userId={user.id}
-                  initial={{ name: profile.displayName, email: profile.contactEmail }}
+                  initial={{ name: profile.displayName }}
                   identity={{ loginName: profile.loginName, isAdmin: profile.isAdmin, canAdmin: profile.canAdmin }}
                 />
               ) : null}
+              {current?.id === "correo" ? <MailForm /> : null}
               {current?.id === "preferencias" ? <PreferencesForm /> : null}
               {current?.id === "contrasena" ? <PasswordForm loginEmail={profile.email} /> : null}
               {current?.id === "ia" ? <AiSettings /> : null}

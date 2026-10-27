@@ -17,6 +17,14 @@ function refreshSessionStore(): void {
 
 /** Entra con email y contraseña y refresca la sesión. Devuelve si se aceptó. */
 export async function signInWithPassword(email: string, password: string): Promise<boolean> {
+  return (await signInDetailed(email, password)).ok;
+}
+
+/**
+ * Como `signInWithPassword`, pero si se rechaza dice por qué cuando el servidor
+ * lo explica (p. ej. `TEMP_ACCESS_EXPIRED`, ver `server/temp-access.ts`).
+ */
+export async function signInDetailed(email: string, password: string): Promise<{ ok: true } | { ok: false; code: string }> {
   const response = await fetch("/api/auth/sign-in/email", {
     method: "POST",
     credentials: "include",
@@ -26,8 +34,10 @@ export async function signInWithPassword(email: string, password: string): Promi
   if (response.ok) {
     rememberBearerFrom(response);
     refreshSessionStore();
+    return { ok: true };
   }
-  return response.ok;
+  const body = (await response.json().catch(() => null)) as { message?: string } | null;
+  return { ok: false, code: body?.message ?? "" };
 }
 
 /** Cambia la contraseña de la sesión actual. Devuelve si se aceptó. */

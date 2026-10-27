@@ -1,4 +1,4 @@
-import { Activity, Building2, Clock, LayoutTemplate, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -20,10 +20,11 @@ import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from 
 import { OrgsBoard } from "./OrgsBoard";
 import { DesignPanel } from "./DesignPanel";
 import { AiBoard } from "./AiBoard";
+import { MailBoard } from "./MailBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
-type Section = "usuarios" | "autenticacion" | "ia" | "plugins" | "apariencia" | "sesion" | "monitor";
+type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
 type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
@@ -53,6 +54,7 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     icon: Sparkles,
     need: ["ai.manage"],
   },
+  { id: "correo", label: "Correo electrónico", icon: Mail, need: ["mail.manage"] },
   { id: "plugins", label: "Plugins", icon: Puzzle, need: ["plugins.manage"] },
   { id: "apariencia", label: "Apariencia", icon: Palette },
   { id: "sesion", label: "Sesión", icon: Clock, need: ["session.manage"] },
@@ -182,7 +184,6 @@ export function AdminScreen() {
       <div data-ui="panes" className="flex min-h-0 flex-1">
         <SettingsNav
           title={t("Ajustes")}
-          storageKey="grafito.admin-nav"
           allLabel={t("Todas")}
           items={items}
           active={current?.id ?? null}
@@ -312,6 +313,7 @@ export function AdminScreen() {
                 {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
                 {current?.id === "ia" ? <AiBoard /> : null}
+                {current?.id === "correo" ? <MailBoard /> : null}
                 {current?.id === "plugins" ? <Plugins view={view} reload={load} /> : null}
                 {current?.id === "sesion" ? <SessionPanel seconds={view.sessionTtl} /> : null}
               </div>

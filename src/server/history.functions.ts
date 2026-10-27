@@ -75,13 +75,14 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
         if (!bytes || !current?.file) return { ok: false as const, error: "Esa versión ya no existe." };
         const key = newFileKey(ownerId);
         await putBlob(sql, key, bytes, current.file.mime);
-        const doc = await replaceFile(sql, ownerId, data.docId, { key, size: bytes.byteLength, actor, separateVersion: true });
+        const doc = await replaceFile(sql, ownerId, data.docId, { key, size: bytes.byteLength, actor, actorId: context.userId, separateVersion: true });
         return { ok: true as const, updatedAt: doc.updatedAt, title: doc.title, content: "" };
       }
       const doc = await updateNote(sql, ownerId, data.docId, {
         title: version.title,
         content: version.content,
         actor,
+        actorId: context.userId,
         separateVersion: true,
       });
       return { ok: true as const, updatedAt: doc.updatedAt, title: doc.title, content: doc.content };
@@ -125,7 +126,7 @@ export const editSharedDoc = createServerFn({ method: "POST" })
       };
     }
     try {
-      const doc = await updateNote(sql, ownerId, data.docId, { title: data.title, content: data.content, actor });
+      const doc = await updateNote(sql, ownerId, data.docId, { title: data.title, content: data.content, actor, actorId: context.userId });
       return { ok: true as const, title: doc.title, content: doc.content, updatedAt: doc.updatedAt, updatedBy: doc.updatedBy };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };

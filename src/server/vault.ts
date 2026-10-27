@@ -3,6 +3,7 @@ import { replaceWikiTitle } from "@/domain/vault/links";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
+import { noteChange } from "./notify";
 
 /**
  * La bóveda de cada usuario en el servidor (solo servidor). Fuente de verdad
@@ -98,6 +99,8 @@ async function writeDoc(
   rev: number,
   onlyIfNewer: boolean,
   separateVersion = false,
+  /** Quién hizo el cambio, si no es el dueño (alguien con quien se compartió). */
+  actorId = userId,
 ): Promise<void> {
   const before = await sql<{ title: string; content: string; deleted: unknown; updated_at: unknown }>`
     select title, content, deleted, updated_at from vault_doc where user_id = ${userId} and id = ${doc.id} limit 1
@@ -115,6 +118,7 @@ async function writeDoc(
     at: doc.updatedAt,
     separate: separateVersion,
   });
+  await noteChange(sql, { ownerId: userId, docId: doc.id, actorId, actorName: doc.updatedBy });
 }
 
 async function upsertDoc(sql: Sql, userId: string, doc: Document, rev: number, onlyIfNewer: boolean): Promise<void> {
@@ -376,7 +380,15 @@ export async function updateNote(
   sql: Sql,
   userId: string,
   id: string,
-  input: { title?: string; content?: string; portfolioId?: string | null; actor: string; separateVersion?: boolean },
+  input: {
+    title?: string;
+    content?: string;
+    portfolioId?: string | null;
+    actor: string;
+    /** Usuario que hace el cambio, si no es el dueño (para los avisos por correo). */
+    actorId?: string;
+    separateVersion?: boolean;
+  },
 ): Promise<Document> {
   const current = await getDoc(sql, userId, id);
   if (!current) throw new VaultError("Esa nota no existe.", 404);
@@ -412,7 +424,7 @@ export async function updateNote(
     updatedAt: now,
     updatedBy: input.actor,
   };
-  await writeDoc(sql, userId, doc, rev, false, input.separateVersion);
+  await writeDoc(sql, userId, doc, rev, false, input.separateVersion, input.actorId ?? userId);
   return doc;
 }
 
@@ -452,7 +464,7 @@ export async function replaceFile(
   sql: Sql,
   userId: string,
   id: string,
-  input: { key: string; size: number; actor: string; separateVersion?: boolean },
+  input: { key: string; size: number; actor: string; actorId?: string; separateVersion?: boolean; autosave?: boolean },
 ): Promise<Document> {
   const current = await getDoc(sql, userId, id);
   if (!current?.file?.key) throw new VaultError("Ese archivo no existe.", 404);
@@ -479,7 +491,9 @@ export async function replaceFile(
     author: input.actor,
     at: now,
     separate: input.separateVersion,
+    autosave: input.autosave,
   });
+  await noteChange(sql, { ownerId: userId, docId: id, actorId: input.actorId ?? userId, actorName: input.actor });
   const doc = await getDoc(sql, userId, id);
   if (!doc) throw new VaultError("Ese archivo no existe.", 404);
   return doc;

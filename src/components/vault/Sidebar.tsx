@@ -1,14 +1,14 @@
 import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { useState, type DragEvent, type MouseEvent } from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
-import { downloadFile, useUploads } from "@/app/files";
+import { useUploads } from "@/app/files";
 import { usePermissions } from "@/app/permissions";
 import { useVault } from "@/app/vault/store";
-import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
+import { PERMISSION } from "@/domain/permissions";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
-import { requestNotePdf } from "./NotePdf";
+import { useRowMenu, type RowMenuTarget } from "./RowMenu";
 import { SharedSection } from "./SharedSection";
 import { useTrashView } from "@/app/trash-view";
 import { VisibilityMark } from "./visibility";
@@ -17,11 +17,6 @@ import { t } from "@/app/i18n";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
-
-type RowMenu =
-  | { x: number; y: number; kind: "root" }
-  | { x: number; y: number; kind: "portfolio"; id: string }
-  | { x: number; y: number; kind: "document"; id: string };
 
 function isVaultDrag(data: DataTransfer): boolean {
   const types = [...data.types];
@@ -37,20 +32,6 @@ function readDrag(data: DataTransfer): { kind: "document" | "portfolio"; id: str
   if (plain.startsWith("port:")) return { kind: "portfolio", id: plain.slice(5) };
   if (plain.startsWith("doc:")) return { kind: "document", id: plain.slice(4) };
   return null;
-}
-
-function downloadDocument(document: Document) {
-  if (document.kind === "file" && document.file) {
-    void downloadFile(document);
-    return;
-  }
-  const blob = new Blob([document.content], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const link = window.document.createElement("a");
-  link.href = url;
-  link.download = `${document.title}.md`;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 export function Sidebar({
@@ -91,12 +72,8 @@ export function Sidebar({
   const setDialog = useVault((state) => state.setDialog);
   const moveDocument = useVault((state) => state.moveDocument);
   const movePortfolio = useVault((state) => state.movePortfolio);
-  const createDocument = useVault((state) => state.createDocument);
-  const duplicate = useVault((state) => state.duplicate);
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const uploadTo = useRef<string | null>(null);
   const [dropOver, setDropOver] = useState<string | null>(null);
-  const [menu, setMenu] = useState<RowMenu | null>(null);
+  const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote);
 
   const filtered = documents.filter((document) => {
     if (tag && document.kind === "markdown") {
@@ -121,7 +98,7 @@ export function Sidebar({
       setActive(id);
       onOpenNote(id);
     }
-    setMenu(null);
+    closeMenu();
   };
 
   const openContent = (id: string) => {
@@ -129,38 +106,10 @@ export function Sidebar({
     if (document?.portfolioId === null) setSelectedPortfolio(null);
     setActive(id);
     onOpenNote(id);
-    setMenu(null);
+    closeMenu();
   };
 
-  const openMenu = (event: MouseEvent, next: RowMenu) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setMenu(next);
-  };
-
-  const pickUpload = (portfolioId: string | null) => {
-    uploadTo.current = portfolioId;
-    setSelectedPortfolio(portfolioId);
-    setMenu(null);
-    uploadRef.current?.click();
-  };
-
-  useEffect(() => {
-    if (!menu) return;
-    const onPointer = () => setMenu(null);
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setMenu(null);
-    };
-    window.addEventListener("mousedown", onPointer);
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("mousedown", onPointer);
-      window.removeEventListener("keydown", onKey, true);
-    };
-  }, [menu]);
+  const openMenu = (event: MouseEvent, next: { x: number; y: number } & RowMenuTarget) => showMenu(event, next);
 
   const acceptDrop = (event: DragEvent, key: string) => {
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
@@ -393,73 +342,7 @@ export function Sidebar({
       </div>
 
       <UploadProgress />
-      <input
-        ref={uploadRef}
-        type="file"
-        tabIndex={-1}
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])];
-          event.target.value = "";
-          void ingestExternalFiles(files, uploadTo.current).then(() => onOpenNote(useVault.getState().activeId ?? ""));
-        }}
-      />
-      {menu ? (
-        <RowContextMenu
-          menu={menu}
-          documents={documents}
-          onNewNote={(portfolioId) => {
-            const id = createDocument(portfolioId);
-            setMenu(null);
-            onOpenNote(id);
-          }}
-          onNewPortfolio={(parentId) => {
-            setMenu(null);
-            setDialog({ type: "portfolio", parentId });
-          }}
-          onUpload={pickUpload}
-          onRenameDocument={(id) => {
-            setMenu(null);
-            setDialog({ type: "rename-document", id });
-          }}
-          onRenamePortfolio={(id) => {
-            setMenu(null);
-            setDialog({ type: "rename-portfolio", id });
-          }}
-          onDeleteDocument={(id) => {
-            setMenu(null);
-            setDialog({ type: "delete-document", id });
-          }}
-          onDeletePortfolio={(id) => {
-            setMenu(null);
-            setDialog({ type: "delete-portfolio", id });
-          }}
-          onLink={(id) => {
-            setMenu(null);
-            setDialog({ type: "link", sourceId: id });
-          }}
-          onDuplicate={(id) => {
-            duplicate(id);
-            setMenu(null);
-            onOpenNote(useVault.getState().activeId ?? "");
-          }}
-          onDownload={(id) => {
-            const document = documents.find((item) => item.id === id);
-            if (document) downloadDocument(document);
-            setMenu(null);
-          }}
-          onDownloadPdf={(id) => {
-            const document = documents.find((item) => item.id === id);
-            if (document?.kind === "markdown") requestNotePdf({ title: document.title, content: document.content });
-            setMenu(null);
-          }}
-          onShare={(kind, id) => {
-            setMenu(null);
-            setDialog({ type: "share", kind, id });
-          }}
-        />
-      ) : null}
+      {menuElement}
     </aside>
   );
 }
@@ -643,7 +526,7 @@ function DocButton({
         onOpenContent(document.id);
       }}
       aria-current={active ? "page" : undefined}
-      className={`relative flex h-9 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm select-none hover:cursor-grab active:cursor-grabbing ${pad} ${
+      className={`relative flex h-9 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm select-none active:cursor-grabbing ${pad} ${
         active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
       }`}
     >
@@ -725,7 +608,7 @@ function PortfolioBranch({
           onDragStart={(event) => onPortfolioDragStart(event, node.portfolio.id)}
           onClick={() => onSelect(node.portfolio.id)}
           onContextMenu={menuEvent}
-          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-sm font-medium text-fg select-none hover:cursor-grab active:cursor-grabbing"
+          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-sm font-medium text-fg select-none active:cursor-grabbing"
         >
           {isCollapsed ? (
             <Folder className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`} />
@@ -774,115 +657,6 @@ function PortfolioBranch({
         </div>
       )}
     </div>
-  );
-}
-
-function RowContextMenu({
-  menu,
-  documents,
-  onNewNote,
-  onNewPortfolio,
-  onUpload,
-  onRenameDocument,
-  onRenamePortfolio,
-  onDeleteDocument,
-  onDeletePortfolio,
-  onLink,
-  onDuplicate,
-  onDownload,
-  onDownloadPdf,
-  onShare,
-}: {
-  menu: RowMenu;
-  documents: Document[];
-  onNewNote: (portfolioId: string | null) => void;
-  onNewPortfolio: (parentId: string | null) => void;
-  onUpload: (portfolioId: string | null) => void;
-  onRenameDocument: (id: string) => void;
-  onRenamePortfolio: (id: string) => void;
-  onDeleteDocument: (id: string) => void;
-  onDeletePortfolio: (id: string) => void;
-  onLink: (id: string) => void;
-  onDuplicate: (id: string) => void;
-  onDownload: (id: string) => void;
-  onDownloadPdf: (id: string) => void;
-  onShare: (kind: "document" | "portfolio", id: string) => void;
-}) {
-  const document = menu.kind === "document" ? documents.find((item) => item.id === menu.id) : null;
-  const portfolioId = menu.kind === "portfolio" ? menu.id : menu.kind === "document" ? (document?.portfolioId ?? null) : null;
-  const can = usePermissions();
-  const left = Math.min(menu.x, window.innerWidth - 220);
-  const top = Math.min(menu.y, window.innerHeight - 320);
-  const items: { label: string; onClick: () => void; danger?: boolean }[] = [];
-  if (can(PERMISSION.notesCreate)) items.push({ label: t("Nueva nota"), onClick: () => onNewNote(portfolioId) });
-  if (can(PERMISSION.portfoliosManage)) {
-    items.push({ label: t("Nuevo portafolio"), onClick: () => onNewPortfolio(menu.kind === "portfolio" ? menu.id : null) });
-  }
-  if (can(PERMISSION.filesUpload)) items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
-  if (menu.kind === "document" && document) {
-    if (can(PERMISSION.notesShare)) items.push({ label: t("Compartir…"), onClick: () => onShare("document", document.id) });
-    if (can(PERMISSION.notesEdit)) items.push({ label: t("Renombrar"), onClick: () => onRenameDocument(document.id) });
-    if (can(PERMISSION.linksManage)) items.push({ label: t("Vincular"), onClick: () => onLink(document.id) });
-    if (document.kind === "markdown" && can(PERMISSION.notesCreate)) {
-      items.push({ label: t("Duplicar"), onClick: () => onDuplicate(document.id) });
-    }
-    if (can(exportPermission(document.kind))) {
-      items.push({
-        label: document.kind === "file" ? t("Descargar") : t("Exportar .md"),
-        onClick: () => onDownload(document.id),
-      });
-    }
-    if (document.kind === "markdown" && can(PERMISSION.notesExport)) {
-      items.push({ label: t("Descargar PDF"), onClick: () => onDownloadPdf(document.id) });
-    }
-    if (can(deletePermission(document.kind))) {
-      items.push({ label: t("Eliminar"), danger: true, onClick: () => onDeleteDocument(document.id) });
-    }
-  }
-  if (menu.kind === "portfolio" && can(PERMISSION.notesShare)) {
-    items.push({ label: t("Compartir…"), onClick: () => onShare("portfolio", menu.id) });
-  }
-  if (menu.kind === "portfolio" && can(PERMISSION.portfoliosManage)) {
-    items.push({ label: t("Renombrar"), onClick: () => onRenamePortfolio(menu.id) });
-    items.push({ label: t("Eliminar"), danger: true, onClick: () => onDeletePortfolio(menu.id) });
-  }
-  if (items.length === 0) return null;
-  return (
-    <div
-      role="menu"
-      data-ui="popover"
-      className="fixed z-50 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl"
-      style={{ left, top }}
-      onMouseDown={(event) => event.stopPropagation()}
-      onContextMenu={(event) => event.preventDefault()}
-    >
-      {items.map((item) => (
-        <MenuItem key={item.label + (item.danger ? "-danger" : "")} label={item.label} danger={item.danger} onClick={item.onClick} />
-      ))}
-    </div>
-  );
-}
-
-function MenuItem({
-  label,
-  onClick,
-  danger = false,
-}: {
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className={`flex h-11 w-full items-center rounded-md px-3 text-left text-sm hover:bg-elevated ${
-        danger ? "text-danger" : "text-fg"
-      }`}
-    >
-      {label}
-    </button>
   );
 }
 

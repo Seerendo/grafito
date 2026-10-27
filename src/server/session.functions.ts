@@ -71,7 +71,8 @@ export const updateAccount = createServerFn({ method: "POST" })
     z
       .object({
         name: z.string().trim().min(1).max(80),
-        contactEmail: z.string().trim().max(120),
+        /** Sin él, el correo no cambia (se edita en Cuenta → Correo). */
+        contactEmail: z.string().trim().max(120).optional(),
       })
       .parse(input),
   )
@@ -80,14 +81,17 @@ export const updateAccount = createServerFn({ method: "POST" })
       return { ok: false as const, error: "El correo no es válido." };
     }
     const sql = await requireLease(context.userId);
-    const email = data.contactEmail || null;
     await sql`update "user" set name = ${data.name}, "updatedAt" = now() where id = ${context.userId}`;
-    await sql`
-      insert into app_profile (user_id, contact_email)
-      values (${context.userId}, ${email})
-      on conflict (user_id) do update set contact_email = ${email}
-    `;
-    return { ok: true as const, displayName: data.name, contactEmail: data.contactEmail };
+    if (data.contactEmail !== undefined) {
+      const email = data.contactEmail || null;
+      await sql`
+        insert into app_profile (user_id, contact_email)
+        values (${context.userId}, ${email})
+        on conflict (user_id) do update set contact_email = ${email}
+      `;
+    }
+    const rows = await sql<{ contact_email: string | null }>`select contact_email from app_profile where user_id = ${context.userId}`;
+    return { ok: true as const, displayName: data.name, contactEmail: rows[0]?.contact_email ?? "" };
   });
 
 export const storageReport = createServerFn({ method: "GET" })

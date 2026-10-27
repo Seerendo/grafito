@@ -93,6 +93,11 @@ export async function editorUrl(docId: string, fileName: string, canWrite: boole
   const wopiBase = env("GRAFITO_WOPI_URL") ?? env("BETTER_AUTH_URL") ?? "http://app:8080";
   target.searchParams.set("WOPISrc", `${wopiBase}/wopi/files/${encodeURIComponent(docId)}`);
   target.searchParams.set("lang", lang);
+  // Sin preferencia explícita, Collabora sigue el modo oscuro del sistema y,
+  // con un tema oscuro, deja el texto oscuro sobre la página oscura. El editor
+  // se abre siempre en claro, como un documento impreso; quien quiera puede
+  // cambiarlo desde el propio editor (Ver → Modo oscuro).
+  target.searchParams.set("ui_defaults", "UITheme=light");
   return target.toString();
 }
 

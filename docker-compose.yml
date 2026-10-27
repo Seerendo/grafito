@@ -119,6 +119,17 @@ services:
       COLLABORA_URL: ${COLLABORA_URL-http://127.0.0.1:9980}
       COLLABORA_INTERNAL_URL: ${COLLABORA_INTERNAL_URL:-http://collabora:9980}
       GRAFITO_WOPI_URL: ${GRAFITO_WOPI_URL:-http://app:8080}
+      # Ollama and LM Studio run outside this compose (installed on the machine or
+      # in a compose of their own). A "localhost" address in Account → AI (e.g.
+      # http://localhost:11434 or http://localhost:1234/v1) is called on this
+      # host machine through host.docker.internal. Any other reachable address
+      # (LAN IP, hostname) works as is. An empty value turns the alias off.
+      GRAFITO_LOCALHOST_ALIAS: ${GRAFITO_LOCALHOST_ALIAS-host.docker.internal}
+      # Time zone for dates in emails (e.g. America/Lima). See docs/MAIL.md.
+      TZ: ${TZ:-UTC}
+    # Makes host.docker.internal resolve on Linux too (Docker Desktop already has it).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -254,30 +265,17 @@ services:
     volumes:
       - ./dev/auth-test/keycloak:/opt/keycloak/data/import:ro
 
-  # --- Only for testing the AI with an open model (not started by default) ---
-  # docker compose --profile ai-test up -d
-  # Allow Ollama in Administration → AI, then connect it in Account → AI with
-  # http://ollama:11434 (or LM Studio with http://ollama:11434/v1, which also speaks
-  # the OpenAI protocol). The model is downloaded the first time.
-  ollama:
-    image: ollama/ollama:0.6.8
-    profiles: ["ai-test"]
+  # --- Only for testing email (not started by default) ---
+  # docker compose --profile mail-test up -d
+  # A fake mail server that keeps every message. In Administration → Email:
+  # server "mailpit", port 1025, security "None". Inbox: http://127.0.0.1:8025
+  mailpit:
+    image: axllent/mailpit:v1.20.4
+    profiles: ["mail-test"]
     ports:
-      - "11434:11434"
-    volumes:
-      - grafito_ollama:/root/.ollama
-
-  ollama-model:
-    image: ollama/ollama:0.6.8
-    profiles: ["ai-test"]
-    depends_on:
-      - ollama
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull qwen2.5:1.5b"]
+      - "127.0.0.1:8025:8025"
 
 volumes:
-  grafito_ollama:
   grafito_pg:
   grafito_es:
   grafito_s3:

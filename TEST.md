@@ -773,10 +773,90 @@ PGLite, port 3100) and then on the production image in the isolated
 | Text selection | ✅ paragraphs, headings and panel text are selectable (`user-select: auto`); before, almost nothing could be selected |
 | Cursor audit (reading, split view, admin; both designs) | ✅ no element outside an editable field shows the text cursor or a caret |
 | Office: selecting a `.docx` | ✅ the editor opens directly, with no button; after closing it from the editor, «Abrir en el editor» reopens it |
-| Office with a dark theme (reported after the round) | ❌→✅ Collabora followed the theme's dark mode (browsers pass it to the iframe) and the text was dark on a dark page. The editor is now always light (`color-scheme: light` on its iframe); checked with Grafito, Cine and Terminal (dark) and Papel (light). |
+| Office with a dark theme (reported after the round) | ❌→✅ Collabora followed the theme's dark mode and the text was dark on a dark page. `color-scheme: light` on the iframe wasn't enough on its own (see Round 16): the editor URL now asks for the light theme. |
 | Office right after uploading a document | ❌→✅ the editor opened before the document reached the server («Ese documento no se puede abrir en el editor»). It now retries for a few seconds; a freshly uploaded `.docx` opens directly. |
 | Untranslated headings in the command palettes («Notas», «Acciones», «Documentos», «Etiquetas») | ✅ translated |
 | `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 35 tests |
+
+## Round 16: menus, panels, Office versions, sign-in dates and local AI
+
+Production image in the isolated `grafito-e2e` stack with Collabora, Grafito
+theme (dark), Modern design unless stated. LM Studio was running on the host
+(outside Docker) at `localhost:1235`.
+
+| Case | Result |
+| --- | --- |
+| Right-click a directory row near the bottom | ❌→✅ the menu was cut off by the directory panel (in Modern, its `backdrop-filter` traps `position: fixed`). It now renders in `<body>`, is measured, and opens upward or leftward when it doesn't fit |
+| Right-click on the Raíz page (recent documents, and the empty space) | ✅ same menu as the directory; «Renombrar» opens the rename dialog |
+| Profile button | ✅ no hover or dimmed state, with the menu open or closed (opacity 1, no background or shadow) |
+| Details panel (outline, links, mentions) | ✅ collapses to a right-hand rail and expands again; works in Modern and Classic |
+| Collapse the directory, the account menu or the admin menu, then leave and come back | ✅ they come back expanded (the state is no longer kept in the browser) |
+| Administration → Usuarios | ✅ each user shows «Primer ingreso» and «Última conexión» with date and time; migration 0014 fills them from existing sessions |
+| Office: good edit, save, random words, save, restore the good version | ❌→✅ before, the second save replaced the first one (10-minute grouping) and the open editor kept showing the random words. Now each manual save is its own version, and the editor reloads with the restored content (7 words, no random words) |
+| Office: unsaved changes when restoring | ✅ the editor saves them first (`Host_VersionRestore` → `Pre_Restore_Ack`) as their own version, then the restore is applied; 7 versions in the end, none lost |
+| Office with a dark theme, again | ❌→✅ still dark on some loads: Collabora follows the system's dark mode when it has no explicit preference. The editor URL now carries `ui_defaults=UITheme=light` (`{"darkTheme":"false"}` in the page); light on every load, also after a restore |
+| Ollama removed from `docker-compose.yml` | ✅ the `ai-test` profile and its volume are gone |
+| LM Studio on the host at `http://localhost:1235/v1` | ✅ the container reaches it via `host.docker.internal`; Cuenta → Conexiones de IA connects (2 models), the address is kept as typed, and the chat answered with `google/gemma-4-e4b` |
+| `localhost` still rejected without the alias, and internal services always | ✅ `local-url.test.ts` |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 36 tests |
+
+## Round 17: profile button and AI chat
+
+Production image in the isolated `grafito-e2e` stack, LM Studio on the host at
+`localhost:1235` with `google/gemma-4-e4b`. The app window was in the
+background, so the page couldn't be painted; the checks were driven by script
+and read from the page.
+
+| Case | Result |
+| --- | --- |
+| Profile button opened with the mouse, closed with Esc | ❌→✅ the button kept focus, and the next key drew the accent focus ring around it. It now lets go of focus when its menu closes (only when opened with the mouse; with the keyboard it keeps focus and its ring) |
+| Model picker | ✅ a small «Elegir modelo» button under the message box; it opens upward with each connected provider and its models; the chosen model is shown and kept after a reload |
+| Two messages in one conversation | ✅ the second answer uses the first («Verde») |
+| New conversation, same question | ✅ answers «no lo sé»: each conversation keeps its own context |
+| History | ✅ lists both conversations (title and date); opening the first brings back its 4 messages |
+| Reload the page | ✅ the open conversation and the model come back |
+| Delete a conversation | ✅ asks for confirmation and removes it from the list and the server |
+| Click outside the panel | ✅ `data-state="closed"` right away, unmounted after 200 ms, and the chat button reappears; opening animates the other way |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 36 tests |
+
+## Round 18: chat box, history placement, profile menu and drag cursor
+
+Production image in `grafito-e2e`, LM Studio on the host. The app window was in
+the background again, so the checks read computed styles and the page by script.
+
+| Case | Result |
+| --- | --- |
+| Chat message box | ❌→✅ the text field drew its own focus ring inside the box, so it looked like two boxes. Now it's a single box (`data-ui="composer"`): text, model and send inside one border, with focus shown on that border; the field's outline is `none` |
+| History placement | ✅ the history list takes the messages area; the message box with the model stays below |
+| Profile menu (Administración, Cuenta, Salir) | ✅ no hover highlight on the options (no `hover:` classes and no hover rules left for them) |
+| Pointer over notes and files in the directory | ✅ hand pointer (`cursor: pointer`), like Raíz; the grabbing hand only while the mouse button is held to drag (`active:cursor-grabbing`) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 36 tests |
+
+## Round 19: email (SMTP), one-time access for new users and change notifications
+
+Production image in `grafito-e2e` with Mailpit (`--profile mail-test`). The
+app window was in the background, so the pages were driven by script. Test
+accounts and passwords only, on the throwaway stack.
+
+| Case | Result |
+| --- | --- |
+| Administración → Correo electrónico: server `mailpit`, port 1025, security «Ninguna», sender, Grafito address; **Probar** | ✅ «Correo de prueba enviado.»; Mailpit got «Grafito: correo de prueba» from «Grafito <grafito@example.test>»; after saving, «El correo está activo.» |
+| New user form | ✅ fields Nombre, Usuario, Correo, Rol (no password) |
+| Create «ana» with `ana@example.test` | ✅ «Se envió el acceso a Ana Prueba. Vence …»; the list shows «Acceso enviado: vence …»; Mailpit got «Tu acceso a Grafito» with the username and a `/acceso#…` link |
+| Where the note is stored | ✅ one `grafito:note:<hash>` key in Redis, none in `app_secret_note`; `app_temp_access` keeps only the password hash |
+| Open the link | ✅ shows the username and a 16-character password; the token is removed from the address bar; the Redis key is gone |
+| Reload the note page | ✅ «Esta nota ya no existe» |
+| Sign in as ana with the temporary password | ✅ goes straight to «Cambia la contraseña» with the current password filled in |
+| Second sign-in with the same temporary password | ✅ refused: 403 `TEMP_ACCESS_USED` |
+| Ana sets her own password | ✅ she enters the vault; `app_temp_access` is empty |
+| **Reenviar acceso** | ✅ «Tu nuevo acceso a Grafito» (says the previous one no longer works); Ana's own password stops working (401) |
+| Temporary password past its expiry | ✅ refused: 403 `TEMP_ACCESS_EXPIRED` |
+| Email dates | ❌→✅ they were in the server's zone (UTC) without saying so; they now include the zone, and `TZ` can be set for the `app` service |
+| Admin edits a note shared with Ana (edit) | ✅ one pending notice, only for Ana (not for the admin who changed it); after the quiet period, Ana got «Cambios en «Bienvenida»» listing «por Administrador» |
+| Admin edits a private note | ✅ a version is recorded; no notice |
+| Email off, create «beto» | ✅ «No se envió el correo: El correo no está configurado.» and the one-time link to hand over, with Copy |
+| Secret note unit tests | ✅ read once, nothing readable stored, wrong token, expired and cancelled |
+| `npm run typecheck`, `eslint`, `npm test`, `vite build` | ✅ no errors; 39 tests |
 
 ## Useful commands
 

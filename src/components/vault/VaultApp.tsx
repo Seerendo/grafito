@@ -29,7 +29,7 @@ import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
 import type { ManualKind, ViewMode } from "@/domain/vault/types";
 import { CommandPalette } from "./CommandPalette";
-import { ContextPane } from "./ContextPane";
+import { ContextPane, ContextRail } from "./ContextPane";
 import { EditorPane } from "./EditorPane";
 import { GraphView } from "./GraphView";
 import { Sidebar, SidebarRail } from "./Sidebar";
@@ -92,6 +92,7 @@ function VaultWorkspace() {
   const mobile = useIsMobile();
   const [pane, setPane] = useState<Pane>("note");
   const [treeOpen, setTreeOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const graph = useVault((state) => state.graph);
   const activeId = useVault((state) => state.activeId);
   const sharedTree = useSharedView((state) => state.tree);
@@ -232,10 +233,6 @@ function VaultWorkspace() {
   }, []);
 
   useEffect(() => {
-    setTreeOpen(localStorage.getItem("grafito.sidebar") !== "0");
-  }, []);
-
-  useEffect(() => {
     const blockNavigate = (event: globalThis.DragEvent) => {
       if (!event.dataTransfer || !isExternalFileDrag(event.dataTransfer)) return;
       event.preventDefault();
@@ -249,11 +246,8 @@ function VaultWorkspace() {
   }, []);
 
   const toggleTree = () => {
-    setTreeOpen((open) => {
-      const next = !open;
-      localStorage.setItem("grafito.sidebar", next ? "1" : "0");
-      return next;
-    });
+    // Sin recordar: al volver a la bóveda el directorio aparece desplegado.
+    setTreeOpen((open) => !open);
   };
 
   const showHome = () => {
@@ -382,7 +376,17 @@ function VaultWorkspace() {
               </FileDrop>
             </div>
             <div data-ui="context-slot" className="hidden h-full lg:block">
-              <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
+              {detailsOpen ? (
+                <ContextPane
+                  onOpenNote={openNote}
+                  onInspect={inspect}
+                  holdGraph={holdGraph}
+                  onFilter={showFiles}
+                  onCollapse={() => setDetailsOpen(false)}
+                />
+              ) : (
+                <ContextRail onExpand={() => setDetailsOpen(true)} />
+              )}
             </div>
           </>
         )}

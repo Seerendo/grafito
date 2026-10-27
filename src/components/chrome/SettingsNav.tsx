@@ -1,12 +1,12 @@
 import { ChevronsLeft, ChevronsRight, LayoutGrid, type LucideIcon } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { t } from "@/app/i18n";
 
 /**
  * Barra lateral de secciones para pantallas de ajustes (Administración,
  * Cuenta). Se pliega a un riel estrecho, como el directorio de notas: el riel
  * conserva los iconos de las secciones y una flecha para volver a desplegarla.
- * El estado se recuerda en el navegador. En móvil no se muestra: la pantalla
+ * Al volver a la pantalla aparece desplegada otra vez. En móvil no se muestra: la pantalla
  * usa tarjetas (`OptionGrid`) y un «Atrás».
  */
 
@@ -19,7 +19,6 @@ export function SettingsNav<T extends string>({
   onSelect,
   allLabel,
   footer,
-  storageKey,
 }: {
   title: string;
   items: SettingsItem<T>[];
@@ -28,27 +27,9 @@ export function SettingsNav<T extends string>({
   /** Si se da, una primera entrada que vuelve a la vista general (`null`). */
   allLabel?: string;
   footer?: ReactNode;
-  storageKey: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(storageKey) === "0");
-    } catch {
-      /* sin almacenamiento: desplegada */
-    }
-  }, [storageKey]);
-
-  const toggle = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    try {
-      localStorage.setItem(storageKey, next ? "0" : "1");
-    } catch {
-      /* sin almacenamiento */
-    }
-  };
+  const toggle = () => setCollapsed((value) => !value);
 
   const entries: { id: T | null; label: string; icon: LucideIcon }[] = [
     ...(allLabel ? [{ id: null, label: allLabel, icon: LayoutGrid }] : []),

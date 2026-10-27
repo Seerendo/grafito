@@ -27,6 +27,13 @@ function flag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
+/** Fecha de la base en milisegundos, o `null` si no hay. */
+function epoch(value: unknown): number | null {
+  if (value == null) return null;
+  const ms = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 async function sqlClient(): Promise<Sql> {
   const { getSql } = await import("@/lib/db");
   return getSql();
@@ -208,12 +215,21 @@ export const adminState = createServerFn({ method: "GET" })
       role_name: string | null;
       owner: unknown;
       source: string | null;
+      first_login_at: unknown;
+      last_seen_at: unknown;
+      contact_email: string | null;
+      access_expires: unknown;
+      access_used: unknown;
     }>`
       select u.id, u.name, m.login_name, m.role_id, r.name as role_name, m.source,
-        exists(select 1 from app_admin a where a.user_id = u.id) as owner
+        exists(select 1 from app_admin a where a.user_id = u.id) as owner,
+        p.first_login_at, p.last_seen_at, p.contact_email,
+        t.expires_at as access_expires, t.used_at as access_used
       from "user" u
       left join app_user_role m on m.user_id = u.id
       left join app_role r on r.id = m.role_id
+      left join app_profile p on p.user_id = u.id
+      left join app_temp_access t on t.user_id = u.id
       order by u.name
     `;
     const byRole = new Map<string, string[]>();
@@ -248,6 +264,22 @@ export const adminState = createServerFn({ method: "GET" })
         roleName: person.role_name ?? "Sin rol",
         owner: flag(person.owner),
         source: person.source ?? "local",
+        firstLoginAt: epoch(person.first_login_at),
+        lastSeenAt: epoch(person.last_seen_at),
+        email: person.contact_email ?? "",
+        // Acceso temporal por correo: pendiente de usar, ya usado (falta cambiar la contraseña) o vencido.
+        access:
+          person.access_expires == null
+            ? null
+            : {
+                expiresAt: Number(person.access_expires),
+                state:
+                  person.access_used != null
+                    ? ("used" as const)
+                    : Number(person.access_expires) <= Date.now()
+                      ? ("expired" as const)
+                      : ("pending" as const),
+              },
       })),
       sources: sources.map((source) => ({
         id: source.id,
@@ -271,8 +303,12 @@ export const markPasswordChanged = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
-    if (!(await isAdmin(sql, context.userId))) return { ok: false as const };
-    await sql`update app_admin set must_change_password = false where user_id = ${context.userId}`;
+    // Un usuario que entró con la contraseña temporal del correo.
+    const { clearTempAccess } = await import("@/server/temp-access");
+    if (!(await clearTempAccess(sql, context.userId))) return { ok: false as const };
+    if (await isAdmin(sql, context.userId)) {
+      await sql`update app_admin set must_change_password = false where user_id = ${context.userId}`;
+    }
     return { ok: true as const };
   });
 
@@ -398,12 +434,27 @@ export const searchDocuments = createServerFn({ method: "POST" })
     };
   });
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const userInput = z.object({
   name: z.string().trim().min(1).max(80),
   username: z.string().trim().min(1).max(32),
-  password: z.string().min(8).max(128),
+  email: z.string().trim().min(1).max(120),
   roleId: z.string().min(1).max(48),
 });
+
+/**
+ * Resultado de crear un usuario o reenviarle el acceso: si el correo salió, o
+ * el enlace de un solo uso para entregárselo a mano (sin correo configurado,
+ * o si el envío falló). Ver `server/temp-access.ts`.
+ */
+type AccessOutcome = { mailed: true; expiresAt: number } | { mailed: false; link: string; expiresAt: number; reason: string };
+
+function outcome(result: Awaited<ReturnType<typeof import("@/server/temp-access").issueAccess>>): AccessOutcome {
+  return result.mailed
+    ? { mailed: true, expiresAt: result.expiresAt }
+    : { mailed: false, link: result.link, expiresAt: result.expiresAt, reason: result.reason };
+}
 
 export const createVaultUser = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -414,15 +465,18 @@ export const createVaultUser = createServerFn({ method: "POST" })
     if (!allows(actor, "users.create")) return { ok: false as const, error: "Sin permiso para crear usuarios." };
     const email = emailForUsername(data.username);
     if (!email) return { ok: false as const, error: "El usuario solo admite letras, números, punto, guion y guion bajo." };
+    if (!emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
     const role = await sql<{ id: string }>`select id from app_role where id = ${data.roleId} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     const login = data.username.trim().toLowerCase();
     const taken = await sql<{ user_id: string }>`select user_id from app_user_role where login_name = ${login} limit 1`;
     if (taken[0]) return { ok: false as const, error: "Ese usuario ya existe." };
     const auth = await (await import("@/lib/auth/server")).getAuth();
+    const { issueAccess, temporaryPassword } = await import("@/server/temp-access");
     try {
+      // Una contraseña que nadie conoce; la de verdad la pone `issueAccess`.
       await auth.api.signUpEmail({
-        body: { name: data.name.trim(), email, password: data.password },
+        body: { name: data.name.trim(), email, password: `${temporaryPassword()}${temporaryPassword()}` },
         headers: await authHeaders(),
       });
     } catch {
@@ -436,8 +490,40 @@ export const createVaultUser = createServerFn({ method: "POST" })
       insert into app_user_role (user_id, role_id, login_name)
       values (${id}, ${data.roleId}, ${login})
     `;
+    await sql`
+      insert into app_profile (user_id, contact_email) values (${id}, ${data.email})
+      on conflict (user_id) do update set contact_email = excluded.contact_email
+    `;
     await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Crea a ${login}`);
-    return { ok: true as const };
+    const access = await issueAccess(sql, id, { resent: false });
+    return { ok: true as const, access: outcome(access) };
+  });
+
+/** Nueva contraseña temporal y correo de acceso, p. ej. si el anterior venció o no llegó. */
+export const resendVaultAccess = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ userId: z.string().min(1).max(80) }).parse(input))
+  .handler(async ({ context, data }) => {
+    const sql = await requireLease(context.userId);
+    const actor = await readUserProfile(sql, context.userId);
+    if (!allows(actor, "users.update")) return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
+    const rows = await sql<{ login_name: string | null; source: string | null; owner: unknown; credential: unknown }>`
+      select m.login_name, m.source,
+        exists(select 1 from app_admin a where a.user_id = u.id) as owner,
+        exists(select 1 from "account" c where c."userId" = u.id and c."providerId" = 'credential') as credential
+      from "user" u left join app_user_role m on m.user_id = u.id
+      where u.id = ${data.userId} limit 1
+    `;
+    const row = rows[0];
+    if (!row) return { ok: false as const, error: "Ese usuario no está." };
+    if (flag(row.owner)) return { ok: false as const, error: "El administrador inicial cambia su contraseña desde su cuenta." };
+    if ((row.source && row.source !== "local") || !flag(row.credential)) {
+      return { ok: false as const, error: "Esa cuenta entra con un proveedor externo: no tiene contraseña de Grafito." };
+    }
+    const { issueAccess } = await import("@/server/temp-access");
+    const access = await issueAccess(sql, data.userId, { resent: true });
+    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Reenvía el acceso a ${row.login_name ?? data.userId}`);
+    return { ok: true as const, access: outcome(access) };
   });
 
 export const updateVaultUser = createServerFn({ method: "POST" })
@@ -448,7 +534,7 @@ export const updateVaultUser = createServerFn({ method: "POST" })
         userId: z.string().min(1).max(80),
         name: z.string().trim().min(1).max(80),
         roleId: z.string().min(1).max(48),
-        password: z.string().max(128).optional(),
+        email: z.string().trim().max(120),
       })
       .parse(input),
   )
@@ -456,10 +542,7 @@ export const updateVaultUser = createServerFn({ method: "POST" })
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
     if (!allows(actor, "users.update")) return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
-    const password = data.password?.trim() ?? "";
-    if (password && password.length < 8) {
-      return { ok: false as const, error: "La contraseña necesita al menos 8 caracteres." };
-    }
+    if (data.email && !emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
     const current = await sql<{ role_id: string | null; owner: unknown }>`
       select m.role_id, exists(select 1 from app_admin a where a.user_id = u.id) as owner
       from "user" u
@@ -482,15 +565,11 @@ export const updateVaultUser = createServerFn({ method: "POST" })
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     await sql`update "user" set name = ${data.name.trim()}, "updatedAt" = now() where id = ${data.userId}`;
     await sql`update app_user_role set role_id = ${data.roleId} where user_id = ${data.userId}`;
-    if (password) {
-      const { hashPassword } = await import("better-auth/crypto");
-      const hashed = await hashPassword(password);
-      await sql`
-        update "account"
-        set password = ${hashed}, "updatedAt" = now()
-        where "userId" = ${data.userId} and "providerId" = 'credential'
-      `;
-    }
+    const contact = data.email || null;
+    await sql`
+      insert into app_profile (user_id, contact_email) values (${data.userId}, ${contact})
+      on conflict (user_id) do update set contact_email = excluded.contact_email
+    `;
     await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Actualiza a ${data.name.trim()}`);
     return { ok: true as const };
   });

@@ -9,13 +9,14 @@ import {
   createVaultUser,
   deleteRole,
   deleteVaultUser,
+  resendVaultAccess,
   renameRole,
   setRolePermission,
   systemLogs as loadLogs,
   systemSnapshot as loadSnapshot,
   updateVaultUser,
 } from "@/server/admin.functions";
-import { t } from "@/app/i18n";
+import { intl, t } from "@/app/i18n";
 
 export type AdminView = Extract<Awaited<ReturnType<typeof adminState>>, { isAdmin: true }>;
 
@@ -28,6 +29,8 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Lo que pasó con el último acceso enviado (correo o enlace para entregar a mano).
+  const [sent, setSent] = useState<{ name: string; access: AccessOutcome } | null>(null);
   const people = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return view.users;
@@ -49,6 +52,7 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
         ) : null}
       </div>
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
+      {sent ? <AccessNotice name={sent.name} access={sent.access} onClose={() => setSent(null)} /> : null}
       {people.length === 0 ? <p className="text-sm text-muted">{t("Ningún usuario coincide.")}</p> : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface empty:hidden">
         {people.map((person) => (
@@ -57,16 +61,24 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
               <button
                 type="button"
                 onClick={() => { setError(""); setOpen({ id: person.id }); }}
-                className="flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-left text-sm hover:bg-elevated"
+                className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 text-left text-sm hover:bg-elevated"
               >
-                <span className="truncate">{person.name}</span>
-                <SourceTag source={person.source} />
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{person.name}</span>
+                  <SourceTag source={person.source} />
+                </span>
+                <SignIns first={person.firstLoginAt} last={person.lastSeenAt} />
+                <AccessState access={person.access} />
               </button>
             ) : (
-              <p className="flex min-w-0 flex-1 items-center gap-2 px-4 py-3 text-sm">
-                <span className="truncate">{person.name}</span>
-                <SourceTag source={person.source} />
-              </p>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 text-sm">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{person.name}</span>
+                  <SourceTag source={person.source} />
+                </span>
+                <SignIns first={person.firstLoginAt} last={person.lastSeenAt} />
+                <AccessState access={person.access} />
+              </div>
             )}
             {can(view, "users.delete") && !person.owner ? (
               confirming === person.id ? (
@@ -103,10 +115,11 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
           onClose={() => setOpen(null)}
           onSubmit={async (values) => {
             const result = await createVaultUser({
-              data: { name: values.name, username: values.username, password: values.password, roleId: values.roleId },
+              data: { name: values.name, username: values.username, email: values.email, roleId: values.roleId },
             });
             if (!result.ok) return result.error;
             setOpen(null);
+            setSent({ name: values.name, access: result.access });
             reload();
             return "";
           }}
@@ -124,11 +137,20 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
                 userId: open.id,
                 name: values.name,
                 roleId: values.roleId,
-                password: values.password || undefined,
+                email: values.email,
               },
             });
             if (!result.ok) return result.error;
             setOpen(null);
+            reload();
+            return "";
+          }}
+          onResend={async () => {
+            const person = view.users.find((item) => item.id === open.id);
+            const result = await resendVaultAccess({ data: { userId: open.id } });
+            if (!result.ok) return result.error;
+            setOpen(null);
+            setSent({ name: person?.name ?? "", access: result.access });
             reload();
             return "";
           }}
@@ -147,6 +169,80 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 /** Origen de una cuenta creada al entrar por un proveedor externo. */
+type AccessOutcome = { mailed: true; expiresAt: number } | { mailed: false; link: string; expiresAt: number; reason: string };
+
+function formatWhen(ms: number) {
+  return new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
+}
+
+/** Estado del acceso temporal por correo de un usuario. */
+function AccessState({ access }: { access: AdminView["users"][number]["access"] }) {
+  if (!access) return null;
+  const text =
+    access.state === "pending"
+      ? t("Acceso enviado: vence {0}", { 0: formatWhen(access.expiresAt) })
+      : access.state === "used"
+        ? t("Entró con la contraseña temporal; aún no la cambió")
+        : t("El acceso venció: reenvíalo");
+  return <span className={`text-xs ${access.state === "expired" ? "text-danger" : "text-accent"}`}>{text}</span>;
+}
+
+/**
+ * Tras crear un usuario o reenviarle el acceso: si el correo salió, o el enlace
+ * de un solo uso para entregárselo a mano (se muestra solo esta vez).
+ */
+function AccessNotice({ name, access, onClose }: { name: string; access: AccessOutcome; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-2 rounded-lg border border-line bg-surface p-4 text-sm">
+      {access.mailed ? (
+        <p>{t("Se envió el acceso a {0}. Vence {1}.", { 0: name, 1: formatWhen(access.expiresAt) })}</p>
+      ) : (
+        <>
+          <p className="text-danger">{t("No se envió el correo: {0}", { 0: t(access.reason) })}</p>
+          <p className="text-muted">
+            {t("Entrega este enlace a {0} por otro medio. Se abre una sola vez y vence {1}.", {
+              0: name,
+              1: formatWhen(access.expiresAt),
+            })}
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={access.link}
+              onFocus={(event) => event.currentTarget.select()}
+              className="h-10 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(access.link).then(() => setCopied(true));
+              }}
+              className="h-10 shrink-0 rounded-md border border-line px-3 text-sm hover:bg-elevated"
+            >
+              {copied ? t("Copiado") : t("Copiar")}
+            </button>
+          </div>
+        </>
+      )}
+      <TextAction onClick={onClose}>{t("Cerrar")}</TextAction>
+    </div>
+  );
+}
+
+/** Primer ingreso y última conexión, con fecha y hora. */
+function SignIns({ first, last }: { first: number | null; last: number | null }) {
+  const when = (ms: number) =>
+    new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
+  if (!first && !last) return <span className="text-xs text-faint">{t("Todavía no ha ingresado")}</span>;
+  return (
+    <span className="flex flex-wrap gap-x-4 text-xs text-faint">
+      {first ? <span>{t("Primer ingreso: {0}", { 0: when(first) })}</span> : null}
+      {last ? <span>{t("Última conexión: {0}", { 0: when(last) })}</span> : null}
+    </span>
+  );
+}
+
 function SourceTag({ source }: { source: string }) {
   const label = SOURCE_LABEL[source];
   if (!label) return null;
@@ -159,16 +255,19 @@ function UserForm({
   person,
   onClose,
   onSubmit,
+  onResend,
 }: {
   roles: AdminView["roles"];
   title: string;
   person?: AdminView["users"][number];
   onClose: () => void;
-  onSubmit: (values: { name: string; username: string; password: string; roleId: string }) => Promise<string>;
+  onSubmit: (values: { name: string; username: string; email: string; roleId: string }) => Promise<string>;
+  /** Reenviar el acceso por correo (solo al editar una cuenta local). */
+  onResend?: () => Promise<string>;
 }) {
   const [name, setName] = useState(person?.name ?? "");
   const [username, setUsername] = useState(person?.loginName ?? "");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(person?.email ?? "");
   const [roleId, setRoleId] = useState(person?.owner ? "admin" : person?.roleId || roles.find((role) => role.id === "miembro")?.id || roles[0]?.id || "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -179,7 +278,7 @@ function UserForm({
         event.preventDefault();
         setBusy(true);
         setError("");
-        void onSubmit({ name, username, password, roleId }).then((message) => {
+        void onSubmit({ name, username, email, roleId }).then((message) => {
           setBusy(false);
           if (message) setError(message);
         });
@@ -202,13 +301,13 @@ function UserForm({
         />
       </label>
       <label className="block text-sm">
-        <span className="text-muted">{person ? t("Nueva contraseña (opcional)") : t("Contraseña")}</span>
+        <span className="text-muted">{t("Correo")}</span>
         <input
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           required={!person}
-          autoComplete="new-password"
+          autoComplete="off"
           className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3"
         />
       </label>
@@ -233,6 +332,23 @@ function UserForm({
         <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50">
           {busy ? t("Guardando…") : t("Guardar")}
         </button>
+        {onResend && person && !person.owner && person.source === "local" ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              void onResend().then((message) => {
+                setBusy(false);
+                if (message) setError(message);
+              });
+            }}
+            className="h-11 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated disabled:opacity-50"
+          >
+            {t("Reenviar acceso")}
+          </button>
+        ) : null}
         <button type="button" onClick={onClose} className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated">
           {t("Cancelar")}
         </button>
