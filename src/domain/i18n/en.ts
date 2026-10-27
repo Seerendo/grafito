@@ -456,7 +456,7 @@ export const en: Record<string, string> = {
   "Falta GRAFITO_ENCRYPTION_KEY en el servidor: no se pueden guardar claves.": "GRAFITO_ENCRYPTION_KEY is missing on the server: keys can't be saved.",
 
   // --- Vault
-  "Raíz": "Root",
+  "Carpeta Personal": "Personal Folder",
   "Buscar notas": "Search notes",
   "Sin resultados": "No results",
   "Desplegar {0}": "Expand {0}",
@@ -574,7 +574,7 @@ export const en: Record<string, string> = {
   "Desplegar los detalles": "Expand the details",
   "Desplegar el directorio": "Expand the directory",
   "Nada coincide.": "Nothing matches.",
-  "Soltar en la raíz": "Drop in the root",
+  "Soltar en la Carpeta Personal": "Drop in the Personal Folder",
   "Soltar para agregar a": "Drop to add to",
   "Dentro de {0}": "Inside {0}",
   "Notas": "Notes",

@@ -205,13 +205,13 @@ After that, the start screen is a normal sign-in.
 ### Layout
 
 - **Left: the directory.** It has two roots:
-  - **Raíz** holds your own (private) notes, portfolios and files. Its page
+  - **Carpeta Personal** (personal folder, formerly «Raíz») holds your own (private) notes, portfolios and files. Its page
     lists your recent documents.
   - **Compartidos conmigo** holds what others shared with you.
   - **Papelera** (trash) holds what you deleted.
   - Collapse the directory with the « arrow to get a wider editor. It opens
     expanded again when you come back to the vault.
-- **Center: the open note.** On the Raíz page, right-click a recent document
+- **Center: the open note.** On the Carpeta Personal page, right-click a recent document
   (or the empty space) for the same menu as in the directory.
 - **Right: the details panel.** It shows the outline, manual links, links
   written in the text, and mentions (backlinks). Collapse it with the »

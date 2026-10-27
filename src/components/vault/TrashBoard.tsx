@@ -110,7 +110,7 @@ export function TrashBoard() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{item.title}</span>
                     <span className="block text-xs text-faint">
-                      {item.portfolioName ?? t("Raíz")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
+                      {item.portfolioName ?? t("Carpeta Personal")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
                     </span>
                   </span>
                   {confirming === item.id ? (

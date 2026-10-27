@@ -48,7 +48,7 @@ export function CommandPalette({
     }
     close();
   };
-  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Raíz");
+  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
 
   return (
     <div

@@ -163,7 +163,7 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
     if (userId) useVault.getState().openVaultFor(userId);
   }, [userId]);
   const portfolios = useVault((view) => view.portfolios);
-  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Raíz");
+  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
 
   const openNote = (id: string) => {
     useVault.getState().setActive(id);

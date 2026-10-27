@@ -16,7 +16,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
     [documents],
   );
-  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Raíz");
+  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Carpeta Personal");
 
   return (
     <div
@@ -29,7 +29,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
     >
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-wrap items-end gap-3">
-          <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Raíz")}</h1>
+          <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Carpeta Personal")}</h1>
           {onCreate ? (
             <button
               type="button"

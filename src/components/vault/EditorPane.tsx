@@ -151,7 +151,7 @@ export function EditorPane({
     );
   }
 
-  const portfolioName = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Raíz");
+  const portfolioName = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
   const isFile = document.kind === "file";
   // Sin permiso de edición la nota siempre se lee, aunque se guardara otro modo.
   const viewMode = canEdit ? mode : "read";
@@ -528,7 +528,7 @@ export function EditorPane({
                       >
                         {item.title}
                         <span className="ml-auto text-xs text-faint">
-                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)?.name ?? t("Raíz")}
+                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)?.name ?? t("Carpeta Personal")}
                         </span>
                       </button>
                     </li>

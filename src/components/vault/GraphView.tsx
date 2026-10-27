@@ -764,7 +764,7 @@ function NodeCard() {
   const activeId = useVault((state) => state.activeId);
   const document = documents.find((item) => item.id === activeId) ?? null;
   if (!document) return null;
-  const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Raíz");
+  const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const wikis = document.kind === "markdown" ? extractWikiLinks(document.content) : [];
   return (

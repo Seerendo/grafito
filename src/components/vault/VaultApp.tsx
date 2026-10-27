@@ -455,7 +455,7 @@ function FileDrop({
     const state = useVault.getState();
     const active = state.documents.find((document) => document.id === state.activeId);
     const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
-    const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? t("Raíz");
+    const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? t("Carpeta Personal");
     return { portfolioId, name };
   };
 
@@ -642,7 +642,7 @@ function VaultDialogs() {
 
   if (dialog.type === "move-conflict") {
     const source = documents.find((item) => item.id === dialog.id);
-    const place = portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? t("Raíz");
+    const place = portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? t("Carpeta Personal");
     return (
       <Modal title={t("Mismo nombre")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">

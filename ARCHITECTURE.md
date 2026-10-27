@@ -162,7 +162,7 @@ The `vault/` pieces:
 | `ai-chat.ts` | AI chat state: open or closed, chosen model, conversation and NDJSON reading |
 | `files.ts` | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile` |
 | `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
-| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`). Opening an own note, Raíz or signing out closes it. |
+| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`). Opening an own note, the Carpeta Personal or signing out closes it. |
 | `trash-view.ts` | Whether the trash fills the main area (`useTrashView`), with the same closing rules |
 | `permissions.ts` | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them. |
 | `actor.ts` | Name of whoever creates or edits notes |

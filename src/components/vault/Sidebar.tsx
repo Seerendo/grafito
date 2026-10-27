@@ -291,7 +291,7 @@ export function Sidebar({
               }`}
             >
               <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
-              <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la raíz") : t("Raíz")}</span>
+              <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la Carpeta Personal") : t("Carpeta Personal")}</span>
             </button>
             <GroupedDocs
               documents={forest.loose}

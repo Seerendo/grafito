@@ -40,7 +40,7 @@ function optionalId(args: Record<string, unknown>, key: string): string | null {
 }
 
 function path(portfolios: Portfolio[], id: string | null): string {
-  if (!id) return "Raíz";
+  if (!id) return "Carpeta Personal";
   const names: string[] = [];
   let current = portfolios.find((portfolio) => portfolio.id === id);
   const seen = new Set<string>();
@@ -49,7 +49,7 @@ function path(portfolios: Portfolio[], id: string | null): string {
     names.unshift(current.name);
     current = current.parentId ? portfolios.find((portfolio) => portfolio.id === current!.parentId) : undefined;
   }
-  return names.join(" › ") || "Raíz";
+  return names.join(" › ") || "Carpeta Personal";
 }
 
 /** Un documento por su id o, si no, por su título exacto (sin distinguir mayúsculas). */
@@ -89,11 +89,11 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
       spec: {
         name: "list_notes",
         description:
-          "Lista notas y archivos (sin su contenido). Filtra por portafolio (id, o 'root' para la raíz) y/o por texto.",
+          "Lista notas y archivos (sin su contenido). Filtra por portafolio (id, o 'root' para la Carpeta Personal (la raíz)) y/o por texto.",
         parameters: {
           type: "object",
           properties: {
-            portfolio_id: { type: "string", description: "Id del portafolio, 'root' para la raíz; vacío para todos" },
+            portfolio_id: { type: "string", description: "Id del portafolio, 'root' para la Carpeta Personal (la raíz); vacío para todos" },
             query: { type: "string", description: "Texto a buscar en el título o el contenido" },
           },
           required: [],
@@ -193,7 +193,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
           properties: {
             title: { type: "string", description: "Título (si existe, se le añade un número)" },
             content: { type: "string", description: "Contenido en Markdown" },
-            portfolio_id: { type: "string", description: "Id del portafolio; vacío para la raíz" },
+            portfolio_id: { type: "string", description: "Id del portafolio; vacío para la Carpeta Personal (la raíz)" },
           },
           required: ["title", "content"],
         },
@@ -256,7 +256,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
           type: "object",
           properties: {
             name: { type: "string", description: "Nombre" },
-            parent_id: { type: "string", description: "Id del portafolio padre; vacío para la raíz" },
+            parent_id: { type: "string", description: "Id del portafolio padre; vacío para la Carpeta Personal (la raíz)" },
           },
           required: ["name"],
         },

@@ -949,6 +949,15 @@ Development server (`grafito-design`).
 | Cuenta overview | ✅ uses the same tiles (same component) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
 
+## Round 26: «Raíz» renamed to «Carpeta Personal»
+
+| Case | Result |
+| --- | --- |
+| Directory, its page title, the place shown beside documents (home list, palette, search, graph, editor), the trash, the move dialog and the drop hint | ✅ «Carpeta Personal» («Personal Folder» in English); no «Raíz» left in the interface |
+| The AI assistant | ✅ names it «Carpeta Personal» too |
+| Layout | ✅ fits in the directory and as the page title; in a narrow window «Nueva nota» wraps under the title |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 39 tests |
+
 ## Useful commands
 
 ```bash
