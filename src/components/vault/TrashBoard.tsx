@@ -75,7 +75,7 @@ export function TrashBoard() {
 
   return (
     <div className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8">
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="w-full">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Papelera")}</h1>
           {canPurge && items && items.length > 0 ? (

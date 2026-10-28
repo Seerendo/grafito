@@ -311,6 +311,11 @@ type VaultState = Persisted & {
   deletePortfolio: (id: string) => void;
   moveDocument: (id: string, portfolioId: string | null) => void;
   movePortfolio: (id: string, parentId: string | null) => void;
+  /**
+   * Mueve varios documentos y portafolios a la vez. Devuelve los títulos que no
+   * se movieron porque en el destino ya hay un documento con ese nombre.
+   */
+  moveMany: (items: { kind: "document" | "portfolio"; id: string }[], target: string | null) => string[];
   renamePortfolio: (id: string, name: string) => boolean;
   resolveMove: (action: "replace" | "rename") => void;
   /** Con `anchor`, el vínculo sale de esa frase del archivo (puede haber varios al mismo destino). */
@@ -683,6 +688,45 @@ export const useVault = create<VaultState>((set, get) => ({
       collapsed: parentId ? { ...get().collapsed, [parentId]: false } : get().collapsed,
       selectedPortfolioId: id,
     });
+  },
+
+  moveMany: (items, target) => {
+    if (!can(PERMISSION.portfoliosManage)) return [];
+    const { documents, portfolios } = get();
+    if (target && !portfolios.some((portfolio) => portfolio.id === target)) return [];
+    const docIds = new Set<string>();
+    const skipped: string[] = [];
+    for (const item of items) {
+      if (item.kind !== "document") continue;
+      const current = documents.find((document) => document.id === item.id);
+      if (!current || current.portfolioId === target) continue;
+      const clash = documents.some(
+        (document) =>
+          document.id !== current.id &&
+          !docIds.has(document.id) &&
+          document.portfolioId === target &&
+          sameTitle(document.title, current.title),
+      );
+      // Dos de la selección con el mismo nombre también chocan entre sí.
+      const twin = documents.some((document) => docIds.has(document.id) && sameTitle(document.title, current.title));
+      if (clash || twin) skipped.push(current.title);
+      else docIds.add(current.id);
+    }
+    const portIds = new Set(
+      items
+        .filter((item) => item.kind === "portfolio" && item.id !== target)
+        // Un portafolio no puede ir dentro de sí mismo.
+        .filter((item) => !target || !descendantIds(portfolios, item.id).has(target))
+        .map((item) => item.id),
+    );
+    set({
+      documents: documents.map((document) =>
+        docIds.has(document.id) ? { ...document, portfolioId: target, ...mark(document) } : document,
+      ),
+      portfolios: portfolios.map((portfolio) => (portIds.has(portfolio.id) ? { ...portfolio, parentId: target } : portfolio)),
+      collapsed: target ? { ...get().collapsed, [target]: false } : get().collapsed,
+    });
+    return skipped;
   },
 
   renamePortfolio: (id, name) => {

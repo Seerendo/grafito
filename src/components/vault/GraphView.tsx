@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Locate, Minus, Plus } from "lucide-react";
 import { graphClickIntent, graphEdges } from "@/domain/vault/graph";
 import { extractHeadings, extractWikiLinks } from "@/domain/vault/links";
-import type { GraphKind } from "@/domain/vault/types";
+import type { Document, GraphKind, Portfolio } from "@/domain/vault/types";
 import { useVault } from "@/app/vault/store";
 import { t } from "@/app/i18n";
 import { linkKey } from "@/domain/vault/anchor";
@@ -44,10 +44,24 @@ function readColor(name: string, fallback: string): string {
   return value || fallback;
 }
 
-export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) {
-  const documents = useVault((state) => state.documents);
-  const activeId = useVault((state) => state.activeId);
-  const selectInGraph = useVault((state) => state.selectInGraph);
+/**
+ * Lo que dibuja el grafo. Sin `source`, la bóveda propia; lo compartido pasa
+ * sus documentos (solo lectura).
+ */
+export type GraphSource = {
+  documents: Document[];
+  portfolios: Portfolio[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+};
+
+export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => void; source?: GraphSource }) {
+  const ownDocuments = useVault((state) => state.documents);
+  const ownActiveId = useVault((state) => state.activeId);
+  const ownSelect = useVault((state) => state.selectInGraph);
+  const documents = source?.documents ?? ownDocuments;
+  const activeId = source ? source.activeId : ownActiveId;
+  const selectInGraph = source?.onSelect ?? ownSelect;
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef(activeId);
@@ -745,7 +759,7 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
         </div>
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <NodeCard />
+        <NodeCard source={source} />
         <div
           ref={stageRef}
           tabIndex={0}
@@ -759,10 +773,13 @@ export function GraphView({ onOpenNote }: { onOpenNote: (id: string) => void }) 
   );
 }
 
-function NodeCard() {
-  const documents = useVault((state) => state.documents);
-  const portfolios = useVault((state) => state.portfolios);
-  const activeId = useVault((state) => state.activeId);
+function NodeCard({ source }: { source?: GraphSource }) {
+  const ownDocuments = useVault((state) => state.documents);
+  const ownPortfolios = useVault((state) => state.portfolios);
+  const ownActiveId = useVault((state) => state.activeId);
+  const documents = source?.documents ?? ownDocuments;
+  const portfolios = source?.portfolios ?? ownPortfolios;
+  const activeId = source ? source.activeId : ownActiveId;
   const document = documents.find((item) => item.id === activeId) ?? null;
   if (!document) return null;
   const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");

@@ -567,6 +567,17 @@ shows the quoted phrase, and clicking it focuses the PDF there
 file already has (`page.getAnnotations()`, anything with text except links,
 form fields and popups) are listed read-only with a marker on the page.
 
+## Editor colors
+
+`components/vault/HighlightLayer.tsx` draws the note under the editor's
+`<textarea>`, colored by `domain/vault/md-highlight.ts` (line by line, with
+fenced code; the spans always add up to the original text). The textarea
+keeps its text transparent, so the cursor, selection, shortcuts and `[[`
+autocomplete stay native. Both share `EDITOR_TEXT` (font, padding, wrapping,
+`scrollbar-gutter`) and the layer follows the textarea's scroll. Colors are
+CSS variables in `styles.css` mixed with the theme's text color; bold uses a
+text shadow, not a heavier weight, so glyph widths never change.
+
 ## Downloading a portfolio
 
 `server/export.ts` turns a portfolio and its subportfolios (or the whole

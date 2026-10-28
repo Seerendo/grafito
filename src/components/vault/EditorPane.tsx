@@ -43,6 +43,7 @@ import { EditingNow } from "./EditingNow";
 import { FullscreenButton } from "./FullscreenButton";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
+import { HighlightLayer } from "./HighlightLayer";
 import { requestNotePdf } from "./NotePdf";
 import { intl, t } from "@/app/i18n";
 
@@ -76,7 +77,13 @@ function prefixLines(value: string, start: number, end: number, prefix: string) 
 }
 
 const TABLE = "| Columna | Columna |\n| --- | --- |\n|  |  |\n";
-const TABLE_AT = "| Columna | Columna |\n| --- | --- |\n| ".length;
+/**
+ * Letra, márgenes y ajuste del texto del editor: los mismos en el cuadro de
+ * texto y en la capa coloreada de debajo, o dejarían de coincidir.
+ */
+const EDITOR_TEXT =
+  "px-4 pt-1.5 pb-3 font-sans text-sm leading-normal whitespace-pre-wrap break-words [scrollbar-gutter:stable] [tab-size:4] sm:px-5";
+const TABLE_AT ="| Columna | Columna |\n| --- | --- |\n| ".length;
 
 export function EditorPane({
   mobile,
@@ -119,6 +126,7 @@ export function EditorPane({
     canEdit && (mode === "edit" || mode === "split"),
   );
   const areaRef = useRef<HTMLTextAreaElement>(null);
+  const layerRef = useRef<HTMLPreElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const insertRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState("");
@@ -549,9 +557,19 @@ export function EditorPane({
         {showEditor ? (
           <div className="flex min-h-0 min-w-0 flex-col border-line pt-1.5 md:border-r md:pr-1">
             {/* El margen de arriba y la derecha no es editable: un clic sobre la línea divisoria no cae en el editor. */}
+            <div className="relative min-h-0 flex-1">
+            <HighlightLayer ref={layerRef} source={document.content} className={`pointer-events-none absolute inset-0 m-0 overflow-hidden ${EDITOR_TEXT}`} />
             <textarea
               ref={areaRef}
               value={document.content}
+              onScroll={(event) => {
+                // La capa coloreada sigue al cuadro de texto.
+                const layer = layerRef.current;
+                if (layer) {
+                  layer.scrollTop = event.currentTarget.scrollTop;
+                  layer.scrollLeft = event.currentTarget.scrollLeft;
+                }
+              }}
               onChange={(event) => {
                 updateContent(document.id, event.target.value);
                 setCursor(event.target.selectionStart);
@@ -577,8 +595,9 @@ export function EditorPane({
               }}
               spellCheck
               aria-label={t("Contenido de la nota")}
-              className="min-h-0 w-full flex-1 resize-none bg-transparent px-4 pt-1.5 pb-3 font-sans text-sm leading-normal text-fg outline-none sm:px-5"
+              className={`absolute inset-0 h-full w-full resize-none overflow-y-auto bg-transparent text-transparent caret-fg outline-none selection:bg-accent/30 selection:text-transparent ${EDITOR_TEXT}`}
             />
+            </div>
             {wiki ? (
               <div className="border-t border-line bg-surface p-2">
                 <ul>

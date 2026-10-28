@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { isLightTheme } from "@/app/theme";
 import { t } from "@/app/i18n";
+import { quoteFlowchartLabels } from "@/domain/vault/mermaid-fix";
 
 export function MermaidDiagram({ chart, variant = "app" }: { chart: string; variant?: "app" | "print" }) {
   const reactId = useId().replace(/:/g, "");
@@ -38,7 +39,19 @@ export function MermaidDiagram({ chart, variant = "app" }: { chart: string; vari
           suppressErrorRendering: true,
           flowchart: { htmlLabels: false },
         });
-        const rendered = await mermaid.render(`grafito${reactId}${theme}${variant}`, chart.trim());
+        const id = `grafito${reactId}${theme}${variant}`;
+        const source = chart.trim();
+        let rendered: { svg: string };
+        try {
+          rendered = await mermaid.render(id, source);
+        } catch (error) {
+          // Etiquetas con paréntesis u otros signos sin comillas: se reintenta con ellas.
+          const quoted = quoteFlowchartLabels(source);
+          if (quoted === source) throw error;
+          rendered = await mermaid.render(`${id}q`, quoted).catch(() => {
+            throw error;
+          });
+        }
         if (!cancelled) setSvg(rendered.svg);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : t("Diagrama inválido"));

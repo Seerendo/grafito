@@ -929,3 +929,73 @@ html[data-tone="dark"] .theme-moon {
   max-height: min(26rem, 55dvh);
   overflow-y: auto;
 }
+
+/*
+ * Colores de sintaxis del editor de notas (`HighlightLayer`). Cada tono se
+ * mezcla con el color del texto del tema, así se lee bien en temas claros y
+ * oscuros. Solo color y fondo: nada que cambie el ancho de las letras.
+ */
+:root {
+  --md-heading: var(--color-accent);
+  --md-mark: color-mix(in oklab, var(--color-accent) 60%, var(--color-faint));
+  --md-link: color-mix(in oklab, #4f9dff 70%, var(--color-fg));
+  --md-code: color-mix(in oklab, #3fbf7f 70%, var(--color-fg));
+  --md-tag: color-mix(in oklab, #c879ff 65%, var(--color-fg));
+  --md-strong: var(--color-fg);
+  --md-em: color-mix(in oklab, #ff9f43 55%, var(--color-fg));
+}
+html[data-tone="light"] {
+  --md-link: color-mix(in oklab, #1a5fd1 80%, var(--color-fg));
+  --md-code: color-mix(in oklab, #127a44 80%, var(--color-fg));
+  --md-tag: color-mix(in oklab, #8a2fc4 80%, var(--color-fg));
+  --md-em: color-mix(in oklab, #b35a00 75%, var(--color-fg));
+}
+[data-ui="md-highlight"] {
+  color: var(--color-fg);
+}
+.md-heading {
+  color: var(--md-heading);
+}
+.md-mark,
+.md-list,
+.md-quote,
+.md-pipe,
+.md-hr,
+.md-fence {
+  color: var(--md-mark);
+}
+.md-callout,
+.md-task {
+  color: var(--md-tag);
+}
+.md-wiki,
+.md-link,
+.md-url {
+  color: var(--md-link);
+}
+.md-inline-code,
+.md-code {
+  color: var(--md-code);
+}
+.md-inline-code {
+  background: color-mix(in oklab, var(--color-inset) 70%, transparent);
+  border-radius: 3px;
+}
+.md-tag {
+  color: var(--md-tag);
+}
+.md-strong {
+  color: var(--md-strong);
+  text-shadow: 0 0 0.6px currentColor;
+}
+.md-em {
+  color: var(--md-em);
+}
+.md-strike {
+  color: var(--color-faint);
+  text-decoration: line-through;
+}
+.md-highlight {
+  background: color-mix(in oklab, var(--color-accent) 25%, transparent);
+  border-radius: 2px;
+}

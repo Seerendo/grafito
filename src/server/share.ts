@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
 import { signedFileUrl } from "./file-links";
+import type { ManualLink } from "@/domain/vault/types";
 
 /**
  * Acceso a datos de lo compartido (solo servidor). Ver `migrations/0006_share.sql`
@@ -43,6 +44,8 @@ export type PublishedDoc = {
   file: { name: string; mime: string; url: string; downloadUrl: string | null } | null;
   updatedBy: string;
   updatedAt: string;
+  /** Vínculos manuales a otros documentos de lo compartido (para el grafo y los vínculos). */
+  links?: ManualLink[];
 };
 
 type FileLinks = (docId: string) => { url: string; downloadUrl: string | null };
@@ -312,10 +315,11 @@ async function vaultContent(
     content: string;
     file_name: string | null;
     file_mime: string | null;
+    links_json: string;
     updated_by: string;
     updated_at: unknown;
   }>`
-    select id, title, kind, portfolio_id, content, file_name, file_mime, updated_by, updated_at
+    select id, title, kind, portfolio_id, content, file_name, file_mime, links_json, updated_by, updated_at
     from vault_doc where user_id = ${ownerId} and not deleted
   `;
   return {
@@ -329,8 +333,20 @@ async function vaultContent(
       file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", url: "", downloadUrl: null } : null,
       updatedBy: row.updated_by,
       updatedAt: new Date(Number(row.updated_at)).toISOString(),
+      links: parseLinks(row.links_json),
     })),
   };
+}
+
+function parseLinks(raw: string): ManualLink[] {
+  try {
+    const links = JSON.parse(raw) as ManualLink[];
+    return Array.isArray(links)
+      ? links.filter((link) => link && typeof link.targetId === "string" && (link.kind === "referencia" || link.kind === "llama"))
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -344,6 +360,10 @@ async function treeFor(sql: Sql, item: ItemRecord, links?: FileLinks): Promise<S
   const documents = vault?.documents ?? (await readDocs(sql, item.owner_id, true));
   const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, portfolios, documents);
   const shown = documents.filter((document) => covered.documentIds.has(document.id));
+  // Solo los vínculos hacia lo que también se comparte: el resto no se ve ni se nombra.
+  for (const document of shown) {
+    if (document.links) document.links = document.links.filter((link) => covered.documentIds.has(link.targetId));
+  }
   if (vault) {
     for (const document of shown) {
       if (document.file && links) document.file = { ...document.file, ...links(document.id) };

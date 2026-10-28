@@ -1,4 +1,17 @@
-import { BookOpen, ChevronRight, File, FileText, FolderOpen, Globe, History, MessageSquare, PenLine, Users } from "lucide-react";
+import {
+  BookOpen,
+  ChevronRight,
+  File,
+  FileText,
+  FolderOpen,
+  Globe,
+  History,
+  ListTree,
+  MessageSquare,
+  PenLine,
+  Users,
+  Waypoints,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FileView } from "@/components/vault/FileView";
 import { HistoryDialog } from "@/components/vault/HistoryDialog";
@@ -11,6 +24,27 @@ import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
 import { FullscreenButton } from "@/components/vault/FullscreenButton";
 import { Comments } from "@/components/vault/Comments";
+import { GraphView } from "@/components/vault/GraphView";
+import type { Document } from "@/domain/vault/types";
+import { SharedContext } from "./SharedContext";
+
+/** Lo publicado como documentos de la bóveda, para el grafo y los vínculos. */
+function asDocuments(documents: PublishedDoc[]): Document[] {
+  return documents.map((document) => ({
+    id: document.id,
+    title: document.title,
+    kind: document.kind,
+    portfolioId: document.portfolioId,
+    content: document.content,
+    file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
+    links: document.links ?? [],
+    pinned: false,
+    createdAt: Date.parse(document.updatedAt),
+    updatedAt: Date.parse(document.updatedAt),
+    createdBy: document.updatedBy,
+    updatedBy: document.updatedBy,
+  }));
+}
 
 /**
  * Visor de una nota o un portafolio compartido: índice a la izquierda (o
@@ -18,6 +52,8 @@ import { Comments } from "@/components/vault/Comments";
  * pone el directorio (`index={false}`) y el documento abierto llega por
  * `docId`/`onOpenDoc`. Con acceso de edición y `onChange`, las notas se pueden
  * editar y ver su historial; al guardar se avisa con el árbol actualizado.
+ * Para moverse rápido, también en un enlace público: el grafo de lo publicado
+ * y un panel con el esquema, los vínculos y las menciones (solo lectura).
  */
 export function SharedViewer({
   tree,
@@ -53,6 +89,15 @@ export function SharedViewer({
   const [commentCount, setCommentCount] = useState(0);
   const canComment = Boolean(onChange) && active !== null;
   const editors = useNotePresence(active && !active.file ? active.id : null, editing, tree.share.id);
+  const documents = useMemo(() => asDocuments(ordered), [ordered]);
+  const [view, setView] = useState<"doc" | "graph">("doc");
+  const [contextOpen, setContextOpen] = useState(true);
+  const graphable = ordered.length > 1;
+  const showGraph = view === "graph" && graphable;
+  const openDoc = (id: string) => {
+    setActiveId(id);
+    setView("doc");
+  };
 
   useEffect(() => {
     setEditing(false);
@@ -136,6 +181,30 @@ export function SharedViewer({
             >
               <MessageSquare className="size-4" />
               {commentCount > 0 ? <span className="text-xs">{commentCount}</span> : null}
+            </button>
+          ) : null}
+          {graphable ? (
+            <button
+              type="button"
+              aria-pressed={showGraph}
+              aria-label={t("Grafo")}
+              title={t("Grafo")}
+              onClick={() => setView((value) => (value === "graph" ? "doc" : "graph"))}
+              className={`grid size-9 place-items-center rounded-md ${showGraph ? "text-accent" : "text-muted hover:text-fg"}`}
+            >
+              <Waypoints className="size-4" />
+            </button>
+          ) : null}
+          {active && !showGraph ? (
+            <button
+              type="button"
+              aria-pressed={contextOpen}
+              aria-label={t("Esquema y vínculos")}
+              title={t("Esquema y vínculos")}
+              onClick={() => setContextOpen((value) => !value)}
+              className={`grid size-9 place-items-center rounded-md ${contextOpen ? "text-accent" : "text-muted hover:text-fg"}`}
+            >
+              <ListTree className="size-4" />
             </button>
           ) : null}
           <FullscreenButton className="h-9 w-9" />
@@ -236,7 +305,14 @@ export function SharedViewer({
             onClose={() => setHistory(false)}
           />
         ) : null}
-        {!active ? (
+        {showGraph ? (
+          <div data-ui="shared-graph" className="min-h-0 flex-1">
+            <GraphView
+              onOpenNote={openDoc}
+              source={{ documents, portfolios: tree.portfolios, activeId: active?.id ?? null, onSelect: setActiveId }}
+            />
+          </div>
+        ) : !active ? (
           <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
             {t("El contenido todavía no está disponible. Vuelve a intentarlo en unos segundos.")}
           </p>
@@ -278,16 +354,27 @@ export function SharedViewer({
           </div>
         )}
       </div>
-      {canComment && commentsOpen && active ? (
+      {active && !showGraph && (contextOpen || (canComment && commentsOpen)) ? (
         <aside
-          aria-label={t("Comentarios")}
-          className="max-h-[45vh] shrink-0 overflow-y-auto border-t border-line bg-surface p-3 md:max-h-none md:w-80 md:border-t-0 md:border-l"
+          aria-label={t("Esquema y vínculos")}
+          className="max-h-[45vh] shrink-0 space-y-5 overflow-y-auto border-t border-line bg-surface p-3 md:max-h-none md:w-80 md:border-t-0 md:border-l"
         >
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">
-            <MessageSquare className="size-3.5" />
-            {t("Comentarios")}
-          </p>
-          <Comments docId={active.id} shareId={tree.share.id} onCount={setCommentCount} />
+          {contextOpen ? (
+            <SharedContext
+              document={documents.find((item) => item.id === active.id) ?? documents[0]!}
+              documents={documents}
+              onOpen={openDoc}
+            />
+          ) : null}
+          {canComment && commentsOpen ? (
+            <section>
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">
+                <MessageSquare className="size-3.5" />
+                {t("Comentarios")}
+              </p>
+              <Comments docId={active.id} shareId={tree.share.id} onCount={setCommentCount} />
+            </section>
+          ) : null}
         </aside>
       ) : null}
     </div>

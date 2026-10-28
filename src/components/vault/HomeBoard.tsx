@@ -45,7 +45,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
         openMenu(event, { kind: "root" });
       }}
     >
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="w-full">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Carpeta Personal")}</h1>
           <span className="ml-auto flex flex-wrap gap-2">
@@ -175,7 +175,7 @@ export function PortfolioBoard({
         openMenu(event, { kind: "portfolio", id: portfolioId });
       }}
     >
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="w-full">
         <nav aria-label={t("Ruta")} className="flex flex-wrap items-center gap-1 text-xs text-faint">
           <button type="button" onClick={onHome} className="hover:text-fg">
             {t("Carpeta Personal")}

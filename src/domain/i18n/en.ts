@@ -870,4 +870,11 @@ export const en: Record<string, string> = {
   "El portafolio enlazado ya no existe.": "The linked portfolio no longer exists.",
   "El repositorio tiene demasiados archivos para leerlos de una vez.": "The repository has too many files to read at once.",
   "La rama cambió mientras tanto.": "The branch changed in the meantime.",
+  // Selección en el directorio
+  "{n} seleccionados": "{n} selected",
+  "Quitar selección": "Clear selection",
+  "No se movieron todos": "Not everything was moved",
+  "Ya hay un documento con ese nombre en el destino: {0}.": "There's already a document with that name there: {0}.",
+  // Compartido: grafo y esquema
+  "Esquema y vínculos": "Outline and links",
 };

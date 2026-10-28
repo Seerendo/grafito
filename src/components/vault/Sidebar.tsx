@@ -1,5 +1,5 @@
 import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Trash2, X } from "lucide-react";
-import { useState, type DragEvent, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
@@ -17,10 +17,39 @@ import { t } from "@/app/i18n";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
+/** Varios elementos a la vez (selección con Ctrl o Shift): JSON con sus claves. */
+const MANY_MIME = "application/x-grafito-many";
+
+type PickKey = `doc:${string}` | `port:${string}`;
+
+/**
+ * Selección de varias filas del directorio: Ctrl (⌘ en Mac) o Shift + clic.
+ * `onPick` devuelve `true` si el clic fue de selección (y no hay que abrir nada).
+ */
+const PickContext = createContext<{ picked: Set<string>; onPick: (event: MouseEvent, key: PickKey) => boolean }>({
+  picked: new Set(),
+  onPick: () => false,
+});
 
 function isVaultDrag(data: DataTransfer): boolean {
   const types = [...data.types];
-  return types.includes(DOC_MIME) || types.includes(PORT_MIME) || types.includes("text/plain");
+  return types.includes(DOC_MIME) || types.includes(PORT_MIME) || types.includes(MANY_MIME) || types.includes("text/plain");
+}
+
+function readMany(data: DataTransfer): { kind: "document" | "portfolio"; id: string }[] | null {
+  try {
+    const keys = JSON.parse(data.getData(MANY_MIME) || "null") as string[] | null;
+    if (!Array.isArray(keys)) return null;
+    return keys.flatMap((key): { kind: "document" | "portfolio"; id: string }[] =>
+      key.startsWith("doc:")
+        ? [{ kind: "document" as const, id: key.slice(4) }]
+        : key.startsWith("port:")
+          ? [{ kind: "portfolio" as const, id: key.slice(5) }]
+          : [],
+    );
+  } catch {
+    return null;
+  }
 }
 
 function readDrag(data: DataTransfer): { kind: "document" | "portfolio"; id: string } | null {
@@ -80,7 +109,52 @@ export function Sidebar({
   const setDialog = useVault((state) => state.setDialog);
   const moveDocument = useVault((state) => state.moveDocument);
   const movePortfolio = useVault((state) => state.movePortfolio);
+  const moveMany = useVault((state) => state.moveMany);
   const [dropOver, setDropOver] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [anchor, setAnchor] = useState<string | null>(null);
+
+  // Esc quita la selección.
+  useEffect(() => {
+    if (picked.length === 0) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setPicked([]);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [picked.length]);
+
+  const onPick = (event: MouseEvent, key: PickKey): boolean => {
+    const toggle = event.ctrlKey || event.metaKey;
+    if (!toggle && !event.shiftKey) {
+      if (picked.length) setPicked([]);
+      setAnchor(key);
+      return false;
+    }
+    event.preventDefault();
+    if (event.shiftKey && anchor) {
+      // Rango en el orden en que se ven las filas.
+      const order = [...document.querySelectorAll<HTMLElement>("[data-ui='sidebar'] [data-pick]")].map(
+        (element) => element.dataset.pick!,
+      );
+      const from = order.indexOf(anchor);
+      const to = order.indexOf(key);
+      if (from >= 0 && to >= 0) {
+        const range = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+        setPicked((current) => [...new Set([...(toggle ? current : []), ...range])]);
+        return true;
+      }
+    }
+    setPicked((current) => {
+      // El primer Ctrl+clic también se lleva la fila elegida antes.
+      const base = current.length === 0 && anchor && anchor !== key ? [anchor] : current;
+      return base.includes(key) ? base.filter((item) => item !== key) : [...base, key];
+    });
+    setAnchor(key);
+    return true;
+  };
   const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote);
 
   const filtered = documents.filter((document) => {
@@ -146,13 +220,37 @@ export function Sidebar({
       takeExternal(event.dataTransfer.files, portfolioId);
       return;
     }
+    const many = readMany(event.dataTransfer);
+    if (many && many.length > 0) {
+      const skipped = moveMany(many, portfolioId);
+      setPicked([]);
+      if (skipped.length > 0) {
+        setDialog({
+          type: "upload-error",
+          title: "No se movieron todos",
+          message: t("Ya hay un documento con ese nombre en el destino: {0}.", { 0: skipped.join(", ") }),
+        });
+      }
+      return;
+    }
     const payload = readDrag(event.dataTransfer);
     if (!payload) return;
     if (payload.kind === "portfolio") movePortfolio(payload.id, portfolioId);
     else moveDocument(payload.id, portfolioId);
   };
 
+  /** Arrastrar una fila seleccionada arrastra toda la selección. */
+  const dragMany = (event: DragEvent, key: string): boolean => {
+    if (picked.length < 2 || !picked.includes(key)) return false;
+    event.dataTransfer.setData(MANY_MIME, JSON.stringify(picked));
+    event.dataTransfer.setData("text/plain", `many:${picked.length}`);
+    event.dataTransfer.effectAllowed = "move";
+    event.stopPropagation();
+    return true;
+  };
+
   const startDrag = (event: DragEvent, id: string) => {
+    if (dragMany(event, `doc:${id}`)) return;
     event.dataTransfer.setData(DOC_MIME, id);
     event.dataTransfer.setData("text/plain", `doc:${id}`);
     event.dataTransfer.effectAllowed = "move";
@@ -160,6 +258,7 @@ export function Sidebar({
   };
 
   const startPortfolioDrag = (event: DragEvent, id: string) => {
+    if (dragMany(event, `port:${id}`)) return;
     event.dataTransfer.setData(PORT_MIME, id);
     event.dataTransfer.setData("text/plain", `port:${id}`);
     event.dataTransfer.effectAllowed = "move";
@@ -167,6 +266,7 @@ export function Sidebar({
   };
 
   return (
+    <PickContext.Provider value={{ picked: new Set(picked), onPick }}>
     <aside
       data-ui="sidebar"
       className="flex h-full min-h-0 w-full flex-col bg-surface md:w-72 md:border-r md:border-line"
@@ -296,18 +396,6 @@ export function Sidebar({
               <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
               <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la Carpeta Personal") : t("Carpeta Personal")}</span>
             </button>
-            <GroupedDocs
-              documents={forest.loose}
-              scope="root"
-              activeId={litId}
-              depth={0}
-              collapsed={collapsed}
-              onOpen={open}
-              onOpenContent={openContent}
-              onDragStart={startDrag}
-              onToggle={toggleCollapsed}
-              onContextMenu={(event, id) => openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })}
-            />
             {forest.roots.map((node) => (
               <PortfolioBranch
                 key={node.portfolio.id}
@@ -333,6 +421,18 @@ export function Sidebar({
                 }
               />
             ))}
+            <GroupedDocs
+              documents={forest.loose}
+              scope="root"
+              activeId={litId}
+              depth={0}
+              collapsed={collapsed}
+              onOpen={open}
+              onOpenContent={openContent}
+              onDragStart={startDrag}
+              onToggle={toggleCollapsed}
+              onContextMenu={(event, id) => openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })}
+            />
             <SharedSection onOpen={onOpenShared} />
             <button
               type="button"
@@ -349,22 +449,35 @@ export function Sidebar({
         )}
       </div>
 
+      {picked.length > 0 ? (
+        <div data-ui="selection" className="flex items-center gap-2 border-t border-line px-3 py-2 text-xs text-muted">
+          <span className="min-w-0 flex-1 truncate">{t("{n} seleccionados", { n: picked.length })}</span>
+          <button
+            type="button"
+            aria-label={t("Quitar selección")}
+            title={t("Quitar selección")}
+            onClick={() => setPicked([])}
+            className="grid size-7 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ) : null}
       <UploadProgress />
       {menuElement}
     </aside>
+    </PickContext.Provider>
   );
 }
 
+/** Notas y archivos juntos, por nombre (`buildForest` ya los ordena). */
 function GroupedDocs({
   documents,
-  scope,
   activeId,
   depth,
-  collapsed,
   onOpen,
   onOpenContent,
   onDragStart,
-  onToggle,
   onContextMenu,
 }: {
   documents: Document[];
@@ -378,92 +491,17 @@ function GroupedDocs({
   onToggle: (id: string) => void;
   onContextMenu: (event: MouseEvent, id: string) => void;
 }) {
-  const notes = documents.filter((document) => document.kind === "markdown");
-  const files = documents.filter((document) => document.kind === "file");
-  return (
-    <>
-      <KindFold
-        label={t("Notas")}
-        documents={notes}
-        groupKey={`notes:${scope}`}
-        activeId={activeId}
-        depth={depth}
-        collapsed={collapsed}
-        onOpen={onOpen}
-        onOpenContent={onOpenContent}
-        onDragStart={onDragStart}
-        onToggle={onToggle}
-        onContextMenu={onContextMenu}
-      />
-      <KindFold
-        label={t("Archivos")}
-        documents={files}
-        groupKey={`files:${scope}`}
-        activeId={activeId}
-        depth={depth}
-        collapsed={collapsed}
-        onOpen={onOpen}
-        onOpenContent={onOpenContent}
-        onDragStart={onDragStart}
-        onToggle={onToggle}
-        onContextMenu={onContextMenu}
-      />
-    </>
-  );
-}
-
-function KindFold({
-  label,
-  documents,
-  groupKey,
-  activeId,
-  depth,
-  collapsed,
-  onOpen,
-  onOpenContent,
-  onDragStart,
-  onToggle,
-  onContextMenu,
-}: {
-  label: string;
-  documents: Document[];
-  groupKey: string;
-  activeId: string | null;
-  depth: number;
-  collapsed: Record<string, boolean>;
-  onOpen: (id: string) => void;
-  onOpenContent: (id: string) => void;
-  onDragStart: (event: DragEvent, id: string) => void;
-  onToggle: (id: string) => void;
-  onContextMenu: (event: MouseEvent, id: string) => void;
-}) {
   if (documents.length === 0) return null;
-  const isCollapsed = collapsed[groupKey] ?? false;
-  const pad = PAD[Math.min(depth, PAD.length - 1)];
   return (
-    <div>
-      <button
-        type="button"
-        aria-expanded={!isCollapsed}
-        onClick={() => onToggle(groupKey)}
-        className={`flex h-8 w-full items-center gap-1 pr-2 text-left text-[11px] font-medium tracking-widest text-faint uppercase hover:text-fg ${pad}`}
-      >
-        <ChevronRight className={`size-3 shrink-0 transition-transform ${isCollapsed ? "" : "rotate-90"}`} />
-        <span className="truncate">{label}</span>
-        <span className="ml-auto tabular-nums">{documents.length}</span>
-      </button>
-      {isCollapsed ? null : (
-        <DocList
-          documents={documents}
-          activeId={activeId}
-          depth={depth}
-          onOpen={onOpen}
-          onOpenContent={onOpenContent}
-          onDragStart={onDragStart}
-          onContextMenu={onContextMenu}
-        />
-      )}
-    </div>
+    <DocList
+      documents={documents}
+      activeId={activeId}
+      depth={depth}
+      onOpen={onOpen}
+      onOpenContent={onOpenContent}
+      onDragStart={onDragStart}
+      onContextMenu={onContextMenu}
+    />
   );
 }
 
@@ -522,20 +560,31 @@ function DocButton({
 }) {
   const pad = PAD[Math.min(depth, PAD.length - 1)];
   const Icon = document.kind === "file" ? File : FileText;
+  const { picked, onPick } = useContext(PickContext);
+  const key = `doc:${document.id}` as const;
+  const isPicked = picked.has(key);
   return (
     <button
       type="button"
+      data-pick={key}
+      aria-selected={isPicked || undefined}
       draggable
       onDragStart={(event) => onDragStart(event, document.id)}
       onContextMenu={(event) => onContextMenu(event, document.id)}
-      onClick={() => onOpen(document.id)}
+      onClick={(event) => {
+        if (!onPick(event, key)) onOpen(document.id);
+      }}
       onDoubleClick={(event) => {
         event.preventDefault();
         onOpenContent(document.id);
       }}
       aria-current={active ? "page" : undefined}
       className={`relative flex h-9 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm select-none active:cursor-grabbing ${pad} ${
-        active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+        isPicked
+          ? "bg-accent/15 text-fg ring-1 ring-accent/40 ring-inset"
+          : active
+            ? "bg-elevated text-fg"
+            : "text-muted hover:bg-elevated hover:text-fg"
       }`}
     >
       {active ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
@@ -589,6 +638,9 @@ function PortfolioBranch({
   const over = dropOver === node.portfolio.id;
   const pad = PAD[Math.min(depth, PAD.length - 1)];
   const menuEvent = (event: MouseEvent) => onPortfolioMenu(event, node.portfolio.id);
+  const { picked, onPick } = useContext(PickContext);
+  const key = `port:${node.portfolio.id}` as const;
+  const isPicked = picked.has(key);
   return (
     <div
       data-drop-portfolio={node.portfolio.id}
@@ -597,7 +649,7 @@ function PortfolioBranch({
     >
       <div
         className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${
-          over ? "bg-accent/15 ring-1 ring-accent" : selected ? "bg-inset" : ""
+          over ? "bg-accent/15 ring-1 ring-accent" : isPicked ? "bg-accent/15 ring-1 ring-accent/40 ring-inset" : selected ? "bg-inset" : ""
         }`}
       >
         {selected ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
@@ -613,8 +665,12 @@ function PortfolioBranch({
         <button
           type="button"
           draggable
+          data-pick={key}
+          aria-selected={isPicked || undefined}
           onDragStart={(event) => onPortfolioDragStart(event, node.portfolio.id)}
-          onClick={() => onSelect(node.portfolio.id)}
+          onClick={(event) => {
+            if (!onPick(event, key)) onSelect(node.portfolio.id);
+          }}
           onContextMenu={menuEvent}
           className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg select-none active:cursor-grabbing"
         >
@@ -629,18 +685,6 @@ function PortfolioBranch({
       </div>
       {isCollapsed ? null : (
         <div>
-          <GroupedDocs
-            documents={node.documents}
-            scope={node.portfolio.id}
-            activeId={activeId}
-            depth={depth + 1}
-            collapsed={collapsed}
-            onOpen={onOpen}
-            onOpenContent={onOpenContent}
-            onDragStart={onDragStart}
-            onToggle={onToggle}
-            onContextMenu={onDocumentMenu}
-          />
           {node.children.map((child) => (
             <PortfolioBranch
               key={child.portfolio.id}
@@ -662,6 +706,18 @@ function PortfolioBranch({
               onPortfolioMenu={onPortfolioMenu}
             />
           ))}
+          <GroupedDocs
+            documents={node.documents}
+            scope={node.portfolio.id}
+            activeId={activeId}
+            depth={depth + 1}
+            collapsed={collapsed}
+            onOpen={onOpen}
+            onOpenContent={onOpenContent}
+            onDragStart={onDragStart}
+            onToggle={onToggle}
+            onContextMenu={onDocumentMenu}
+          />
         </div>
       )}
     </div>

@@ -260,6 +260,10 @@ After that, the start screen is a normal sign-in.
   anything (and without renaming it) is discarded: it's never saved.
 - **Markdown:** notes support Markdown, Mermaid diagrams (including C4) and
   task checkboxes (`- [ ]`).
+  - In **Editar**, the text is colored as in a code editor: headings, `[[links]]`,
+    code, `#tags`, lists and tasks, quotes and callouts, tables.
+  - A flowchart whose labels have parentheses or other signs without quotes
+    (`A[Paso (1)]`) is drawn anyway: Grafito adds the quotes Mermaid needs.
 - **Links:** type `[[` to link to another note. If the target doesn't exist
   yet, clicking the link creates it.
 - **Tags:** `#tags` become filters. Click a tag to filter the directory.
@@ -272,6 +276,13 @@ After that, the start screen is a normal sign-in.
 
 - Portfolios are folders and can be nested. Right-click the directory to create,
   rename, move or delete them, or drag notes and portfolios onto them.
+- Inside a portfolio, its subportfolios come first, then its notes and files
+  together, by name.
+- **Moving several at once:** Ctrl+click (⌘ on a Mac) adds or removes a note,
+  file or portfolio from the selection, and Shift+click selects everything
+  between two rows. Dragging any selected row moves the whole selection. Esc
+  clears it. A document isn't moved if the target already has one with the
+  same name; Grafito says which ones.
 - Drop files from your computer onto a portfolio:
   - A `.md` file becomes a note.
   - Anything else is uploaded to the server in parts, with progress at the
@@ -353,6 +364,11 @@ portfolio. Your role needs the share permission.
 | **Pública** | Anyone with the link (`/p/<token>`), without signing in |
 
 Public links are always read-only.
+
+- **Moving around a share** (also with a public link): **Grafo** shows the
+  graph of what is shared, and the **Esquema y vínculos** panel shows the open
+  note's outline, its links and the documents that mention it. Clicking any of
+  them opens it. Only links between shared documents are shown.
 
 - **Portfolios:** sharing a portfolio includes everything inside it.
 - **Markers:** the directory marks shared (👥) and public (🌐) items.

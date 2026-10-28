@@ -337,7 +337,7 @@ export function MarkdownView({
   const blocks = parseBlocks(source);
   let hidTitle = false;
   return (
-    <article id="note-top" className="mx-auto max-w-2xl px-4 py-3 font-serif text-sm leading-normal text-fg sm:px-5">
+    <article id="note-top" className="w-full px-4 py-3 font-serif text-sm leading-normal text-fg sm:px-5">
       {blocks.map((block, index) => {
         if (block.type === "fm") {
           const pairs = block.lines
