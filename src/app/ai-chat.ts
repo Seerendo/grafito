@@ -4,13 +4,22 @@ import type { AiProviderId } from "@/domain/ai";
 import { bearerHeader } from "@/lib/auth/bearer";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
-import { aiConversation, aiConversations, removeAiConversation, saveAiConversation } from "@/server/ai.functions";
+import {
+  aiConversation,
+  aiConversations,
+  aiProfiles,
+  removeAiConversation,
+  removeAiProfile,
+  saveAiConversation,
+  saveAiProfile,
+} from "@/server/ai.functions";
 
 /**
  * Estado del chat de IA (cliente): abierto o cerrado, modelo elegido, la
  * conversación abierta y el historial. Las conversaciones se guardan en el
  * servidor (`ai_conversation`); la pestaña recuerda cuál estaba abierta y el
- * navegador, el modelo elegido por usuario.
+ * navegador, el modelo y el perfil elegidos por usuario. Los perfiles
+ * («Documentación», «Análisis»…) los crea cada persona (`ai_profile`).
  */
 
 export type ToolChip = { label: string; ok: boolean; docId?: string };
@@ -28,6 +37,8 @@ export type ModelRef = { provider: AiProviderId; model: string };
 
 export type ConversationSummary = { id: string; title: string; updatedAt: number };
 
+export type AiProfile = { id: string; name: string; instructions: string; readOnly: boolean };
+
 type ChatState = {
   userId: string | null;
   open: boolean;
@@ -42,6 +53,14 @@ type ChatState = {
   /** Lo escrito y aún no enviado: sigue ahí al minimizar y volver a abrir. */
   draft: string;
   setDraft: (draft: string) => void;
+  /** Perfiles de la persona; `null` mientras no se han leído. */
+  profiles: AiProfile[] | null;
+  /** Perfil elegido; `null` es el asistente general. */
+  profileId: string | null;
+  setProfile: (id: string | null) => void;
+  loadProfiles: () => Promise<void>;
+  saveProfile: (profile: AiProfile) => Promise<string>;
+  deleteProfile: (id: string) => Promise<void>;
   bind: (userId: string) => void;
   setOpen: (open: boolean) => void;
   toggle: () => void;
@@ -56,6 +75,7 @@ type ChatState = {
 
 const MODEL_KEY = "grafito.ai.model:";
 const CURRENT_KEY = "grafito.ai.current:";
+const PROFILE_KEY = "grafito.ai.profile:";
 
 /**
  * Contexto que se manda al modelo: los últimos turnos de la conversación
@@ -142,8 +162,47 @@ export const useAiChat = create<ChatState>((set, get) => {
     busy: false,
     controller: null,
     draft: "",
+    profiles: null,
+    profileId: null,
 
     setDraft: (draft) => set({ draft }),
+
+    setProfile: (id) => {
+      const userId = get().userId;
+      if (userId) save(local, PROFILE_KEY + userId, id);
+      set({ profileId: id });
+    },
+
+    loadProfiles: async () => {
+      try {
+        const result = await aiProfiles();
+        const profiles = result.profiles;
+        set({ profiles });
+        // El elegido se borró (en otra pestaña o equipo): vuelve el general.
+        const current = get().profileId;
+        if (current && !profiles.some((profile) => profile.id === current)) get().setProfile(null);
+      } catch {
+        set({ profiles: get().profiles ?? [] });
+      }
+    },
+
+    saveProfile: async (profile) => {
+      const result = await saveAiProfile({ data: profile });
+      if (!result.ok) return result.error;
+      set({ profiles: result.profiles });
+      return "";
+    },
+
+    deleteProfile: async (id) => {
+      set({ profiles: (get().profiles ?? []).filter((profile) => profile.id !== id) });
+      if (get().profileId === id) get().setProfile(null);
+      try {
+        const result = await removeAiProfile({ data: { id } });
+        set({ profiles: result.profiles });
+      } catch {
+        /* reaparece al volver a leer los perfiles */
+      }
+    },
 
     bind: (userId) => {
       if (get().userId === userId) return;
@@ -155,6 +214,8 @@ export const useAiChat = create<ChatState>((set, get) => {
         conversations: null,
         model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
         draft: "",
+        profiles: null,
+        profileId: load<string | null>(local, PROFILE_KEY + userId, null),
       });
       if (current) void get().openChat(current);
     },
@@ -208,7 +269,7 @@ export const useAiChat = create<ChatState>((set, get) => {
     },
 
     send: async (text) => {
-      const { model, userId, busy, conversationId } = get();
+      const { model, userId, busy, conversationId, profileId } = get();
       const content = text.trim();
       if (!model || !userId || busy || !content) return;
       const userTurn: ChatTurn = { id: uuid(), role: "user", content };
@@ -232,7 +293,12 @@ export const useAiChat = create<ChatState>((set, get) => {
           method: "POST",
           credentials: "include",
           headers: { "content-type": "application/json", ...bearerHeader() },
-          body: JSON.stringify({ provider: model.provider, model: model.model, messages: history }),
+          body: JSON.stringify({
+            provider: model.provider,
+            model: model.model,
+            messages: history,
+            ...(profileId ? { profileId } : {}),
+          }),
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {

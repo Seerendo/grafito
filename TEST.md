@@ -1028,6 +1028,23 @@ Test stack, LM Studio (`google/gemma-4-e4b`), Cristal design.
 | Connect LM Studio with one chat model | ❌→✅ said «1 modelos disponibles»; now «1 modelo disponible» |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
 
+## Round 31: AI profiles and the focus ring after a click
+
+Test stack, LM Studio (`google/gemma-4-e4b`), Cristal design.
+
+| Case | Result |
+| --- | --- |
+| Click a note in the directory, then press a letter | ❌→✅ the row matched `:focus-visible` and got a ring; now no outline (measured), until Tab is pressed |
+| Tab after that | ✅ the ring is back on the next row |
+| Profile picker beside the model | ✅ «General», the profiles, and «Gestionar perfiles» |
+| Create «Documentación» (read-only, with format instructions) and «Análisis» | ✅ saved on the server; the list is sorted by name and shows «Solo lectura» |
+| «Documentación»: «Crea una nota…» | ✅ declines, and no note is created (checked in the database) |
+| «Documentación»: summarize a note | ✅ reads it and answers with a title, a list and a sources line, as its instructions say |
+| «Análisis»: ask about a note | ✅ three sentences and a «Conclusión:» line |
+| Reload the page | ✅ the chosen profile is still selected |
+| Message bar with the profile picker | ❌→✅ the «Mayús+Enter: nueva línea» hint wrapped onto two lines; removed (no help texts) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
+
 ## Useful commands
 
 ```bash

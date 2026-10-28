@@ -791,6 +791,14 @@ html[data-tone="dark"] .theme-moon {
 }
 
 /*
+ * Con el ratón, sin anillo de foco aunque luego se pulse una tecla: vuelve con
+ * Tab (`app/input-modality.ts`). Gana al anillo de los diseños.
+ */
+:is(html, html[data-design])[data-modality="pointer"] :focus-visible {
+  outline: none;
+}
+
+/*
  * Selectores: la lista desplegable con esquinas redondeadas, del color del
  * tema, donde el navegador deja darle estilo (`appearance: base-select`,
  * Chrome y Edge 135+). En los demás queda la lista nativa.

@@ -273,6 +273,11 @@ The `vault/` pieces:
 4. Server functions use `authMiddleware`, which checks the request origin
    (`isolation.server.ts`) and the session (`verify.server.ts`).
 
+**Focus ring:** after a click, `app/input-modality.ts` sets
+`<html data-modality="pointer">` and the focus ring stays off, even when a key
+is pressed later. Without it, the browser draws the ring on the clicked row as
+soon as any key is pressed. Tab turns the ring back on.
+
 **One session per browser.** All tabs share it:
 
 - The bearer token (`lib/auth/bearer.ts`) lives in `localStorage`. It is the
@@ -778,7 +783,18 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
   - **Context:** each conversation sends only its own turns to the model: the
     last 30, up to about 24,000 characters (`app/ai-chat.ts`).
   - **Minimize:** a click outside the panel (on desktop) shrinks it toward its
-    button in 200 ms. Opening animates the other way.
+    button in 200 ms. Opening animates the other way. The draft lives in the
+    chat store, so it survives.
+  - **Profiles** (`server/ai/profiles.ts`, table `ai_profile`, migration
+    0017):
+    - Each person's own presets: a name, instructions and `read_only`. Up to
+      30 per person.
+    - The chat sends the chosen profile's id (`profileId`) with each message.
+      `runAgent` loads it for that user and adds its instructions after the
+      assistant's own, so they shape tone, format and focus.
+    - A read-only profile drops the tools marked `writes` (`create_note`,
+      `update_note`, `create_portfolio`) on top of what the role allows.
+    - A deleted profile is ignored, and the chat falls back to **General**.
 
 | Provider | Protocol | Address | Key |
 | --- | --- | --- | --- |

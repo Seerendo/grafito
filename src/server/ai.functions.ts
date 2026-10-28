@@ -16,6 +16,7 @@ import {
 } from "@/server/ai/config";
 import { checkLocalUrl, localhostAlias } from "@/server/ai/local-url";
 import { deleteConversation, listConversations, readConversation, writeConversation } from "@/server/ai/conversations";
+import { deleteProfile, listProfiles, MAX_PROFILES, writeProfile } from "@/server/ai/profiles";
 import { listModels } from "@/server/ai/providers";
 import { ProviderError } from "@/server/ai/types";
 
@@ -213,4 +214,44 @@ export const removeAiConversation = createServerFn({ method: "POST" })
     const { sql } = await caller(context.userId);
     await deleteConversation(sql, context.userId, data.id);
     return { ok: true as const };
+  });
+
+// --- Perfiles del chat --------------------------------------------------------------
+
+export const aiProfiles = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { sql, profile } = await caller(context.userId);
+    if (!allows(profile, "ai.use")) return { ok: false as const, profiles: [] };
+    return { ok: true as const, profiles: await listProfiles(sql, context.userId) };
+  });
+
+export const saveAiProfile = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({
+        id: conversationId,
+        name: z.string().trim().min(1).max(60),
+        instructions: z.string().trim().max(4000),
+        readOnly: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, profile } = await caller(context.userId);
+    if (!allows(profile, "ai.use")) return { ok: false as const, error: "Sin permiso." };
+    if (!(await writeProfile(sql, context.userId, data))) {
+      return { ok: false as const, error: `Puedes tener hasta ${MAX_PROFILES} perfiles.` };
+    }
+    return { ok: true as const, profiles: await listProfiles(sql, context.userId) };
+  });
+
+export const removeAiProfile = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ id: conversationId }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql } = await caller(context.userId);
+    await deleteProfile(sql, context.userId, data.id);
+    return { ok: true as const, profiles: await listProfiles(sql, context.userId) };
   });

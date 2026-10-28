@@ -24,6 +24,8 @@ export type ToolEvent = {
 type Tool = {
   spec: ToolSpec;
   permission: string;
+  /** Crea o cambia algo: fuera en un perfil de solo lectura. */
+  writes?: boolean;
   run: (args: Record<string, unknown>) => Promise<{ result: unknown; event: ToolEvent }>;
 };
 
@@ -98,7 +100,7 @@ function portfolioChoices(portfolios: Portfolio[]) {
   return portfolios.map((portfolio) => ({ id: portfolio.id, name: portfolio.name, path: path(portfolios, portfolio.id) }));
 }
 
-export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
+export function vaultTools(sql: Sql, userId: string, profile: UserProfile, options: { readOnly?: boolean } = {}): {
   specs: ToolSpec[];
   run: (call: ToolCall) => Promise<{ content: string; event: ToolEvent }>;
 } {
@@ -229,6 +231,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
     },
     {
       permission: PERMISSION.notesCreate,
+      writes: true,
       spec: {
         name: "create_note",
         description: "Crea una nota Markdown nueva. Usa [[Título]] para enlazar otras notas.",
@@ -271,6 +274,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
     },
     {
       permission: PERMISSION.notesEdit,
+      writes: true,
       spec: {
         name: "update_note",
         description:
@@ -310,6 +314,7 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
     },
     {
       permission: PERMISSION.portfoliosManage,
+      writes: true,
       spec: {
         name: "create_portfolio",
         description: "Crea un portafolio (carpeta), opcionalmente dentro de otro.",
@@ -340,7 +345,9 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile): {
     },
   ];
 
-  const allowed = tools.filter((tool) => profile.isAdmin || profile.permissions.includes(tool.permission));
+  const allowed = tools.filter(
+    (tool) => (profile.isAdmin || profile.permissions.includes(tool.permission)) && !(options.readOnly && tool.writes),
+  );
   return {
     specs: allowed.map((tool) => tool.spec),
     run: async (call) => {

@@ -1,19 +1,40 @@
-import { ArrowUp, Bot, Check, CheckCircle2, ChevronDown, CircleAlert, History, Loader2, MessageCircle, Minus, SquarePen, Square, Trash2 } from "lucide-react";
+import {
+  ArrowUp,
+  Bot,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  CircleAlert,
+  History,
+  Loader2,
+  MessageCircle,
+  Minus,
+  Pencil,
+  Plus,
+  SquarePen,
+  Square,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useAiChat, type ChatTurn } from "@/app/ai-chat";
+import { useAiChat, type AiProfile, type ChatTurn } from "@/app/ai-chat";
 import { useVault } from "@/app/vault/store";
 import { MarkdownView } from "@/components/vault/MarkdownView";
+import { Switch } from "@/components/ui/Switch";
 import { findByTitle } from "@/domain/vault/links";
 import type { AiProviderId } from "@/domain/ai";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { aiChatState, aiModels } from "@/server/ai.functions";
 import { intl, t } from "@/app/i18n";
+import { uuid } from "@/lib/uuid";
 
 /**
  * Chat de IA de la bóveda: botón flotante (o Ctrl+B) que abre un panel para
  * hablar con el modelo elegido sobre las notas, portafolios y archivos. Guarda
  * cada conversación en el historial; un clic fuera del panel lo minimiza.
+ * Cada persona puede crear perfiles («Documentación», «Análisis»…) con sus
+ * propias indicaciones y elegirlos junto al modelo.
  */
 
 type ChatInfo = Awaited<ReturnType<typeof aiChatState>>;
@@ -109,7 +130,7 @@ function ChatPanel({
   const newChat = useAiChat((state) => state.newChat);
   const draft = useAiChat((state) => state.draft);
   const setDraft = useAiChat((state) => state.setDraft);
-  const [view, setView] = useState<"chat" | "history">("chat");
+  const [view, setView] = useState<"chat" | "history" | "profiles">("chat");
   const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -167,7 +188,7 @@ function ChatPanel({
       <header className="flex items-center gap-2 border-b border-line py-1.5 pr-1.5 pl-3">
         <Bot className="size-4 shrink-0 text-accent" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={view === "chat" ? title : undefined}>
-          {view === "history" ? t("Historial") : title}
+          {view === "history" ? t("Historial") : view === "profiles" ? t("Perfiles") : title}
         </span>
         <HeaderButton
           label={t("Historial de conversaciones")}
@@ -200,6 +221,8 @@ function ChatPanel({
           {/* El historial ocupa la zona de los mensajes; la caja de texto sigue debajo. */}
           {view === "history" ? (
             <HistoryList onPick={() => setView("chat")} />
+          ) : view === "profiles" ? (
+            <ProfilesView onDone={() => setView("chat")} />
           ) : providers.length === 0 ? (
             <Centered>
               <span>
@@ -227,8 +250,8 @@ function ChatPanel({
               ))}
             </div>
           )}
-          {providers.length > 0 ? (
-            // Una sola caja: el texto arriba y, en la misma, el modelo y enviar.
+          {providers.length > 0 && view !== "profiles" ? (
+            // Una sola caja: el texto arriba y, en la misma, el perfil, el modelo y enviar.
             <form
               data-ui="composer"
               className="m-2 flex shrink-0 flex-col rounded-lg border border-line bg-inset"
@@ -257,15 +280,15 @@ function ChatPanel({
                 className="block max-h-40 min-h-9 w-full resize-none border-0 bg-transparent px-3 pt-2.5 pb-0.5 text-sm text-fg outline-none placeholder:text-faint disabled:opacity-60"
               />
               <span className="flex items-center gap-1 px-1.5 pb-1.5">
+                <ProfilePicker onManage={() => setView("profiles")} />
                 <ModelPicker providers={providers} />
-                <span className="ml-auto hidden text-[11px] text-faint sm:inline">{t("Mayús+Enter: nueva línea")}</span>
                 {busy ? (
                   <button
                     type="button"
                     onClick={stop}
                     aria-label={t("Detener")}
                     title={t("Detener")}
-                    className="grid size-7 shrink-0 place-items-center rounded-md border border-line text-fg"
+                    className="ml-auto grid size-7 shrink-0 place-items-center rounded-md border border-line text-fg"
                   >
                     <Square className="size-3" />
                   </button>
@@ -275,7 +298,7 @@ function ChatPanel({
                     disabled={!modelReady || !draft.trim()}
                     aria-label={t("Enviar")}
                     title={t("Enviar (Enter)")}
-                    className="grid size-7 shrink-0 place-items-center rounded-md bg-accent text-accent-fg disabled:opacity-40"
+                    className="ml-auto grid size-7 shrink-0 place-items-center rounded-md bg-accent text-accent-fg disabled:opacity-40"
                   >
                     <ArrowUp className="size-4" />
                   </button>
@@ -489,6 +512,294 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Perfil del chat, junto al modelo: el asistente general o uno de los perfiles
+ * de la persona, y el acceso a crearlos y editarlos.
+ */
+function ProfilePicker({ onManage }: { onManage: () => void }) {
+  const profiles = useAiChat((state) => state.profiles);
+  const profileId = useAiChat((state) => state.profileId);
+  const setProfile = useAiChat((state) => state.setProfile);
+  const load = useAiChat((state) => state.loadProfiles);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const current = profiles?.find((profile) => profile.id === profileId) ?? null;
+
+  useEffect(() => {
+    if (profiles === null) void load();
+  }, [profiles, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  const pick = (id: string | null) => {
+    setProfile(id);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={t("Perfil")}
+        title={current ? current.name : t("General")}
+        className={`flex h-7 max-w-36 min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
+          current ? "text-accent" : "text-muted hover:text-fg"
+        }`}
+      >
+        <UserRound className="size-3 shrink-0" />
+        <span className="truncate">{current ? current.name : t("General")}</span>
+        <ChevronDown className="size-3 shrink-0" />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          data-ui="popover"
+          className="absolute bottom-full left-0 z-10 mb-1 max-h-72 w-60 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+        >
+          <ProfileOption on={!current} onClick={() => pick(null)}>
+            {t("General")}
+          </ProfileOption>
+          {(profiles ?? []).map((profile) => (
+            <ProfileOption key={profile.id} on={profile.id === current?.id} onClick={() => pick(profile.id)}>
+              {profile.name}
+            </ProfileOption>
+          ))}
+          <div className="my-1 border-t border-line" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onManage();
+            }}
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-muted hover:bg-elevated hover:text-fg"
+          >
+            <Pencil className="size-3.5 shrink-0" />
+            {t("Gestionar perfiles")}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ProfileOption({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={on}
+      onClick={onClick}
+      className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg hover:bg-elevated"
+    >
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {on ? <Check className="size-3.5 shrink-0 text-accent" /> : null}
+    </button>
+  );
+}
+
+/** Perfiles: la lista (un clic lo usa), y crear, editar o borrar uno. */
+function ProfilesView({ onDone }: { onDone: () => void }) {
+  const profiles = useAiChat((state) => state.profiles);
+  const profileId = useAiChat((state) => state.profileId);
+  const setProfile = useAiChat((state) => state.setProfile);
+  const load = useAiChat((state) => state.loadProfiles);
+  const remove = useAiChat((state) => state.deleteProfile);
+  const [editing, setEditing] = useState<AiProfile | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (editing) return <ProfileForm profile={editing} onDone={() => setEditing(null)} />;
+  if (profiles === null) {
+    return (
+      <Centered>
+        <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
+      </Centered>
+    );
+  }
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        {profiles.length === 0 ? <Centered>{t("Todavía no tienes perfiles.")}</Centered> : null}
+        <ul>
+          {profiles.map((profile) => (
+            <li key={profile.id} className="group flex items-center gap-1 rounded-md hover:bg-elevated">
+              <button
+                type="button"
+                onClick={() => {
+                  setProfile(profile.id);
+                  onDone();
+                }}
+                className="flex min-w-0 flex-1 flex-col px-2.5 py-2 text-left"
+              >
+                <span className={`flex items-center gap-2 text-sm ${profile.id === profileId ? "text-accent" : "text-fg"}`}>
+                  <span className="truncate">{profile.name}</span>
+                  {profile.readOnly ? (
+                    <span className="shrink-0 rounded-full border border-line px-1.5 text-[10px] text-muted">{t("Solo lectura")}</span>
+                  ) : null}
+                </span>
+                {profile.instructions ? (
+                  <span className="truncate text-[11px] text-faint">{profile.instructions.replace(/\s+/g, " ")}</span>
+                ) : null}
+              </button>
+              {confirming === profile.id ? (
+                <span className="flex shrink-0 items-center gap-2 pr-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirming(null);
+                      void remove(profile.id);
+                    }}
+                    className="text-danger"
+                  >
+                    {t("Eliminar")}
+                  </button>
+                  <button type="button" onClick={() => setConfirming(null)} className="text-muted hover:text-fg">
+                    {t("No")}
+                  </button>
+                </span>
+              ) : (
+                <span className="mr-1 flex shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(profile)}
+                    aria-label={t("Editar perfil")}
+                    title={t("Editar perfil")}
+                    className="grid size-7 place-items-center rounded-md text-faint hover:text-fg"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(profile.id)}
+                    aria-label={t("Eliminar perfil")}
+                    title={t("Eliminar perfil")}
+                    className="grid size-7 place-items-center rounded-md text-faint hover:text-danger"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="flex shrink-0 justify-between gap-2 border-t border-line p-2">
+        <button
+          type="button"
+          onClick={onDone}
+          className="h-8 rounded-md px-3 text-sm text-muted hover:text-fg"
+        >
+          {t("Volver al chat")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing({ id: uuid(), name: "", instructions: "", readOnly: false })}
+          className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-sm text-accent-fg"
+        >
+          <Plus className="size-4" />
+          {t("Nuevo perfil")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileForm({ profile, onDone }: { profile: AiProfile; onDone: () => void }) {
+  const save = useAiChat((state) => state.saveProfile);
+  const [name, setName] = useState(profile.name);
+  const [instructions, setInstructions] = useState(profile.instructions);
+  const [readOnly, setReadOnly] = useState(profile.readOnly);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const problem = await save({ id: profile.id, name: name.trim(), instructions: instructions.trim(), readOnly });
+      if (problem) setError(problem);
+      else onDone();
+    } catch {
+      setError("No se pudo guardar.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form
+      className="flex min-h-0 flex-1 flex-col"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <label className="block text-sm">
+          <span className="text-muted">{t("Nombre")}</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={60}
+            required
+            autoFocus
+            autoComplete="off"
+            className="mt-1 h-10 w-full rounded-md border border-line bg-inset px-3 text-fg"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">{t("Instrucciones")}</span>
+          <textarea
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            maxLength={4000}
+            rows={8}
+            className="mt-1 block w-full resize-y rounded-md border border-line bg-inset px-3 py-2 text-sm text-fg"
+          />
+        </label>
+        <Switch checked={readOnly} onChange={setReadOnly} label={t("Solo lectura")} />
+        {error ? <p className="text-xs text-danger">{t(error)}</p> : null}
+      </div>
+      <div className="flex shrink-0 justify-end gap-2 border-t border-line p-2">
+        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-sm text-muted hover:text-fg">
+          {t("Cancelar")}
+        </button>
+        <button
+          type="submit"
+          disabled={!name.trim() || saving}
+          className="h-8 rounded-md bg-accent px-3 text-sm text-accent-fg disabled:opacity-40"
+        >
+          {t("Guardar")}
+        </button>
+      </div>
+    </form>
   );
 }
 

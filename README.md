@@ -416,7 +416,18 @@ initial administrator always keeps every permission.
    - **History** (clock icon) lists your past conversations. Open one to
      continue it, or delete it. Each conversation keeps its own context.
      Conversations are saved on the server, so they're there in any browser.
-   - Clicking outside the chat minimizes it to its button.
+   - **Profiles** (the person icon beside the model) change how the assistant
+     works, for example «Documentación» or «Análisis». Each person creates
+     their own in **Gestionar perfiles**, inside the chat:
+     - a name;
+     - instructions the assistant follows (tone, format, focus);
+     - **Solo lectura**, so that profile can read the vault but not create or
+       edit notes.
+
+     **General** is the assistant without a profile. The chosen profile is
+     remembered in that browser.
+   - Clicking outside the chat minimizes it to its button. What you were
+     typing is still there when you open it again.
 
 The assistant can list portfolios, search, read, create and edit notes, within
 the permissions of your role. It finds notes and portfolios by name as well as
