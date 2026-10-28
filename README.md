@@ -283,6 +283,18 @@ After that, the start screen is a normal sign-in.
   between two rows. Dragging any selected row moves the whole selection. Esc
   clears it. A document isn't moved if the target already has one with the
   same name; Grafito says which ones.
+  - A Shift range that starts on a note or file only takes notes and files:
+    passing over a portfolio doesn't select it (and with it, everything
+    inside). Add a whole portfolio with Ctrl+click.
+  - What is inside a selected portfolio travels with it and isn't taken out.
+- **Portfolio description and links:** a portfolio's page has a description
+  (click to write it) and its own links, like a note's.
+- **Links to anything:** **Vincular** offers your notes, files and
+  portfolios, and what is shared with you (a note, file or portfolio of
+  someone else, with their name). Links to portfolios show up in the graph as
+  diamonds and links to shared items with a dashed border; opening them goes
+  to the portfolio's page or to the shared viewer. If you lose access, or the
+  item stops being shared, the link is removed by itself.
 - Drop files from your computer onto a portfolio:
   - A `.md` file becomes a note.
   - Anything else is uploaded to the server in parts, with progress at the
@@ -329,9 +341,10 @@ After that, the start screen is a normal sign-in.
   and for its portfolio and the ones that contain it. Three optional limits:
   - **per user**, everything they upload anywhere: set by the system
     administrator in **Administración → Usuarios y permisos → Espacio por
-    usuario y portafolio**, with a default for users without their own;
-  - **per portfolio**, with its subportfolios: also set there by the system
-    administrator, or in the portfolio's **Espacio y permisos**;
+    usuario**, with a default for users without their own;
+  - **per portfolio**, with its subportfolios: set by the system
+    administrator in **Espacio por portafolio**, or in the portfolio's
+    **Espacio y permisos**;
   - **per user in a portfolio**, out of the portfolio's space: set in
     **Espacio y permisos** (right-click a portfolio, the drive button on its
     page, or the same button in a portfolio shared with you) by its owner,

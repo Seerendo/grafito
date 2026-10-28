@@ -121,6 +121,7 @@ export function Sidebar({
       if (event.key !== "Escape") return;
       event.stopPropagation();
       setPicked([]);
+      setAnchor(null);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -136,9 +137,13 @@ export function Sidebar({
     event.preventDefault();
     if (event.shiftKey && anchor) {
       // Rango en el orden en que se ven las filas.
-      const order = [...document.querySelectorAll<HTMLElement>("[data-ui='sidebar'] [data-pick]")].map(
-        (element) => element.dataset.pick!,
-      );
+      // Un rango desde una nota o archivo solo toma notas y archivos (y desde un
+      // portafolio, solo portafolios): pasar por encima de un portafolio no lo
+      // mete entero en la selección. Para eso está Ctrl+clic.
+      const kind = anchor.slice(0, anchor.indexOf(":") + 1);
+      const order = [...document.querySelectorAll<HTMLElement>("[data-ui='sidebar'] [data-pick]")]
+        .map((element) => element.dataset.pick!)
+        .filter((item) => item.startsWith(kind) || item === key);
       const from = order.indexOf(anchor);
       const to = order.indexOf(key);
       if (from >= 0 && to >= 0) {
@@ -223,7 +228,9 @@ export function Sidebar({
     const many = readMany(event.dataTransfer);
     if (many && many.length > 0) {
       const skipped = moveMany(many, portfolioId);
+      // Una selección terminada no deja ancla: el próximo Ctrl+clic empieza de cero.
       setPicked([]);
+      setAnchor(null);
       if (skipped.length > 0) {
         setDialog({
           type: "upload-error",
@@ -456,7 +463,10 @@ export function Sidebar({
             type="button"
             aria-label={t("Quitar selección")}
             title={t("Quitar selección")}
-            onClick={() => setPicked([])}
+            onClick={() => {
+              setPicked([]);
+              setAnchor(null);
+            }}
             className="grid size-7 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
           >
             <X className="size-3.5" />

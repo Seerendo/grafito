@@ -15,6 +15,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
+import { resolveLink, useSharedTrees } from "@/app/shared-links";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
@@ -66,6 +67,8 @@ export function ContextPane({
 }) {
   const document = useActiveDocument();
   const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const trees = useSharedTrees((state) => state.trees);
   const setTag = useVault((state) => state.setTag);
   const openTitle = useVault((state) => state.openTitle);
   const setMode = useVault((state) => state.setMode);
@@ -110,10 +113,7 @@ export function ContextPane({
           target: findByTitle(documents, title),
         }))
       : [];
-  const manual = document.links.map((link) => ({
-    link,
-    target: documents.find((item) => item.id === link.targetId) ?? null,
-  }));
+  const manual = document.links.map((link) => ({ link, target: resolveLink(link, documents, portfolios, trees) }));
   const incomingWiki = documents
     .filter((item) => item.id !== document.id && item.kind === "markdown")
     .flatMap((item) => {
@@ -205,8 +205,8 @@ export function ContextPane({
                 <button
                   type="button"
                   disabled={!item.target}
-                  onClick={() => item.target && choose(item.target.id)}
-                  onDoubleClick={() => item.target && onOpenNote(item.target.id)}
+                  onClick={() => (item.target?.open ? item.target.open() : item.target && choose(item.target.id))}
+                  onDoubleClick={() => item.target && !item.target.open && onOpenNote(item.target.id)}
                   className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm hover:bg-elevated disabled:hover:bg-transparent"
                 >
                   <span className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-accent">
@@ -494,3 +494,4 @@ export function ContextRail({ onExpand }: { onExpand: () => void }) {
     </div>
   );
 }
+

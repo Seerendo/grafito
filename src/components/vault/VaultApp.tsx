@@ -27,6 +27,7 @@ import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
+import { sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -62,6 +63,8 @@ function useIsMobile() {
 export function VaultApp() {
   const userId = useCurrentUser()?.id;
   const owner = useVault((state) => state.owner);
+  // Los vínculos a lo compartido conmigo se quitan si pierdo el acceso.
+  useSharedLinkCheck();
 
   useEffect(() => {
     if (userId) useVault.getState().openVaultFor(userId);
@@ -556,6 +559,8 @@ function NavButton({
   );
 }
 
+type LinkCandidate = { key: string; targetId: string; target?: "portfolio"; shareId?: string; title: string; detail: string };
+
 function VaultDialogs() {
   const dialog = useVault((state) => state.dialog);
   const setDialog = useVault((state) => state.setDialog);
@@ -573,6 +578,7 @@ function VaultDialogs() {
   const [renameError, setRenameError] = useState("");
   const [kind, setKind] = useState<ManualKind>("referencia");
   const [query, setQuery] = useState("");
+  const [shared, setShared] = useState<Awaited<ReturnType<typeof sharedCandidates>>>([]);
 
   useEffect(() => {
     if (dialog?.type === "portfolio") setName("");
@@ -587,17 +593,44 @@ function VaultDialogs() {
     if (dialog?.type === "link") {
       setKind("referencia");
       setQuery("");
+      // Lo compartido conmigo también puede ser destino.
+      setShared([]);
+      void sharedCandidates().then(setShared);
     }
   }, [dialog]);
 
+  /** Notas, archivos y portafolios propios, y lo compartido conmigo. */
   const candidates = useMemo(() => {
     if (dialog?.type !== "link") return [];
     const needle = query.trim().toLowerCase();
-    return documents
-      .filter((document) => document.id !== dialog.sourceId)
-      .filter((document) => !needle || document.title.toLowerCase().includes(needle))
-      .slice(0, 8);
-  }, [dialog, documents, query]);
+    const all: LinkCandidate[] = [
+      ...documents.map((document) => ({
+        key: document.id,
+        targetId: document.id,
+        title: document.title,
+        detail: document.kind === "file" ? t("archivo") : t("nota"),
+      })),
+      ...portfolios.map((portfolio) => ({
+        key: `p:${portfolio.id}`,
+        targetId: portfolio.id,
+        target: "portfolio" as const,
+        title: portfolio.name,
+        detail: t("portafolio"),
+      })),
+      ...shared.map((item) => ({
+        key: `s:${item.shareId}:${item.targetId}`,
+        targetId: item.targetId,
+        target: item.target,
+        shareId: item.shareId,
+        title: item.title,
+        detail: `${item.kind === "portfolio" ? t("portafolio") : item.kind === "file" ? t("archivo") : t("nota")} · ${item.ownerName}`,
+      })),
+    ];
+    return all
+      .filter((item) => item.targetId !== dialog.sourceId)
+      .filter((item) => !needle || item.title.toLowerCase().includes(needle))
+      .slice(0, 12);
+  }, [dialog, documents, portfolios, shared, query]);
 
   if (!dialog) return null;
 
@@ -755,17 +788,20 @@ function VaultDialogs() {
           className="mt-3 h-11 w-full rounded-md border border-line bg-inset px-3 text-sm outline-none"
         />
         <ul className="mt-2 max-h-56 overflow-y-auto">
-          {candidates.map((document) => (
-            <li key={document.id}>
+          {candidates.map((item) => (
+            <li key={item.key}>
               <button
                 type="button"
-                onClick={() => addManualLink(dialog.sourceId, document.id, kind, dialog.anchor)}
+                onClick={() =>
+                  addManualLink(dialog.sourceId, item.targetId, kind, dialog.anchor, {
+                    target: item.target,
+                    shareId: item.shareId,
+                  })
+                }
                 className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-elevated"
               >
-                <span className="truncate">{document.title}</span>
-                <span className="ml-auto shrink-0 text-xs text-faint">
-                  {document.kind === "file" ? t("archivo") : t("nota")}
-                </span>
+                <span className="truncate">{item.title}</span>
+                <span className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-faint">{item.detail}</span>
               </button>
             </li>
           ))}

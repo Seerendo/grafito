@@ -11,6 +11,23 @@ import { MAX_EXACT } from "@/domain/vault/anchor";
 
 const id = z.string().min(1).max(80);
 
+const linkSchema = z.object({
+  targetId: id,
+  kind: z.enum(["referencia", "llama"]),
+  // Vínculo desde una frase de un PDF (ver `domain/vault/anchor.ts`).
+  anchor: z
+    .object({
+      page: z.number().int().min(1).max(100_000),
+      exact: z.string().min(1).max(MAX_EXACT),
+      prefix: z.string().max(64),
+      suffix: z.string().max(64),
+    })
+    .optional(),
+  // A un portafolio, y a algo compartido conmigo (ver `ManualLink`).
+  target: z.literal("portfolio").optional(),
+  shareId: id.optional(),
+});
+
 const docSchema = z.object({
   id,
   title: z.string().max(200),
@@ -28,23 +45,7 @@ const docSchema = z.object({
       dataUrl: z.string().max(1_500_000).optional(),
     })
     .nullable(),
-  links: z
-    .array(
-      z.object({
-        targetId: id,
-        kind: z.enum(["referencia", "llama"]),
-        // Vínculo desde una frase de un PDF (ver `domain/vault/anchor.ts`).
-        anchor: z
-          .object({
-            page: z.number().int().min(1).max(100_000),
-            exact: z.string().min(1).max(MAX_EXACT),
-            prefix: z.string().max(64),
-            suffix: z.string().max(64),
-          })
-          .optional(),
-      }),
-    )
-    .max(500),
+  links: z.array(linkSchema).max(500),
   pinned: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -54,7 +55,13 @@ const docSchema = z.object({
   base: z.object({ content: z.string().max(MAX_CONTENT), title: z.string().max(200), updatedAt: z.number() }).optional(),
 });
 
-const portfolioSchema = z.object({ id, name: z.string().max(120), parentId: id.nullable() });
+const portfolioSchema = z.object({
+  id,
+  name: z.string().max(120),
+  parentId: id.nullable(),
+  description: z.string().max(4000).optional(),
+  links: z.array(linkSchema).max(500).optional(),
+});
 
 /** Permisos de escritura: sin ninguno, el navegador no puede cambiar la bóveda del servidor. */
 const WRITE = [

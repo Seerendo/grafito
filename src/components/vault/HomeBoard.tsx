@@ -1,10 +1,13 @@
-import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, PenTool, Plus } from "lucide-react";
+import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, Link2, PenTool, Plus, X } from "lucide-react";
+import { resolveLink, useSharedTrees } from "@/app/shared-links";
+import { linkKey } from "@/domain/vault/anchor";
+import type { Portfolio } from "@/domain/vault/types";
 import { usePluginEnabled } from "@/app/plugins";
 import { downloadPortfolio } from "@/app/export";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { createDrawing } from "./ingest-files";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
 import { useRowMenu } from "./RowMenu";
@@ -208,6 +211,7 @@ export function PortfolioBoard({
             ) : null}
           </span>
         </div>
+        <PortfolioAbout portfolio={portfolio} onOpenNote={onOpenNote} />
         {children.length === 0 && items.length === 0 ? (
           <p className="mt-8 text-sm text-faint">{t("Este portafolio está vacío.")}</p>
         ) : null}
@@ -275,6 +279,79 @@ function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | n
       <PenTool className="size-4" />
       {t("Nuevo dibujo")}
     </button>
+  );
+}
+
+/** Descripción del portafolio y sus vínculos (a notas, archivos, portafolios o lo compartido conmigo). */
+function PortfolioAbout({ portfolio, onOpenNote }: { portfolio: Portfolio; onOpenNote: (id: string) => void }) {
+  const can = usePermissions();
+  const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const trees = useSharedTrees((state) => state.trees);
+  const setDialog = useVault((state) => state.setDialog);
+  const setDescription = useVault((state) => state.setPortfolioDescription);
+  const removeLink = useVault((state) => state.removeManualLink);
+  const canEdit = can(PERMISSION.portfoliosManage);
+  const canLink = can(PERMISSION.linksManage);
+  const [draft, setDraft] = useState(portfolio.description ?? "");
+  useEffect(() => setDraft(portfolio.description ?? ""), [portfolio.id, portfolio.description]);
+  const links = (portfolio.links ?? []).map((link) => ({ link, target: resolveLink(link, documents, portfolios, trees) }));
+
+  return (
+    <div data-ui="portfolio-about" className="mt-4 space-y-3">
+      {canEdit ? (
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => setDescription(portfolio.id, draft.trim())}
+          rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+          maxLength={4000}
+          aria-label={t("Descripción del portafolio")}
+          placeholder={t("Añade una descripción…")}
+          className="w-full resize-y rounded-md border border-transparent bg-transparent px-0 py-1 text-sm leading-relaxed text-muted outline-none placeholder:text-faint hover:border-line focus:border-line focus:bg-inset focus:px-2"
+        />
+      ) : portfolio.description ? (
+        <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted">{portfolio.description}</p>
+      ) : null}
+      {links.length > 0 || canLink ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {links.map(({ link, target }) =>
+            target ? (
+              <span key={linkKey(link)} className="inline-flex h-8 max-w-full items-center gap-1 rounded-full border border-line pr-1 pl-2.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => (target.open ? target.open() : onOpenNote(target.id))}
+                  className="min-w-0 truncate text-fg hover:text-accent"
+                >
+                  <span className="text-accent">{link.kind === "llama" ? t("Invoca") : t("Referencia")}</span> · {target.title}
+                </button>
+                {canLink ? (
+                  <button
+                    type="button"
+                    aria-label={t("Quitar vínculo")}
+                    title={t("Quitar vínculo")}
+                    onClick={() => removeLink(portfolio.id, link)}
+                    className="grid size-6 shrink-0 place-items-center rounded-full text-faint hover:text-fg"
+                  >
+                    <X className="size-3" />
+                  </button>
+                ) : null}
+              </span>
+            ) : null,
+          )}
+          {canLink ? (
+            <button
+              type="button"
+              onClick={() => setDialog({ type: "link", sourceId: portfolio.id })}
+              className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs text-accent hover:bg-elevated"
+            >
+              <Link2 className="size-3.5" />
+              {t("Vincular")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

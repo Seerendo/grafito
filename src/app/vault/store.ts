@@ -319,8 +319,25 @@ type VaultState = Persisted & {
   renamePortfolio: (id: string, name: string) => boolean;
   resolveMove: (action: "replace" | "rename") => void;
   /** Con `anchor`, el vínculo sale de esa frase del archivo (puede haber varios al mismo destino). */
-  addManualLink: (sourceId: string, targetId: string, kind: ManualKind, anchor?: TextAnchor) => void;
+  /**
+   * `sourceId` puede ser una nota, un archivo o un portafolio. `extra`: el
+   * destino es un portafolio, o algo compartido conmigo (`shareId`).
+   */
+  addManualLink: (
+    sourceId: string,
+    targetId: string,
+    kind: ManualKind,
+    anchor?: TextAnchor,
+    extra?: Pick<ManualLink, "target" | "shareId">,
+  ) => void;
   removeManualLink: (sourceId: string, link: Pick<ManualLink, "targetId" | "anchor">) => void;
+  /** La descripción de un portafolio (en su página). */
+  setPortfolioDescription: (id: string, description: string) => void;
+  /**
+   * Quita los vínculos a lo compartido por `shareId` cuyo destino ya no se ve:
+   * todos si `keep` es `null` (sin acceso), o los que no están en `keep`.
+   */
+  pruneShareLinks: (shareId: string, keep: Set<string> | null) => void;
   /** Una frase vinculada a la que ir al abrir su archivo (desde Menciones). */
   focusAnchor: { docId: string; anchor: TextAnchor } | null;
   setFocusAnchor: (focus: { docId: string; anchor: TextAnchor } | null) => void;
@@ -694,6 +711,20 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.portfoliosManage)) return [];
     const { documents, portfolios } = get();
     if (target && !portfolios.some((portfolio) => portfolio.id === target)) return [];
+    // Lo que está dentro de un portafolio también elegido viaja con él: no se saca de ahí.
+    const pickedPortfolios = items.filter((item) => item.kind === "portfolio").map((item) => item.id);
+    const insidePicked = (portfolioId: string | null): boolean => {
+      for (let id = portfolioId, steps = 0; id && steps < 100; steps += 1) {
+        if (pickedPortfolios.includes(id)) return true;
+        id = portfolios.find((portfolio) => portfolio.id === id)?.parentId ?? null;
+      }
+      return false;
+    };
+    items = items.filter((item) =>
+      item.kind === "document"
+        ? !insidePicked(documents.find((document) => document.id === item.id)?.portfolioId ?? null)
+        : !insidePicked(portfolios.find((portfolio) => portfolio.id === item.id)?.parentId ?? null),
+    );
     const docIds = new Set<string>();
     const skipped: string[] = [];
     for (const item of items) {
@@ -788,16 +819,27 @@ export const useVault = create<VaultState>((set, get) => ({
     });
   },
 
-  addManualLink: (sourceId, targetId, kind, anchor) => {
+  addManualLink: (sourceId, targetId, kind, anchor, extra) => {
     if (!can(PERMISSION.linksManage)) return;
     if (sourceId === targetId) return;
-    const added: ManualLink = anchor ? { targetId, kind, anchor } : { targetId, kind };
+    const added: ManualLink = {
+      targetId,
+      kind,
+      ...(anchor ? { anchor } : {}),
+      ...(extra?.target ? { target: extra.target } : {}),
+      ...(extra?.shareId ? { shareId: extra.shareId } : {}),
+    };
     const key = linkKey(added);
     set({
       documents: get().documents.map((document) => {
         if (document.id !== sourceId) return document;
         const links = document.links.filter((link) => linkKey(link) !== key);
         return { ...document, links: [...links, added], ...mark(document) };
+      }),
+      portfolios: get().portfolios.map((portfolio) => {
+        if (portfolio.id !== sourceId) return portfolio;
+        const links = (portfolio.links ?? []).filter((link) => linkKey(link) !== key);
+        return { ...portfolio, links: [...links, added] };
       }),
       dialog: null,
     });
@@ -815,6 +857,37 @@ export const useVault = create<VaultState>((set, get) => ({
               ...mark(document),
             }
           : document,
+      ),
+      portfolios: get().portfolios.map((portfolio) =>
+        portfolio.id === sourceId
+          ? { ...portfolio, links: (portfolio.links ?? []).filter((link) => linkKey(link) !== key) }
+          : portfolio,
+      ),
+    });
+  },
+
+  setPortfolioDescription: (id, description) => {
+    if (!can(PERMISSION.portfoliosManage)) return;
+    const clean = description.slice(0, 4000);
+    set({
+      portfolios: get().portfolios.map((portfolio) =>
+        portfolio.id === id && (portfolio.description ?? "") !== clean ? { ...portfolio, description: clean } : portfolio,
+      ),
+    });
+  },
+
+  pruneShareLinks: (shareId, keep) => {
+    const gone = (link: ManualLink) => link.shareId === shareId && (keep === null || !keep.has(link.targetId));
+    const { documents, portfolios } = get();
+    if (!documents.some((document) => document.links.some(gone)) && !portfolios.some((portfolio) => (portfolio.links ?? []).some(gone))) {
+      return;
+    }
+    set({
+      documents: documents.map((document) =>
+        document.links.some(gone) ? { ...document, links: document.links.filter((link) => !gone(link)), ...mark(document) } : document,
+      ),
+      portfolios: portfolios.map((portfolio) =>
+        (portfolio.links ?? []).some(gone) ? { ...portfolio, links: (portfolio.links ?? []).filter((link) => !gone(link)) } : portfolio,
       ),
     });
   },

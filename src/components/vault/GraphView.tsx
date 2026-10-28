@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Locate, Minus, Plus } from "lucide-react";
-import { graphClickIntent, graphEdges } from "@/domain/vault/graph";
+import { graphClickIntent, graphEdges, type GraphNode } from "@/domain/vault/graph";
+import { sharedTarget, useSharedTrees } from "@/app/shared-links";
+import { useSharedView } from "@/app/shared-view";
 import { extractHeadings, extractWikiLinks } from "@/domain/vault/links";
 import type { Document, GraphKind, Portfolio } from "@/domain/vault/types";
 import { useVault } from "@/app/vault/store";
@@ -11,7 +13,8 @@ type SimNode = {
   id: string;
   title: string;
   pinned: boolean;
-  kind: "markdown" | "file";
+  kind: "markdown" | "file" | "portfolio";
+  shared: boolean;
   x: number;
   y: number;
   vx: number;
@@ -57,15 +60,30 @@ export type GraphSource = {
 
 export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => void; source?: GraphSource }) {
   const ownDocuments = useVault((state) => state.documents);
+  const ownPortfolios = useVault((state) => state.portfolios);
   const ownActiveId = useVault((state) => state.activeId);
   const ownSelect = useVault((state) => state.selectInGraph);
-  const documents = source?.documents ?? ownDocuments;
+  const trees = useSharedTrees((state) => state.trees);
+  // En la bóveda propia, también los portafolios vinculados y lo compartido conmigo al que apuntan vínculos.
+  const extras = source ? new Map<string, Extra>() : graphExtras(ownDocuments, ownPortfolios, trees);
+  const documents: GraphNode[] = source?.documents ?? [...ownDocuments, ...[...extras.values()].map((extra) => extra.node)];
   const activeId = source ? source.activeId : ownActiveId;
-  const selectInGraph = source?.onSelect ?? ownSelect;
+  const extrasRef = useRef(extras);
+  extrasRef.current = extras;
+  const selectInGraph = (id: string) => {
+    if (source) source.onSelect(id);
+    else if (!extrasRef.current.has(id)) ownSelect(id);
+  };
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef(activeId);
-  const openRef = useRef(onOpenNote);
+  // Un portafolio se abre en su página; lo compartido, en su visor.
+  const openNode = (id: string) => {
+    const extra = extrasRef.current.get(id);
+    if (!extra) return onOpenNote(id);
+    if (extra.open) extra.open();
+  };
+  const openRef = useRef(openNode);
   const selectRef = useRef(selectInGraph);
   const cameraRef = useRef<Camera>({ x: 0, y: 0, k: 1 });
   const apiRef = useRef<GraphApi>({
@@ -76,7 +94,7 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
     pan: () => undefined,
   });
   activeRef.current = activeId;
-  openRef.current = onOpenNote;
+  openRef.current = openNode;
   selectRef.current = selectInGraph;
   const [local, setLocal] = useState(false);
   const [seed, setSeed] = useState(0);
@@ -150,6 +168,7 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
           title: note.title,
           pinned: note.pinned,
           kind: note.kind,
+          shared: Boolean(note.shared),
           x: width / 2 + Math.cos(angle) * radius,
           y: height / 2 + Math.sin(angle) * radius,
           vx: 0,
@@ -366,6 +385,14 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
         context.beginPath();
         if (node.kind === "file") {
           roundRect(context, node.x - radius, node.y - radius, radius * 2, radius * 2, 3 / cam.k);
+        } else if (node.kind === "portfolio") {
+          // Rombo: un portafolio entero.
+          const r = radius * 1.35;
+          context.moveTo(node.x, node.y - r);
+          context.lineTo(node.x + r, node.y);
+          context.lineTo(node.x, node.y + r);
+          context.lineTo(node.x - r, node.y);
+          context.closePath();
         } else {
           context.arc(node.x, node.y, radius, 0, Math.PI * 2);
         }
@@ -373,7 +400,10 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
         context.fill();
         context.lineWidth = 1.5 / cam.k;
         context.strokeStyle = active || node.id === hoverId.current ? accent : faint;
+        // Lo compartido conmigo, con borde discontinuo.
+        if (node.shared) context.setLineDash([3 / cam.k, 2 / cam.k]);
         context.stroke();
+        context.setLineDash([]);
         if (!active && !showQuietLabels) continue;
         const label = node.title.length > 28 ? t("{0}…", { 0: node.title.slice(0, 26) }) : node.title;
         context.font = `${12 / cam.k}px Outfit, sans-serif`;
@@ -771,6 +801,55 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
       </div>
     </div>
   );
+}
+
+type Extra = { node: GraphNode; open?: () => void };
+
+/**
+ * Nodos de más en el grafo de la bóveda propia: los portafolios que tienen
+ * vínculos o a los que apunta uno, y lo compartido conmigo al que apunta un
+ * vínculo (si ya no se ve, no aparece).
+ */
+function graphExtras(
+  documents: Document[],
+  portfolios: Portfolio[],
+  trees: ReturnType<typeof useSharedTrees.getState>["trees"],
+): Map<string, Extra> {
+  const out = new Map<string, Extra>();
+  const links = [...documents.flatMap((document) => document.links), ...portfolios.flatMap((portfolio) => portfolio.links ?? [])];
+  const portfolioNode = (portfolio: Portfolio): Extra => ({
+    node: { id: portfolio.id, title: portfolio.name, kind: "portfolio", content: "", links: portfolio.links ?? [], pinned: false },
+    open: () => useVault.getState().openPortfolio(portfolio.id),
+  });
+  for (const portfolio of portfolios) {
+    if ((portfolio.links ?? []).length > 0) out.set(portfolio.id, portfolioNode(portfolio));
+  }
+  for (const link of links) {
+    if (out.has(link.targetId)) continue;
+    if (link.shareId) {
+      const found = sharedTarget(trees, link);
+      if (!found) continue;
+      out.set(link.targetId, {
+        node: {
+          id: link.targetId,
+          title: `${found.title} · ${found.ownerName}`,
+          kind: found.kind,
+          content: "",
+          links: [],
+          pinned: false,
+          shared: true,
+        },
+        open: () => {
+          useVault.getState().setGraph(false);
+          useSharedView.getState().openShared(found.tree, found.kind === "portfolio" ? null : link.targetId);
+        },
+      });
+    } else if (link.target === "portfolio") {
+      const portfolio = portfolios.find((item) => item.id === link.targetId);
+      if (portfolio) out.set(portfolio.id, portfolioNode(portfolio));
+    }
+  }
+  return out;
 }
 
 function NodeCard({ source }: { source?: GraphSource }) {

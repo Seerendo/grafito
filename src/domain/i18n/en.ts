@@ -914,4 +914,10 @@ export const en: Record<string, string> = {
   "No se pudo guardar el archivo.": "Couldn't save the file.",
   "No puedes añadir nada a ese portafolio.": "You can't add anything to that portfolio.",
   "Ese portafolio no es parte de lo compartido.": "That portfolio isn't part of the share.",
+  "Espacio por usuario": "Space per user",
+  "Espacio por portafolio": "Space per portfolio",
+  // Portafolios: descripción y vínculos
+  "Descripción del portafolio": "Portfolio description",
+  "Añade una descripción…": "Add a description…",
+  "portafolio": "portfolio",
 };

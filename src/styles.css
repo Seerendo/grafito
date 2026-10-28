@@ -999,3 +999,16 @@ html[data-tone="light"] {
   background: color-mix(in oklab, var(--color-accent) 25%, transparent);
   border-radius: 2px;
 }
+
+/* Cambio de idioma (Cuenta → Preferencias): un fundido corto en vez de un salto. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+  animation-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}

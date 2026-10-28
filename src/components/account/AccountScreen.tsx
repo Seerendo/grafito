@@ -25,6 +25,8 @@ import { t } from "@/app/i18n";
 
 type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "ia" | "api";
 
+const SECTION_KEY = "grafito.account.section";
+
 type Profile = Awaited<ReturnType<typeof accountState>>;
 
 const SECTIONS: SettingsItem<Section>[] = [
@@ -41,7 +43,24 @@ export function AccountScreen() {
   const can = usePermissions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
-  const [section, setSection] = useState<Section | null>(null);
+  // La sección abierta sobrevive al cambio de idioma (que vuelve a montar la página).
+  const [section, setSectionState] = useState<Section | null>(() => {
+    try {
+      const saved = typeof window === "undefined" ? null : window.sessionStorage.getItem(SECTION_KEY);
+      return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
+    } catch {
+      return null;
+    }
+  });
+  const setSection = (next: Section | null) => {
+    setSectionState(next);
+    try {
+      if (next) window.sessionStorage.setItem(SECTION_KEY, next);
+      else window.sessionStorage.removeItem(SECTION_KEY);
+    } catch {
+      /* solo es una comodidad */
+    }
+  };
 
   useEffect(() => {
     if (!user?.id) return;

@@ -1,4 +1,4 @@
-import { Activity, Building2, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, FolderOpen, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -26,7 +26,7 @@ import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -242,7 +242,10 @@ export function AdminScreen() {
                             ]
                           : []),
                         ...(allowed(view, "space.manage")
-                          ? [{ id: "cuotas" as const, label: "Espacio por usuario y portafolio", icon: HardDrive }]
+                          ? [
+                              { id: "cuotas" as const, label: "Espacio por usuario", icon: HardDrive },
+                              { id: "cuotas-portafolio" as const, label: "Espacio por portafolio", icon: FolderOpen },
+                            ]
                           : []),
                       ]}
                       onPick={(id) => setLeaf(id)}
@@ -253,7 +256,8 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "usuarios" && leaf === "usuarios" ? <UsersBoard view={view} reload={load} /> : null}
                 {current?.id === "usuarios" && leaf === "organizaciones" ? <OrgsBoard view={view} /> : null}
-                {current?.id === "usuarios" && leaf === "cuotas" ? <QuotaBoard /> : null}
+                {current?.id === "usuarios" && leaf === "cuotas" ? <QuotaBoard view="users" /> : null}
+                {current?.id === "usuarios" && leaf === "cuotas-portafolio" ? <QuotaBoard view="portfolios" /> : null}
                 {current?.id === "usuarios" && leaf === "roles" ? (
                   <RolesBoard view={view} reload={load} roleId={roleId} onOpen={setRoleId} />
                 ) : null}
@@ -338,7 +342,8 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
     return view.roles.find((role) => role.id === roleId)?.name ?? t("Roles");
   }
   if (section === "usuarios" && leaf === "organizaciones") return t("Organizaciones");
-  if (section === "usuarios" && leaf === "cuotas") return t("Espacio por usuario y portafolio");
+  if (section === "usuarios" && leaf === "cuotas") return t("Espacio por usuario");
+  if (section === "usuarios" && leaf === "cuotas-portafolio") return t("Espacio por portafolio");
   if (section === "usuarios") return t("Usuarios y permisos");
   if (section === "autenticacion" && leaf === "ldap") return "LDAP";
   if (section === "autenticacion" && leaf === "oauth") return t("OAuth");

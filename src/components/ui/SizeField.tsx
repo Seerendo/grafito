@@ -13,7 +13,8 @@ function split(bytes: number | null): { amount: string; unit: "MB" | "GB" } {
 /**
  * Un tope de espacio: cantidad y unidad (MB o GB). Vacío es «sin tope». Se
  * guarda al pulsar Enter o al salir del campo, si cambió; `onSave` devuelve el
- * error a mostrar, o `null`.
+ * error a mostrar, o `null`. Queda alineado al final de su celda, como piden
+ * las tablas de espacio.
  */
 export function SizeField({
   value,
@@ -56,7 +57,7 @@ export function SizeField({
 
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-1">
+      <div className="flex items-center justify-end gap-1">
         <input
           inputMode="decimal"
           value={amount}
@@ -88,7 +89,7 @@ export function SizeField({
           <option value="GB">GB</option>
         </select>
       </div>
-      {error ? <p className="mt-1 text-xs text-danger">{t(error)}</p> : null}
+      {error ? <p className="mt-1 text-right text-xs text-danger">{t(error)}</p> : null}
     </div>
   );
 }

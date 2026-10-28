@@ -599,6 +599,21 @@ shared portfolio counts for them.
   administrator (`space.manage`) also sets user and portfolio limits
   (`QuotaBoard`).
 
+## Links to portfolios and shared items
+
+Migration 0023 gives `vault_portfolio` a `description` and `links_json`
+(synced like a note's; `pushChanges` only overwrites them when the browser
+sends them, so the API and Git keep them). A `ManualLink` may carry
+`target: "portfolio"` and `shareId` (the target belongs to someone else and
+is reached through that share). `app/shared-links.ts` caches the shared
+trees (two minutes), resolves those targets for the graph, the context pane
+and the portfolio page, and `pruneShareLinks` drops a link when the server
+says there is no access (`openShared` returns `null`) or the target is no
+longer in the share. A network error never prunes. In the graph
+(`graphExtras` in `GraphView`), portfolios with or behind a link are
+diamonds and shared targets have a dashed border; `[[wiki]]` links still
+only resolve to the owner's own notes.
+
 ## Editor colors
 
 `components/vault/HighlightLayer.tsx` draws the note under the editor's

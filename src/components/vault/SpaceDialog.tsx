@@ -90,19 +90,25 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
               {state.canManage ? t("Usuarios") : t("Tu espacio aquí")}
             </h3>
             <div className="overflow-x-auto rounded-md border border-line">
-              <table className="w-full min-w-[34rem] text-sm">
+              <table className="w-full min-w-[44rem] table-fixed text-sm">
+                <colgroup>
+                  <col />
+                  <col className="w-40" />
+                  <col className="w-32" />
+                  <col className="w-56" />
+                </colgroup>
                 <thead className="bg-inset text-left text-xs text-faint">
                   <tr>
                     <th className="px-3 py-2 font-medium">{t("Usuario")}</th>
                     <th className="px-3 py-2 font-medium">{t("Permiso")}</th>
-                    <th className="px-3 py-2 font-medium">{t("Usado")}</th>
-                    <th className="px-3 py-2 font-medium">{t("Su espacio aquí")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Usado")}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t("Su espacio aquí")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {state.members.map((member) => (
-                    <tr key={member.userId} className="border-t border-line align-top">
-                      <td className="px-3 py-2">
+                    <tr key={member.userId} className="border-t border-line align-middle">
+                      <td className="min-w-0 px-3 py-2">
                         <span className="block truncate text-fg">{member.name || member.loginName}</span>
                         {member.orgName ? (
                           <span className="block truncate text-xs text-faint">{t("Por {0}", { 0: member.orgName })}</span>
@@ -124,7 +130,7 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
                                 if (failed) setError(failed);
                               });
                             }}
-                            className="h-9 rounded-md border border-line bg-inset px-2 text-sm text-fg"
+                            className="h-9 w-full rounded-md border border-line bg-inset px-2 text-sm text-fg"
                           >
                             <option value="read">{t("Solo lectura")}</option>
                             <option value="edit">{t("Puede editar")}</option>
@@ -134,7 +140,7 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
                           <span className="text-muted">{t(ACCESS_LABEL[member.access])}</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-muted tabular-nums">
+                      <td className="px-3 py-2 text-right text-muted tabular-nums">
                         {formatBytes(member.used)}
                         {member.limit ? ` · ${Math.min(100, Math.round((member.used / member.limit) * 100))} %` : ""}
                       </td>
@@ -148,7 +154,7 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
                             }
                           />
                         ) : (
-                          <span className="text-muted">{member.limit === null ? t("Sin tope") : formatBytes(member.limit)}</span>
+                          <span className="block text-right text-muted">{member.limit === null ? t("Sin tope") : formatBytes(member.limit)}</span>
                         )}
                       </td>
                     </tr>

@@ -9,12 +9,24 @@ export type ManualLink = {
   kind: ManualKind;
   /** Desde una frase del archivo (un PDF), no desde todo el archivo. */
   anchor?: TextAnchor;
+  /** El destino es un portafolio (por defecto, una nota o un archivo). */
+  target?: "portfolio";
+  /**
+   * El destino es de otra persona y llega por lo compartido conmigo (este
+   * elemento). Si pierdo el acceso o deja de estar compartido, el vínculo se
+   * quita (`app/shared-links.ts`).
+   */
+  shareId?: string;
 };
 
 export type Portfolio = {
   id: string;
   name: string;
   parentId: string | null;
+  /** Texto libre que lo describe (en su página). */
+  description?: string;
+  /** Sus vínculos, como los de una nota. */
+  links?: ManualLink[];
 };
 
 /**

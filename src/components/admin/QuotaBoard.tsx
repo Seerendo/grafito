@@ -8,12 +8,13 @@ import { t } from "@/app/i18n";
 type Overview = Extract<Awaited<ReturnType<typeof spaceOverview>>, { ok: true }>;
 
 /**
- * Administración → Usuarios y permisos → Espacio (permiso `space.manage`):
- * el espacio por defecto de cada usuario, el de cada uno y el de cada
- * portafolio. Lo que cada usuario puede usar dentro de un portafolio lo
- * reparten su dueño o quien lo administra (diálogo «Espacio y permisos»).
+ * Administración → Usuarios y permisos (permiso `space.manage`): «Espacio por
+ * usuario» (el de por defecto y el de cada uno) y «Espacio por portafolio».
+ * Lo que cada usuario puede usar dentro de un portafolio lo reparten su dueño
+ * o quien lo administra (diálogo «Espacio y permisos»). Las columnas tienen
+ * ancho fijo para que las tablas queden alineadas.
  */
-export function QuotaBoard() {
+export function QuotaBoard({ view }: { view: "users" | "portfolios" }) {
   const [data, setData] = useState<Overview | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
@@ -44,6 +45,7 @@ export function QuotaBoard() {
 
   return (
     <div data-ui="quota-board" className="space-y-6">
+      {view === "users" ? (
       <section className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-4">
         <span className="min-w-0 flex-1 text-sm text-fg">{t("Espacio de cada usuario, si no tiene uno propio")}</span>
         <SizeField
@@ -52,6 +54,7 @@ export function QuotaBoard() {
           onSave={async (bytes) => saved(await setDefaultUserSpace({ data: { bytes } }))}
         />
       </section>
+      ) : null}
 
       <label className="flex h-10 items-center gap-2 rounded-md border border-line bg-inset px-3 text-sm text-muted">
         <Search className="size-4 shrink-0" />
@@ -63,25 +66,30 @@ export function QuotaBoard() {
         />
       </label>
 
+      {view === "users" ? (
       <section>
-        <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">{t("Usuarios")}</h3>
         <div className="overflow-x-auto rounded-md border border-line">
-          <table className="w-full min-w-[30rem] text-sm">
+          <table className="w-full min-w-[34rem] table-fixed text-sm">
+            <colgroup>
+              <col />
+              <col className="w-28" />
+              <col className="w-56" />
+            </colgroup>
             <thead className="bg-inset text-left text-xs text-faint">
               <tr>
                 <th className="px-3 py-2 font-medium">{t("Usuario")}</th>
-                <th className="px-3 py-2 font-medium">{t("Usado")}</th>
-                <th className="px-3 py-2 font-medium">{t("Espacio")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("Usado")}</th>
+                <th className="px-3 py-2 text-right font-medium">{t("Espacio")}</th>
               </tr>
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id} className="border-t border-line align-top">
-                  <td className="px-3 py-2">
+                <tr key={user.id} className="border-t border-line align-middle">
+                  <td className="min-w-0 px-3 py-2">
                     <span className="block truncate text-fg">{user.name || user.loginName}</span>
                     {user.loginName && user.name ? <span className="block truncate text-xs text-faint">{user.loginName}</span> : null}
                   </td>
-                  <td className="px-3 py-2 text-muted tabular-nums">{formatBytes(user.used)}</td>
+                  <td className="px-3 py-2 text-right text-muted tabular-nums">{formatBytes(user.used)}</td>
                   <td className="px-3 py-2">
                     <SizeField
                       value={user.limit}
@@ -95,28 +103,33 @@ export function QuotaBoard() {
           </table>
         </div>
       </section>
-
+      ) : (
       <section>
-        <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">{t("Portafolios")}</h3>
         {portfolios.length === 0 ? (
           <p className="text-sm text-faint italic">{t("Nada coincide.")}</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-line">
-            <table className="w-full min-w-[34rem] text-sm">
+            <table className="w-full min-w-[42rem] table-fixed text-sm">
+              <colgroup>
+                <col />
+                <col className="w-40" />
+                <col className="w-28" />
+                <col className="w-56" />
+              </colgroup>
               <thead className="bg-inset text-left text-xs text-faint">
                 <tr>
                   <th className="px-3 py-2 font-medium">{t("Portafolio")}</th>
                   <th className="px-3 py-2 font-medium">{t("Dueño")}</th>
-                  <th className="px-3 py-2 font-medium">{t("Usado")}</th>
-                  <th className="px-3 py-2 font-medium">{t("Espacio")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("Usado")}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t("Espacio")}</th>
                 </tr>
               </thead>
               <tbody>
                 {portfolios.map((portfolio) => (
-                  <tr key={`${portfolio.ownerId}/${portfolio.id}`} className="border-t border-line align-top">
-                    <td className="px-3 py-2 text-fg">{portfolio.path}</td>
-                    <td className="px-3 py-2 text-muted">{portfolio.ownerName}</td>
-                    <td className="px-3 py-2 text-muted tabular-nums">{formatBytes(portfolio.used)}</td>
+                  <tr key={`${portfolio.ownerId}/${portfolio.id}`} className="border-t border-line align-middle">
+                    <td className="truncate px-3 py-2 text-fg" title={portfolio.path}>{portfolio.path}</td>
+                    <td className="truncate px-3 py-2 text-muted">{portfolio.ownerName}</td>
+                    <td className="px-3 py-2 text-right text-muted tabular-nums">{formatBytes(portfolio.used)}</td>
                     <td className="px-3 py-2">
                       <SizeField
                         value={portfolio.limit}
@@ -135,6 +148,7 @@ export function QuotaBoard() {
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }
