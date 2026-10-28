@@ -138,6 +138,13 @@ services:
       GRAFITO_LOCALHOST_ALIAS: ${GRAFITO_LOCALHOST_ALIAS-host.docker.internal}
       # Time zone for dates in emails (e.g. America/Lima). See docs/MAIL.md.
       TZ: ${TZ:-UTC}
+      # Git sync (optional plugin). Servers besides github.com and gitlab.com,
+      # e.g. an institutional GitLab, and minutes between syncs. See docs/GIT.md.
+      GRAFITO_GIT_HOSTS: ${GRAFITO_GIT_HOSTS:-}
+      GRAFITO_GIT_SYNC_MINUTES: ${GRAFITO_GIT_SYNC_MINUTES:-2}
+      # A server whose certificate comes from your own authority: mount its CA
+      # file and point here (e.g. /app/certs/ca.pem). See docs/GIT.md.
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
     # Secrets generated for this installation (server/install-secrets.ts).
     volumes:
       - grafito_secrets:/app/.data/secrets

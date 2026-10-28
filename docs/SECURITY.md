@@ -34,6 +34,11 @@ How Grafito defends itself, and what was checked by attacking a running copy
   `GRAFITO_SECRETS_DIR` (the `grafito_secrets` volume in Docker). They're kept
   out of the database, so a database dump doesn't include the key that
   decrypts its AI keys.
+- **Git sync** (optional, docs/GIT.md): access tokens are encrypted with
+  `GRAFITO_ENCRYPTION_KEY`. The server only calls github.com, gitlab.com and
+  the hosts the administrator lists in `GRAFITO_GIT_HOSTS`, and doesn't follow
+  redirects, so a user can't use it to reach internal addresses. Webhooks are
+  checked against the link's secret in constant time.
 - **Headers:** a Content Security Policy on every page
   (`lib/security-headers.ts`), `X-Frame-Options: DENY`, `nosniff` and a strict
   referrer policy.

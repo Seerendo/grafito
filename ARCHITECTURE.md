@@ -209,6 +209,9 @@ The `vault/` pieces:
 | `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
 | `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
+| `comments.ts` / `comments.functions.ts` | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`) |
+| `zip.ts` / `export.ts` / `export.functions.ts` | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it |
+| `git/` / `git.functions.ts` | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions |
 
 ### `src/lib/`
 
@@ -551,8 +554,62 @@ so existing ciphertext still opens. See docs/SECURITY.md.
 `server/comments.functions.ts` lets the owner and anyone the document is shared
 with (`editableTarget` or `grantedDocOwner`, read-only included) list and add
 comments. The author or the owner can delete one. `purgeTrash` deletes them
-with the document. `components/vault/Comments.tsx` re-reads them every 20
-seconds while visible.
+with the document. `app/comments.ts` keeps them per document in a zustand
+store shared by `components/vault/Comments.tsx` and the PDF viewer, and
+re-reads them every 20 seconds while visible.
+
+**Notes on a PDF.** A comment can carry an `anchor` (migration 0020): the
+same `TextAnchor` as a linked phrase (`domain/vault/anchor.ts`), stored as
+JSON. `PdfView` offers **Nota** next to **Vincular selección**, highlights
+anchored comments in yellow and opens them in a bubble; the comments panel
+shows the quoted phrase, and clicking it focuses the PDF there
+(`useComments.focusPdf`). The PDF file is never changed. Annotations the
+file already has (`page.getAnnotations()`, anything with text except links,
+form fields and popups) are listed read-only with a marker on the page.
+
+## Downloading a portfolio
+
+`server/export.ts` turns a portfolio and its subportfolios (or the whole
+vault, `all`) into `.zip` entries: a folder per portfolio, `<title>.md` per
+note and each file as is, with names made safe and unique per folder.
+`server/zip.ts` streams them without compression, reading each file from the
+store as it goes, so memory stays flat; it stops at 4 GB or 65,535 entries
+(no ZIP64). The app asks `portfolioZipLink` for a signed link (`signToken`,
+five minutes, carrying what the role may export) and opens
+`GET /api/portfolios/:id/download`, which also accepts a personal API token.
+
+## Git sync
+
+Optional (plugin `git`, off by default; permission `git.sync`, admin only).
+See docs/GIT.md for the behavior. Migration 0021 adds `git_link` (a portfolio
+or `all` per user, provider, server, repository, branch, folder, direction,
+encrypted token, webhook secret, last commit) and `git_link_file` (each synced
+path with its document, Git blob id, the document's `updated_at`, title and
+portfolio at that moment, and the note's text as the merge base).
+
+- **Providers** (`server/git/providers.ts`): GitHub (git data API: blobs, a
+  tree on the parent's, a commit, then a non-forced ref update, so a moved
+  branch fails and is retried) and GitLab (`/repository/commits` with
+  actions, after checking the head). No redirects are followed and only
+  github.com, gitlab.com and the hosts in `GRAFITO_GIT_HOSTS` are called, so a
+  user can't point the server at an internal address.
+- **Engine** (`syncLink` in `server/git/sync.ts`): compares each document and
+  path with its `git_link_file` row. Paths stay the same while a document's
+  title and portfolio don't change. Remote content is compared by Git blob
+  id (`gitBlobSha`), local content by `updated_at`, so an idle sync is one
+  API call. Pulled changes go through `updateNote` / `replaceFile` /
+  `createNote` (history, notifications, revisions for the browsers). Notes
+  changed on both sides go through `merge3`; a failed merge or a file keeps
+  the repository's version as a «(Git)» copy. Rows for pushed changes are
+  saved only after the commit, so a failed commit is retried without losing
+  or duplicating anything. It refuses to run if the branch or the whole
+  folder disappears after a sync, instead of trashing everything.
+- **Timer** (`startGitSync`, started with the session lease like the mail
+  notifier): every 30 seconds it runs the links that are `pending` or older
+  than `GRAFITO_GIT_SYNC_MINUTES`. One run per link at a time.
+- **Webhook** (`/api/git/hook/:id`): GitHub's `X-Hub-Signature-256` (HMAC of
+  the body) or GitLab's `X-Gitlab-Token`, compared in constant time; marks
+  the link pending and runs it.
 
 ## Drawings (Excalidraw)
 

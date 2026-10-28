@@ -127,5 +127,8 @@ export async function requireLease(userId: string): Promise<Sql> {
   // Envío periódico de avisos por correo (una vez por proceso).
   const { startNotifier } = await import("@/server/notify");
   startNotifier();
+  // Sincronización con Git de los portafolios enlazados (si hay).
+  const { startGitSync } = await import("@/server/git/sync");
+  startGitSync();
   return sql;
 }

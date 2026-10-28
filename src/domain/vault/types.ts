@@ -71,7 +71,9 @@ export type DialogState =
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }
   | { type: "link"; sourceId: string; anchor?: TextAnchor }
   | { type: "share"; kind: "document" | "portfolio"; id: string }
-  | { type: "upload-error"; message: string }
+  /** `portfolioId` = "all": toda la bóveda. */
+  | { type: "git"; portfolioId: string }
+  | { type: "upload-error"; message: string; title?: string }
   | { type: "reset" }
   | null;
 

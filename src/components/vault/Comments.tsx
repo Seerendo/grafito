@@ -1,75 +1,42 @@
-import { Send, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { addDocComment, docComments, removeDocComment } from "@/server/comments.functions";
+import { FileText, Send, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { deleteComment, sendComment, useComments, useDocComments, type DocComment, type PdfNote } from "@/app/comments";
 import { intl, t } from "@/app/i18n";
 
-type Comment = { id: string; author: string; body: string; at: number; mine: boolean };
-
-/** Cada cuánto se vuelven a leer mientras están a la vista. */
-const REFRESH_MS = 20_000;
+const NO_NOTES: PdfNote[] = [];
 
 /**
  * Comentarios de una nota o un archivo, propio o compartido conmigo (`shareId`).
- * Comentar no edita el documento: sirve aunque se tenga solo lectura.
+ * Comentar no edita el documento: sirve aunque se tenga solo lectura. En un
+ * PDF también están las notas sobre una frase (se dejan desde el visor) y las
+ * que ya traía el archivo; al pulsarlas, el visor va a su sitio.
  */
 export function Comments({ docId, shareId, onCount }: { docId: string; shareId?: string; onCount?: (count: number) => void }) {
-  const [comments, setComments] = useState<Comment[] | null>(null);
-  const [isOwner, setIsOwner] = useState(false);
+  const { comments, isOwner } = useDocComments(docId, shareId);
+  const pdfNotes = useComments((state) => state.pdfNotes[docId] ?? NO_NOTES);
+  const focusPdf = useComments((state) => state.focusPdf);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    try {
-      const result = await docComments({ data: { docId, ...(shareId ? { shareId } : {}) } });
-      setComments(result.comments);
-      setIsOwner(result.isOwner);
-    } catch {
-      setComments((current) => current ?? []);
-    }
+  useEffect(() => {
+    setDraft("");
+    setError("");
   }, [docId, shareId]);
 
   useEffect(() => {
-    setComments(null);
-    setDraft("");
-    setError("");
-    void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [load]);
-
-  useEffect(() => {
-    if (comments) onCount?.(comments.length);
-  }, [comments, onCount]);
+    if (comments) onCount?.(comments.length + pdfNotes.length);
+  }, [comments, pdfNotes, onCount]);
 
   const send = async () => {
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
     setError("");
-    try {
-      const result = await addDocComment({ data: { docId, body, ...(shareId ? { shareId } : {}) } });
-      if (!result.ok) setError(result.error);
-      else {
-        setDraft("");
-        await load();
-      }
-    } catch {
-      setError("No se pudo enviar.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const remove = async (id: string) => {
-    setComments((current) => current?.filter((comment) => comment.id !== id) ?? null);
-    try {
-      await removeDocComment({ data: { docId, id, ...(shareId ? { shareId } : {}) } });
-    } finally {
-      void load();
-    }
+    const failed = await sendComment(docId, shareId, body);
+    if (failed) setError(failed);
+    else setDraft("");
+    setSending(false);
   };
 
   const when = (ms: number) =>
@@ -79,32 +46,44 @@ export function Comments({ docId, shareId, onCount }: { docId: string; shareId?:
     <div data-ui="comments" className="space-y-2">
       {comments === null ? (
         <p className="px-1.5 text-sm text-faint">{t("Cargando…")}</p>
-      ) : comments.length === 0 ? (
+      ) : comments.length === 0 && pdfNotes.length === 0 ? (
         <p className="px-1.5 text-sm text-faint italic">{t("Sin comentarios.")}</p>
       ) : (
         <ul className="space-y-2">
           {comments.map((comment) => (
-            <li key={comment.id} className="group rounded-md bg-inset px-2.5 py-2">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="min-w-0 flex-1 truncate font-medium text-fg">{comment.author}</span>
-                <span className="shrink-0 text-faint">{when(comment.at)}</span>
-                {comment.mine || isOwner ? (
-                  <button
-                    type="button"
-                    aria-label={t("Borrar comentario")}
-                    title={t("Borrar comentario")}
-                    onClick={() => void remove(comment.id)}
-                    className="grid size-6 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                ) : null}
-              </div>
-              <p className="mt-1 text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{comment.body}</p>
-            </li>
+            <CommentItem
+              key={comment.id}
+              comment={comment}
+              when={when(comment.at)}
+              canDelete={comment.mine || isOwner}
+              onDelete={() => void deleteComment(docId, shareId, comment.id)}
+              onFocus={comment.anchor ? () => focusPdf(docId, comment.anchor!.page, comment.anchor!.exact) : undefined}
+            />
           ))}
         </ul>
       )}
+      {pdfNotes.length > 0 ? (
+        <div className="space-y-2">
+          <p className="px-1.5 pt-1 text-xs font-medium text-faint">{t("Notas que trae el PDF")}</p>
+          <ul className="space-y-2">
+            {pdfNotes.map((note) => (
+              <li key={note.id}>
+                <button
+                  type="button"
+                  onClick={() => focusPdf(docId, note.page)}
+                  className="block w-full rounded-md bg-inset px-2.5 py-2 text-left hover:bg-elevated"
+                >
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="min-w-0 flex-1 truncate font-medium text-fg">{note.author || t("Sin autor")}</span>
+                    <span className="shrink-0 text-faint">{t("Pág. {n}", { n: note.page })}</span>
+                  </span>
+                  <span className="mt-1 block text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{note.body}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <form
         className="flex items-end gap-1.5 rounded-md border border-line bg-inset p-1.5"
         onSubmit={(event) => {
@@ -139,5 +118,51 @@ export function Comments({ docId, shareId, onCount }: { docId: string; shareId?:
       </form>
       {error ? <p className="px-1.5 text-xs text-danger">{t(error)}</p> : null}
     </div>
+  );
+}
+
+function CommentItem({
+  comment,
+  when,
+  canDelete,
+  onDelete,
+  onFocus,
+}: {
+  comment: DocComment;
+  when: string;
+  canDelete: boolean;
+  onDelete: () => void;
+  onFocus?: () => void;
+}) {
+  return (
+    <li className="group rounded-md bg-inset px-2.5 py-2">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">{comment.author}</span>
+        <span className="shrink-0 text-faint">{when}</span>
+        {canDelete ? (
+          <button
+            type="button"
+            aria-label={t("Borrar comentario")}
+            title={t("Borrar comentario")}
+            onClick={onDelete}
+            className="grid size-6 shrink-0 place-items-center rounded text-faint opacity-0 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
+      </div>
+      {comment.anchor && onFocus ? (
+        <button
+          type="button"
+          onClick={onFocus}
+          className="mt-1.5 flex w-full items-start gap-1.5 rounded border-l-2 border-yellow-400 bg-surface px-2 py-1 text-left text-xs text-muted hover:text-fg"
+        >
+          <FileText className="mt-0.5 size-3 shrink-0" />
+          <span className="min-w-0 flex-1 line-clamp-2">{comment.anchor.exact}</span>
+          <span className="shrink-0 text-faint">{t("Pág. {n}", { n: comment.anchor.page })}</span>
+        </button>
+      ) : null}
+      <p className="mt-1 text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{comment.body}</p>
+    </li>
   );
 }

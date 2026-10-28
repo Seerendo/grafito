@@ -298,6 +298,24 @@ After that, the start screen is a normal sign-in.
   - A PDF can have several linked phrases, even to the same target, besides
     links from the whole file.
   - Scanned PDFs have no text to select.
+- **Notes on a PDF:** select a phrase and click **Nota** to leave a note on
+  it. The PDF file is not changed.
+  - The phrase is highlighted in yellow. Clicking it shows its notes.
+  - The notes are comments with a quote of the phrase: they appear under
+    **Comentarios**, and clicking the quote opens the PDF at the phrase.
+  - Anyone who can comment can add them, including on PDFs shared read-only.
+  - Notes that the PDF already had (added in another PDF reader) are kept in
+    the file and shown too: a yellow marker on the page and a list under
+    **Comentarios** («Notas que trae el PDF»). They are read-only in Grafito.
+- **Downloading a portfolio:** **Descargar (.zip)** in a portfolio's
+  right-click menu, or the download button on its page, downloads the
+  portfolio with its subportfolios as a `.zip`. Each portfolio is a folder,
+  each note a `.md` file and each file goes as is. **Descargar todo (.zip)**
+  in the root menu downloads the whole vault. Notes are included with the
+  **Exportar** permission and files with **Descargar**.
+- **Git (optional):** a portfolio, or the whole vault, can be kept in sync
+  with a folder of a GitHub or GitLab repository, both ways. See
+  [docs/GIT.md](docs/GIT.md).
 - On a phone, or without drag and drop, use **Subir archivo** in the
   right-click (long-press) menu. It accepts several files and treats `.md` the
   same way.
@@ -424,7 +442,7 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Autenticación** | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains. |
 | **Inteligencia artificial** | Which AI providers users may connect |
 | **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
-| **Plugins** | Turn the graph, Mermaid and links on or off |
+| **Plugins** | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default) |
 | **Apariencia** | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
 | **Monitorización y logs** | System monitor, audit log, storage usage and backend health checks |
@@ -502,6 +520,7 @@ curl -H "Authorization: Bearer gft_..." http://127.0.0.1:8080/api/v1/notes
 | `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | Update a note. Renaming also updates `[[links]]`. |
 | `DELETE /api/v1/notes/:id` | Delete a note or file |
 | `GET /api/v1/notes/:id/file` | Download a file |
+| `GET /api/portfolios/:id/download` | Download a portfolio (`all`: the whole vault) as `.zip` |
 
 To upload a file through the API, use the same three steps as the app:
 
@@ -536,6 +555,8 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Previous key during a rotation | — |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | Other sites allowed to send sign-ins, comma-separated | The address each request was sent to, `BETTER_AUTH_URL` and localhost |
 | `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md)) | Editor off |
+| `GRAFITO_GIT_HOSTS`, `GRAFITO_GIT_SYNC_MINUTES` | Git servers allowed besides github.com and gitlab.com; minutes between syncs (see [docs/GIT.md](docs/GIT.md)) | Only github.com and gitlab.com; 2 |
+| `NODE_EXTRA_CA_CERTS` | CA file for a Git server with a certificate from your own authority | Public authorities only |
 | `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION` | Only for a `COLLABORA_URL` on an address of its own (see [docs/OFFICE.md](docs/OFFICE.md#servers-and-https)) | `localhost:*`; `false` |
 
 ### Testing external sign-in locally
@@ -577,6 +598,8 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
   and licensing.
 - [docs/MAIL.md](docs/MAIL.md): email (SMTP), new users' one-time access and
   change notifications.
+- [docs/GIT.md](docs/GIT.md): syncing portfolios with GitHub or GitLab,
+  including a self-hosted (institutional) GitLab.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,
   sharing, sync, authentication and AI internals.
 - [TEST.md](TEST.md): the end-to-end test log for each round of changes.

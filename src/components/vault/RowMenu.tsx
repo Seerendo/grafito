@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
+import { downloadPortfolio } from "@/app/export";
 import { downloadFile } from "@/app/files";
 import { t } from "@/app/i18n";
 import { usePermissions } from "@/app/permissions";
+import { usePluginEnabled } from "@/app/plugins";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import type { Document } from "@/domain/vault/types";
@@ -111,6 +113,7 @@ function RowContextMenu({
 }) {
   const documents = useVault((state) => state.documents);
   const can = usePermissions();
+  const gitOn = usePluginEnabled("git");
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState({ left: menu.x, top: menu.y, ready: false });
   const document = menu.kind === "document" ? documents.find((item) => item.id === menu.id) : null;
@@ -186,8 +189,18 @@ function RowContextMenu({
       items.push({ label: t("Eliminar"), danger: true, onClick: act(() => vault().setDialog({ type: "delete-document", id })) });
     }
   }
+  const canZip = can(PERMISSION.notesExport) || can(PERMISSION.filesDownload);
+  const canGit = gitOn && can(PERMISSION.gitSync);
+  if (menu.kind === "root" && canZip) {
+    items.push({ label: t("Descargar todo (.zip)"), onClick: act(() => void downloadPortfolio("all")) });
+  }
+  if (menu.kind === "root" && canGit) {
+    items.push({ label: t("Sincronizar todo con Git…"), onClick: act(() => vault().setDialog({ type: "git", portfolioId: "all" })) });
+  }
   if (menu.kind === "portfolio") {
     const id = menu.id;
+    if (canZip) items.push({ label: t("Descargar (.zip)"), onClick: act(() => void downloadPortfolio(id)) });
+    if (canGit) items.push({ label: t("Sincronizar con Git…"), onClick: act(() => vault().setDialog({ type: "git", portfolioId: id })) });
     if (can(PERMISSION.notesShare)) {
       items.push({ label: t("Compartir…"), onClick: act(() => vault().setDialog({ type: "share", kind: "portfolio", id })) });
     }

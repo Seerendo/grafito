@@ -13,6 +13,7 @@ export const PERMISSION = {
   filesDownload: "files.download",
   filesDelete: "files.delete",
   portfoliosManage: "portfolios.manage",
+  gitSync: "git.sync",
   linksManage: "links.manage",
   graphView: "graph.view",
   aiUse: "ai.use",

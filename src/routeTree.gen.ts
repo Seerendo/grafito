@@ -28,6 +28,8 @@ import { Route as ApiV1PortfoliosRouteImport } from './routes/api/v1/portfolios'
 import { Route as WopiFilesIdRouteImport } from './routes/wopi/files/$id'
 import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/uploads.complete'
 import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
+import { Route as ApiGitHookIdRouteImport } from './routes/api/git/hook/$id'
+import { Route as ApiPortfoliosIdDownloadRouteImport } from './routes/api/portfolios/$id.download'
 import { Route as ApiV1NotesIdRouteImport } from './routes/api/v1/notes.$id'
 import { Route as WopiFilesIdContentsRouteImport } from './routes/wopi/files/$id.contents'
 import { Route as ApiV1NotesIdFileRouteImport } from './routes/api/v1/notes.$id.file'
@@ -127,6 +129,16 @@ const ApiFilesUploadsPartRoute = ApiFilesUploadsPartRouteImport.update({
   path: '/part',
   getParentRoute: () => ApiFilesUploadsRoute,
 } as any)
+const ApiGitHookIdRoute = ApiGitHookIdRouteImport.update({
+  id: '/api/git/hook/$id',
+  path: '/api/git/hook/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPortfoliosIdDownloadRoute = ApiPortfoliosIdDownloadRouteImport.update({
+  id: '/api/portfolios/$id/download',
+  path: '/api/portfolios/$id/download',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1NotesIdRoute = ApiV1NotesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -163,6 +175,8 @@ export interface FileRoutesByFullPath {
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
+  '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -187,6 +201,8 @@ export interface FileRoutesByTo {
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
+  '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -212,6 +228,8 @@ export interface FileRoutesById {
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
+  '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -238,6 +256,8 @@ export interface FileRouteTypes {
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
+    | '/api/git/hook/$id'
+    | '/api/portfolios/$id/download'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -262,6 +282,8 @@ export interface FileRouteTypes {
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
+    | '/api/git/hook/$id'
+    | '/api/portfolios/$id/download'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -286,6 +308,8 @@ export interface FileRouteTypes {
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
+    | '/api/git/hook/$id'
+    | '/api/portfolios/$id/download'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -309,6 +333,8 @@ export interface RootRouteChildren {
   ApiV1NotesRoute: typeof ApiV1NotesRouteWithChildren
   ApiV1PortfoliosRoute: typeof ApiV1PortfoliosRoute
   WopiFilesIdRoute: typeof WopiFilesIdRouteWithChildren
+  ApiGitHookIdRoute: typeof ApiGitHookIdRoute
+  ApiPortfoliosIdDownloadRoute: typeof ApiPortfoliosIdDownloadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -446,6 +472,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiFilesUploadsPartRouteImport
       parentRoute: typeof ApiFilesUploadsRoute
     }
+    '/api/git/hook/$id': {
+      id: '/api/git/hook/$id'
+      path: '/api/git/hook/$id'
+      fullPath: '/api/git/hook/$id'
+      preLoaderRoute: typeof ApiGitHookIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/portfolios/$id/download': {
+      id: '/api/portfolios/$id/download'
+      path: '/api/portfolios/$id/download'
+      fullPath: '/api/portfolios/$id/download'
+      preLoaderRoute: typeof ApiPortfoliosIdDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/notes/$id': {
       id: '/api/v1/notes/$id'
       path: '/$id'
@@ -538,6 +578,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1NotesRoute: ApiV1NotesRouteWithChildren,
   ApiV1PortfoliosRoute: ApiV1PortfoliosRoute,
   WopiFilesIdRoute: WopiFilesIdRouteWithChildren,
+  ApiGitHookIdRoute: ApiGitHookIdRoute,
+  ApiPortfoliosIdDownloadRoute: ApiPortfoliosIdDownloadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

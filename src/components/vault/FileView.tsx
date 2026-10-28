@@ -37,7 +37,8 @@ function formatSize(bytes: number | undefined): string {
  * (`docId`); en lo compartido llegan hechos (`links`). Los documentos de
  * Office se abren en el editor si el servidor lo tiene (`office`): `own` para
  * los propios, `shareId` para lo compartido conmigo. En los PDF propios se
- * puede vincular una frase con otro documento (`PdfView`).
+ * puede vincular una frase con otro documento, y en todos (salvo un enlace
+ * público) dejarle una nota (`PdfView`).
  */
 export function FileView({
   title,
@@ -219,7 +220,14 @@ function FileBody({
             onOpenNote={drawing.onOpenNote}
           />
         ) : kind === "pdf" ? (
-          <PdfView key={links.url} url={links.url} title={title} {...pdf} />
+          <PdfView
+            key={links.url}
+            url={links.url}
+            title={title}
+            {...pdf}
+            // Notas sobre frases: en lo propio y en lo compartido con sesión, no en un enlace público.
+            notes={office ? { docId: office.docId, shareId: office.shareId } : undefined}
+          />
         ) : kind === "video" ? (
           <video key={links.url} src={links.url} controls onError={broken} className="mx-auto max-h-[70vh] max-w-full rounded-md" />
         ) : kind === "audio" ? (

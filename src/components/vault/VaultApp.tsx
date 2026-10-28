@@ -25,6 +25,7 @@ import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
+import { GitDialog } from "./GitDialog";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -603,6 +604,10 @@ function VaultDialogs() {
     return <ShareDialog kind={dialog.kind} id={dialog.id} onClose={() => setDialog(null)} />;
   }
 
+  if (dialog.type === "git") {
+    return <GitDialog portfolioId={dialog.portfolioId} onClose={() => setDialog(null)} />;
+  }
+
   if (dialog.type === "portfolio") {
     const parent = portfolios.find((item) => item.id === dialog.parentId);
     return (
@@ -767,7 +772,7 @@ function VaultDialogs() {
 
   if (dialog.type === "upload-error") {
     return (
-      <Modal title={t("No se pudo subir")} onClose={() => setDialog(null)}>
+      <Modal title={t(dialog.title ?? "No se pudo subir")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">{t(dialog.message)}</p>
         <div className="mt-4 flex justify-end">
           <Primary onClick={() => setDialog(null)}>{t("Entendido")}</Primary>

@@ -7,6 +7,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { editableTarget, grantedDocOwner } from "@/server/share";
 import { getDoc } from "@/server/vault";
+import { isTextAnchor, type TextAnchor } from "@/domain/vault/anchor";
 import { addComment, deleteComment, listComments, MAX_COMMENT } from "@/server/comments";
 
 /**
@@ -49,7 +50,15 @@ export const docComments = createServerFn({ method: "GET" })
 
 export const addDocComment = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => target.extend({ body: z.string().trim().min(1).max(MAX_COMMENT) }).parse(input))
+  .validator((input: unknown) =>
+    target
+      .extend({
+        body: z.string().trim().min(1).max(MAX_COMMENT),
+        // Una nota sobre una frase de un PDF.
+        anchor: z.custom<TextAnchor>(isTextAnchor).optional(),
+      })
+      .parse(input),
+  )
   .handler(async ({ context: auth, data }) => {
     const { sql, profile, ownerId } = await context(auth.userId, data.docId, data.shareId);
     if (!ownerId) return { ok: false as const, error: "Ya no tienes acceso a este documento." };
@@ -59,6 +68,7 @@ export const addDocComment = createServerFn({ method: "POST" })
       authorId: auth.userId,
       authorName: profile.displayName || profile.loginName || "Alguien",
       body: data.body,
+      anchor: data.anchor ?? null,
     });
     return { ok: true as const };
   });

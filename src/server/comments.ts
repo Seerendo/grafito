@@ -1,4 +1,5 @@
 import type { Sql } from "@/lib/db";
+import { isTextAnchor, type TextAnchor } from "@/domain/vault/anchor";
 
 /**
  * Comentarios de un documento (solo servidor). Ver
@@ -10,11 +11,29 @@ export const MAX_COMMENT = 4000;
 /** Comentarios que se conservan por documento (los más antiguos se descartan). */
 const KEEP = 500;
 
-export type DocComment = { id: string; authorId: string | null; author: string; body: string; at: number };
+/** Con `anchor`, es una nota sobre esa frase de un PDF. */
+export type DocComment = { id: string; authorId: string | null; author: string; body: string; at: number; anchor: TextAnchor | null };
+
+function parseAnchor(raw: string | null): TextAnchor | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isTextAnchor(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function listComments(sql: Sql, ownerId: string, docId: string): Promise<DocComment[]> {
-  const rows = await sql<{ id: string; author_id: string | null; author_name: string; body: string; created_at: unknown }>`
-    select id, author_id, author_name, body, created_at from doc_comment
+  const rows = await sql<{
+    id: string;
+    author_id: string | null;
+    author_name: string;
+    body: string;
+    created_at: unknown;
+    anchor: string | null;
+  }>`
+    select id, author_id, author_name, body, created_at, anchor from doc_comment
     where owner_id = ${ownerId} and doc_id = ${docId} order by created_at
   `;
   return rows.map((row) => ({
@@ -23,16 +42,18 @@ export async function listComments(sql: Sql, ownerId: string, docId: string): Pr
     author: row.author_name,
     body: row.body,
     at: Number(row.created_at),
+    anchor: parseAnchor(row.anchor),
   }));
 }
 
 export async function addComment(
   sql: Sql,
-  input: { ownerId: string; docId: string; authorId: string; authorName: string; body: string },
+  input: { ownerId: string; docId: string; authorId: string; authorName: string; body: string; anchor?: TextAnchor | null },
 ): Promise<void> {
+  const anchor = input.anchor ? JSON.stringify(input.anchor) : null;
   await sql`
-    insert into doc_comment (id, owner_id, doc_id, author_id, author_name, body, created_at)
-    values (${crypto.randomUUID()}, ${input.ownerId}, ${input.docId}, ${input.authorId}, ${input.authorName}, ${input.body}, ${Date.now()})
+    insert into doc_comment (id, owner_id, doc_id, author_id, author_name, body, created_at, anchor)
+    values (${crypto.randomUUID()}, ${input.ownerId}, ${input.docId}, ${input.authorId}, ${input.authorName}, ${input.body}, ${Date.now()}, ${anchor})
   `;
   const old = await sql<{ id: string }>`
     select id from doc_comment where owner_id = ${input.ownerId} and doc_id = ${input.docId}
