@@ -15,7 +15,7 @@ from them.
 - Encryption-key rotation (`GRAFITO_ENCRYPTION_KEY_PREVIOUS`).
 - Security headers and a Content Security Policy, plus a custom 404 page.
 - CI on GitHub Actions (typecheck, lint, tests, build, Docker image).
-- MIT license (it was AGPL-3.0).
+- AGPL-3.0 license.
 - MinIO capacity in the storage panel.
 - Files in object storage (item 4 below): chunked uploads up to a
   configurable limit (100 MB by default), signed links, migration of older

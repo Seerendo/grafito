@@ -584,6 +584,6 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 
 ## License
 
-Grafito is licensed under the [MIT License](LICENSE). Collabora Online, the
-optional Office editor, is a separate program with its own license (see
-[docs/OFFICE.md](docs/OFFICE.md#licensing-and-business-use)).
+Grafito is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+If you run a modified version as a network service, you must offer its source
+code to the users of that service.
