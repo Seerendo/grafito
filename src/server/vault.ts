@@ -1,5 +1,6 @@
 import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
+import { merge3 } from "@/domain/vault/merge";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
@@ -169,11 +170,25 @@ export type VaultChanges = {
   deletedPortfolios: string[];
 };
 
-/** Aplica lo que manda un navegador y devuelve la revisión nueva. */
-export async function pushChanges(sql: Sql, userId: string, changes: VaultChanges): Promise<number> {
+export type PushResult = {
+  revision: number;
+  /** Notas que se juntaron con un cambio de otra persona: hay que volver a bajarlas. */
+  merged: string[];
+  /** Notas que no se pudieron juntar: la versión del servidor, que se queda como estaba. */
+  conflicts: Document[];
+};
+
+/**
+ * Aplica lo que manda un navegador. Una nota que trae `base` y que otra
+ * persona cambió desde esa versión (un invitado, la IA, otra pestaña) se junta
+ * con ese cambio (`merge3`); si las dos tocaron lo mismo, no se escribe y se
+ * devuelve como conflicto. Sin `base` (archivos, cachés antiguas), gana la más
+ * reciente.
+ */
+export async function pushChanges(sql: Sql, userId: string, changes: VaultChanges): Promise<PushResult> {
   const empty =
     changes.docs.length + changes.deletedDocs.length + changes.portfolios.length + changes.deletedPortfolios.length === 0;
-  if (empty) return currentRevision(sql, userId);
+  if (empty) return { revision: await currentRevision(sql, userId), merged: [], conflicts: [] };
   const rev = await nextRevision(sql, userId);
   const now = Date.now();
   for (const portfolio of changes.portfolios) {
@@ -191,7 +206,39 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
     `;
   }
   const converted: string[] = [];
-  for (const incoming of changes.docs) {
+  const merged: string[] = [];
+  const conflicts: Document[] = [];
+  for (const { base, ...incoming } of changes.docs) {
+    if (incoming.kind === "markdown" && base) {
+      const rows = await sql<{ title: string; content: string; updated_at: unknown; deleted: unknown }>`
+        select title, content, updated_at, deleted from vault_doc where user_id = ${userId} and id = ${incoming.id} limit 1
+      `;
+      const current = rows[0] && !flag(rows[0].deleted) ? rows[0] : null;
+      if (current && Number(current.updated_at) !== base.updatedAt) {
+        const result = merge3(base.content, incoming.content, current.content);
+        if (!result.ok) {
+          const theirs = await getDoc(sql, userId, incoming.id);
+          if (theirs) conflicts.push(theirs);
+          continue;
+        }
+        const doc: Document = {
+          ...incoming,
+          content: result.text,
+          title: incoming.title !== base.title ? incoming.title : current.title,
+          updatedAt: Math.max(Date.now(), Number(current.updated_at) + 1),
+        };
+        await writeDoc(sql, userId, doc, rev, false);
+        merged.push(doc.id);
+        continue;
+      }
+      // Parte de lo que hay: se escribe aunque su fecha sea anterior (al elegir
+      // «Guardar la mía» en un conflicto, la otra versión es más reciente).
+      if (current && incoming.updatedAt <= Number(current.updated_at)) {
+        await writeDoc(sql, userId, { ...incoming, updatedAt: Number(current.updated_at) + 1 }, rev, false);
+        merged.push(incoming.id);
+        continue;
+      }
+    }
     const stored = incoming.kind === "file" ? await storeIncomingFile(sql, userId, incoming.file) : null;
     let doc = stored ? { ...incoming, file: stored.file } : incoming;
     // El contenido de un archivo solo cambia en el servidor (editor de Office):
@@ -215,12 +262,12 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
     `;
   }
   if (changes.deletedDocs.length > 0) await purgeExpired(sql, userId);
-  if (converted.length === 0) return rev;
+  if (converted.length === 0) return { revision: rev, merged, conflicts };
   // El navegador mandó contenido y el servidor lo guardó aparte: una revisión
   // más para que baje la versión con clave y suelte el contenido de su caché.
   const after = await nextRevision(sql, userId);
   for (const id of converted) await sql`update vault_doc set rev = ${after} where user_id = ${userId} and id = ${id}`;
-  return after;
+  return { revision: after, merged, conflicts };
 }
 
 /** Cambios posteriores a `since` (incluidas las bajas). */

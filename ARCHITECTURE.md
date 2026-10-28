@@ -498,9 +498,29 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
 - **Revisions:** every server-side change gets the user's next revision
   (`vault_state.revision`). Deletions stay as tombstones.
 - **Merging:** the browser remembers the last revision it received and a
-  fingerprint of each document as last synced. It pulls what is new, pushes
-  what changed locally, and if a document changed on both sides, the newest
-  wins.
+  fingerprint of each document as last synced. It pulls what is new and pushes
+  what changed locally.
+  - **Notes:** the first local edit since the last sync records `base`, the
+    server version it starts from (`mark` in `app/vault/store.ts`). The push
+    carries it.
+  - If the server's note changed since `base` (a person it's shared with, the
+    AI, another tab), `pushChanges` merges both with `merge3`
+    (`domain/vault/merge.ts`): a line-based three-way merge where lines changed
+    on only one side are taken from that side.
+  - If both changed the same lines, nothing is written. The note comes back in
+    `conflicts`, the editor shows **Usar la suya** / **Guardar la mía**
+    (`keepTheirs` / `keepMine` in `sync.ts`), and the note isn't pushed until
+    then.
+  - A merged note is pulled again, so every tab ends up with the same text.
+  - Files, and notes cached before `base` existed, keep "the newest wins".
+- **Shared notes:** a person with edit access saves through `editSharedDoc`,
+  sending `baseUpdatedAt` and `baseContent`. If the note changed meanwhile, it
+  is merged the same way, or reported as a conflict.
+- **Who is editing:** each open editor (in Editar or Dividir mode, or a shared
+  note being edited) calls `notePresence` every 10 seconds
+  (`app/presence.ts`). `server/presence.ts` keeps it in memory for 30
+  seconds, so with several Grafito instances each one only knows its own
+  callers.
 - **When it syncs:**
   - When the vault opens.
   - 1.5 seconds after each change.

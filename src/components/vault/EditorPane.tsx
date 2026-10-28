@@ -33,10 +33,12 @@ import { useActiveDocument, useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import { downloadFile } from "@/app/files";
-import { syncVault } from "@/app/vault/sync";
+import { keepMine, keepTheirs, syncVault } from "@/app/vault/sync";
+import { useNotePresence } from "@/app/presence";
 import { FileView } from "./FileView";
 import { HistoryDialog } from "./HistoryDialog";
 import { HomeBoard } from "./HomeBoard";
+import { EditingNow } from "./EditingNow";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
 import { requestNotePdf } from "./NotePdf";
@@ -99,8 +101,14 @@ export function EditorPane({
   const duplicate = useVault((state) => state.duplicate);
   const setDialog = useVault((state) => state.setDialog);
   const createDocument = useVault((state) => state.createDocument);
+  const conflicts = useVault((state) => state.conflicts);
   const can = usePermissions();
   const canEdit = can(PERMISSION.notesEdit);
+  // Quién más edita esta nota; y, en modo Editar o Dividir, aviso de que aquí también.
+  const editors = useNotePresence(
+    document?.kind === "markdown" ? document.id : null,
+    canEdit && (mode === "edit" || mode === "split"),
+  );
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const insertRef = useRef<HTMLDivElement>(null);
@@ -415,6 +423,37 @@ export function EditorPane({
           </div>
         </div>
       </div>
+
+      <EditingNow names={editors} />
+
+      {/* Otra persona cambió lo mismo de esta nota: se elige cuál queda (ver `sync.ts`). */}
+      {conflicts[document.id] ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm">
+          <span className="min-w-0 flex-1">
+            {conflicts[document.id]!.updatedBy}{" "}{t("cambió la nota mientras la editabas.")}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const owner = useVault.getState().owner;
+              if (owner) keepTheirs(owner, document.id);
+            }}
+            className="h-9 rounded-md px-3 text-sm text-fg hover:bg-elevated"
+          >
+            {t("Usar la suya")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const owner = useVault.getState().owner;
+              if (owner) keepMine(owner, document.id);
+            }}
+            className="h-9 rounded-md bg-accent px-3 text-sm font-medium text-accent-fg"
+          >
+            {t("Guardar la mía")}
+          </button>
+        </div>
+      ) : null}
 
       {isFile ? null : (
         <div data-ui="modebar" className="flex items-center gap-1 border-b border-line px-3 py-1">

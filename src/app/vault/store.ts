@@ -10,6 +10,7 @@ import {
   type Document,
   type ManualKind,
   type Portfolio,
+  type SyncBase,
   type ViewMode,
 } from "@/domain/vault/types";
 import { can, subscribePermissions } from "@/app/permissions";
@@ -69,8 +70,18 @@ function authorOf(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : AUTHOR;
 }
 
-function mark(): { updatedAt: number; updatedBy: string } {
-  return { updatedAt: Date.now(), updatedBy: actorName() };
+/**
+ * Marca de un cambio hecho aquí. En una nota, recuerda además la versión del
+ * servidor de la que parte (la primera vez que cambia desde que se sincronizó):
+ * con ella el servidor junta este cambio con el de otra persona.
+ */
+function mark(document: Document): { updatedAt: number; updatedBy: string; base?: SyncBase } {
+  const stamp = { updatedAt: Date.now(), updatedBy: actorName() };
+  if (document.kind !== "markdown") return stamp;
+  return {
+    ...stamp,
+    base: document.base ?? { content: document.content, title: document.title, updatedAt: document.updatedAt },
+  };
 }
 
 function born(): { createdAt: number; updatedAt: number; createdBy: string; updatedBy: string } {
@@ -107,6 +118,7 @@ function normalize(document: Document): Document {
     createdBy: authorOf(document.createdBy),
     updatedBy: authorOf(document.updatedBy),
     pinned: Boolean(document.pinned),
+    ...(document.base && typeof document.base.content === "string" ? { base: document.base } : {}),
   };
 }
 
@@ -214,12 +226,12 @@ function withTitle(documents: Document[], id: string, title: string): Document[]
         ...document,
         title,
         content: document.kind === "markdown" ? replaceWikiTitle(content, current.title, title) : content,
-        ...mark(),
+        ...mark(document),
       };
     }
     if (document.kind !== "markdown") return document;
     const content = replaceWikiTitle(document.content, current.title, title);
-    return content === document.content ? document : { ...document, content, ...mark() };
+    return content === document.content ? document : { ...document, content, ...mark(document) };
   });
 }
 
@@ -254,6 +266,18 @@ type VaultState = Persisted & {
   }) => void;
   /** Sustituye la bóveda entera por la del servidor. */
   replaceVault: (documents: Document[], portfolios: Portfolio[]) => void;
+  /**
+   * Notas que otra persona cambió a la vez que aquí, sin poder juntarse: la
+   * versión del servidor, hasta que se elija cuál queda (ver `sync.ts`).
+   */
+  conflicts: Record<string, Document>;
+  setConflict: (doc: Document) => void;
+  clearConflict: (id: string) => void;
+  /**
+   * Tras subir: lo subido ya es la versión del servidor. Si la nota cambió
+   * mientras se subía, su base pasa a ser lo subido.
+   */
+  markSynced: (pushed: Document[]) => void;
   /** Carga la bóveda de `userId` (o la de ejemplo si no tiene). */
   openVaultFor: (userId: string) => void;
   /** Guarda y descarga la bóveda en memoria (al salir). */
@@ -386,6 +410,31 @@ export const useVault = create<VaultState>((set, get) => ({
     });
   },
 
+  conflicts: {},
+
+  setConflict: (doc) => set({ conflicts: { ...get().conflicts, [doc.id]: doc } }),
+
+  clearConflict: (id) => {
+    const { [id]: _gone, ...rest } = get().conflicts;
+    set({ conflicts: rest });
+  },
+
+  markSynced: (pushed) => {
+    const sent = new Map(pushed.map((doc) => [doc.id, doc]));
+    let touched = false;
+    const documents = get().documents.map((document) => {
+      const doc = sent.get(document.id);
+      if (!doc || !document.base) return document;
+      touched = true;
+      if (document === doc) {
+        const { base: _base, ...synced } = document;
+        return synced;
+      }
+      return { ...document, base: { content: doc.content, title: doc.title, updatedAt: doc.updatedAt } };
+    });
+    if (touched) set({ documents });
+  },
+
   replaceVault: (documents, portfolios) => {
     const activeId = get().activeId;
     set({
@@ -434,7 +483,7 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.notesEdit)) return;
     set((state) => ({
       documents: state.documents.map((document) =>
-        document.id === id ? { ...document, content, ...mark() } : document,
+        document.id === id ? { ...document, content, ...mark(document) } : document,
       ),
     }));
   },
@@ -469,7 +518,7 @@ export const useVault = create<VaultState>((set, get) => ({
         lines[line] = current.includes("[ ]")
           ? current.replace("[ ]", "[x]")
           : current.replace(/\[(x|X)\]/, "[ ]");
-        return { ...document, content: lines.join("\n"), ...mark() };
+        return { ...document, content: lines.join("\n"), ...mark(document) };
       }),
     }));
   },
@@ -602,7 +651,7 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     set({
       documents: get().documents.map((document) =>
-        document.id === id ? { ...document, portfolioId, ...mark() } : document,
+        document.id === id ? { ...document, portfolioId, ...mark(document) } : document,
       ),
       collapsed: portfolioId ? { ...get().collapsed, [portfolioId]: false } : get().collapsed,
       selectedPortfolioId: portfolioId,
@@ -653,7 +702,7 @@ export const useVault = create<VaultState>((set, get) => ({
         .map((document) => ({
           ...document,
           portfolioId: document.id === source.id ? dialog.portfolioId : document.portfolioId,
-          ...(document.id === source.id ? mark() : { updatedAt: document.updatedAt, updatedBy: document.updatedBy }),
+          ...(document.id === source.id ? mark(document) : { updatedAt: document.updatedAt, updatedBy: document.updatedBy }),
           links: document.links
             .filter((link) => !(document.id === source.id && link.targetId === dialog.existingId))
             .map((link) =>
@@ -672,7 +721,7 @@ export const useVault = create<VaultState>((set, get) => ({
     const title = uniqueTitle(get().documents, source.title, dialog.portfolioId, source.kind, source.id);
     const documents = withTitle(get().documents, source.id, title).map((document) =>
       document.id === source.id
-        ? { ...document, portfolioId: dialog.portfolioId, ...mark() }
+        ? { ...document, portfolioId: dialog.portfolioId, ...mark(document) }
         : document,
     );
     set({
@@ -690,7 +739,7 @@ export const useVault = create<VaultState>((set, get) => ({
       documents: get().documents.map((document) => {
         if (document.id !== sourceId) return document;
         const links = document.links.filter((link) => link.targetId !== targetId);
-        return { ...document, links: [...links, { targetId, kind }], ...mark() };
+        return { ...document, links: [...links, { targetId, kind }], ...mark(document) };
       }),
       dialog: null,
     });
@@ -704,7 +753,7 @@ export const useVault = create<VaultState>((set, get) => ({
           ? {
               ...document,
               links: document.links.filter((link) => link.targetId !== targetId),
-              ...mark(),
+              ...mark(document),
             }
           : document,
       ),

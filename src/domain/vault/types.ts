@@ -26,6 +26,13 @@ export type VaultFile = {
   dataUrl?: string;
 };
 
+/**
+ * La versión del servidor de la que parte una edición hecha en este navegador
+ * y aún no subida. Con ella el servidor junta los cambios de otra persona
+ * (`domain/vault/merge.ts`) en vez de que gane el último.
+ */
+export type SyncBase = { content: string; title: string; updatedAt: number };
+
 export type Document = {
   id: string;
   title: string;
@@ -39,6 +46,8 @@ export type Document = {
   createdBy: string;
   updatedBy: string;
   pinned: boolean;
+  /** Solo en el navegador, mientras hay cambios sin subir (ver `SyncBase`). */
+  base?: SyncBase;
 };
 
 export type GraphKind = "wiki" | ManualKind;

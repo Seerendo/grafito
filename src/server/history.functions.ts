@@ -2,11 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
+import { merge3 } from "@/domain/vault/merge";
 import type { Sql } from "@/lib/db";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { listVersions, readVersion } from "@/server/history";
-import { editableTarget } from "@/server/share";
+import { editableTarget, grantedDocOwner } from "@/server/share";
+import { touchPresence } from "@/server/presence";
 import { putBlob, readBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
 import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreFromTrash, updateNote, VaultError } from "@/server/vault";
@@ -94,7 +96,9 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
 
 /**
  * Guarda una nota compartida conmigo con permiso de edición. Si cambió desde
- * que se abrió (`baseUpdatedAt`), no se pisa: se devuelve la versión actual.
+ * que se abrió (`baseUpdatedAt`), se mezcla con lo de la otra persona a partir
+ * de lo que había al abrirla (`baseContent`, ver `domain/vault/merge.ts`). Si
+ * las dos tocaron lo mismo, no se pisa: se devuelve la versión actual.
  */
 export const editSharedDoc = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -106,6 +110,7 @@ export const editSharedDoc = createServerFn({ method: "POST" })
         title: z.string().max(200).optional(),
         content: z.string().max(MAX_CONTENT),
         baseUpdatedAt: z.number(),
+        baseContent: z.string().max(MAX_CONTENT).optional(),
       })
       .parse(input),
   )
@@ -117,7 +122,16 @@ export const editSharedDoc = createServerFn({ method: "POST" })
     if (!ownerId) return { ok: false as const, error: "Ya no puedes editar esta nota." };
     const current = await getDoc(sql, ownerId, data.docId);
     if (!current || current.kind !== "markdown") return { ok: false as const, error: "Esta nota ya no existe." };
+    let content = data.content;
+    let merged = false;
     if (current.updatedAt !== data.baseUpdatedAt) {
+      const result = data.baseContent === undefined ? null : merge3(data.baseContent, data.content, current.content);
+      if (result?.ok) {
+        content = result.text;
+        merged = true;
+      }
+    }
+    if (current.updatedAt !== data.baseUpdatedAt && !merged) {
       return {
         ok: false as const,
         conflict: true as const,
@@ -126,12 +140,32 @@ export const editSharedDoc = createServerFn({ method: "POST" })
       };
     }
     try {
-      const doc = await updateNote(sql, ownerId, data.docId, { title: data.title, content: data.content, actor, actorId: context.userId });
-      return { ok: true as const, title: doc.title, content: doc.content, updatedAt: doc.updatedAt, updatedBy: doc.updatedBy };
+      const doc = await updateNote(sql, ownerId, data.docId, { title: data.title, content, actor, actorId: context.userId });
+      return { ok: true as const, merged, title: doc.title, content: doc.content, updatedAt: doc.updatedAt, updatedBy: doc.updatedBy };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
       throw error;
     }
+  });
+
+/**
+ * Quién más está editando una nota (la propia o una compartida conmigo), y
+ * aviso de que yo la edito (`editing`) o ya no. El editor lo llama cada pocos
+ * segundos mientras está abierto (ver `app/presence.ts`).
+ */
+export const notePresence = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.extend({ editing: z.boolean() }).parse(input))
+  .handler(async ({ context, data }) => {
+    const sql = await requireLease(context.userId);
+    const ownerId = data.shareId
+      ? ((await editableTarget(sql, context.userId, data.shareId, data.docId))?.ownerId ??
+        (await grantedDocOwner(sql, context.userId, data.shareId, data.docId)))
+      : context.userId;
+    if (!ownerId) return { ok: false as const, editors: [] };
+    const { actor } = await actorFor(sql, context.userId);
+    const editors = touchPresence({ ownerId, docId: data.docId, userId: context.userId, name: actor, editing: data.editing });
+    return { ok: true as const, editors };
   });
 
 // ---------------------------------------------------------------------------

@@ -1045,6 +1045,24 @@ Test stack, LM Studio (`google/gemma-4-e4b`), Cristal design.
 | Message bar with the profile picker | ❌→✅ the «Mayús+Enter: nueva línea» hint wrapped onto two lines; removed (no help texts) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 49 tests |
 
+## Round 32: two people editing the same note
+
+Test stack. «e2eadmin» (owner, at `http://127.0.0.1:8080`) shares «Fuentes»
+with «carla» (LDAP, edit access, at `http://localhost:8080`, so each tab keeps
+its own session). Results checked in `vault_doc` and `vault_doc_version`.
+
+| Case | Result |
+| --- | --- |
+| Both have the note open to edit | ✅ the owner sees «Carla Directorio está editando esta nota» and Carla sees «Administrador está editando esta nota» |
+| Carla edits a line; the owner edits the next line and syncs; Carla saves | ❌→✅ first a conflict, because the classic three-way merge treats adjacent lines as one block; two lines next to each other (a list) now merge line by line. Carla sees «Guardado junto con los cambios de otra persona» and both changes are kept |
+| The owner edits a line; Carla saves a change to another line before his edit reaches the server | ✅ before, the newest overwrote the other; now the server merges both and the owner's editor receives the merged text |
+| Same, both on the same line | ✅ the server keeps Carla's; the owner gets «Carla Directorio cambió la nota mientras la editabas» with «Usar la suya» / «Guardar la mía», and his text stays in his editor |
+| «Guardar la mía» | ❌→✅ the warning went away but the server refused the write (the other version was more recent); a note that starts from what the server has is now written whatever its date. The owner's version is on the server and Carla's is in the history |
+| Carla saves on top of an old version that changed the same line | ✅ the warning, not an overwrite |
+| `merge3` unit tests (separate paragraphs, deleting one paragraph while the other is edited, adjacent lines, same line, insertions in the same place) | ✅ 9 tests |
+| `presence` unit tests (others only, leaving, expiry, per note) | ✅ 4 tests |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
+
 ## Useful commands
 
 ```bash

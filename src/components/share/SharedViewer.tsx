@@ -7,6 +7,8 @@ import { editSharedDoc } from "@/server/history.functions";
 import type { PublishedDoc, SharedTree } from "@/server/share";
 import { childrenOf, docsIn, orderDocuments, rootParent } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
+import { useNotePresence } from "@/app/presence";
+import { EditingNow } from "@/components/vault/EditingNow";
 
 /**
  * Visor de una nota o un portafolio compartido: índice a la izquierda (o
@@ -44,6 +46,7 @@ export function SharedViewer({
   const [conflict, setConflict] = useState<{ content: string; updatedAt: number; updatedBy: string } | null>(null);
   const [history, setHistory] = useState(false);
   const dirty = editing && active !== null && draft !== active.content;
+  const editors = useNotePresence(active && !active.file ? active.id : null, editing, tree.share.id);
 
   useEffect(() => {
     setEditing(false);
@@ -69,6 +72,8 @@ export function SharedViewer({
           docId: active.id,
           content: draft,
           baseUpdatedAt: base ?? Date.parse(active.updatedAt),
+          // Lo que había al empezar: con ello el servidor junta los cambios de otra persona.
+          ...(base === undefined ? { baseContent: active.content } : {}),
         },
       });
       if (result.ok) {
@@ -79,7 +84,9 @@ export function SharedViewer({
           updatedAt: new Date(result.updatedAt).toISOString(),
           updatedBy: result.updatedBy,
         });
-        setMessage(t("Guardado"));
+        // Se juntó con lo que otra persona guardó entre medias: seguir desde ahí.
+        if (result.merged) setDraft(result.content);
+        setMessage(result.merged ? t("Guardado junto con los cambios de otra persona") : t("Guardado"));
       } else if ("conflict" in result && result.conflict) {
         setConflict(result.current);
       } else {
@@ -111,7 +118,7 @@ export function SharedViewer({
             {t("Compartido por")}{" "}{tree.share.ownerName} · {tree.share.access === "edit" ? t("Puedes editar") : t("Solo lectura")}
             {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
           </span>
-          {message ? <span className={message === "Guardado" ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
+          {message ? <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
           {canEdit ? (
             <span className="flex shrink-0 items-center gap-1">
               <button
@@ -162,6 +169,7 @@ export function SharedViewer({
             </span>
           ) : null}
         </div>
+        <EditingNow names={editors} />
         {conflict && active ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm sm:px-5">
             <span className="min-w-0 flex-1">

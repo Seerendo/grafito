@@ -33,6 +33,8 @@ const docSchema = z.object({
   updatedAt: z.number(),
   createdBy: z.string().max(80),
   updatedBy: z.string().max(80),
+  // La versión del servidor de la que parte esta edición (notas; ver `SyncBase`).
+  base: z.object({ content: z.string().max(MAX_CONTENT), title: z.string().max(200), updatedAt: z.number() }).optional(),
 });
 
 const portfolioSchema = z.object({ id, name: z.string().max(120), parentId: id.nullable() });
@@ -69,7 +71,8 @@ export const pushVault = createServerFn({ method: "POST" })
     if (data.deletedPortfolios.length > 0 && !allows(profile, PERMISSION.portfoliosManage)) {
       return { ok: false as const, error: "Tu rol no puede borrar portafolios." };
     }
-    return { ok: true as const, revision: await pushChanges(sql, context.userId, data) };
+    const result = await pushChanges(sql, context.userId, data);
+    return { ok: true as const, ...result };
   });
 
 export const pullVault = createServerFn({ method: "GET" })

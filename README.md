@@ -315,10 +315,17 @@ Public links are always read-only.
 - **What recipients see:** shared items appear under **Compartidos conmigo** in
   the recipient's directory. Shared portfolios expand in place, and documents
   open in the main area. Items they can edit carry a pencil.
-- **Editing a shared note:** **Editar**, then **Guardar** (or Ctrl+S). If the
-  owner or someone else changed the note in the meantime, Grafito warns you
-  instead of overwriting. You can keep their version (**Usar la suya**) or save
-  yours on top (**Guardar la mía**). Both versions stay in the history.
+- **Editing a shared note:** **Editar**, then **Guardar** (or Ctrl+S).
+- **Editing at the same time:** the owner, in their vault, and the people it's
+  shared with can edit the same note at once.
+  - While someone else edits it, the note shows «Ana está editando esta nota».
+  - If the other person saved changes to other lines in the meantime, Grafito
+    merges them with yours («Guardado junto con los cambios de otra persona»).
+  - If you both changed the same lines (one deletes a paragraph the other is
+    editing, for example), nothing is overwritten. Grafito warns you and you
+    choose: keep their version (**Usar la suya**) or save yours on top
+    (**Guardar la mía**). Both versions stay in the history.
+  - Office documents are edited by everyone at once, live, in Collabora.
 - **Revoking:** setting an item back to private, or deleting it, revokes access
   immediately.
 
