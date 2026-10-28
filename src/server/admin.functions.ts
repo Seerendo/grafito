@@ -4,7 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { removeUserFiles } from "@/server/files";
 import { requireLease, readTtl } from "@/server/lease";
 import { ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD, STRONG_PASSWORD, documentEngine, emailForUsername, fileEngine, relationalEngine } from "@/server/platform";
-import { allows, readUserProfile } from "@/server/profile";
+import { allows, forgetRoleGrants, readUserProfile } from "@/server/profile";
 import { mirrorToElastic, probeElastic, searchElastic, type IndexDoc } from "@/server/search";
 import { probeBucket } from "@/server/storage";
 
@@ -333,6 +333,7 @@ export const setRolePermission = createServerFn({ method: "POST" })
     } else {
       await sql`delete from app_role_permission where role_id = ${data.roleId} and permission_key = ${data.key}`;
     }
+    forgetRoleGrants();
     await writeLog(
       sql,
       actor.loginName || actor.displayName,
@@ -666,6 +667,7 @@ export const deleteRole = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Hay usuarios con este rol. Cámbiales el rol antes." };
     }
     await sql`delete from app_role where id = ${data.id}`;
+    forgetRoleGrants();
     await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Elimina el rol ${role[0].name}`);
     return { ok: true as const };
   });

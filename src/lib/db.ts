@@ -167,6 +167,8 @@ async function createPgliteSql(): Promise<Sql> {
   // serverless disks are not a database.
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
+    // Índices de trigramas para buscar (migrations/0019_vault_indexes.sql).
+    const { pg_trgm } = await import("@electric-sql/pglite/contrib/pg_trgm");
     const dataDir = process.env.NODE_ENV === "production" ? undefined : ".data/pglite";
     if (dataDir) {
       const { mkdirSync } = await import("node:fs");
@@ -174,6 +176,7 @@ async function createPgliteSql(): Promise<Sql> {
     }
     const pg = new PGlite({
       dataDir,
+      extensions: { pg_trgm },
       parsers: {
         [OID_INT8]: Number,
         [OID_DATE]: identity,
