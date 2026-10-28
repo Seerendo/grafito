@@ -535,6 +535,47 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
 - **Permissions:** the server rejects changes from users without write
   permission, and deletions without the delete permission.
 
+## Comments
+
+`doc_comment` (migration 0018) holds comments on a note or file.
+`server/comments.functions.ts` lets the owner and anyone the document is shared
+with (`editableTarget` or `grantedDocOwner`, read-only included) list and add
+comments. The author or the owner can delete one. `purgeTrash` deletes them
+with the document. `components/vault/Comments.tsx` re-reads them every 20
+seconds while visible.
+
+## Drawings (Excalidraw)
+
+- **A file like any other:** a drawing is a `.excalidraw` file
+  (`domain/vault/drawing.ts`), so links, sharing, versions and the trash work
+  unchanged.
+- **Viewing and editing:** `components/vault/DrawingView.tsx` loads
+  `@excalidraw/excalidraw` only in the browser. `import.meta.env.SSR` keeps it
+  out of the server build, because it reads `window` when loaded.
+- **Saving:** changes are saved 2 seconds after the last one through
+  `saveDrawing`. As with the Office editor, it writes a new object and a file
+  version (`replaceFile`, grouped as autosave).
+- **Fonts:** `vite.config.ts` copies the 14 MB of fonts to
+  `public/excalidraw/` (not versioned), and `EXCALIDRAW_ASSET_PATH` points
+  there. Nothing is loaded from a CDN.
+- **No unmounting:** after a save the file gets a new key. `useFileLinks` keeps
+  the previous signed links until the new ones arrive, so the drawing (or the
+  Office editor) stays mounted. Before this, the view unmounted for a moment
+  and lost the text being typed.
+- **The AI** reads a drawing's text elements, not its JSON (`fileText`).
+
+## Full screen
+
+`app/fullscreen.ts`:
+
+- `VaultApp` hides the top bar, the directory, the details panel and the mobile
+  tab bar.
+- It requests the browser's full screen for the whole document, not just the
+  editor, so dialogs still show.
+- It locks Escape with `navigator.keyboard.lock` where supported (Chrome,
+  Edge). The page then gets Esc: the first one closes a dialog, the next one
+  leaves full screen.
+
 ## Version history and trash
 
 - **Versions** (`server/history.ts`): `writeDoc` records a version whenever a

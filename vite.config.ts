@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { cpSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import { defineConfig } from "vite";
@@ -43,6 +43,22 @@ function pgliteBootstrapPlugin(): Plugin {
   };
 }
 
+/**
+ * Las fuentes de Excalidraw (14 MB) se sirven desde Grafito y no desde un CDN,
+ * para que los dibujos funcionen sin internet: se copian a `public/excalidraw/`
+ * (no versionado) al arrancar o construir. Ver `components/vault/DrawingView.tsx`.
+ */
+function excalidrawAssetsPlugin(): Plugin {
+  return {
+    name: "grafito:excalidraw-assets",
+    buildStart() {
+      const from = join(process.cwd(), "node_modules/@excalidraw/excalidraw/dist/prod/fonts");
+      const to = join(process.cwd(), "public/excalidraw/fonts");
+      if (existsSync(from) && !existsSync(to)) cpSync(from, to, { recursive: true });
+    },
+  };
+}
+
 // Destino del build de producción. `node-server` genera `.output/server/index.mjs`
 // (lo que ejecuta la imagen de Docker); `NITRO_PRESET=vercel` despliega en Vercel.
 const nitroPreset = process.env.NITRO_PRESET?.trim() || "node-server";
@@ -63,6 +79,7 @@ export default defineConfig(({ command, isPreview }) => ({
   resolve: { tsconfigPaths: true },
   plugins: [
     pgliteBootstrapPlugin(),
+    excalidrawAssetsPlugin(),
     tailwindcss(),
     tanstackStart(),
     ...(command === "build" || isPreview ? [nitro({ preset: nitroPreset })] : []),

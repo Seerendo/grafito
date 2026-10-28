@@ -323,6 +323,8 @@ type VaultState = Persisted & {
   duplicate: (id: string) => void;
   importNote: (title: string, content: string, portfolioId?: string | null) => void;
   closeActive: () => void;
+  /** Abre un portafolio en el centro: sus subportafolios, notas y archivos. */
+  openPortfolio: (id: string) => void;
   reset: () => void;
 };
 
@@ -456,6 +458,8 @@ export const useVault = create<VaultState>((set, get) => ({
   setActive: (id) => set({ activeId: id, graph: false, palette: false, folderPicked: false }),
   selectInGraph: (id) => set({ activeId: id, palette: false, folderPicked: false }),
   closeActive: () => set({ activeId: null, graph: false }),
+  openPortfolio: (id) =>
+    set({ activeId: null, graph: false, palette: false, selectedPortfolioId: id, rootPicked: false, folderPicked: true }),
   setMode: (mode) => {
     if (mode !== "read" && !can(PERMISSION.notesEdit)) return;
     set({ mode });

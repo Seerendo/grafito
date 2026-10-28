@@ -111,12 +111,13 @@ export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<s
   if (!file) return null;
   const mime = (file.mime || "").toLowerCase();
   const office = /\.(docx|docm|pptx|xlsx|xlsm|odt|ods|odp)$/i.test(file.name);
+  const drawing = /\.excalidraw$/i.test(file.name);
   // Antes que el tipo: el de Word o Excel lleva «xml» (`…openxmlformats…`) y
   // no es texto, es un ZIP.
   const textual =
-    !office && (mime.startsWith("text/") || TEXTUAL.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name));
+    !office && !drawing && (mime.startsWith("text/") || TEXTUAL.test(mime) || /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name));
   const pdf = mime === "application/pdf" || /\.pdf$/i.test(file.name);
-  if (!textual && !office && !pdf) return null;
+  if (!textual && !office && !pdf && !drawing) return null;
   let bytes: Uint8Array | null = null;
   if (file.key) bytes = await readBlob(sql, file.key);
   else if (file.dataUrl) bytes = decodeDataUrl(file.dataUrl)?.bytes ?? null;
@@ -125,9 +126,24 @@ export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<s
   if (textual) raw = Buffer.from(bytes).toString("utf8");
   // Word, Excel, PowerPoint y OpenDocument: su texto (ver `office-text.ts`).
   else if (office) raw = officeText(file.name, bytes);
+  // Un dibujo de Excalidraw: sus textos, no el JSON de la escena.
+  else if (drawing) raw = drawingText(bytes);
   else raw = await pdfText(bytes);
   if (!raw) return null;
   return raw.length > max ? `${raw.slice(0, max)}\n…(recortado)` : raw;
+}
+
+/** Los textos de un dibujo de Excalidraw, uno por línea; `null` si no tiene. */
+function drawingText(bytes: Uint8Array): string | null {
+  try {
+    const scene = JSON.parse(Buffer.from(bytes).toString("utf8")) as { elements?: { type?: string; text?: string; isDeleted?: boolean }[] };
+    const texts = (scene.elements ?? [])
+      .filter((element) => element.type === "text" && !element.isDeleted && element.text?.trim())
+      .map((element) => element.text!.trim());
+    return texts.length ? texts.join("\n") : null;
+  } catch {
+    return null;
+  }
 }
 
 /** El texto de un PDF (con PDF.js, vía `unpdf`); `null` si no tiene texto, p. ej. un escaneado. */

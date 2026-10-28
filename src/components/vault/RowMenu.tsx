@@ -6,7 +6,7 @@ import { usePermissions } from "@/app/permissions";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import type { Document } from "@/domain/vault/types";
-import { ingestExternalFiles } from "./ingest-files";
+import { createDrawing, ingestExternalFiles } from "./ingest-files";
 import { requestNotePdf } from "./NotePdf";
 
 export type RowMenuTarget = { kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string };
@@ -143,7 +143,13 @@ function RowContextMenu({
     const parentId = menu.kind === "portfolio" ? menu.id : null;
     items.push({ label: t("Nuevo portafolio"), onClick: act(() => vault().setDialog({ type: "portfolio", parentId })) });
   }
-  if (can(PERMISSION.filesUpload)) items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
+  if (can(PERMISSION.filesUpload)) {
+    items.push({
+      label: t("Nuevo dibujo"),
+      onClick: act(() => void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
+    });
+    items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
+  }
   if (menu.kind === "document" && document) {
     const id = document.id;
     if (can(PERMISSION.notesShare)) {

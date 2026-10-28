@@ -1,4 +1,7 @@
-import { File, FileText, Plus } from "lucide-react";
+import { ChevronRight, File, FileText, Folder, PenTool, Plus } from "lucide-react";
+import { usePermissions } from "@/app/permissions";
+import { PERMISSION } from "@/domain/permissions";
+import { createDrawing } from "./ingest-files";
 import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
@@ -6,11 +9,24 @@ import { useRowMenu } from "./RowMenu";
 
 const RECENT = 12;
 
-/** Raíz: lo último que se tocó en la bóveda, con el mismo menú contextual que el directorio. */
+/**
+ * Raíz: sus portafolios y lo último que se tocó en la bóveda, con el mismo
+ * menú contextual que el directorio.
+ */
 export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onOpenNote: (id: string) => void }) {
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const setActive = useVault((state) => state.setActive);
+  const openPortfolio = useVault((state) => state.openPortfolio);
+  const roots = useMemo(
+    () =>
+      portfolios
+        .filter((portfolio) => portfolio.parentId === null)
+        .sort((a, b) => a.name.localeCompare(b.name, intl(), { sensitivity: "base" })),
+    [portfolios],
+  );
+  const countIn = (id: string) =>
+    documents.filter((document) => document.portfolioId === id).length + portfolios.filter((item) => item.parentId === id).length;
   const { openMenu, element: menu } = useRowMenu(onOpenNote);
   const recent = useMemo(
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
@@ -30,17 +46,41 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Carpeta Personal")}</h1>
-          {onCreate ? (
-            <button
-              type="button"
-              onClick={onCreate}
-              className="ml-auto inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
-            >
-              <Plus className="size-4" />
-              {t("Nueva nota")}
-            </button>
-          ) : null}
+          <span className="ml-auto flex flex-wrap gap-2">
+            <NewDrawingButton portfolioId={null} onOpenNote={onOpenNote} />
+            {onCreate ? (
+              <button
+                type="button"
+                onClick={onCreate}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+              >
+                <Plus className="size-4" />
+                {t("Nueva nota")}
+              </button>
+            ) : null}
+          </span>
         </div>
+        {roots.length > 0 ? (
+          <section className="mt-6">
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Portafolios")}</h2>
+            <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+              {roots.map((portfolio) => (
+                <li key={portfolio.id} className="border-b border-line last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => openPortfolio(portfolio.id)}
+                    onContextMenu={(event) => openMenu(event, { kind: "portfolio", id: portfolio.id })}
+                    className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
+                  >
+                    <Folder className="size-4 shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{portfolio.name}</span>
+                    <span className="shrink-0 text-xs text-faint">{countIn(portfolio.id)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {recent.length > 0 ? (
           <section className="mt-6">
             <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Recientes")}</h2>
@@ -69,6 +109,167 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
       </div>
       {menu}
     </div>
+  );
+}
+
+/**
+ * Un portafolio abierto desde el directorio: su ruta, sus subportafolios y sus
+ * notas y archivos, con el mismo menú contextual que el directorio.
+ */
+export function PortfolioBoard({
+  portfolioId,
+  onCreate,
+  onOpenNote,
+  onOpenPortfolio,
+  onHome,
+}: {
+  portfolioId: string;
+  onCreate?: () => void;
+  onOpenNote: (id: string) => void;
+  onOpenPortfolio: (id: string) => void;
+  onHome: () => void;
+}) {
+  const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const setActive = useVault((state) => state.setActive);
+  const { openMenu, element: menu } = useRowMenu(onOpenNote);
+  const portfolio = portfolios.find((item) => item.id === portfolioId);
+  const trail = useMemo(() => {
+    const out: { id: string; name: string }[] = [];
+    let current = portfolio;
+    while (current && out.length < 30) {
+      out.unshift({ id: current.id, name: current.name });
+      const parentId = current.parentId;
+      current = parentId ? portfolios.find((item) => item.id === parentId) : undefined;
+    }
+    return out;
+  }, [portfolio, portfolios]);
+  const children = useMemo(
+    () =>
+      portfolios
+        .filter((item) => item.parentId === portfolioId)
+        .sort((a, b) => a.name.localeCompare(b.name, intl(), { sensitivity: "base" })),
+    [portfolios, portfolioId],
+  );
+  const items = useMemo(
+    () =>
+      documents
+        .filter((document) => document.portfolioId === portfolioId)
+        .sort((a, b) => a.title.localeCompare(b.title, intl(), { sensitivity: "base" })),
+    [documents, portfolioId],
+  );
+  const countIn = (id: string) =>
+    documents.filter((document) => document.portfolioId === id).length + portfolios.filter((item) => item.parentId === id).length;
+
+  if (!portfolio) return null;
+
+  return (
+    <div
+      data-home
+      data-ui="portfolio-board"
+      className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8"
+      onContextMenu={(event) => {
+        if ((event.target as HTMLElement).closest("button")) return;
+        openMenu(event, { kind: "portfolio", id: portfolioId });
+      }}
+    >
+      <div className="mx-auto w-full max-w-3xl">
+        <nav aria-label={t("Ruta")} className="flex flex-wrap items-center gap-1 text-xs text-faint">
+          <button type="button" onClick={onHome} className="hover:text-fg">
+            {t("Carpeta Personal")}
+          </button>
+          {trail.slice(0, -1).map((step) => (
+            <span key={step.id} className="flex items-center gap-1">
+              <ChevronRight className="size-3" />
+              <button type="button" onClick={() => onOpenPortfolio(step.id)} className="hover:text-fg">
+                {step.name}
+              </button>
+            </span>
+          ))}
+        </nav>
+        <div className="mt-2 flex flex-wrap items-end gap-3">
+          <h1 className="min-w-0 font-serif text-4xl font-semibold tracking-tight break-words">{portfolio.name}</h1>
+          <span className="ml-auto flex flex-wrap gap-2">
+            <NewDrawingButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
+            {onCreate ? (
+              <button
+                type="button"
+                onClick={onCreate}
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+              >
+                <Plus className="size-4" />
+                {t("Nueva nota")}
+              </button>
+            ) : null}
+          </span>
+        </div>
+        {children.length === 0 && items.length === 0 ? (
+          <p className="mt-8 text-sm text-faint">{t("Este portafolio está vacío.")}</p>
+        ) : null}
+        {children.length > 0 ? (
+          <section className="mt-6">
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Portafolios")}</h2>
+            <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+              {children.map((child) => (
+                <li key={child.id} className="border-b border-line last:border-b-0">
+                  <button
+                    type="button"
+                    onClick={() => onOpenPortfolio(child.id)}
+                    onContextMenu={(event) => openMenu(event, { kind: "portfolio", id: child.id })}
+                    className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
+                  >
+                    <Folder className="size-4 shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate text-sm">{child.name}</span>
+                    <span className="shrink-0 text-xs text-faint">{countIn(child.id)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+        {items.length > 0 ? (
+          <section className="mt-6">
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Notas y archivos")}</h2>
+            <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+              {items.map((document) => {
+                const Icon = document.kind === "file" ? File : FileText;
+                return (
+                  <li key={document.id} className="border-b border-line last:border-b-0">
+                    <button
+                      type="button"
+                      onClick={() => setActive(document.id)}
+                      onContextMenu={(event) => openMenu(event, { kind: "document", id: document.id })}
+                      className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
+                    >
+                      <Icon className="size-4 shrink-0 text-faint" />
+                      <span className="min-w-0 flex-1 truncate text-sm">{document.title}</span>
+                      <span className="shrink-0 text-xs text-faint">{formatWhen(document.updatedAt)}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+      </div>
+      {menu}
+    </div>
+  );
+}
+
+/** «Nuevo dibujo» (Excalidraw) en la carpeta que se está viendo. */
+function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | null; onOpenNote: (id: string) => void }) {
+  const can = usePermissions();
+  if (!can(PERMISSION.filesUpload)) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))}
+      className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated"
+    >
+      <PenTool className="size-4" />
+      {t("Nuevo dibujo")}
+    </button>
   );
 }
 

@@ -41,11 +41,14 @@ export function Sidebar({
   onCollapse,
   onOpenShared,
   onOpenTrash,
+  onOpenPortfolio,
   holdGraph,
 }: {
   onOpenNote: (id: string) => void;
   onOpenShared: () => void;
   onOpenTrash: () => void;
+  /** Abre un portafolio en el centro (sus subportafolios, notas y archivos). */
+  onOpenPortfolio: (id: string) => void;
   onInspect: (id: string) => void;
   onHome: () => void;
   onCollapse?: () => void;
@@ -316,7 +319,7 @@ export function Sidebar({
                 dropOver={dropOver}
                 onOpen={open}
                 onOpenContent={openContent}
-                onSelect={setSelectedPortfolio}
+                onSelect={holdGraph ? setSelectedPortfolio : onOpenPortfolio}
                 onToggle={toggleCollapsed}
                 onDragOver={acceptDrop}
                 onDrop={takeDrop}
@@ -613,7 +616,7 @@ function PortfolioBranch({
           onDragStart={(event) => onPortfolioDragStart(event, node.portfolio.id)}
           onClick={() => onSelect(node.portfolio.id)}
           onContextMenu={menuEvent}
-          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-sm font-medium text-fg select-none active:cursor-grabbing"
+          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg select-none active:cursor-grabbing"
         >
           {isCollapsed ? (
             <Folder className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`} />

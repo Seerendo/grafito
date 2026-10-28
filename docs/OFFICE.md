@@ -95,8 +95,8 @@ lawyer review it.*
   - Grafito doesn't include, link to or redistribute Collabora's code.
   - `docker-compose.yml` only references the official image, which each
     installation downloads itself.
-  - So Collabora's license (MPL 2.0 for the source code) and Grafito's
-    (AGPL-3.0) don't mix.
+  - So Collabora's license (MPL 2.0 for the source code) and Grafito's (MIT)
+    don't mix.
 - **The CODE image** used here (`collabora/code`) is the free *Development
   Edition*, intended for home use, testing and small setups. It comes with no
   support.
@@ -116,17 +116,13 @@ lawyer review it.*
   (`COLLABORA_URL=`) or point it at a licensed Collabora server. No code
   changes are needed.
 
-**Grafito itself (AGPL-3.0):**
+**Grafito itself (MIT):**
 
-- **Paid options are allowed:** as the copyright holder you can sell paid
-  options or run a paid hosted service. The AGPL allows charging.
-- **Source obligation:** if you run a modified Grafito as a network service,
-  its users must be able to get the source of that modified version.
-- **Closed paid features:** keeping some paid features closed requires owning
-  the copyright of all the code, so you can license it under other terms too.
-  Before accepting outside contributions, ask contributors to sign a CLA (or a
-  similar agreement that lets you relicense). Otherwise, keep paid features in
-  separate services that don't modify Grafito.
+- **Anything goes, commercially too:** anyone may use, modify, sell or host
+  Grafito, including closed versions, as long as they keep the copyright and
+  license notice.
+- **No source obligation:** unlike the AGPL Grafito had before, running a
+  modified version as a service doesn't require publishing its source.
 
 ## Servers and HTTPS
 

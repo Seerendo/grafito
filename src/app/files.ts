@@ -1,5 +1,5 @@
 import { uuid } from "@/lib/uuid";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import type { Document, VaultFile } from "@/domain/vault/types";
 import { bearerHeader } from "@/lib/auth/bearer";
@@ -104,12 +104,20 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
   const inline = !file?.key && file?.dataUrl ? file.dataUrl : null;
   const key = file?.key ?? null;
 
+  const shownFor = useRef(docId);
+
   useEffect(() => setAttempt(0), [docId]);
 
   useEffect(() => {
     if (inline || !key) return;
     let cancelled = false;
-    setState(null);
+    // Otro documento: sin enlaces hasta tener los suyos. El mismo con una
+    // versión nueva (lo guardó un dibujo o el editor de Office): se siguen
+    // mostrando los anteriores mientras llegan, sin desmontar la vista.
+    if (shownFor.current !== docId) {
+      shownFor.current = docId;
+      setState(null);
+    }
     let timer = 0;
     void ownLinks(docId).then((next) => {
       if (cancelled) return;

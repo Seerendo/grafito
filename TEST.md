@@ -1079,6 +1079,26 @@ Test stack. A two-page PDF where «EXP-7781» appears on both pages.
 | `anchor` unit tests (context, repeated phrase, edited surroundings, missing phrase, keys, validation) | ✅ 6 tests |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
 
+## Round 34: portfolio pages, full screen, comments, drawings, MIT
+
+Test stack, Cristal design, «e2eadmin» (owner, `127.0.0.1`) and «carla» (LDAP,
+`localhost`).
+
+| Case | Result |
+| --- | --- |
+| Click «Carpeta Personal» | ❌→✅ only listed recent documents; now lists its portfolios too (Documentación, 5) |
+| Click «Atlas» / «Documentación» in the directory | ✅ the center shows the path, «Nuevo dibujo» / «Nueva nota», and its notes and files / its 5 sub-portfolios with counts |
+| Hovering a portfolio in the directory (Cristal) | ❌→✅ the folder icon touched the edge of the hover pill; the row now has inner padding |
+| Full screen on a drawing | ✅ top bar, directory and details hidden; the drawing takes the screen. (The browser's own full screen needs a real click; not checked here) |
+| Full screen, «Vincular» open, Esc | ❌→✅ the dialog closes and full screen stays; a second Esc leaves full screen and the document stays open |
+| «Nuevo dibujo» | ✅ «Dibujo.excalidraw» in that portfolio, opened in Excalidraw (Spanish, dark like the theme); fonts served by Grafito (200) |
+| Type text in a drawing and wait past the autosave | ❌→✅ the text box closed and the text was lost: after each save `useFileLinks` dropped the file's links for a moment and the drawing unmounted. Now the same view stays (checked with a marker), the text box stays open, and both texts are in the saved file |
+| Drawing history | ✅ the original plus the grouped autosaves (2 versions) |
+| Share «Fuentes» read-only with Carla; Carla comments | ✅ no «Editar», a comments panel; her comment shows with name and time |
+| The owner sees it under «Comentarios» and replies | ✅ he can delete both; Carla gets the reply on the next refresh (20 s) and can delete only hers |
+| The note after commenting | ✅ unchanged (same date) |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
+
 ## Useful commands
 
 ```bash

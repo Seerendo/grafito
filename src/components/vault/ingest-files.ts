@@ -2,6 +2,7 @@ import { uploadVaultFile } from "@/app/files";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
+import { DRAWING_MIME, emptyDrawing } from "@/domain/vault/drawing";
 
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -50,4 +51,10 @@ export async function ingestExternalFiles(files: FileList | File[], portfolioId:
   const owner = useVault.getState().owner;
   if (uploaded && owner) await syncVault(owner);
   if (error) useVault.getState().setDialog({ type: "upload-error", message: error });
+}
+
+/** «Nuevo dibujo»: un dibujo de Excalidraw vacío en `portfolioId`, que queda abierto. */
+export async function createDrawing(portfolioId: string | null): Promise<void> {
+  const file = new File([emptyDrawing()], `${t("Dibujo")}.excalidraw`, { type: DRAWING_MIME });
+  await ingestExternalFiles([file], portfolioId);
 }

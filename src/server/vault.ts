@@ -5,6 +5,7 @@ import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
 import { noteChange } from "./notify";
+import { purgeComments } from "./comments";
 
 /**
  * La bóveda de cada usuario en el servidor (solo servidor). Fuente de verdad
@@ -634,6 +635,7 @@ export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Prom
       where user_id = ${userId} and id = ${id} and deleted
     `;
     await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
+    await purgeComments(sql, userId, id);
   }
 }
 

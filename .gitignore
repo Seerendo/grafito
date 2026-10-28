@@ -16,3 +16,5 @@ backups/
 # Local test stack (test services and images), not versioned
 docker-compose.test.yml
 backups-test/
+# Excalidraw fonts, copied from node_modules by vite.config.ts
+public/excalidraw/

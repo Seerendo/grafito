@@ -7,15 +7,18 @@ import { syncVault } from "@/app/vault/sync";
 import type { VaultFile } from "@/domain/vault/types";
 import { OfficeEditor } from "./OfficeEditor";
 import { PdfView } from "./PdfView";
+import { DrawingView } from "./DrawingView";
+import { isDrawingName } from "@/domain/vault/drawing";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import type { TextAnchor } from "@/domain/vault/anchor";
 import type { ManualLink } from "@/domain/vault/types";
 import { getLocale, t } from "@/app/i18n";
 
-type Kind = "image" | "pdf" | "video" | "audio" | "other";
+type Kind = "image" | "pdf" | "drawing" | "video" | "audio" | "other";
 
 function kindOf(mime: string, name: string): Kind {
+  if (isDrawingName(name)) return "drawing";
   if (mime.startsWith("image/") || /\.(svg|png|jpe?g|gif|webp|avif)$/i.test(name)) return "image";
   if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
   if (mime.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(name)) return "video";
@@ -43,6 +46,7 @@ export function FileView({
   links,
   shareId,
   onOpenNote,
+  canEdit = false,
 }: {
   title: string;
   file: VaultFile;
@@ -50,9 +54,17 @@ export function FileView({
   links?: FileLinks;
   shareId?: string;
   onOpenNote?: (id: string) => void;
+  /** En lo compartido: si se puede editar (dibujos). */
+  canEdit?: boolean;
 }) {
   return links ? (
-    <FileBody title={title} file={file} links={links} office={shareId ? { docId, shareId } : null} />
+    <FileBody
+      title={title}
+      file={file}
+      links={links}
+      office={shareId ? { docId, shareId } : null}
+      drawing={{ docId, shareId, canEdit: canEdit && Boolean(shareId) }}
+    />
   ) : (
     <OwnFile title={title} file={file} docId={docId} onOpenNote={onOpenNote} />
   );
@@ -94,7 +106,17 @@ function OwnFile({
     focus,
     onFocused,
   };
-  return <FileBody title={title} file={file} links={own.links} onBroken={own.retry} office={{ docId }} pdf={pdf} />;
+  return (
+    <FileBody
+      title={title}
+      file={file}
+      links={own.links}
+      onBroken={own.retry}
+      office={{ docId }}
+      pdf={pdf}
+      drawing={{ docId, canEdit: can(PERMISSION.notesEdit), onOpenNote }}
+    />
+  );
 }
 
 /** Tras una subida, el archivo tarda un instante en llegar al servidor: se reintenta unas veces. */
@@ -107,6 +129,7 @@ function FileBody({
   onBroken,
   office,
   pdf,
+  drawing,
 }: {
   title: string;
   file: VaultFile;
@@ -114,6 +137,7 @@ function FileBody({
   onBroken?: () => void;
   office: { docId: string; shareId?: string } | null;
   pdf?: PdfLinking;
+  drawing: { docId: string; shareId?: string; canEdit: boolean; onOpenNote?: (id: string) => void };
 }) {
   const kind = kindOf(file.mime, file.name);
   const [failures, setFailures] = useState(0);
@@ -185,6 +209,15 @@ function FileBody({
             alt={title}
             onError={broken}
             className="mx-auto max-h-full max-w-full rounded-md border border-line"
+          />
+        ) : kind === "drawing" ? (
+          <DrawingView
+            url={links.url}
+            docId={drawing.docId}
+            shareId={drawing.shareId}
+            canEdit={drawing.canEdit}
+            onSaved={pull}
+            onOpenNote={drawing.onOpenNote}
           />
         ) : kind === "pdf" ? (
           <PdfView key={links.url} url={links.url} title={title} {...pdf} />

@@ -18,6 +18,8 @@ let loader: Promise<PdfJs> | null = null;
 
 /** PDF.js y su worker, cargados solo cuando se abre un PDF. */
 function loadPdfJs(): Promise<PdfJs> {
+  // Solo en el navegador (ver `DrawingView`): fuera del build del servidor.
+  if (import.meta.env.SSR) return Promise.reject(new Error("PDF.js solo en el navegador"));
   loader ??= Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]).then(
     ([lib, worker]) => {
       lib.GlobalWorkerOptions.workerSrc = worker.default;

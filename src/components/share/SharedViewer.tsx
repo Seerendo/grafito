@@ -1,4 +1,4 @@
-import { BookOpen, ChevronRight, File, FileText, FolderOpen, Globe, History, PenLine, Users } from "lucide-react";
+import { BookOpen, ChevronRight, File, FileText, FolderOpen, Globe, History, MessageSquare, PenLine, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { FileView } from "@/components/vault/FileView";
 import { HistoryDialog } from "@/components/vault/HistoryDialog";
@@ -9,6 +9,8 @@ import { childrenOf, docsIn, orderDocuments, rootParent } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
 import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
+import { FullscreenButton } from "@/components/vault/FullscreenButton";
+import { Comments } from "@/components/vault/Comments";
 
 /**
  * Visor de una nota o un portafolio compartido: índice a la izquierda (o
@@ -46,6 +48,10 @@ export function SharedViewer({
   const [conflict, setConflict] = useState<{ content: string; updatedAt: number; updatedBy: string } | null>(null);
   const [history, setHistory] = useState(false);
   const dirty = editing && active !== null && draft !== active.content;
+  // Comentarios: dentro de la bóveda (con sesión), también en solo lectura.
+  const [commentsOpen, setCommentsOpen] = useState(true);
+  const [commentCount, setCommentCount] = useState(0);
+  const canComment = Boolean(onChange) && active !== null;
   const editors = useNotePresence(active && !active.file ? active.id : null, editing, tree.share.id);
 
   useEffect(() => {
@@ -119,6 +125,20 @@ export function SharedViewer({
             {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
           </span>
           {message ? <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
+          {canComment ? (
+            <button
+              type="button"
+              aria-pressed={commentsOpen}
+              aria-label={t("Comentarios")}
+              title={t("Comentarios")}
+              onClick={() => setCommentsOpen((value) => !value)}
+              className={`inline-flex h-9 items-center gap-1 rounded-md px-2 ${commentsOpen ? "text-accent" : "text-muted hover:text-fg"}`}
+            >
+              <MessageSquare className="size-4" />
+              {commentCount > 0 ? <span className="text-xs">{commentCount}</span> : null}
+            </button>
+          ) : null}
+          <FullscreenButton className="h-9 w-9" />
           {canEdit ? (
             <span className="flex shrink-0 items-center gap-1">
               <button
@@ -227,6 +247,7 @@ export function SharedViewer({
             docId={active.id}
             links={active.file}
             shareId={onChange ? tree.share.id : undefined}
+            canEdit={tree.share.access === "edit" && Boolean(onChange)}
           />
         ) : editing ? (
           <textarea
@@ -257,6 +278,18 @@ export function SharedViewer({
           </div>
         )}
       </div>
+      {canComment && commentsOpen && active ? (
+        <aside
+          aria-label={t("Comentarios")}
+          className="max-h-[45vh] shrink-0 overflow-y-auto border-t border-line bg-surface p-3 md:max-h-none md:w-80 md:border-t-0 md:border-l"
+        >
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">
+            <MessageSquare className="size-3.5" />
+            {t("Comentarios")}
+          </p>
+          <Comments docId={active.id} shareId={tree.share.id} onCount={setCommentCount} />
+        </aside>
+      ) : null}
     </div>
   );
 }

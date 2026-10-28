@@ -234,8 +234,11 @@ After that, the start screen is a normal sign-in.
 ### Layout
 
 - **Left: the directory.** It has two roots:
-  - **Carpeta Personal** (personal folder, formerly «Raíz») holds your own (private) notes, portfolios and files. Its page
-    lists your recent documents.
+  - **Carpeta Personal** (personal folder, formerly «Raíz») holds your own
+    (private) notes, portfolios and files. Its page lists your portfolios and
+    your recent documents.
+  - Clicking a portfolio opens its page in the center: its path, its
+    sub-portfolios, and its notes and files.
   - **Compartidos conmigo** holds what others shared with you.
   - **Papelera** (trash) holds what you deleted.
   - Collapse the directory with the « arrow to get a wider editor. It opens
@@ -243,8 +246,12 @@ After that, the start screen is a normal sign-in.
 - **Center: the open note.** On the Carpeta Personal page, right-click a recent document
   (or the empty space) for the same menu as in the directory.
 - **Right: the details panel.** It shows the outline, manual links, links
-  written in the text, and mentions (backlinks). Collapse it with the »
-  arrow.
+  written in the text, mentions (backlinks) and comments. Collapse it with the
+  » arrow.
+- **Full screen:** the ⤢ button of a note or file hides the top bar and both
+  panels, and asks the browser for full screen. Esc closes an open dialog
+  first, then leaves full screen (in Chrome and Edge; elsewhere the browser
+  leaves full screen on the first Esc).
 - **On phones,** a bottom bar switches between Notes, Note, Graph and Links.
 
 ### Notes
@@ -272,6 +279,14 @@ After that, the start screen is a normal sign-in.
     (`GRAFITO_MAX_UPLOAD_MB`).
   - Images, PDFs, video and audio are previewed. Everything else can be
     downloaded.
+- **Drawings:** **Nuevo dibujo** (on a portfolio's page or in the right-click
+  menu) creates an Excalidraw drawing.
+  - It is a `.excalidraw` file, so it can be linked, shared and restored from
+    its history like any file.
+  - It saves itself a couple of seconds after each change.
+  - In a shape's link (Ctrl+K), a note's title (or `[[Title]]`) opens that
+    note in Grafito.
+  - Excalidraw and its fonts are served by Grafito, so drawings work offline.
 - **Linking a phrase in a PDF:** select a word or phrase in a PDF (a document
   number, for example) and click **Vincular selección**. Then pick the note or
   file it points to.
@@ -335,6 +350,12 @@ Public links are always read-only.
     choose: keep their version (**Usar la suya**) or save yours on top
     (**Guardar la mía**). Both versions stay in the history.
   - Office documents are edited by everyone at once, live, in Collabora.
+- **Comments:** anyone a note or file is shared with, even read-only, can
+  comment on it without editing it. The owner sees the comments under
+  **Comentarios** in the details panel. Others see them beside the shared
+  document. Each person can delete their own comments; the owner can delete
+  any of them. Comments are deleted with the document when the trash is
+  emptied.
 - **Revoking:** setting an item back to private, or deleting it, revokes access
   immediately.
 
@@ -558,6 +579,6 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 
 ## License
 
-Grafito is licensed under the [GNU Affero General Public License v3.0](LICENSE).
-If you run a modified version as a network service, you must offer its source
-code to the users of that service.
+Grafito is licensed under the [MIT License](LICENSE). Collabora Online, the
+optional Office editor, is a separate program with its own license (see
+[docs/OFFICE.md](docs/OFFICE.md#licensing-and-business-use)).

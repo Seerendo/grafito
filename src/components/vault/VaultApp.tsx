@@ -37,6 +37,7 @@ import { Sidebar, SidebarRail } from "./Sidebar";
 import { NotePdfHost } from "./NotePdf";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
 import { t } from "@/app/i18n";
+import { useFullscreen, watchFullscreen } from "@/app/fullscreen";
 
 type Pane = "files" | "note" | "graph" | "links";
 
@@ -181,6 +182,10 @@ function VaultWorkspace() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (useFullscreen.getState().on && !useVault.getState().dialog && !useAiChat.getState().open) {
+          useFullscreen.getState().exit();
+          return;
+        }
         if (useAiChat.getState().open) {
           useAiChat.getState().setOpen(false);
           return;
@@ -261,6 +266,21 @@ function VaultWorkspace() {
     setTreeOpen((open) => !open);
   };
 
+  const fullscreen = useFullscreen((state) => state.on);
+  useEffect(() => watchFullscreen(), []);
+  // Sin nada abierto no hay qué ver a pantalla completa.
+  const nothingOpen = useVault((state) => !state.activeId) && !sharedPane;
+  useEffect(() => {
+    if (fullscreen && nothingOpen) useFullscreen.getState().exit();
+  }, [fullscreen, nothingOpen]);
+
+  const showPortfolio = (id: string) => {
+    useSharedView.getState().closeShared();
+    useTrashView.getState().setOpen(false);
+    useVault.getState().openPortfolio(id);
+    setPane("note");
+  };
+
   const showHome = () => {
     useSharedView.getState().closeShared();
     useTrashView.getState().setOpen(false);
@@ -283,6 +303,7 @@ function VaultWorkspace() {
   return (
     <VisibilityProvider>
     <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+      {fullscreen ? null : (
       <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button
           type="button"
@@ -335,14 +356,25 @@ function VaultWorkspace() {
           </button>
         ) : null}
       </header>
+      )}
 
       <div data-ui="panes" className="flex min-h-0 flex-1">
-        {mobile ? (
+        {fullscreen ? (
+          // Pantalla completa: solo la nota o el archivo abierto (ver `app/fullscreen.ts`).
+          <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
+            {sharedPane ?? (
+              <FileDrop enabled={canAddFiles} onAdded={openNote}>
+                <EditorPane mobile={mobile} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
+              </FileDrop>
+            )}
+          </div>
+        ) : mobile ? (
           pane === "files" ? (
             <Sidebar
               onOpenNote={openNote}
               onInspect={inspect}
               onHome={showHome}
+              onOpenPortfolio={showPortfolio}
               onOpenShared={openSharedDoc}
               onOpenTrash={openTrash}
               holdGraph={holdGraph}
@@ -367,6 +399,7 @@ function VaultWorkspace() {
                 onOpenNote={openNote}
                 onInspect={inspect}
                 onHome={showHome}
+                onOpenPortfolio={showPortfolio}
                 onOpenShared={openSharedDoc}
                 onOpenTrash={openTrash}
                 onCollapse={toggleTree}
@@ -403,7 +436,7 @@ function VaultWorkspace() {
         )}
       </div>
 
-      {mobile ? (
+      {mobile && !fullscreen ? (
         <nav data-ui="tabbar" className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}>
           <NavButton active={pane === "files"} label={t("Notas")} onClick={() => setPane("files")}>
             <Folder className="size-5" />

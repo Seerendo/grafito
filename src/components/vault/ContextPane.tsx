@@ -1,4 +1,17 @@
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, ChevronsLeft, ChevronsRight, FileText, Hash, Link2, ListTree, Plus, X } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  FileText,
+  Hash,
+  Link2,
+  ListTree,
+  MessageSquare,
+  Plus,
+  X,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
@@ -7,13 +20,14 @@ import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
 import { linkKey } from "@/domain/vault/anchor";
+import { Comments } from "./Comments";
 
 const KIND_LABEL: Record<ManualKind, string> = {
   referencia: "referencia",
   llama: "invoca",
 };
 
-type SectionKey = "esquema" | "vinculos" | "escritos" | "menciones";
+type SectionKey = "esquema" | "vinculos" | "escritos" | "menciones" | "comentarios";
 
 type OutlineNode = {
   id: string;
@@ -65,7 +79,9 @@ export function ContextPane({
     vinculos: true,
     escritos: true,
     menciones: true,
+    comentarios: true,
   });
+  const [commentCount, setCommentCount] = useState(0);
   const [foldedHeads, setFoldedHeads] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -297,6 +313,15 @@ export function ContextPane({
             ))}
           </ul>
         )}
+      </Section>
+
+      <Section
+        title={t("Comentarios")}
+        icon={<MessageSquare className="size-3.5" />}
+        count={commentCount}
+        fold={{ open: openSections.comentarios, onToggle: () => toggleSection("comentarios") }}
+      >
+        <Comments docId={document.id} onCount={setCommentCount} />
       </Section>
 
       {document.kind === "markdown" ? (

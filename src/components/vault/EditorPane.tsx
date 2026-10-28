@@ -35,10 +35,12 @@ import { PERMISSION, deletePermission, exportPermission } from "@/domain/permiss
 import { downloadFile } from "@/app/files";
 import { keepMine, keepTheirs, syncVault } from "@/app/vault/sync";
 import { useNotePresence } from "@/app/presence";
+import { useFullscreen } from "@/app/fullscreen";
 import { FileView } from "./FileView";
 import { HistoryDialog } from "./HistoryDialog";
-import { HomeBoard } from "./HomeBoard";
+import { HomeBoard, PortfolioBoard } from "./HomeBoard";
 import { EditingNow } from "./EditingNow";
+import { FullscreenButton } from "./FullscreenButton";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
 import { requestNotePdf } from "./NotePdf";
@@ -102,6 +104,13 @@ export function EditorPane({
   const setDialog = useVault((state) => state.setDialog);
   const createDocument = useVault((state) => state.createDocument);
   const conflicts = useVault((state) => state.conflicts);
+  const openPortfolio = useVault((state) => state.openPortfolio);
+  const showStart = useVault((state) => state.showStart);
+  const boardPortfolio = useVault((state) =>
+    state.folderPicked && state.selectedPortfolioId && state.portfolios.some((item) => item.id === state.selectedPortfolioId)
+      ? state.selectedPortfolioId
+      : null,
+  );
   const can = usePermissions();
   const canEdit = can(PERMISSION.notesEdit);
   // Quién más edita esta nota; y, en modo Editar o Dividir, aviso de que aquí también.
@@ -149,6 +158,18 @@ export function EditorPane({
       window.removeEventListener("keydown", onKey, true);
     };
   }, [menu, insertOpen]);
+
+  if (!document && boardPortfolio) {
+    return (
+      <PortfolioBoard
+        portfolioId={boardPortfolio}
+        onCreate={can(PERMISSION.notesCreate) ? () => createDocument() : undefined}
+        onOpenNote={onOpenNote}
+        onOpenPortfolio={openPortfolio}
+        onHome={showStart}
+      />
+    );
+  }
 
   if (!document) {
     return (
@@ -319,10 +340,14 @@ export function EditorPane({
         </div>
         <div className="flex shrink-0 items-center">
           <VisibilityMark id={document.id} className="px-2" />
+          <FullscreenButton />
           <button
             type="button"
             aria-label={t("Cerrar documento")}
-            onClick={onClose}
+            onClick={() => {
+              useFullscreen.getState().exit();
+              onClose();
+            }}
             className="grid h-11 w-11 place-items-center rounded-md text-muted hover:text-fg"
           >
             <X className="size-4" />

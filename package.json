@@ -1,7 +1,7 @@
 {
   "name": "grafito",
   "private": true,
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "sideEffects": false,
   "type": "module",
   "overrides": {
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@fontsource/literata": "^5.3.0",
     "@fontsource/outfit": "^5.3.0",
     "@tailwindcss/vite": "^4.3.0",
