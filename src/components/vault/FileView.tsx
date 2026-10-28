@@ -212,7 +212,6 @@ function FileBody({
           />
         ) : kind === "drawing" ? (
           <DrawingView
-            url={links.url}
             docId={drawing.docId}
             shareId={drawing.shareId}
             canEdit={drawing.canEdit}

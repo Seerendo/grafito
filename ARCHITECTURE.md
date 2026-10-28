@@ -552,15 +552,32 @@ seconds while visible.
 - **Viewing and editing:** `components/vault/DrawingView.tsx` loads
   `@excalidraw/excalidraw` only in the browser. `import.meta.env.SSR` keeps it
   out of the server build, because it reads `window` when loaded.
-- **Saving:** changes are saved 2 seconds after the last one through
-  `saveDrawing`. As with the Office editor, it writes a new object and a file
-  version (`replaceFile`, grouped as autosave).
+- **Reading:** a drawing is read with `readDrawing`, not through its signed
+  link. Each save writes a new object, and grouped autosaves delete the
+  previous one, so a link from a moment ago may point to a deleted object.
+- **Saving, almost in real time:** `saveDrawing` (`server/drawing.ts`) runs
+  0.6 seconds after a change, and at least every 2 seconds while changes keep
+  coming. Saves are queued, never two at once.
+  - Only real changes count (`getSceneVersion`, images, canvas color). Panning
+    or zooming doesn't save.
+  - Pending changes are saved on unmount and when the tab is hidden.
+  - On `pagehide` they go to `POST /api/drawings/:id` with `keepalive`, up to
+    64 KB, so a reload doesn't lose them.
+  - As with the Office editor, each save is a new object and a file version
+    (`replaceFile`, grouped as autosave).
+- **Menu:** Grafito passes its own `MainMenu`: export image, search, help,
+  clear and canvas color, without Excalidraw's links or loading and saving
+  loose files.
+  - Below about 730 px, Excalidraw switches to its mobile layout, for example
+    in the center between both panels. There, `styles.css` keeps that menu at
+    the bottom with a capped height, instead of covering the canvas.
 - **Fonts:** `vite.config.ts` copies the 14 MB of fonts to
   `public/excalidraw/` (not versioned), and `EXCALIDRAW_ASSET_PATH` points
   there. Nothing is loaded from a CDN.
 - **No unmounting:** after a save the file gets a new key. `useFileLinks` keeps
   the previous signed links until the new ones arrive, so the drawing (or the
-  Office editor) stays mounted. Before this, the view unmounted for a moment
+  Office editor) stays mounted. Its link cache is keyed by document and file
+  key, so it never hands out a link to an earlier version. Before this, the view unmounted for a moment
   and lost the text being typed.
 - **The AI** reads a drawing's text elements, not its JSON (`fileText`).
 

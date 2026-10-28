@@ -1099,6 +1099,20 @@ Test stack, Cristal design, «e2eadmin» (owner, `127.0.0.1`) and «carla» (LDA
 | The note after commenting | ✅ unchanged (same date) |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
 
+## Round 35: Excalidraw drawings, saving and menu
+
+Test stack, a drawing opened in the center (358 px wide, between both panels).
+Results checked in what `readDrawing` returns and in the stored object.
+
+| Case | Result |
+| --- | --- |
+| Close a drawing after saving and open it again | ❌→✅ showed the old drawing, or «No se pudo abrir el dibujo». The signed-link cache was keyed by document only, so it kept handing out the previous version's link, and grouped autosaves delete that object. Drawings now load through `readDrawing`, and the cache is keyed by file key too. The reopened drawing has the text |
+| Type and close the drawing 100 ms later | ✅ saved on unmount; the text is there when reopened |
+| Keep typing in a text box | ✅ saved while still editing (at 1.6 s, then on finishing); the stored file has the text before the box is closed |
+| Type and reload the page 200 ms later | ❌→✅ was lost (the request died with the page); now sent with `keepalive` to `POST /api/drawings/:id` and stored |
+| Options menu (☰) at 358 px (Excalidraw's mobile layout) | ❌→✅ covered the whole canvas and listed GitHub, Follow us and Discord; now Grafito's own items, 277 of 514 px high |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
+
 ## Useful commands
 
 ```bash

@@ -918,3 +918,14 @@ html[data-tone="dark"] .theme-moon {
 .pdf-link-hover .textLayer :is(span, br) {
   cursor: pointer;
 }
+
+/*
+ * Dibujos (`components/vault/DrawingView.tsx`): con poco ancho (el centro entre
+ * los dos paneles) Excalidraw pasa a su diseño de móvil, donde su menú ocupaba
+ * todo el lienzo. Aquí se queda abajo, con un alto máximo y su propio scroll.
+ */
+[data-ui="drawing"] .dropdown-menu--mobile {
+  top: auto !important;
+  max-height: min(26rem, 55dvh);
+  overflow-y: auto;
+}

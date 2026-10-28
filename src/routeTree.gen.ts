@@ -19,6 +19,7 @@ import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$sh
 import { Route as PTokenRouteImport } from './routes/p/$token'
 import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDrawingsIdRouteImport } from './routes/api/drawings/$id'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files/$id'
 import { Route as ApiFilesUploadsRouteImport } from './routes/api/files/uploads'
 import { Route as ApiV1MeRouteImport } from './routes/api/v1/me'
@@ -79,6 +80,11 @@ const ApiAiChatRoute = ApiAiChatRouteImport.update({
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDrawingsIdRoute = ApiDrawingsIdRouteImport.update({
+  id: '/api/drawings/$id',
+  path: '/api/drawings/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiFilesIdRoute = ApiFilesIdRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
   '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByTo {
   '/compartidos': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
   '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
   '/api/files/uploads': typeof ApiFilesUploadsRouteWithChildren
   '/api/v1/me': typeof ApiV1MeRoute
@@ -220,6 +229,7 @@ export interface FileRouteTypes {
     | '/compartidos/'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/drawings/$id'
     | '/api/files/$id'
     | '/api/files/uploads'
     | '/api/v1/me'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/compartidos'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/drawings/$id'
     | '/api/files/$id'
     | '/api/files/uploads'
     | '/api/v1/me'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/compartidos/'
     | '/api/ai/chat'
     | '/api/auth/$'
+    | '/api/drawings/$id'
     | '/api/files/$id'
     | '/api/files/uploads'
     | '/api/v1/me'
@@ -290,6 +302,7 @@ export interface RootRouteChildren {
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   ApiAiChatRoute: typeof ApiAiChatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDrawingsIdRoute: typeof ApiDrawingsIdRoute
   ApiFilesIdRoute: typeof ApiFilesIdRoute
   ApiFilesUploadsRoute: typeof ApiFilesUploadsRouteWithChildren
   ApiV1MeRoute: typeof ApiV1MeRoute
@@ -368,6 +381,13 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/drawings/$id': {
+      id: '/api/drawings/$id'
+      path: '/api/drawings/$id'
+      fullPath: '/api/drawings/$id'
+      preLoaderRoute: typeof ApiDrawingsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/files/$id': {
@@ -511,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   CompartidosIndexRoute: CompartidosIndexRoute,
   ApiAiChatRoute: ApiAiChatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDrawingsIdRoute: ApiDrawingsIdRoute,
   ApiFilesIdRoute: ApiFilesIdRoute,
   ApiFilesUploadsRoute: ApiFilesUploadsRouteWithChildren,
   ApiV1MeRoute: ApiV1MeRoute,

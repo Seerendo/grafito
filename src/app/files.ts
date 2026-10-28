@@ -81,12 +81,18 @@ export async function uploadVaultFile(file: File): Promise<{ key: string; size: 
 const FRESH_MS = 50 * 60_000;
 const links = new Map<string, { links: FileLinks | null; at: number }>();
 
-async function ownLinks(docId: string): Promise<FileLinks | null> {
-  const cached = links.get(docId);
+/**
+ * Por documento y versión del archivo (`key`): al guardarse (un dibujo, el
+ * editor de Office) el archivo pasa a otro objeto y el anterior puede
+ * borrarse, así que un enlace guardado de la versión vieja ya no sirve.
+ */
+async function ownLinks(docId: string, key: string | null): Promise<FileLinks | null> {
+  const id = `${docId}:${key ?? ""}`;
+  const cached = links.get(id);
   if (cached && Date.now() - cached.at < FRESH_MS) return cached.links;
   const fresh = await fileLink({ data: { docId } }).catch(() => null);
   // Solo se recuerda lo que salió bien: un archivo recién subido aún puede no estar en el servidor.
-  if (fresh) links.set(docId, { links: fresh, at: Date.now() });
+  if (fresh) links.set(id, { links: fresh, at: Date.now() });
   return fresh;
 }
 
@@ -119,7 +125,7 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
       setState(null);
     }
     let timer = 0;
-    void ownLinks(docId).then((next) => {
+    void ownLinks(docId, key).then((next) => {
       if (cancelled) return;
       setState(next);
       if (!next && attempt < LINK_RETRIES) timer = window.setTimeout(() => setAttempt((value) => value + 1), 1500);
@@ -133,7 +139,7 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
   return {
     links: inline ? { url: inline, downloadUrl: inline } : state,
     retry: () => {
-      links.delete(docId);
+      links.delete(`${docId}:${key ?? ""}`);
       setAttempt((value) => value + 1);
     },
   };
@@ -143,7 +149,7 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
 export async function downloadFile(document: Document): Promise<void> {
   const file = document.file;
   if (!file) return;
-  const href = file.key ? (await ownLinks(document.id))?.downloadUrl : file.dataUrl;
+  const href = file.key ? (await ownLinks(document.id, file.key))?.downloadUrl : file.dataUrl;
   if (!href) return;
   const link = window.document.createElement("a");
   link.href = href;

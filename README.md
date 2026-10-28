@@ -283,7 +283,9 @@ After that, the start screen is a normal sign-in.
   menu) creates an Excalidraw drawing.
   - It is a `.excalidraw` file, so it can be linked, shared and restored from
     its history like any file.
-  - It saves itself a couple of seconds after each change.
+  - It saves itself as you draw: shortly after each change, and at least
+    every two seconds while you keep drawing. What's pending is also saved
+    when you close it, switch tabs or reload the page.
   - In a shape's link (Ctrl+K), a note's title (or `[[Title]]`) opens that
     note in Grafito.
   - Excalidraw and its fonts are served by Grafito, so drawings work offline.
