@@ -560,6 +560,30 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
 
 ## Files
 
+**Links from a phrase of a PDF.**
+
+- PDFs are shown with PDF.js (`pdfjs-dist`, loaded only when a PDF opens) in
+  `components/vault/PdfView.tsx`.
+  - Each page gets a canvas plus PDF.js's text layer, so text can be selected.
+  - Pages are drawn as they come near the view.
+  - The text-layer CSS (`.textLayer`) is copied from `web/pdf_viewer.css` into
+    `styles.css`.
+- **Anchor:** a manual link may carry `anchor: { page, exact, prefix, suffix }`
+  (`domain/vault/anchor.ts`): the selected text plus 32 characters on each
+  side, like the web-annotation `TextQuoteSelector`.
+- **Finding the phrase again:** `locate` picks the occurrence whose
+  surroundings match best, so a repeated phrase stays put and small edits
+  around it don't break it. A phrase that is gone isn't highlighted, and the
+  link stays in **Vínculos**.
+- **Identity:** `linkKey` tells links apart by target plus anchor. A document
+  can therefore have several anchored links to one target, and also a
+  whole-file link to it.
+- **Where anchors show:**
+  - **Vínculos** lists the phrase and its page.
+  - **Menciones** lists it too. Clicking it sets `focusAnchor`, and the viewer
+    scrolls to the phrase and flashes it.
+  - The graph keeps one edge per pair.
+
 File bytes no longer travel inside notes. A file document carries
 `{ name, mime, key, size }`; the bytes live in MinIO / S3 under
 `vault/<userId>/<uuid>`, or in `file_blob` when no object storage is

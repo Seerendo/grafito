@@ -272,6 +272,15 @@ After that, the start screen is a normal sign-in.
     (`GRAFITO_MAX_UPLOAD_MB`).
   - Images, PDFs, video and audio are previewed. Everything else can be
     downloaded.
+- **Linking a phrase in a PDF:** select a word or phrase in a PDF (a document
+  number, for example) and click **Vincular selección**. Then pick the note or
+  file it points to.
+  - The phrase stays highlighted. Clicking it opens its target.
+  - The target lists it under **Menciones** with its page («Contrato.pdf ·
+    pág. 2 · «EXP-7781»»). Clicking that opens the PDF at the phrase.
+  - A PDF can have several linked phrases, even to the same target, besides
+    links from the whole file.
+  - Scanned PDFs have no text to select.
 - On a phone, or without drag and drop, use **Subir archivo** in the
   right-click (long-press) menu. It accepts several files and treats `.md` the
   same way.

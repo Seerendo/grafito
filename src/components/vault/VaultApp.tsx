@@ -695,6 +695,12 @@ function VaultDialogs() {
   if (dialog.type === "link") {
     return (
       <Modal title={t("Vincular")} onClose={() => setDialog(null)}>
+        {dialog.anchor ? (
+          <p className="mb-3 rounded-md bg-inset px-3 py-2 text-sm">
+            «{dialog.anchor.exact}»
+            <span className="text-faint">{" · "}{t("pág. {0}", { 0: dialog.anchor.page })}</span>
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-2">
           <KindButton active={kind === "referencia"} label={t("Referencia")} onClick={() => setKind("referencia")} />
           <KindButton active={kind === "llama"} label={t("Invoca")} onClick={() => setKind("llama")} />
@@ -710,7 +716,7 @@ function VaultDialogs() {
             <li key={document.id}>
               <button
                 type="button"
-                onClick={() => addManualLink(dialog.sourceId, document.id, kind)}
+                onClick={() => addManualLink(dialog.sourceId, document.id, kind, dialog.anchor)}
                 className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-elevated"
               >
                 <span className="truncate">{document.title}</span>

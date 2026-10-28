@@ -1,11 +1,16 @@
 import { Download, PenLine } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFileLinks, type FileLinks } from "@/app/files";
 import { isOfficeFile, useOfficeEnabled, useOfficeReload } from "@/app/office";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import type { VaultFile } from "@/domain/vault/types";
 import { OfficeEditor } from "./OfficeEditor";
+import { PdfView } from "./PdfView";
+import { usePermissions } from "@/app/permissions";
+import { PERMISSION } from "@/domain/permissions";
+import type { TextAnchor } from "@/domain/vault/anchor";
+import type { ManualLink } from "@/domain/vault/types";
 import { getLocale, t } from "@/app/i18n";
 
 type Kind = "image" | "pdf" | "video" | "audio" | "other";
@@ -28,7 +33,8 @@ function formatSize(bytes: number | undefined): string {
  * Vista de un archivo. En la bóveda propia pide sus enlaces firmados
  * (`docId`); en lo compartido llegan hechos (`links`). Los documentos de
  * Office se abren en el editor si el servidor lo tiene (`office`): `own` para
- * los propios, `shareId` para lo compartido conmigo.
+ * los propios, `shareId` para lo compartido conmigo. En los PDF propios se
+ * puede vincular una frase con otro documento (`PdfView`).
  */
 export function FileView({
   title,
@@ -36,23 +42,59 @@ export function FileView({
   docId,
   links,
   shareId,
+  onOpenNote,
 }: {
   title: string;
   file: VaultFile;
   docId: string;
   links?: FileLinks;
   shareId?: string;
+  onOpenNote?: (id: string) => void;
 }) {
   return links ? (
     <FileBody title={title} file={file} links={links} office={shareId ? { docId, shareId } : null} />
   ) : (
-    <OwnFile title={title} file={file} docId={docId} />
+    <OwnFile title={title} file={file} docId={docId} onOpenNote={onOpenNote} />
   );
 }
 
-function OwnFile({ title, file, docId }: { title: string; file: VaultFile; docId: string }) {
+/** Lo que el visor de PDF necesita para vincular frases y abrir sus destinos. */
+type PdfLinking = {
+  links: ManualLink[];
+  targetTitle: (id: string) => string | undefined;
+  onLink?: (anchor: TextAnchor) => void;
+  onOpen?: (id: string) => void;
+  focus: TextAnchor | null;
+  onFocused: () => void;
+};
+
+function OwnFile({
+  title,
+  file,
+  docId,
+  onOpenNote,
+}: {
+  title: string;
+  file: VaultFile;
+  docId: string;
+  onOpenNote?: (id: string) => void;
+}) {
   const own = useFileLinks(docId, file);
-  return <FileBody title={title} file={file} links={own.links} onBroken={own.retry} office={{ docId }} />;
+  const documents = useVault((state) => state.documents);
+  const setDialog = useVault((state) => state.setDialog);
+  const focus = useVault((state) => (state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null));
+  const setFocusAnchor = useVault((state) => state.setFocusAnchor);
+  const can = usePermissions();
+  const onFocused = useCallback(() => setFocusAnchor(null), [setFocusAnchor]);
+  const pdf: PdfLinking = {
+    links: documents.find((item) => item.id === docId)?.links ?? [],
+    targetTitle: (id) => documents.find((item) => item.id === id)?.title,
+    onLink: can(PERMISSION.linksManage) ? (anchor) => setDialog({ type: "link", sourceId: docId, anchor }) : undefined,
+    onOpen: onOpenNote,
+    focus,
+    onFocused,
+  };
+  return <FileBody title={title} file={file} links={own.links} onBroken={own.retry} office={{ docId }} pdf={pdf} />;
 }
 
 /** Tras una subida, el archivo tarda un instante en llegar al servidor: se reintenta unas veces. */
@@ -64,12 +106,14 @@ function FileBody({
   links,
   onBroken,
   office,
+  pdf,
 }: {
   title: string;
   file: VaultFile;
   links: FileLinks | null;
   onBroken?: () => void;
   office: { docId: string; shareId?: string } | null;
+  pdf?: PdfLinking;
 }) {
   const kind = kindOf(file.mime, file.name);
   const [failures, setFailures] = useState(0);
@@ -143,7 +187,7 @@ function FileBody({
             className="mx-auto max-h-full max-w-full rounded-md border border-line"
           />
         ) : kind === "pdf" ? (
-          <iframe key={links.url} title={title} src={links.url} className="h-[70vh] w-full rounded-md border border-line bg-paper" />
+          <PdfView key={links.url} url={links.url} title={title} {...pdf} />
         ) : kind === "video" ? (
           <video key={links.url} src={links.url} controls onError={broken} className="mx-auto max-h-[70vh] max-w-full rounded-md" />
         ) : kind === "audio" ? (

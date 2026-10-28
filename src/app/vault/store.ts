@@ -2,6 +2,7 @@ import { uuid } from "@/lib/uuid";
 import { create } from "zustand";
 import { actorName } from "@/app/actor";
 import { findByTitle, replaceWikiTitle } from "@/domain/vault/links";
+import { isTextAnchor, linkKey, type TextAnchor } from "@/domain/vault/anchor";
 import { migrateLegacyVault, nestSamplePortfolios } from "@/domain/vault/migrate";
 import { PERMISSION, deletePermission } from "@/domain/permissions";
 import { descendantIds } from "@/domain/vault/portfolios";
@@ -9,6 +10,7 @@ import {
   type DialogState,
   type Document,
   type ManualKind,
+  type ManualLink,
   type Portfolio,
   type SyncBase,
   type ViewMode,
@@ -92,12 +94,14 @@ function born(): { createdAt: number; updatedAt: number; createdBy: string; upda
 
 function normalize(document: Document): Document {
   const links = Array.isArray(document.links)
-    ? document.links.filter(
-        (link) =>
-          link &&
-          typeof link.targetId === "string" &&
-          (link.kind === "referencia" || link.kind === "llama"),
-      )
+    ? document.links
+        .filter(
+          (link) =>
+            link &&
+            typeof link.targetId === "string" &&
+            (link.kind === "referencia" || link.kind === "llama"),
+        )
+        .map((link) => (link.anchor && !isTextAnchor(link.anchor) ? { targetId: link.targetId, kind: link.kind } : link))
     : [];
   return {
     id: document.id,
@@ -309,8 +313,12 @@ type VaultState = Persisted & {
   movePortfolio: (id: string, parentId: string | null) => void;
   renamePortfolio: (id: string, name: string) => boolean;
   resolveMove: (action: "replace" | "rename") => void;
-  addManualLink: (sourceId: string, targetId: string, kind: ManualKind) => void;
-  removeManualLink: (sourceId: string, targetId: string) => void;
+  /** Con `anchor`, el vínculo sale de esa frase del archivo (puede haber varios al mismo destino). */
+  addManualLink: (sourceId: string, targetId: string, kind: ManualKind, anchor?: TextAnchor) => void;
+  removeManualLink: (sourceId: string, link: Pick<ManualLink, "targetId" | "anchor">) => void;
+  /** Una frase vinculada a la que ir al abrir su archivo (desde Menciones). */
+  focusAnchor: { docId: string; anchor: TextAnchor } | null;
+  setFocusAnchor: (focus: { docId: string; anchor: TextAnchor } | null) => void;
   openTitle: (title: string) => void;
   duplicate: (id: string) => void;
   importNote: (title: string, content: string, portfolioId?: string | null) => void;
@@ -732,33 +740,39 @@ export const useVault = create<VaultState>((set, get) => ({
     });
   },
 
-  addManualLink: (sourceId, targetId, kind) => {
+  addManualLink: (sourceId, targetId, kind, anchor) => {
     if (!can(PERMISSION.linksManage)) return;
     if (sourceId === targetId) return;
+    const added: ManualLink = anchor ? { targetId, kind, anchor } : { targetId, kind };
+    const key = linkKey(added);
     set({
       documents: get().documents.map((document) => {
         if (document.id !== sourceId) return document;
-        const links = document.links.filter((link) => link.targetId !== targetId);
-        return { ...document, links: [...links, { targetId, kind }], ...mark(document) };
+        const links = document.links.filter((link) => linkKey(link) !== key);
+        return { ...document, links: [...links, added], ...mark(document) };
       }),
       dialog: null,
     });
   },
 
-  removeManualLink: (sourceId, targetId) => {
+  removeManualLink: (sourceId, removed) => {
     if (!can(PERMISSION.linksManage)) return;
+    const key = linkKey(removed);
     set({
       documents: get().documents.map((document) =>
         document.id === sourceId
           ? {
               ...document,
-              links: document.links.filter((link) => link.targetId !== targetId),
+              links: document.links.filter((link) => linkKey(link) !== key),
               ...mark(document),
             }
           : document,
       ),
     });
   },
+
+  focusAnchor: null,
+  setFocusAnchor: (focus) => set({ focusAnchor: focus }),
 
   openTitle: (title) => {
     const found = findByTitle(get().documents, title);

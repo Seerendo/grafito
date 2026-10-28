@@ -589,7 +589,7 @@ export function EditorPane({
             ) : null}
           </div>
         ) : null}
-        {showPreview && isFile && document.file ? <FileView title={document.title} file={document.file} docId={document.id} /> : null}
+        {showPreview && isFile && document.file ? <FileView title={document.title} file={document.file} docId={document.id} onOpenNote={onOpenNote} /> : null}
         {showPreview && !isFile ? (
           <div className="min-h-0 overflow-y-auto">
             <MarkdownView

@@ -6,6 +6,7 @@ import { useActiveDocument, useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
+import { linkKey } from "@/domain/vault/anchor";
 
 const KIND_LABEL: Record<ManualKind, string> = {
   referencia: "referencia",
@@ -57,6 +58,7 @@ export function ContextPane({
   const setDialog = useVault((state) => state.setDialog);
   const canLink = useCan(PERMISSION.linksManage);
   const removeManualLink = useVault((state) => state.removeManualLink);
+  const setFocusAnchor = useVault((state) => state.setFocusAnchor);
   const mode = useVault((state) => state.mode);
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     esquema: true,
@@ -107,11 +109,19 @@ export function ContextPane({
     });
   const incomingManual = documents
     .filter((item) => item.id !== document.id)
-    .flatMap((item) => {
-      const link = item.links.find((entry) => entry.targetId === document.id);
-      if (!link) return [];
-      return [{ id: item.id, title: item.title, detail: KIND_LABEL[link.kind], via: link.kind }];
-    });
+    .flatMap((item) =>
+      item.links
+        .filter((entry) => entry.targetId === document.id)
+        .map((link) => ({
+          id: item.id,
+          title: item.title,
+          // Desde una frase de un PDF: cuál y en qué página.
+          detail: link.anchor ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»` : KIND_LABEL[link.kind],
+          via: link.kind,
+          key: linkKey(link),
+          anchor: link.anchor,
+        })),
+    );
   const tags = document.kind === "markdown" ? extractTags(document.content) : [];
 
   const jump = (id: string) => {
@@ -175,7 +185,7 @@ export function ContextPane({
         ) : (
           <ul>
             {manual.map((item) => (
-              <li key={`${item.link.kind}-${item.link.targetId}`} className="flex items-center gap-1">
+              <li key={`${item.link.kind}-${linkKey(item.link)}`} className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={!item.target}
@@ -186,15 +196,22 @@ export function ContextPane({
                   <span className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-accent">
                     {KIND_LABEL[item.link.kind]}
                   </span>
-                  <span className={`truncate ${item.target ? "text-fg" : "text-muted"}`}>
-                    {item.target?.title ?? t("destino borrado")}
+                  <span className="min-w-0">
+                    <span className={`block truncate ${item.target ? "text-fg" : "text-muted"}`}>
+                      {item.target?.title ?? t("destino borrado")}
+                    </span>
+                    {item.link.anchor ? (
+                      <span className="block truncate text-xs text-faint">
+                        {t("pág. {0}", { 0: item.link.anchor.page })} · «{item.link.anchor.exact}»
+                      </span>
+                    ) : null}
                   </span>
                 </button>
                 {canLink ? (
                   <button
                     type="button"
                     aria-label={t("Quitar vínculo")}
-                    onClick={() => removeManualLink(document.id, item.link.targetId)}
+                    onClick={() => removeManualLink(document.id, item.link)}
                     className="grid h-10 w-9 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
                   >
                     <X className="size-3.5" />
@@ -259,10 +276,14 @@ export function ContextPane({
         ) : (
           <ul className="space-y-1">
             {[...incomingManual, ...incomingWiki].map((item) => (
-              <li key={`${item.via}-${item.id}`}>
+              <li key={`${item.via}-${item.id}-${"key" in item ? item.key : ""}`}>
                 <button
                   type="button"
-                  onClick={() => choose(item.id)}
+                  onClick={() => {
+                    // Desde una frase de un PDF: al abrirlo, ir a ella.
+                    if ("anchor" in item && item.anchor && !holdGraph) setFocusAnchor({ docId: item.id, anchor: item.anchor });
+                    choose(item.id);
+                  }}
                   onDoubleClick={() => onOpenNote(item.id)}
                   className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated"
                 >

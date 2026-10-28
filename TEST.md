@@ -1063,6 +1063,22 @@ its own session). Results checked in `vault_doc` and `vault_doc_version`.
 | `presence` unit tests (others only, leaving, expiry, per note) | ✅ 4 tests |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
 
+## Round 33: linking a phrase of a PDF
+
+Test stack. A two-page PDF where «EXP-7781» appears on both pages.
+
+| Case | Result |
+| --- | --- |
+| Open the PDF | ✅ the new viewer (PDF.js) shows both pages with selectable text; the worker loads under the existing CSP |
+| Select «EXP-7781» on page 2 | ✅ «Vincular selección» appears next to it; the dialog shows «EXP-7781» · pág. 2 |
+| Link it to «Bitácora de campo» | ✅ only page 2's occurrence is highlighted (not page 1's); the highlight lines up with the text (within 1 px). «Vínculos» shows «Bitácora de campo · pág. 2 · «EXP-7781»» |
+| Hover and click the highlight | ✅ hand cursor, the target's title as a tooltip; the click opens the note |
+| «Menciones» of the note | ✅ «Contrato de obra · pág. 2 · «EXP-7781»»; clicking it opens the PDF scrolled to the phrase |
+| Clear the browser's copy and reload | ✅ the link comes back from the server (`links_json` keeps the anchor) and is highlighted again |
+| A second phrase (page 1) to the same note, then remove page 2's | ✅ two separate links; removing one keeps the other |
+| `anchor` unit tests (context, repeated phrase, edited surroundings, missing phrase, keys, validation) | ✅ 6 tests |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
+
 ## Useful commands
 
 ```bash

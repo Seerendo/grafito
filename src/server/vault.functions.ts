@@ -5,6 +5,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { MAX_CONTENT, pullChanges, pushChanges } from "@/server/vault";
+import { MAX_EXACT } from "@/domain/vault/anchor";
 
 /** Sincronización de la bóveda del navegador con la del servidor (ver `app/vault/sync.ts`). */
 
@@ -27,7 +28,23 @@ const docSchema = z.object({
       dataUrl: z.string().max(1_500_000).optional(),
     })
     .nullable(),
-  links: z.array(z.object({ targetId: id, kind: z.enum(["referencia", "llama"]) })).max(200),
+  links: z
+    .array(
+      z.object({
+        targetId: id,
+        kind: z.enum(["referencia", "llama"]),
+        // Vínculo desde una frase de un PDF (ver `domain/vault/anchor.ts`).
+        anchor: z
+          .object({
+            page: z.number().int().min(1).max(100_000),
+            exact: z.string().min(1).max(MAX_EXACT),
+            prefix: z.string().max(64),
+            suffix: z.string().max(64),
+          })
+          .optional(),
+      }),
+    )
+    .max(500),
   pinned: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number(),

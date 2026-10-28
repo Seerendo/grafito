@@ -5,6 +5,7 @@ import { extractHeadings, extractWikiLinks } from "@/domain/vault/links";
 import type { GraphKind } from "@/domain/vault/types";
 import { useVault } from "@/app/vault/store";
 import { t } from "@/app/i18n";
+import { linkKey } from "@/domain/vault/anchor";
 
 type SimNode = {
   id: string;
@@ -807,8 +808,9 @@ function NodeCard() {
               const target = documents.find((item) => item.id === link.targetId);
               const label = link.kind === "llama" ? t("Invoca") : t("Referencia");
               return (
-                <li key={`${link.kind}-${link.targetId}`} className="truncate py-0.5">
+                <li key={`${link.kind}-${linkKey(link)}`} className="truncate py-0.5">
                   {t(label)} · {target?.title ?? t("sin destino")}
+                  {link.anchor ? ` · «${link.anchor.exact}»` : ""}
                 </li>
               );
             })}

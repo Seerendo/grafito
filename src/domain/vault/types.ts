@@ -1,3 +1,5 @@
+import type { TextAnchor } from "./anchor";
+
 export type ViewMode = "edit" | "split" | "read";
 
 export type ManualKind = "referencia" | "llama";
@@ -5,6 +7,8 @@ export type ManualKind = "referencia" | "llama";
 export type ManualLink = {
   targetId: string;
   kind: ManualKind;
+  /** Desde una frase del archivo (un PDF), no desde todo el archivo. */
+  anchor?: TextAnchor;
 };
 
 export type Portfolio = {
@@ -65,7 +69,7 @@ export type DialogState =
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }
-  | { type: "link"; sourceId: string }
+  | { type: "link"; sourceId: string; anchor?: TextAnchor }
   | { type: "share"; kind: "document" | "portfolio"; id: string }
   | { type: "upload-error"; message: string }
   | { type: "reset" }
