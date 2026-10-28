@@ -30,6 +30,9 @@ export function MermaidDiagram({ chart, variant = "app" }: { chart: string; vari
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: "strict",
+          // Ni imágenes en las etiquetas: en una nota compartida servirían de
+          // píxel de rastreo hacia otro servidor.
+          dompurifyConfig: { FORBID_TAGS: ["img", "image"] },
           theme,
           fontFamily: variant === "print" ? "Georgia, serif" : "Outfit, sans-serif",
           suppressErrorRendering: true,

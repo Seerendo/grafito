@@ -18,8 +18,14 @@ function officeOrigin(requestUrl: string): string | null {
   }
 }
 
-/** Middleware global de peticiones: cabeceras de seguridad en cada respuesta. */
+/**
+ * Middleware global de peticiones: antes de nada, los secretos propios de la
+ * instalación si faltan o son los de ejemplo (`server/install-secrets.ts`);
+ * después, cabeceras de seguridad en cada respuesta.
+ */
 const withSecurityHeaders = createMiddleware().server(async ({ next, request }) => {
+  const { ensureInstallSecrets } = await import("@/server/install-secrets");
+  ensureInstallSecrets();
   const result = await next();
   const headers = securityHeaders(process.env.NODE_ENV !== "production", officeOrigin(request.url));
   for (const [name, value] of Object.entries(headers)) {

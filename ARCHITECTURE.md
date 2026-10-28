@@ -535,6 +535,16 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
 - **Permissions:** the server rejects changes from users without write
   permission, and deletions without the delete permission.
 
+## Installation secrets
+
+`server/install-secrets.ts` runs before the first request (global middleware
+in `start.ts`) and in `getAuth`. If `BETTER_AUTH_SECRET` or
+`GRAFITO_ENCRYPTION_KEY` are missing, or hold the example values older
+`docker-compose.yml` files shipped, it uses random ones kept in
+`GRAFITO_SECRETS_DIR` (the `grafito_secrets` volume in Docker), not in the
+database. The old example encryption key becomes `GRAFITO_ENCRYPTION_KEY_PREVIOUS`
+so existing ciphertext still opens. See docs/SECURITY.md.
+
 ## Comments
 
 `doc_comment` (migration 0018) holds comments on a note or file.

@@ -30,6 +30,7 @@ The internal services (Postgres, Elasticsearch, Redis, MinIO) only listen on
 | MinIO (`grafito_s3`) | The bytes of uploaded files | **Yes** |
 | Elasticsearch (`grafito_es`) | The search index | No: it is rebuilt from Postgres |
 | Redis (`grafito_redis`) | Session deadlines | No: users only have to sign in again |
+| Secrets (`grafito_secrets`) | `BETTER_AUTH_SECRET` and `GRAFITO_ENCRYPTION_KEY` when Grafito created them (not set in `.env`) | **Yes, apart from the database:** without the key, saved AI keys and the SMTP password can't be read. Copy `/app/.data/secrets` somewhere safe, or set both secrets in `.env` |
 
 ## Scheduled backups
 
@@ -95,6 +96,18 @@ Restoring one note doesn't require a full restore:
 - **History:** every note keeps its version history.
 
 ## Rotating secrets
+
+When `.env` doesn't set `BETTER_AUTH_SECRET` or `GRAFITO_ENCRYPTION_KEY`, or
+sets the example values older versions of `docker-compose.yml` shipped,
+Grafito creates its own on first start and keeps them in the `grafito_secrets`
+volume (`server/install-secrets.ts`).
+
+- On the first start after upgrading, everyone signs in again.
+- Unless `GRAFITO_ENCRYPTION_KEY_PREVIOUS` is set, the old example encryption
+  key acts as the previous key. AI keys and the SMTP password saved with it
+  still decrypt, and are re-encrypted with the new key when used.
+
+To use your own instead, set them in `.env` as below.
 
 ### `GRAFITO_ENCRYPTION_KEY` (encrypts users' AI keys)
 

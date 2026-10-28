@@ -106,11 +106,13 @@ services:
       S3_ACCESS_KEY: grafito
       S3_SECRET_KEY: ${S3_SECRET_KEY:-grafito-secret}
       S3_REGION: us-east-1
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-grafito-dev-secret-cambia-esto}
-      # Encrypts each user's AI keys. Change it (32+ characters) and don't lose it:
-      # without it, saved keys can't be read. To rotate it, put the previous one in
-      # GRAFITO_ENCRYPTION_KEY_PREVIOUS (see docs/OPERATIONS.md).
-      GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-grafito-dev-encryption-key-cambia-esto-0001}
+      # Empty (or the old public example value): Grafito creates one for this
+      # installation and keeps it in the grafito_secrets volume.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # Encrypts each user's AI keys and the SMTP password (32+ characters). Empty:
+      # Grafito creates one for this installation in grafito_secrets. To rotate it,
+      # put the previous one in GRAFITO_ENCRYPTION_KEY_PREVIOUS (docs/OPERATIONS.md).
+      GRAFITO_ENCRYPTION_KEY: ${GRAFITO_ENCRYPTION_KEY:-}
       GRAFITO_ENCRYPTION_KEY_PREVIOUS: ${GRAFITO_ENCRYPTION_KEY_PREVIOUS:-}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
       # Other addresses people open Grafito with (its IP and its domain, for
@@ -136,6 +138,9 @@ services:
       GRAFITO_LOCALHOST_ALIAS: ${GRAFITO_LOCALHOST_ALIAS-host.docker.internal}
       # Time zone for dates in emails (e.g. America/Lima). See docs/MAIL.md.
       TZ: ${TZ:-UTC}
+    # Secrets generated for this installation (server/install-secrets.ts).
+    volumes:
+      - grafito_secrets:/app/.data/secrets
     # Makes host.docker.internal resolve on Linux too (Docker Desktop already has it).
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -252,6 +257,7 @@ services:
       - app
 
 volumes:
+  grafito_secrets:
   grafito_pg:
   grafito_es:
   grafito_s3:

@@ -1113,6 +1113,27 @@ Results checked in what `readDrawing` returns and in the stored object.
 | Options menu (☰) at 358 px (Excalidraw's mobile layout) | ❌→✅ covered the whole canvas and listed GitHub, Follow us and Discord; now Grafito's own items, 277 of 514 px high |
 | `npm run typecheck`, `eslint`, `npm test` | ✅ no errors |
 
+## Round 36: security test
+
+Test stack with the example secrets from `docker-compose.yml`, «e2eadmin»
+(owner) and «carla» (LDAP, a share with edit access). Full report in
+docs/SECURITY.md.
+
+| Case | Result |
+| --- | --- |
+| Forge a signed file link and a WOPI token with the public example `BETTER_AUTH_SECRET`, with no account | ❌→✅ before: the file downloaded (200) and the token opened the document with write access. Now the example value is replaced by a secret for the installation (`/app/.data/secrets`, mode 600): 403 and 401 |
+| After that change | ✅ open sessions end once; signing in again works; a legitimate file link still works after restarting the container |
+| 13 XSS payloads in a note (raw HTML, `javascript:` links, `[[…]]`, code, table, tag, Mermaid, title), opened by the owner and by the guest | ✅ nothing runs; the title shows as text |
+| `<img>` in a Mermaid label | ❌→✅ loaded an outside image (no script); images are now forbidden in labels |
+| HTML and scripts in a comment | ✅ plain text for both users |
+| SVG with a script, HTML file, HTML disguised as PNG | ✅ download with `sandbox`; the PNG stays `image/png` with `nosniff` |
+| Carla reads, edits (`PATCH`) or deletes an owner note not shared with her through the API; fetches his file without a signature or with a forged one; saves his drawing, directly or reusing her share | ✅ 404, 403 or refused; the note is unchanged |
+| `' OR 1=1--`, `UNION SELECT`, `%`, `_` in API search | ✅ no injection; only her own notes |
+| Cross-site POST (with `Sec-Fetch-Site: cross-site`) | ✅ 403 |
+| 12 wrong passwords | ✅ 429 from the 4th |
+| `install-secrets` unit tests (public values replaced, created once and kept, own secrets untouched, data encrypted with the old example key still opens after upgrading with an empty key) | ✅ 4 tests |
+| `npm run typecheck`, `eslint`, `npm test` | ✅ no errors; 72 tests |
+
 ## Useful commands
 
 ```bash

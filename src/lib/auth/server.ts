@@ -245,6 +245,9 @@ const RECHECK_MS = 5000;
  * cambia su configuración; `invalidateAuth()` fuerza la comprobación.
  */
 export async function getAuth(): Promise<Auth> {
+  // El secreto de sesión no puede ser el de ejemplo público (ver `server/install-secrets.ts`).
+  const { ensureInstallSecrets } = await import("@/server/install-secrets");
+  ensureInstallSecrets();
   const cached = globalAuthRef.__grafitoAuth__;
   const now = Date.now();
   if (cached && now - cached.checkedAt < RECHECK_MS) return cached.auth;

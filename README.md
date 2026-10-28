@@ -84,8 +84,8 @@ Uncomment and fill in what you need, then apply it with
 
 | Variable | Set it when | Notes |
 | --- | --- | --- |
-| `BETTER_AUTH_SECRET` | Always, outside your own computer | Signs sessions. Changing it later only signs everyone out. |
-| `GRAFITO_ENCRYPTION_KEY` | Before anyone saves AI keys | 32+ characters. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
+| `BETTER_AUTH_SECRET` | Optional | Signs sessions, file links and Office editor tokens. Empty: Grafito creates one for this installation (in the `grafito_secrets` volume). Changing it later only signs everyone out. |
+| `GRAFITO_ENCRYPTION_KEY` | Optional | Encrypts AI keys and the SMTP password (32+ characters). Empty: Grafito creates one, like the secret above. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
 | `POSTGRES_PASSWORD`, `S3_SECRET_KEY` | **Before the first start** | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md). |
 | `COLLABORA_ADMIN_PASSWORD` | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980. |
 | `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito | See [On a server or a network](#on-a-server-or-a-network). |
@@ -530,8 +530,9 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO or S3 for uploaded files | Files stored in Postgres (20 MB limit by default) |
 | `GRAFITO_MAX_UPLOAD_MB` | Per-file upload limit | 100 with S3, 20 without |
 | `REDIS_URL` | Session deadlines | Stored in Postgres |
-| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session signing and public URL | Required in production |
-| `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys (32+ characters) | AI keys can't be saved |
+| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session, file link and editor token signing; public URL | A secret created for the installation in `GRAFITO_SECRETS_DIR`; the URL is required in production |
+| `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys and the SMTP password (32+ characters) | A key created for the installation in `GRAFITO_SECRETS_DIR` |
+| `GRAFITO_SECRETS_DIR` | Where those generated secrets are kept | `.data/secrets` (`/app/.data/secrets`, the `grafito_secrets` volume, in Docker) |
 | `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Previous key during a rotation | — |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | Other sites allowed to send sign-ins, comma-separated | The address each request was sent to, `BETTER_AUTH_URL` and localhost |
 | `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md)) | Editor off |
@@ -568,6 +569,8 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 
 ## Further reading
 
+- [docs/SECURITY.md](docs/SECURITY.md): the security model and the last
+  security test (XSS, SQL injection, access control, CSRF, uploads, secrets).
 - [docs/OPERATIONS.md](docs/OPERATIONS.md): backups, restore, secret rotation
   and what to do when something is down.
 - [docs/OFFICE.md](docs/OFFICE.md): the Office editor (Collabora), offline use
