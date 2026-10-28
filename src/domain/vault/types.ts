@@ -73,6 +73,8 @@ export type DialogState =
   | { type: "share"; kind: "document" | "portfolio"; id: string }
   /** `portfolioId` = "all": toda la bóveda. */
   | { type: "git"; portfolioId: string }
+  /** Espacio y permisos de un portafolio propio o (con `shareId`) compartido conmigo. */
+  | { type: "space"; portfolioId: string; shareId?: string }
   | { type: "upload-error"; message: string; title?: string }
   | { type: "reset" }
   | null;

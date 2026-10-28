@@ -18,6 +18,7 @@ import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/
 import { setSessionTtl, storageReport } from "@/server/session.functions";
 import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
+import { QuotaBoard } from "./QuotaBoard";
 import { DesignPanel } from "./DesignPanel";
 import { AiBoard } from "./AiBoard";
 import { MailBoard } from "./MailBoard";
@@ -25,7 +26,7 @@ import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -40,7 +41,7 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     id: "usuarios",
     label: "Usuarios y permisos",
     icon: Users,
-    need: ["admin.access", "users.create", "users.update", "users.delete", "roles.manage", "orgs.manage"],
+    need: ["admin.access", "users.create", "users.update", "users.delete", "roles.manage", "orgs.manage", "space.manage"],
   },
   {
     id: "autenticacion",
@@ -221,7 +222,8 @@ export function AdminScreen() {
                   allowed(view, "users.update") ||
                   allowed(view, "users.delete") ||
                   allowed(view, "roles.manage") ||
-                  allowed(view, "orgs.manage") ? (
+                  allowed(view, "orgs.manage") ||
+                  allowed(view, "space.manage") ? (
                     <OptionGrid
                       items={[
                         ...(allowed(view, "users.create") || allowed(view, "users.update") || allowed(view, "users.delete")
@@ -239,6 +241,9 @@ export function AdminScreen() {
                               },
                             ]
                           : []),
+                        ...(allowed(view, "space.manage")
+                          ? [{ id: "cuotas" as const, label: "Espacio por usuario y portafolio", icon: HardDrive }]
+                          : []),
                       ]}
                       onPick={(id) => setLeaf(id)}
                     />
@@ -248,6 +253,7 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "usuarios" && leaf === "usuarios" ? <UsersBoard view={view} reload={load} /> : null}
                 {current?.id === "usuarios" && leaf === "organizaciones" ? <OrgsBoard view={view} /> : null}
+                {current?.id === "usuarios" && leaf === "cuotas" ? <QuotaBoard /> : null}
                 {current?.id === "usuarios" && leaf === "roles" ? (
                   <RolesBoard view={view} reload={load} roleId={roleId} onOpen={setRoleId} />
                 ) : null}
@@ -332,6 +338,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
     return view.roles.find((role) => role.id === roleId)?.name ?? t("Roles");
   }
   if (section === "usuarios" && leaf === "organizaciones") return t("Organizaciones");
+  if (section === "usuarios" && leaf === "cuotas") return t("Espacio por usuario y portafolio");
   if (section === "usuarios") return t("Usuarios y permisos");
   if (section === "autenticacion" && leaf === "ldap") return "LDAP";
   if (section === "autenticacion" && leaf === "oauth") return t("OAuth");

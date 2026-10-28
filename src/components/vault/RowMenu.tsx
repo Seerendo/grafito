@@ -201,6 +201,7 @@ function RowContextMenu({
     const id = menu.id;
     if (canZip) items.push({ label: t("Descargar (.zip)"), onClick: act(() => void downloadPortfolio(id)) });
     if (canGit) items.push({ label: t("Sincronizar con Git…"), onClick: act(() => vault().setDialog({ type: "git", portfolioId: id })) });
+    items.push({ label: t("Espacio y permisos…"), onClick: act(() => vault().setDialog({ type: "space", portfolioId: id })) });
     if (can(PERMISSION.notesShare)) {
       items.push({ label: t("Compartir…"), onClick: act(() => vault().setDialog({ type: "share", kind: "portfolio", id })) });
     }

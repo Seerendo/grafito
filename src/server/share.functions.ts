@@ -79,7 +79,7 @@ export const setShare = createServerFn({ method: "POST" })
         targetId: id,
         title: z.string().max(200),
         visibility: z.enum(["private", "shared", "public"]),
-        access: z.enum(["read", "edit"]).default("read"),
+        access: z.enum(["read", "edit", "admin"]).default("read"),
         userIds: z.array(id).max(200),
         orgIds: z.array(id).max(200).default([]),
       })

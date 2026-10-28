@@ -13,13 +13,32 @@ import type { ManualLink } from "@/domain/vault/types";
  * cualquiera de sus sub-organizaciones (`share_org_grant`). Esto último se
  * resuelve subiendo desde las organizaciones del usuario hasta sus raíces.
  *
- * Acceso: `read` (por defecto) o `edit`. Lo público siempre es de solo
- * lectura. Desde la migración 0008 el contenido se lee directamente de la
+ * Acceso: `read` (por defecto), `edit` (también crear notas y subir archivos
+ * dentro de un portafolio) o `admin` (además reparte el espacio del portafolio
+ * y cambia los permisos de los demás; ver `space.ts`). Puede fijarse por
+ * invitado (`share_grant.access`); sin él vale el del elemento. Lo público
+ * siempre es de solo lectura. Desde la migración 0008 el contenido se lee directamente de la
  * bóveda del dueño en el servidor (`vault_doc`); la copia publicada
  * (`published_*`) solo queda como respaldo para dueños sin bóveda en el servidor.
  */
 
-export type ShareAccess = "read" | "edit";
+export type ShareAccess = "read" | "edit" | "admin";
+
+const RANK: Record<ShareAccess, number> = { read: 1, edit: 2, admin: 3 };
+
+/** Si el nivel deja crear y cambiar contenido. */
+export function canWrite(access: ShareAccess): boolean {
+  return access === "edit" || access === "admin";
+}
+
+function fromRank(rank: unknown): ShareAccess {
+  const value = Number(rank);
+  return value >= 3 ? "admin" : value === 2 ? "edit" : "read";
+}
+
+function isAccess(value: unknown): value is ShareAccess {
+  return value === "read" || value === "edit" || value === "admin";
+}
 
 export type ShareRow = {
   id: string;
@@ -81,7 +100,7 @@ type ItemRecord = {
 };
 
 function accessOf(item: ItemRecord): ShareAccess {
-  return item.visibility === "shared" && item.access === "edit" ? "edit" : "read";
+  return item.visibility === "shared" && isAccess(item.access) ? item.access : "read";
 }
 
 function toRow(item: ItemRecord): ShareRow {
@@ -165,21 +184,32 @@ export async function writeShare(
       values (${id}, ${ownerId}, ${input.kind}, ${input.targetId}, ${input.title}, ${input.visibility}, ${access}, ${token})
     `;
   }
+  // El nivel propio de cada invitado (si se le puso) se conserva.
+  const userAccess = new Map(
+    (await sql<{ user_id: string; access: string | null }>`select user_id, access from share_grant where share_id = ${id}`).map(
+      (row) => [row.user_id, row.access],
+    ),
+  );
+  const orgAccess = new Map(
+    (await sql<{ org_id: string; access: string | null }>`select org_id, access from share_org_grant where share_id = ${id}`).map(
+      (row) => [row.org_id, row.access],
+    ),
+  );
   await sql`delete from share_grant where share_id = ${id}`;
   await sql`delete from share_org_grant where share_id = ${id}`;
   if (input.visibility === "shared") {
     for (const orgId of new Set(input.orgIds)) {
       await sql`
-        insert into share_org_grant (share_id, org_id)
-        select ${id}, o.id from app_org o where o.id = ${orgId}
+        insert into share_org_grant (share_id, org_id, access)
+        select ${id}, o.id, ${orgAccess.get(orgId) ?? null} from app_org o where o.id = ${orgId}
         on conflict do nothing
       `;
     }
     for (const userId of new Set(input.userIds)) {
       if (userId === ownerId) continue;
       await sql`
-        insert into share_grant (share_id, user_id)
-        select ${id}, id from "user" where id = ${userId}
+        insert into share_grant (share_id, user_id, access)
+        select ${id}, id, ${userAccess.get(userId) ?? null} from "user" where id = ${userId}
         on conflict do nothing
       `;
     }
@@ -388,13 +418,21 @@ export async function sharedWith(
   sql: Sql,
   userId: string,
 ): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess }[]> {
-  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; access: ShareAccess }>`
+  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown }>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
-    select s.id, s.kind, s.title, s.access, u.name as owner_name
+    select s.id, s.kind, s.title, u.name as owner_name,
+      (
+        select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
+        from (
+          select g.access from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+          union all
+          select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)
+        ) x
+      ) as rank
     from share_item s
     join "user" u on u.id = s.owner_id
     where s.visibility = 'shared'
@@ -410,7 +448,7 @@ export async function sharedWith(
     kind: row.kind,
     title: row.title,
     ownerName: row.owner_name?.trim() || "Alguien",
-    access: row.access === "edit" ? "edit" : "read",
+    access: fromRank(row.rank),
   }));
 }
 
@@ -457,7 +495,7 @@ export async function editableTarget(
   docId: string,
 ): Promise<{ ownerId: string } | null> {
   const item = await grantedItem(sql, userId, shareId);
-  if (!item || item.owner_id === userId || accessOf(item) !== "edit") return null;
+  if (!item || item.owner_id === userId || !canWrite(accessOf(item))) return null;
   const tree = await treeFor(sql, item);
   return tree.documents.some((document) => document.id === docId) ? { ownerId: item.owner_id } : null;
 }
@@ -470,7 +508,16 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
-    select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.access, s.public_token
+    select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.public_token,
+      case when s.owner_id = ${userId} then 'admin' else (
+        select case max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
+          when 3 then 'admin' when 2 then 'edit' else 'read' end
+        from (
+          select g.access from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+          union all
+          select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)
+        ) x
+      ) end as access
     from share_item s
     where s.id = ${shareId}
       and (
@@ -523,4 +570,126 @@ export async function shareCandidates(sql: Sql, userId: string): Promise<{ id: s
     order by u.name
   `;
   return rows.map((row) => ({ id: row.id, name: row.name?.trim() || "Sin nombre", loginName: row.login_name ?? "" }));
+}
+
+// ---------------------------------------------------------------------------
+// Miembros de un portafolio (para su espacio y sus permisos, ver `space.ts`)
+
+export type PortfolioMember = {
+  userId: string;
+  name: string;
+  loginName: string;
+  access: ShareAccess;
+  /** El elemento compartido y si el usuario está invitado directamente en él (se le puede cambiar el nivel). */
+  shareId: string;
+  direct: boolean;
+  /** Si llega por una organización, cuál. */
+  orgName: string | null;
+};
+
+/** Los portafolios del dueño desde `portfolioId` hasta la raíz (él incluido). */
+export async function portfolioLineage(sql: Sql, ownerId: string, portfolioId: string): Promise<string[]> {
+  const rows = await sql<{ id: string; parent_id: string | null }>`
+    select id, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
+  `;
+  const parent = new Map(rows.map((row) => [row.id, row.parent_id]));
+  const out: string[] = [];
+  for (let id: string | null = portfolioId; id && parent.has(id) && !out.includes(id); id = parent.get(id) ?? null) out.push(id);
+  return out;
+}
+
+/**
+ * Quién tiene acceso a un portafolio por lo compartido: los invitados (y los
+ * de sus organizaciones) de los elementos que lo cubren, el mismo o uno de los
+ * que lo contienen. Si alguien llega por varios, cuenta el nivel más alto.
+ */
+export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: string): Promise<PortfolioMember[]> {
+  const lineage = await portfolioLineage(sql, ownerId, portfolioId);
+  if (lineage.length === 0) return [];
+  const items = (
+    await sql<ItemRecord>`
+      select id, owner_id, kind, target_id, title, visibility, access, public_token
+      from share_item where owner_id = ${ownerId} and kind = 'portfolio' and visibility = 'shared'
+    `
+  ).filter((item) => lineage.includes(item.target_id));
+  const byUser = new Map<string, PortfolioMember>();
+  const add = (member: PortfolioMember) => {
+    const known = byUser.get(member.userId);
+    if (!known || RANK[member.access] > RANK[known.access] || (RANK[member.access] === RANK[known.access] && member.direct && !known.direct)) {
+      byUser.set(member.userId, member);
+    }
+  };
+  for (const item of items) {
+    const direct = await sql<{ user_id: string; name: string; login: string | null; access: string | null }>`
+      select g.user_id, u.name, coalesce(m.login_name, a.login_name) as login, g.access
+      from share_grant g join "user" u on u.id = g.user_id
+      left join app_user_role m on m.user_id = g.user_id
+      left join app_admin a on a.user_id = g.user_id
+      where g.share_id = ${item.id}
+    `;
+    for (const row of direct) {
+      add({
+        userId: row.user_id,
+        name: row.name?.trim() || row.login || "",
+        loginName: row.login ?? "",
+        access: isAccess(row.access) ? row.access : accessOf(item),
+        shareId: item.id,
+        direct: true,
+        orgName: null,
+      });
+    }
+    const viaOrg = await sql<{ user_id: string; name: string; login: string | null; access: string | null; org_name: string }>`
+      with recursive tree(id, root) as (
+        select o.id, o.id from app_org o join share_org_grant g on g.org_id = o.id where g.share_id = ${item.id}
+        union
+        select c.id, t.root from app_org c join tree t on c.parent_id = t.id
+      )
+      select distinct mem.user_id, u.name, coalesce(r.login_name, a.login_name) as login, g.access, o.name as org_name
+      from tree t
+      join app_org_member mem on mem.org_id = t.id
+      join share_org_grant g on g.share_id = ${item.id} and g.org_id = t.root
+      join app_org o on o.id = t.root
+      join "user" u on u.id = mem.user_id
+      left join app_user_role r on r.user_id = mem.user_id
+      left join app_admin a on a.user_id = mem.user_id
+    `;
+    for (const row of viaOrg) {
+      if (row.user_id === ownerId) continue;
+      add({
+        userId: row.user_id,
+        name: row.name?.trim() || row.login || "",
+        loginName: row.login ?? "",
+        access: isAccess(row.access) ? row.access : accessOf(item),
+        shareId: item.id,
+        direct: false,
+        orgName: row.org_name,
+      });
+    }
+  }
+  return [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** El nivel de `userId` en un portafolio del dueño (`null`: sin acceso por lo compartido). */
+export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: string, userId: string): Promise<ShareAccess | null> {
+  if (userId === ownerId) return "admin";
+  return (await portfolioMembers(sql, ownerId, portfolioId)).find((member) => member.userId === userId)?.access ?? null;
+}
+
+/** Cambia el nivel de un invitado directo de un elemento compartido. */
+export async function setGrantAccess(sql: Sql, shareId: string, userId: string, access: ShareAccess): Promise<boolean> {
+  const rows = await sql<{ user_id: string }>`
+    update share_grant set access = ${access} where share_id = ${shareId} and user_id = ${userId} returning user_id
+  `;
+  return rows.length > 0;
+}
+
+/** El elemento compartido `shareId` con el nivel de `userId` (dueño: `admin`), o `null`. */
+export async function shareForUser(
+  sql: Sql,
+  userId: string,
+  shareId: string,
+): Promise<{ ownerId: string; kind: ShareKind; targetId: string; access: ShareAccess } | null> {
+  const item = await grantedItem(sql, userId, shareId);
+  if (!item) return null;
+  return { ownerId: item.owner_id, kind: item.kind, targetId: item.target_id, access: item.owner_id === userId ? "admin" : accessOf(item) };
 }

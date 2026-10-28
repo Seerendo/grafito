@@ -567,6 +567,38 @@ shows the quoted phrase, and clicking it focuses the PDF there
 file already has (`page.getAnnotations()`, anything with text except links,
 form fields and popups) are listed read-only with a marker on the page.
 
+## Space and portfolio permissions
+
+Migration 0022. Only files count: `vault_doc.file_size` of `kind = 'file'`,
+trash included, versions excluded. `vault_doc.uploaded_by` says who uploaded
+a file (empty: the vault owner), so a file someone added to another person's
+shared portfolio counts for them.
+
+- **Limits** (`server/space.ts`): `space_user` (or `app_setting
+  .space_default_user`), `space_portfolio` (the portfolio and its
+  subportfolios) and `space_member` (a user inside a portfolio). `checkSpace`
+  checks the uploader's total and, for the target portfolio and every one
+  above it, the portfolio's and the uploader's share. It runs when an upload
+  starts (declared size) and when it completes (real size; the object is
+  deleted if it doesn't fit), and again in `addSharedFile`. `checkShares`
+  (`domain/space.ts`) keeps every member share, and their sum, within the
+  portfolio's.
+- **Access levels:** `read`, `edit`, `admin`, on the share item and optionally
+  per grant (`share_grant.access`, `share_org_grant.access`). The effective
+  level is the highest among the user's direct and organization grants
+  (`grantedItem`, `sharedWith`, `portfolioMembers`). `writeShare` keeps
+  per-grant levels when the owner saves the share again.
+- **Adding to a shared portfolio** (`edit` or `admin`): uploads take
+  `shareId` and `portfolioId` (`server/upload-target.ts`); the object key is
+  under the owner (`vault/<owner>/…`) and `mayUpload` lets the uploader send
+  its parts. `createSharedNote` and `addSharedFile`
+  (`server/space.functions.ts`) write into the owner's vault, whose browsers
+  get it with the normal sync.
+- **Who manages what:** the owner and `admin` members split a portfolio's
+  space and change direct members' levels (`SpaceDialog`); the system
+  administrator (`space.manage`) also sets user and portfolio limits
+  (`QuotaBoard`).
+
 ## Editor colors
 
 `components/vault/HighlightLayer.tsx` draws the note under the editor's

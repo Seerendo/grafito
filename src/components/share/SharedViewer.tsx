@@ -1,6 +1,9 @@
 import {
   BookOpen,
   ChevronRight,
+  FilePlus,
+  HardDrive,
+  Upload,
   File,
   FileText,
   FolderOpen,
@@ -27,6 +30,10 @@ import { Comments } from "@/components/vault/Comments";
 import { GraphView } from "@/components/vault/GraphView";
 import type { Document } from "@/domain/vault/types";
 import { SharedContext } from "./SharedContext";
+import { openShared } from "@/server/share.functions";
+import { addSharedFile, createSharedNote } from "@/server/space.functions";
+import { uploadVaultFile } from "@/app/files";
+import { useVault } from "@/app/vault/store";
 
 /** Lo publicado como documentos de la bóveda, para el grafo y los vínculos. */
 function asDocuments(documents: PublishedDoc[]): Document[] {
@@ -65,7 +72,8 @@ export function SharedViewer({
   tree: SharedTree;
   docId?: string | null;
   onOpenDoc?: (id: string) => void;
-  onChange?: (tree: SharedTree) => void;
+  /** Con `docId`, además abre ese documento (uno recién creado). */
+  onChange?: (tree: SharedTree, docId?: string) => void;
   index?: boolean;
 }) {
   const ordered = useMemo(() => orderDocuments(tree), [tree]);
@@ -76,7 +84,8 @@ export function SharedViewer({
   const byTitle = (name: string) => ordered.find((document) => document.title.toLowerCase() === name.toLowerCase());
   const single = tree.share.kind === "document" || !index;
   const Badge = tree.share.visibility === "public" ? Globe : Users;
-  const canEdit = tree.share.access === "edit" && Boolean(onChange) && active?.kind === "markdown";
+  const writable = tree.share.access === "edit" || tree.share.access === "admin";
+  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -97,6 +106,52 @@ export function SharedViewer({
   const openDoc = (id: string) => {
     setActiveId(id);
     setView("doc");
+  };
+  // Añadir a un portafolio compartido con permiso de edición: en el portafolio
+  // del documento abierto o, si no, en el compartido.
+  const canAdd = writable && Boolean(onChange) && tree.share.kind === "portfolio";
+  const sharedRoot = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
+  const here =
+    active?.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === active.portfolioId) ? active.portfolioId : sharedRoot;
+  const hereName = tree.portfolios.find((portfolio) => portfolio.id === here)?.name ?? tree.share.title;
+  const [adding, setAdding] = useState(false);
+  const reload = async (docId?: string) => {
+    const next = await openShared({ data: { shareId: tree.share.id } }).catch(() => null);
+    if (next) onChange?.(next, docId);
+  };
+  const addNote = async () => {
+    setAdding(true);
+    setMessage("");
+    const result = await createSharedNote({ data: { shareId: tree.share.id, portfolioId: here, title: "" } }).catch(() => null);
+    setAdding(false);
+    if (!result?.ok) setMessage(result?.error ?? t("No se pudo crear la nota."));
+    else {
+      await reload(result.id);
+      setView("doc");
+    }
+  };
+  const addFiles = async (files: FileList) => {
+    setAdding(true);
+    setMessage("");
+    let last: string | undefined;
+    for (const file of [...files]) {
+      try {
+        const stored = await uploadVaultFile(file, { shareId: tree.share.id, portfolioId: here });
+        const result = await addSharedFile({
+          data: { shareId: tree.share.id, portfolioId: here, key: stored.key, name: file.name, mime: file.type },
+        });
+        if (!result.ok) {
+          setMessage(result.error);
+          break;
+        }
+        last = result.id;
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : t("No se pudo subir."));
+        break;
+      }
+    }
+    setAdding(false);
+    if (last) await reload(last);
   };
 
   useEffect(() => {
@@ -166,7 +221,7 @@ export function SharedViewer({
           <Badge className="size-3.5 shrink-0 text-faint" />
           <span className="min-w-0 flex-1 truncate">
             {active ? <span className="font-medium text-fg">{active.title} · </span> : null}
-            {t("Compartido por")}{" "}{tree.share.ownerName} · {tree.share.access === "edit" ? t("Puedes editar") : t("Solo lectura")}
+            {t("Compartido por")}{" "}{tree.share.ownerName} · {tree.share.access === "admin" ? t("Administras") : writable ? t("Puedes editar") : t("Solo lectura")}
             {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
           </span>
           {message ? <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
@@ -181,6 +236,47 @@ export function SharedViewer({
             >
               <MessageSquare className="size-4" />
               {commentCount > 0 ? <span className="text-xs">{commentCount}</span> : null}
+            </button>
+          ) : null}
+          {canAdd ? (
+            <>
+              <button
+                type="button"
+                disabled={adding}
+                aria-label={t("Nueva nota en {0}", { 0: hereName })}
+                title={t("Nueva nota en {0}", { 0: hereName })}
+                onClick={() => void addNote()}
+                className="grid size-9 place-items-center rounded-md text-muted hover:text-fg disabled:opacity-50"
+              >
+                <FilePlus className="size-4" />
+              </button>
+              <label
+                aria-label={t("Subir archivo a {0}", { 0: hereName })}
+                title={t("Subir archivo a {0}", { 0: hereName })}
+                className={`grid size-9 cursor-pointer place-items-center rounded-md text-muted hover:text-fg ${adding ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <Upload className="size-4" />
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    if (event.target.files?.length) void addFiles(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </>
+          ) : null}
+          {onChange && tree.share.kind === "portfolio" && here ? (
+            <button
+              type="button"
+              aria-label={t("Espacio y permisos")}
+              title={t("Espacio y permisos")}
+              onClick={() => useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: tree.share.id })}
+              className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
+            >
+              <HardDrive className="size-4" />
             </button>
           ) : null}
           {graphable ? (
@@ -323,7 +419,7 @@ export function SharedViewer({
             docId={active.id}
             links={active.file}
             shareId={onChange ? tree.share.id : undefined}
-            canEdit={tree.share.access === "edit" && Boolean(onChange)}
+            canEdit={writable && Boolean(onChange)}
           />
         ) : editing ? (
           <textarea

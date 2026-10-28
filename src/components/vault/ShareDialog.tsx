@@ -1,5 +1,5 @@
 import { copyText } from "@/lib/clipboard";
-import { Building2, Check, Eye, Globe, Link2, Lock, Pencil, User, Users } from "lucide-react";
+import { Building2, Check, Eye, Globe, Link2, Lock, Pencil, ShieldCheck, User, Users } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { publicUrl, setMyShares, shareOf, useMyShares } from "@/app/shares";
 import { useVault } from "@/app/vault/store";
@@ -23,7 +23,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   );
   const current = shareOf(shares, kind, id);
   const [visibility, setVisibility] = useState<Visibility>(current?.visibility ?? "private");
-  const [access, setAccess] = useState<"read" | "edit">(current?.access ?? "read");
+  const [access, setAccess] = useState<"read" | "edit" | "admin">(current?.access ?? "read");
   const [selected, setSelected] = useState<Set<string>>(new Set(current?.userIds ?? []));
   const [selectedOrgs, setSelectedOrgs] = useState<Set<string>>(new Set(current?.orgIds ?? []));
   const [people, setPeople] = useState<Candidate[] | null>(null);
@@ -102,13 +102,18 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
 
       {visibility === "shared" ? (
         <div className="mt-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("Permiso")}>
+          <div className={`grid gap-2 ${kind === "portfolio" ? "grid-cols-3" : "grid-cols-2"}`} role="radiogroup" aria-label={t("Permiso")}>
             <Choice active={access === "read"} onClick={() => setAccess("read")} icon={<Eye className="size-4" />}>
               {t("Solo lectura")}
             </Choice>
             <Choice active={access === "edit"} onClick={() => setAccess("edit")} icon={<Pencil className="size-4" />}>
               {t("Puede editar")}
             </Choice>
+            {kind === "portfolio" ? (
+              <Choice active={access === "admin"} onClick={() => setAccess("admin")} icon={<ShieldCheck className="size-4" />}>
+                {t("Administra")}
+              </Choice>
+            ) : null}
           </div>
           <SearchField value={query} onChange={setQuery} placeholder={t("Buscar usuario u organización")} />
           <ul className="max-h-56 overflow-y-auto rounded-md border border-line">

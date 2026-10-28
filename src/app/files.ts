@@ -34,8 +34,15 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
   return body;
 }
 
-/** Sube un archivo por partes. Devuelve su clave y tamaño, o lanza un Error con el motivo. */
-export async function uploadVaultFile(file: File): Promise<{ key: string; size: number }> {
+/**
+ * Sube un archivo por partes. Devuelve su clave y tamaño, o lanza un Error con
+ * el motivo. `target`: el portafolio donde quedará (para el espacio) y, si es
+ * uno compartido conmigo, su `shareId`.
+ */
+export async function uploadVaultFile(
+  file: File,
+  target: { portfolioId?: string | null; shareId?: string } = {},
+): Promise<{ key: string; size: number }> {
   const id = uuid();
   const mime = file.type || "application/octet-stream";
   track({ id, name: file.name, sent: 0, total: file.size }, id);
@@ -44,7 +51,7 @@ export async function uploadVaultFile(file: File): Promise<{ key: string; size: 
     started = await call<{ key: string; uploadId: string; partSize: number }>("/api/files/uploads", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: file.name, mime, size: file.size }),
+      body: JSON.stringify({ name: file.name, mime, size: file.size, ...target }),
     });
     const parts: { part: number; etag: string }[] = [];
     let offset = 0;
@@ -52,6 +59,7 @@ export async function uploadVaultFile(file: File): Promise<{ key: string; size: 
     do {
       const chunk = file.slice(offset, offset + started.partSize);
       const query = new URLSearchParams({ key: started.key, uploadId: started.uploadId, part: String(part) });
+      if (target.shareId) query.set("shareId", target.shareId);
       const { etag } = await call<{ etag: string }>(`/api/files/uploads/part?${query}`, { method: "PUT", body: chunk });
       parts.push({ part, etag });
       offset += chunk.size;
@@ -61,14 +69,14 @@ export async function uploadVaultFile(file: File): Promise<{ key: string; size: 
     return await call<{ key: string; size: number }>("/api/files/uploads/complete", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key: started.key, uploadId: started.uploadId, parts }),
+      body: JSON.stringify({ key: started.key, uploadId: started.uploadId, parts, ...target }),
     });
   } catch (error) {
     if (started) {
       void call("/api/files/uploads/complete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: started.key, uploadId: started.uploadId, abort: true }),
+        body: JSON.stringify({ key: started.key, uploadId: started.uploadId, abort: true, ...target }),
       }).catch(() => undefined);
     }
     throw error instanceof Error ? error : new Error(t("No se pudo subir."));

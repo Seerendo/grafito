@@ -324,6 +324,23 @@ After that, the start screen is a normal sign-in.
   each note a `.md` file and each file goes as is. **Descargar todo (.zip)**
   in the root menu downloads the whole vault. Notes are included with the
   **Exportar** permission and files with **Descargar**.
+- **Space:** only files count (their current version, also in the trash until
+  it is emptied; not their history). Each file counts for whoever uploaded it
+  and for its portfolio and the ones that contain it. Three optional limits:
+  - **per user**, everything they upload anywhere: set by the system
+    administrator in **Administración → Usuarios y permisos → Espacio por
+    usuario y portafolio**, with a default for users without their own;
+  - **per portfolio**, with its subportfolios: also set there by the system
+    administrator, or in the portfolio's **Espacio y permisos**;
+  - **per user in a portfolio**, out of the portfolio's space: set in
+    **Espacio y permisos** (right-click a portfolio, the drive button on its
+    page, or the same button in a portfolio shared with you) by its owner,
+    whoever manages it (**Administra**) or the system administrator. No one's
+    share can exceed the portfolio's, and neither can their sum.
+
+  Limits apply when a new file is uploaded: the upload is refused with the
+  reason. Saving changes to an existing file (Office, drawings) is never cut
+  off, so no work is lost.
 - **Git (optional):** a portfolio, or the whole vault, can be kept in sync
   with a folder of a GitHub or GitLab repository, both ways. See
   [docs/GIT.md](docs/GIT.md).
@@ -360,10 +377,19 @@ portfolio. Your role needs the share permission.
 | Option | Who can see it |
 | --- | --- |
 | **Privada** | Only you |
-| **Compartida** | The users and organizations you pick, either **Solo lectura** (read-only) or **Puede editar** (can edit). Sharing with an organization includes its sub-organizations. |
+| **Compartida** | The users and organizations you pick, with **Solo lectura** (read-only), **Puede editar** (can edit) or, for a portfolio, **Administra** (manages it). Sharing with an organization includes its sub-organizations. |
 | **Pública** | Anyone with the link (`/p/<token>`), without signing in |
 
 Public links are always read-only.
+
+- **Permissions in a shared portfolio:**
+  - **Puede editar** also lets people add to it: **Nueva nota** and **Subir
+    archivo** in the shared portfolio's header add to the portfolio of the open
+    document (or the shared one).
+  - **Administra** also lets them share out the portfolio's space and change
+    the others' permissions in **Espacio y permisos**.
+  - The level is set for everyone in **Compartir…** and can then be changed per
+    person in **Espacio y permisos**. Re-saving the share keeps those changes.
 
 - **Moving around a share** (also with a public link): **Grafo** shows the
   graph of what is shared, and the **Esquema y vínculos** panel shows the open

@@ -179,6 +179,19 @@ export async function readBlob(sql: Sql, key: string): Promise<Uint8Array | null
   return new Uint8Array(await new Response(blob.body).arrayBuffer());
 }
 
+/** Tamaño de un archivo guardado, o `null` si no está. */
+export async function blobSize(sql: Sql, key: string): Promise<number | null> {
+  const store = s3();
+  if (!store) {
+    const rows = await sql<{ size: unknown }>`select octet_length(data) as size from file_blob where key = ${key} limit 1`;
+    return rows[0] ? Number(rows[0].size) : null;
+  }
+  const response = await store.client.fetch(objectUrl(store, key), { method: "HEAD" });
+  if (!response.ok) return null;
+  const size = Number(response.headers.get("content-length"));
+  return Number.isFinite(size) ? size : null;
+}
+
 export async function deleteBlob(sql: Sql, key: string): Promise<void> {
   const store = s3();
   if (!store) {

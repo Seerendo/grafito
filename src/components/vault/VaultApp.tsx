@@ -26,6 +26,7 @@ import { SharedViewer } from "@/components/share/SharedViewer";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
+import { SpaceDialog } from "./SpaceDialog";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -154,7 +155,7 @@ function VaultWorkspace() {
         docId={sharedDoc}
         index={false}
         onOpenDoc={(id) => useSharedView.getState().openShared(sharedTree, id)}
-        onChange={(next) => useSharedView.getState().openShared(next, sharedDoc)}
+        onChange={(next, id) => useSharedView.getState().openShared(next, id ?? sharedDoc)}
       />
     </div>
   ) : null;
@@ -602,6 +603,10 @@ function VaultDialogs() {
 
   if (dialog.type === "share") {
     return <ShareDialog kind={dialog.kind} id={dialog.id} onClose={() => setDialog(null)} />;
+  }
+
+  if (dialog.type === "space") {
+    return <SpaceDialog portfolioId={dialog.portfolioId} shareId={dialog.shareId} onClose={() => setDialog(null)} />;
   }
 
   if (dialog.type === "git") {

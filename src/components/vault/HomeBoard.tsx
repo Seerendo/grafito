@@ -1,4 +1,4 @@
-import { ChevronRight, Download, File, FileText, Folder, GitBranch, PenTool, Plus } from "lucide-react";
+import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, PenTool, Plus } from "lucide-react";
 import { usePluginEnabled } from "@/app/plugins";
 import { downloadPortfolio } from "@/app/export";
 import { usePermissions } from "@/app/permissions";
@@ -192,6 +192,7 @@ export function PortfolioBoard({
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <h1 className="min-w-0 font-serif text-4xl font-semibold tracking-tight break-words">{portfolio.name}</h1>
           <span className="ml-auto flex flex-wrap gap-2">
+            <SpaceButton portfolioId={portfolioId} />
             <GitButton portfolioId={portfolioId} />
             <ZipButton portfolioId={portfolioId} />
             <NewDrawingButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
@@ -273,6 +274,22 @@ function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | n
     >
       <PenTool className="size-4" />
       {t("Nuevo dibujo")}
+    </button>
+  );
+}
+
+function SpaceButton({ portfolioId }: { portfolioId: string }) {
+  const setDialog = useVault((state) => state.setDialog);
+  return (
+    <button
+      type="button"
+      data-ui="space-button"
+      onClick={() => setDialog({ type: "space", portfolioId })}
+      aria-label={t("Espacio y permisos")}
+      title={t("Espacio y permisos")}
+      className="inline-flex size-10 items-center justify-center rounded-md border border-line text-fg hover:bg-elevated"
+    >
+      <HardDrive className="size-4" />
     </button>
   );
 }

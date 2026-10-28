@@ -56,6 +56,12 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
     if (next) void refresh();
   };
 
+  // Lo que se añade desde el visor (nota o archivo nuevos) también se ve aquí.
+  const viewed = useSharedView((state) => state.tree);
+  useEffect(() => {
+    if (viewed) setTrees((current) => (viewed.share.id in current ? { ...current, [viewed.share.id]: viewed } : current));
+  }, [viewed]);
+
   const loadTree = async (shareId: string, fresh = false): Promise<SharedTree | null> => {
     if (!fresh && trees[shareId] !== undefined) return trees[shareId];
     const tree = await openShared({ data: { shareId } }).catch(() => null);
@@ -130,7 +136,7 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                   )}
                   <Icon className="size-3.5 shrink-0 text-faint" />
                   <span className="truncate">{item.title || t("Sin título")}</span>
-                  {item.access === "edit" ? (
+                  {item.access === "edit" || item.access === "admin" ? (
                     <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} />
                   ) : null}
                   <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>

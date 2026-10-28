@@ -40,7 +40,7 @@ export async function ingestExternalFiles(files: FileList | File[], portfolioId:
       continue;
     }
     try {
-      const stored = await uploadVaultFile(file);
+      const stored = await uploadVaultFile(file, { portfolioId });
       const result = useVault.getState().uploadFile(portfolioId, file.name, file.type || "application/octet-stream", stored);
       if (result) error = result;
       else uploaded = true;
