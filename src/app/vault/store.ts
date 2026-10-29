@@ -309,6 +309,8 @@ type VaultState = Persisted & {
   createPortfolio: (parentId: string | null, name: string) => void;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
+  /** Varios documentos y portafolios a la vez (`doc:<id>`, `port:<id>`): a la papelera, con lo que contienen. */
+  deleteMany: (keys: string[]) => void;
   moveDocument: (id: string, portfolioId: string | null) => void;
   movePortfolio: (id: string, parentId: string | null) => void;
   /**
@@ -638,6 +640,13 @@ export const useVault = create<VaultState>((set, get) => ({
       activeId: get().activeId === id ? (documents[0]?.id ?? null) : get().activeId,
       dialog: null,
     });
+  },
+
+  deleteMany: (keys) => {
+    for (const key of keys) if (key.startsWith("port:")) get().deletePortfolio(key.slice(5));
+    // Los de un portafolio ya borrado ya no están: se saltan solos.
+    for (const key of keys) if (key.startsWith("doc:")) get().deleteDocument(key.slice(4));
+    set({ dialog: null });
   },
 
   deletePortfolio: (id) => {

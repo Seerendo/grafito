@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
-/** Diálogo modal: abajo en móvil, centrado en escritorio. Clic fuera lo cierra. */
+/**
+ * Diálogo modal: abajo en móvil, centrado en escritorio. Clic fuera lo cierra.
+ * Se dibuja en el `body`: dentro de un panel con `backdrop-filter` (diseño
+ * Cristal) un `position: fixed` queda encerrado en el panel y el diálogo salía
+ * centrado en él, no en la ventana.
+ */
 export function Modal({
   title,
   onClose,
@@ -12,7 +18,7 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
-  return (
+  const dialog = (
     <div data-ui="overlay" className="fixed inset-0 z-50 flex items-end justify-center bg-inset/80 p-4 sm:items-center" onMouseDown={onClose}>
       <div
         role="dialog"
@@ -27,4 +33,5 @@ export function Modal({
       </div>
     </div>
   );
+  return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
 }

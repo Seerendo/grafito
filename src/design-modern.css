@@ -101,6 +101,14 @@ html[data-design="modern"] [data-ui="panes"] > div:not([data-ui]) {
   backdrop-filter: blur(20px) saturate(1.15);
 }
 
+/* El panel de detalles se desplaza él mismo (esquema, vínculos, comentarios…):
+   el `overflow: hidden` de arriba solo debía recortar las esquinas. */
+html[data-design="modern"] [data-ui="panes"] > [data-ui="context"],
+html[data-design="modern"] [data-ui="context-slot"] > [data-ui="context"] {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 html[data-design="modern"] [data-ui="context-slot"] {
   padding: 0;
 }

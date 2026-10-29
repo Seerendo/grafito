@@ -843,6 +843,26 @@ function VaultDialogs() {
     );
   }
 
+  if (dialog.type === "delete-many") {
+    const folders = dialog.keys.filter((key) => key.startsWith("port:")).length;
+    const docs = dialog.keys.length - folders;
+    const parts = [
+      folders ? (folders === 1 ? t("1 portafolio") : t("{n} portafolios", { n: folders })) : "",
+      docs ? (docs === 1 ? t("1 documento") : t("{n} documentos", { n: docs })) : "",
+    ].filter(Boolean);
+    return (
+      <Modal title={t("Eliminar {n} elementos", { n: dialog.keys.length })} onClose={() => setDialog(null)}>
+        <p className="text-sm text-muted">
+          {t("{0} irán a la papelera (los portafolios, con todo lo que contienen).", { 0: parts.join(t(" y ")) })}
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+          <Danger onClick={() => useVault.getState().deleteMany(dialog.keys)}>{t("Eliminar")}</Danger>
+        </div>
+      </Modal>
+    );
+  }
+
   if (dialog.type === "link") {
     return (
       <Modal title={t("Vincular")} onClose={() => setDialog(null)}>

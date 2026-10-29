@@ -44,6 +44,7 @@ import { FullscreenButton } from "./FullscreenButton";
 import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
 import { HighlightLayer } from "./HighlightLayer";
+import { emptyHistory, record, redo, undo, type UndoHistory } from "@/domain/vault/undo";
 import { requestNotePdf } from "./NotePdf";
 import { intl, t } from "@/app/i18n";
 
@@ -127,6 +128,19 @@ export function EditorPane({
   );
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const layerRef = useRef<HTMLPreElement>(null);
+  // Deshacer y rehacer propios (ver `domain/vault/undo.ts`), por nota.
+  const undoRef = useRef<{ docId: string; history: UndoHistory; value: string }>({ docId: "", history: emptyHistory(), value: "" });
+  // Dónde estaba el cursor antes de la última tecla (al escribir, el cuadro ya trae el texto nuevo).
+  const lastSelection = useRef({ start: 0, end: 0 });
+  // Otra nota, o un cambio que no vino de este editor (al sincronizar, otro
+  // dispositivo): se empieza de nuevo, para que deshacer no revierta lo ajeno.
+  useEffect(() => {
+    const state = undoRef.current;
+    if (!document || document.kind !== "markdown") return;
+    if (state.docId !== document.id || state.value !== document.content) {
+      undoRef.current = { docId: document.id, history: emptyHistory(), value: document.content };
+    }
+  }, [document]);
   const menuRef = useRef<HTMLDivElement>(null);
   const insertRef = useRef<HTMLDivElement>(null);
   const [title, setTitle] = useState("");
@@ -220,8 +234,35 @@ export function EditorPane({
     setTitleError("");
   };
 
+  /** Antes de cambiar el texto: lo deja en el historial de deshacer. */
+  const remember = (next: string, typing: boolean, area = areaRef.current) => {
+    const state = undoRef.current;
+    if (state.docId !== document.id) return;
+    const before = { value: document.content, start: area?.selectionStart ?? 0, end: area?.selectionEnd ?? 0 };
+    state.history = record(state.history, typing ? { ...before, ...lastSelection.current } : before, next, typing);
+    state.value = next;
+  };
+  const restore = (direction: "undo" | "redo") => {
+    const area = areaRef.current;
+    const state = undoRef.current;
+    if (!area || state.docId !== document.id) return;
+    const current = { value: document.content, start: area.selectionStart, end: area.selectionEnd };
+    const step = direction === "undo" ? undo(state.history, current) : redo(state.history, current);
+    if (!step) return;
+    state.history = step.history;
+    state.value = step.state.value;
+    updateContent(document.id, step.state.value);
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(step.state.start, step.state.end);
+      lastSelection.current = { start: step.state.start, end: step.state.end };
+      setCursor(step.state.start);
+    });
+  };
+
   const focusEdit = (next: string, start: number, end: number) => {
     setInsertOpen(false);
+    remember(next, false);
     updateContent(document.id, next);
     requestAnimationFrame(() => {
       const area = areaRef.current;
@@ -287,6 +328,7 @@ export function EditorPane({
     if (!clean) return;
     const next = document.content.slice(0, wiki.start) + `[[${clean}]]` + document.content.slice(area.selectionStart);
     const nextCursor = wiki.start + clean.length + 4;
+    remember(next, false);
     updateContent(document.id, next);
     requestAnimationFrame(() => {
       area.focus();
@@ -571,15 +613,25 @@ export function EditorPane({
                 }
               }}
               onChange={(event) => {
+                remember(event.target.value, true, event.target);
                 updateContent(document.id, event.target.value);
                 setCursor(event.target.selectionStart);
+                lastSelection.current = { start: event.target.selectionStart, end: event.target.selectionEnd };
               }}
-              onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+              onSelect={(event) => {
+                setCursor(event.currentTarget.selectionStart);
+                lastSelection.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd };
+              }}
               onKeyUp={(event) => setCursor(event.currentTarget.selectionStart)}
               onClick={(event) => setCursor(event.currentTarget.selectionStart)}
               onKeyDown={(event) => {
                 const meta = event.metaKey || event.ctrlKey;
-                if (meta && event.key.toLowerCase() === "b") {
+                const key = event.key.toLowerCase();
+                if (meta && !event.altKey && (key === "z" || key === "y")) {
+                  // Ctrl+Z deshace; Ctrl+Y o Ctrl+Mayús+Z rehace.
+                  event.preventDefault();
+                  restore(key === "z" && !event.shiftKey ? "undo" : "redo");
+                } else if (meta && event.key.toLowerCase() === "b") {
                   event.preventDefault();
                   applyWrap("**", "**");
                 } else if (meta && event.key.toLowerCase() === "i") {

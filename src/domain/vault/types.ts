@@ -77,6 +77,8 @@ export type DialogState =
   | { type: "delete-document"; id: string }
   /** Con `shareId`, uno de lo compartido conmigo (un espacio de trabajo): `name` es su nombre. */
   | { type: "delete-portfolio"; id: string; shareId?: string; name?: string }
+  /** Varios elegidos con Ctrl o Mayús (`doc:<id>`, `port:<id>`). */
+  | { type: "delete-many"; keys: string[] }
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }

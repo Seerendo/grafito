@@ -262,6 +262,9 @@ After that, the start screen is a normal sign-in.
   task checkboxes (`- [ ]`).
   - In **Editar**, the text is colored as in a code editor: headings, `[[links]]`,
     code, `#tags`, lists and tasks, quotes and callouts, tables.
+  - **Ctrl+Z** undoes (what you type in a row is one step; bold, links and
+    other toolbar changes are a step each) and **Ctrl+Y** or Ctrl+Shift+Z
+    redoes.
   - A flowchart whose labels have parentheses or other signs without quotes
     (`A[Paso (1)]`) is drawn anyway: Grafito adds the quotes Mermaid needs.
 - **Links:** type `[[` to link to another note. If the target doesn't exist
@@ -280,8 +283,11 @@ After that, the start screen is a normal sign-in.
   together, by name.
 - **Moving several at once:** Ctrl+click (⌘ on a Mac) adds or removes a note,
   file or portfolio from the selection, and Shift+click selects everything
-  between two rows. Dragging any selected row moves the whole selection. Esc
-  clears it. A document isn't moved if the target already has one with the
+  between two rows. Dragging any selected row moves the whole selection. Esc,
+  or a plain click on anything else in the directory (Carpeta Personal, a
+  workspace, the trash…), clears it. **Supr** (Delete), or right-click on a
+  selected row → **Eliminar N elementos**, sends all of them to the trash
+  after one confirmation. A document isn't moved if the target already has one with the
   same name; Grafito says which ones.
   - A Shift range that starts on a note or file only takes notes and files:
     passing over a portfolio doesn't select it (and with it, everything
@@ -483,7 +489,8 @@ Public links are always read-only.
   - From there you can **Recuperar** it. A note returns to its portfolio, which
     is recovered too if it was deleted. A deleted portfolio shows up once,
     with how many documents it holds, and comes back with everything inside.
-  - Or you can delete it for good.
+  - Or you can delete it for good, one by one or all at once with **Vaciar
+    papelera** (also on right-click). Both ask in a dialog first.
   - Items are removed automatically after 30 days.
 
 ## Office documents

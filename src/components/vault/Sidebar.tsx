@@ -118,10 +118,18 @@ export function Sidebar({
   const [picked, setPicked] = useState<string[]>([]);
   const [anchor, setAnchor] = useState<string | null>(null);
 
-  // Esc quita la selección.
+  // Esc quita la selección; Supr (o Retroceso en Mac) pide eliminar lo elegido.
   useEffect(() => {
     if (picked.length === 0) return;
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Delete" || (event.key === "Backspace" && event.metaKey)) {
+        const target = event.target;
+        if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+        if (useVault.getState().dialog) return;
+        event.preventDefault();
+        setDialog({ type: "delete-many", keys: picked });
+        return;
+      }
       if (event.key !== "Escape") return;
       event.stopPropagation();
       setPicked([]);
@@ -129,7 +137,18 @@ export function Sidebar({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [picked.length]);
+  }, [picked, setDialog]);
+
+  // Lo que ya no existe (eliminado, o borrado en otro dispositivo) sale de la selección.
+  useEffect(() => {
+    if (picked.length === 0) return;
+    const alive = (key: string) =>
+      key.startsWith("doc:")
+        ? documents.some((document) => document.id === key.slice(4))
+        : portfolios.some((portfolio) => portfolio.id === key.slice(5));
+    if (picked.every(alive)) return;
+    setPicked((current) => current.filter(alive));
+  }, [picked, documents, portfolios]);
 
   const onPick = (event: MouseEvent, key: PickKey): boolean => {
     const toggle = event.ctrlKey || event.metaKey;
@@ -200,7 +219,11 @@ export function Sidebar({
     closeMenu();
   };
 
-  const openMenu = (event: MouseEvent, next: { x: number; y: number } & RowMenuTarget) => showMenu(event, next);
+  const openMenu = (event: MouseEvent, next: { x: number; y: number } & RowMenuTarget) => {
+    // Clic derecho sobre una de varias elegidas: el menú vale para todas.
+    const key = next.kind === "document" ? `doc:${next.id}` : next.kind === "portfolio" ? `port:${next.id}` : null;
+    showMenu(event, key && picked.length > 1 && picked.includes(key) ? { ...next, many: picked } : next);
+  };
 
   const acceptDrop = (event: DragEvent, key: string) => {
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
@@ -281,6 +304,17 @@ export function Sidebar({
     <aside
       data-ui="sidebar"
       className="flex h-full min-h-0 w-full flex-col bg-surface md:w-72 md:border-r md:border-line"
+      // Un clic normal en cualquier otra cosa del directorio (la Carpeta
+      // Personal, un espacio de trabajo, la papelera, un hueco…) quita la
+      // selección hecha con Ctrl o Mayús. Las flechas de plegar no, para poder
+      // abrir carpetas mientras se elige; las filas lo resuelven en `onPick`.
+      onClickCapture={(event) => {
+        if (picked.length === 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        const target = event.target as HTMLElement;
+        if (target.closest("[data-pick], [data-keep-pick], [data-ui='selection']")) return;
+        setPicked([]);
+        setAnchor(null);
+      }}
       onDragOver={(event) => {
         if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
         if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-root]")) return;
@@ -679,6 +713,7 @@ function PortfolioBranch({
         <button
           type="button"
           aria-label={isCollapsed ? t("Abrir {0}", { 0: node.portfolio.name }) : t("Cerrar {0}", { 0: node.portfolio.name })}
+          data-keep-pick
           onClick={() => onToggle(node.portfolio.id)}
           onContextMenu={menuEvent}
           className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"

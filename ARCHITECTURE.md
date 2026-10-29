@@ -718,6 +718,18 @@ autocomplete stay native. Both share `EDITOR_TEXT` (font, padding, wrapping,
 CSS variables in `styles.css` mixed with the theme's text color; bold uses a
 text shadow, not a heavier weight, so glyph widths never change.
 
+## Editor undo
+
+The note editor is a `<textarea>` controlled by React over a colored layer
+(`HighlightLayer`). The browser's own undo fails there: each change made by
+code (toolbar, `[[…]]` suggestions, sync) rewrites the value and breaks its
+history, so Ctrl+Z undid something else and the text fell out of step with its
+colors. `domain/vault/undo.ts` keeps full states (text and selection):
+typing within a second in the same line is one step, every change by code is
+its own step. `EditorPane` records before each change, handles Ctrl+Z /
+Ctrl+Y / Ctrl+Shift+Z itself, and starts over when the note changes from
+outside (another device), so undoing never reverts someone else's text.
+
 ## Downloading a portfolio
 
 `server/export.ts` turns a portfolio and its subportfolios (or the whole

@@ -232,6 +232,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                     <button
                       type="button"
                       aria-label={isOpen ? t("Cerrar {0}", { 0: item.title }) : t("Abrir {0}", { 0: item.title })}
+                      data-keep-pick
                       onClick={() => {
                         if (!isOpen) void loadTree(item.id);
                         toggle(item.id);
@@ -392,6 +393,7 @@ function SharedBranch({
               <button
                 type="button"
                 aria-label={isOpen ? t("Cerrar {0}", { 0: portfolio.name }) : t("Abrir {0}", { 0: portfolio.name })}
+                data-keep-pick
                 onClick={() => onToggle(key)}
                 className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
               >

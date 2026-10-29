@@ -11,7 +11,10 @@ import type { Document } from "@/domain/vault/types";
 import { createDrawing, ingestExternalFiles } from "./ingest-files";
 import { requestNotePdf } from "./NotePdf";
 
-export type RowMenuTarget = { kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string };
+export type RowMenuTarget = ({ kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string }) & {
+  /** Sobre una fila elegida entre varias (Ctrl o Mayús): todas las elegidas. */
+  many?: string[];
+};
 
 type RowMenu = RowMenuTarget & { x: number; y: number };
 
@@ -209,6 +212,15 @@ function RowContextMenu({
       items.push({ label: t("Renombrar"), onClick: act(() => vault().setDialog({ type: "rename-portfolio", id })) });
       items.push({ label: t("Eliminar"), danger: true, onClick: act(() => vault().setDialog({ type: "delete-portfolio", id })) });
     }
+  }
+  // Sobre una fila elegida entre varias: lo que vale para todas a la vez.
+  if (menu.many && menu.many.length > 1) {
+    const keys = menu.many;
+    items.splice(0, items.length, {
+      label: t("Eliminar {n} elementos", { n: keys.length }),
+      danger: true,
+      onClick: act(() => vault().setDialog({ type: "delete-many", keys })),
+    });
   }
   if (items.length === 0) return null;
   // En el cuerpo de la página: dentro de un panel con `backdrop-filter` (diseño

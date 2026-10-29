@@ -1,10 +1,11 @@
-import { Building2, File, FileText, Folder, House } from "lucide-react";
+import { Building2, File, FileText, Folder, House, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/app/permissions";
 import { useTrashView } from "@/app/trash-view";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { TextAction } from "@/components/ui/TextAction";
+import { Modal } from "@/components/ui/Modal";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import { useAutoContextMenu } from "@/components/ui/use-auto-context-menu";
 import { PERMISSION } from "@/domain/permissions";
@@ -123,21 +124,16 @@ export function TrashBoard() {
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Papelera")}</h1>
           {mayPurge && items && items.length > 0 ? (
-            <span className="ml-auto flex items-center gap-3 text-sm">
-              {confirming === "all" ? (
-                <>
-                  <span className="text-muted">{t("¿Vaciar la papelera?")}</span>
-                  <TextAction tone="danger" onClick={() => void purge()}>
-                    {t("Sí")}
-                  </TextAction>
-                  <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
-                </>
-              ) : (
-                <TextAction tone="danger" menuLabel={t("Vaciar papelera")} onClick={() => setConfirming("all")}>
-                  {t("Vaciar")}
-                </TextAction>
-              )}
-            </span>
+            <button
+              type="button"
+              data-menu-label={t("Vaciar papelera")}
+              disabled={busy !== null}
+              onClick={() => setConfirming("all")}
+              className="ml-auto inline-flex h-10 items-center gap-2 rounded-md border border-danger/40 px-4 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+            >
+              <Trash2 className="size-4" />
+              {t("Vaciar papelera")}
+            </button>
           ) : null}
         </div>
         {spaces.length > 0 ? (
@@ -193,26 +189,16 @@ export function TrashBoard() {
                       {item.portfolioName ?? t("Carpeta Personal")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
                     </span>
                   </span>
-                  {confirming === item.id ? (
-                    <span className="flex items-center gap-3">
-                      <span className="text-muted">{t("¿Borrar para siempre?")}</span>
-                      <TextAction tone="danger" onClick={() => void purge([item.id])}>
-                        {t("Sí")}
+                  <span className="flex items-center gap-4">
+                    {mayRestore ? (
+                      <TextAction onClick={() => void restore(item.id)}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
+                    ) : null}
+                    {mayPurge ? (
+                      <TextAction tone="danger" onClick={() => setConfirming(item.id)}>
+                        {t("Eliminar")}
                       </TextAction>
-                      <TextAction onClick={() => setConfirming(null)}>{t("No")}</TextAction>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-4">
-                      {mayRestore ? (
-                        <TextAction onClick={() => void restore(item.id)}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
-                      ) : null}
-                      {mayPurge ? (
-                        <TextAction tone="danger" onClick={() => setConfirming(item.id)}>
-                          {t("Eliminar")}
-                        </TextAction>
-                      ) : null}
-                    </span>
-                  )}
+                    ) : null}
+                  </span>
                 </li>
               );
             })}
@@ -220,6 +206,33 @@ export function TrashBoard() {
         ) : null}
         {menu.element}
         {autoMenu.element}
+        {confirming ? (
+          <Modal
+            title={confirming === "all" ? t("Vaciar la papelera") : t("Eliminar para siempre")}
+            onClose={() => setConfirming(null)}
+          >
+            <p className="text-sm text-muted">
+              {confirming === "all"
+                ? t("Se borrará para siempre todo lo que hay en esta papelera ({n}). No se puede deshacer.", { n: items?.length ?? 0 })
+                : t("«{0}» se borrará para siempre. No se puede deshacer.", {
+                    0: items?.find((item) => item.id === confirming)?.title ?? "",
+                  })}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirming(null)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
+                {t("Cancelar")}
+              </button>
+              <button
+                type="button"
+                autoFocus
+                onClick={() => void purge(confirming === "all" ? undefined : [confirming])}
+                className="h-11 rounded-md bg-danger px-4 text-sm font-medium text-accent-fg"
+              >
+                {confirming === "all" ? t("Vaciar") : t("Eliminar para siempre")}
+              </button>
+            </div>
+          </Modal>
+        ) : null}
       </div>
     </div>
   );
