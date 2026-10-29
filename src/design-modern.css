@@ -144,6 +144,24 @@ html[data-design="modern"] [data-ui="sidebar"] div.bg-inset {
   background-color: var(--m-active);
 }
 
+/*
+ * Fila de portafolio (flecha y nombre, botones aparte): se resalta entera al
+ * pasar por encima, y no si ya está seleccionada o marcada con Shift/Ctrl.
+ */
+html[data-design="modern"] [data-ui="sidebar"] [data-row] button,
+html[data-design="modern"] [data-ui="sidebar"] [data-row] button:hover {
+  background-color: transparent;
+}
+
+html[data-design="modern"] [data-ui="sidebar"] [data-row] {
+  border-radius: 0.7rem;
+  transition: background-color 140ms ease;
+}
+
+html[data-design="modern"] [data-ui="sidebar"] [data-row=""]:hover {
+  background-color: var(--m-hover);
+}
+
 html[data-design="modern"] [data-ui="sidebar"] span.absolute.left-0 {
   display: none;
 }

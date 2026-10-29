@@ -662,9 +662,17 @@ function PortfolioBranch({
       onDragOver={(event) => onDragOver(event, node.portfolio.id)}
       onDrop={(event) => onDrop(event, node.portfolio.id)}
     >
+      {/* Flecha y nombre son botones aparte, pero la fila se resalta entera (`data-row`). */}
       <div
+        data-row={over || isPicked || selected ? "marked" : ""}
         className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${
-          over ? "bg-accent/15 ring-1 ring-accent" : isPicked ? "bg-accent/15 ring-1 ring-accent/40 ring-inset" : selected ? "bg-inset" : ""
+          over
+            ? "bg-accent/15 ring-1 ring-accent"
+            : isPicked
+              ? "bg-accent/15 ring-1 ring-accent/40 ring-inset"
+              : selected
+                ? "bg-inset"
+                : "hover:bg-elevated"
         }`}
       >
         {selected ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}

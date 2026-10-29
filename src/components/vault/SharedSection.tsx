@@ -1,4 +1,4 @@
-import { Building2, ChevronRight, File, FileText, FolderOpen, Pencil, Users } from "lucide-react";
+import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
 import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
@@ -179,61 +179,93 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
             const tree = trees[item.id];
             const isOpen = expanded.has(item.id);
             const portfolio = item.kind === "portfolio";
-            const Icon = portfolio ? FolderOpen : FileText;
             const single = !portfolio && tree ? tree.documents[0] : undefined;
             const rootId = tree ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : null;
             const lit =
               (single && single.id === activeDoc) ||
               (portfolio && boardShare === item.id && (boardPortfolio === null || boardPortfolio === rootId));
+            const editable = item.access === "edit" || item.access === "admin";
+            const rootMenu = async (event: React.MouseEvent) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const { clientX, clientY } = event;
+              const loaded = tree ?? (await loadTree(item.id));
+              const root = loaded ? (childrenOf(loaded, rootParent(loaded))[0]?.id ?? null) : null;
+              const target = portfolio ? { kind: "portfolio" as const, id: root } : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
+              menu.openAt(clientX, clientY, menuFor(item, loaded, target));
+            };
             return (
               <li key={item.id}>
-                <button
-                  type="button"
-                  title={t("De {0}", { 0: item.ownerName })}
-                  onContextMenu={async (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const { clientX, clientY } = event;
-                    const loaded = tree ?? (await loadTree(item.id));
-                    const root = loaded ? (childrenOf(loaded, rootParent(loaded))[0]?.id ?? null) : null;
-                    const target = portfolio ? { kind: "portfolio" as const, id: root } : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
-                    menu.openAt(clientX, clientY, menuFor(item, loaded, target));
-                  }}
-                  onClick={async () => {
-                    if (portfolio) {
-                      // Se abre su página (sus portafolios y recientes); pulsarlo
-                      // con la página ya abierta lo pliega.
-                      if (!isOpen || lit) toggle(item.id);
-                      const loaded = await loadTree(item.id, true);
-                      if (loaded) {
-                        showPortfolio(loaded, null);
-                        onOpen();
-                      }
-                      return;
-                    }
-                    const loaded = await loadTree(item.id);
-                    const doc = loaded?.documents[0];
-                    if (doc) await openDoc(item.id, doc.id);
-                  }}
-                  className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${PAD[0]} ${
-                    lit ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
-                  }`}
-                  aria-current={lit ? "page" : undefined}
-                >
-                  {portfolio ? (
-                    <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                  ) : (
-                    <span className="size-3.5 shrink-0" />
-                  )}
-                  <Icon className="size-3.5 shrink-0 text-faint" />
-                  <span className="truncate">{item.title || t("Sin título")}</span>
-                  {item.access === "edit" || item.access === "admin" ? (
-                    <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} />
-                  ) : null}
-                  {workspaces ? null : (
-                    <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
-                  )}
-                </button>
+                {portfolio ? (
+                  // Como un portafolio de la Carpeta Personal: la flecha pliega o
+                  // despliega; el nombre abre su página.
+                  <div
+                    title={t("De {0}", { 0: item.ownerName })}
+                    onContextMenu={rootMenu}
+                    data-row={lit ? "marked" : ""}
+                    className={`relative flex h-9 shrink-0 items-center rounded-md ${PAD[0]} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
+                  >
+                    {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
+                    <button
+                      type="button"
+                      aria-label={isOpen ? t("Cerrar {0}", { 0: item.title }) : t("Abrir {0}", { 0: item.title })}
+                      onClick={() => {
+                        if (!isOpen) void loadTree(item.id);
+                        toggle(item.id);
+                      }}
+                      className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
+                    >
+                      <ChevronRight className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        // Su página: sus portafolios, documentos y recientes.
+                        const loaded = await loadTree(item.id, true);
+                        if (loaded) {
+                          showPortfolio(loaded, null);
+                          onOpen();
+                        }
+                      }}
+                      aria-current={lit ? "page" : undefined}
+                      className="flex h-9 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg"
+                    >
+                      {isOpen ? (
+                        <FolderOpen className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                      ) : (
+                        <Folder className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                      )}
+                      <span className="truncate">{item.title || t("Sin título")}</span>
+                      {editable ? <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} /> : null}
+                      {workspaces ? null : (
+                        <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs font-normal text-faint">{item.ownerName}</span>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title={t("De {0}", { 0: item.ownerName })}
+                    onContextMenu={rootMenu}
+                    onClick={async () => {
+                      const loaded = await loadTree(item.id);
+                      const doc = loaded?.documents[0];
+                      if (doc) await openDoc(item.id, doc.id);
+                    }}
+                    aria-current={lit ? "page" : undefined}
+                    className={`relative flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${PAD[0]} ${
+                      lit ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                    }`}
+                  >
+                    {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
+                    <FileText className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                    <span className="truncate">{item.title || t("Sin título")}</span>
+                    {editable ? <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} /> : null}
+                    {workspaces ? null : (
+                      <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
+                    )}
+                  </button>
+                )}
                 {portfolio && isOpen ? (
                   tree === undefined ? (
                     <p className="py-1 pl-10 text-xs text-faint">{t("Cargando…")}</p>
@@ -328,22 +360,34 @@ function SharedBranch({
         const lit = litPortfolio === portfolio.id;
         return (
           <li key={portfolio.id}>
-            <button
-              type="button"
-              onClick={() => {
-                if (!isOpen || lit) onToggle(key);
-                onOpenPortfolio(portfolio.id);
-              }}
+            <div
               onContextMenu={(event) => onMenu(event, { kind: "portfolio", id: portfolio.id })}
-              aria-current={lit ? "page" : undefined}
-              className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${pad} ${
-                lit ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
-              }`}
+              data-row={lit ? "marked" : ""}
+              className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
             >
-              <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`} />
-              <FolderOpen className="size-3.5 shrink-0 text-faint" />
-              <span className="truncate">{portfolio.name}</span>
-            </button>
+              {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
+              <button
+                type="button"
+                aria-label={isOpen ? t("Cerrar {0}", { 0: portfolio.name }) : t("Abrir {0}", { 0: portfolio.name })}
+                onClick={() => onToggle(key)}
+                className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
+              >
+                <ChevronRight className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenPortfolio(portfolio.id)}
+                aria-current={lit ? "page" : undefined}
+                className="flex h-9 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg"
+              >
+                {isOpen ? (
+                  <FolderOpen className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                ) : (
+                  <Folder className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                )}
+                <span className="truncate">{portfolio.name}</span>
+              </button>
+            </div>
             {isOpen ? (
               <SharedBranch
                 tree={tree}
@@ -373,11 +417,10 @@ function SharedBranch({
                   onContextMenu={(event) => onMenu(event, { kind: "doc", id: document.id })}
                   aria-current={on ? "page" : undefined}
                   className={`relative flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${pad} ${
-                    on ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                    on ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
                   }`}
                 >
                   {on ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
-                  <span className="size-3.5 shrink-0" />
                   <Icon className={`size-3.5 shrink-0 ${on ? "text-accent" : "text-faint"}`} />
                   <span className="truncate">{document.title}</span>
                 </button>

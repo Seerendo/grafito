@@ -375,9 +375,9 @@ After that, the start screen is a normal sign-in.
     organization, also to lower it.
   - Only someone from the organization or its sub-organizations can be a
     workspace's administrator.
-  - Clicking a workspace (or one of its portfolios) opens its page, like the
-    Carpeta Personal's: its portfolios, its documents and the recent ones,
-    with a path back up. Only what is open stays highlighted in the
+  - As in the Carpeta Personal, the arrow of a workspace (or of one of its
+    portfolios) folds or unfolds it, and clicking its name opens its page:
+    its portfolios, its documents and the recent ones, with a path back up. Only what is open stays highlighted in the
     directory: the Carpeta Personal is no longer marked.
   - Right-click a workspace, one of its portfolios or a document, in the
     directory or on its page (also on an empty spot of the page, as in the
