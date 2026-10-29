@@ -21,6 +21,22 @@ type OllamaMessage =
   | { role: "assistant"; content: string; tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[] }
   | { role: "tool"; content: string; tool_name: string };
 
+/**
+ * Contexto que se le pide a Ollama (`num_ctx`). Por defecto usa 2048–4096
+ * tokens y, si la conversación no cabe, recorta por el principio: se perdían
+ * las instrucciones y las herramientas, y el modelo decía haber hecho cosas
+ * que no hizo. Se pide lo que hace falta (unos 3 caracteres por token, más
+ * margen para la respuesta), en potencias de 2 para que Ollama no recargue el
+ * modelo a cada mensaje, entre 8192 y 32768.
+ */
+export function contextSize(messages: ChatMessage[], tools: ToolSpec[]): number {
+  const chars = messages.reduce((sum, message) => sum + message.content.length, 0) + JSON.stringify(tools).length;
+  const needed = Math.ceil(chars / 3) + 2048;
+  let size = 8192;
+  while (size < needed && size < 32_768) size *= 2;
+  return size;
+}
+
 export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpec[]) {
   const mapped: OllamaMessage[] = messages.map((message) => {
     if (message.role === "tool") return { role: "tool", content: message.content, tool_name: message.name };
@@ -38,6 +54,7 @@ export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpe
   return {
     model,
     stream: false,
+    options: { num_ctx: contextSize(messages, tools) },
     messages: mapped,
     ...(tools.length
       ? {

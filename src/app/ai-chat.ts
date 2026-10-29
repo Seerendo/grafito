@@ -97,9 +97,15 @@ function contextOf(turns: ChatTurn[]): { role: "user" | "assistant"; content: st
   let size = 0;
   for (let index = usable.length - 1; index >= 0; index -= 1) {
     const turn = usable[index]!;
-    size += turn.content.length;
+    // Lo que de verdad hizo en esa respuesta (no solo lo que dijo): sin esto,
+    // el modelo veía «creé la nota» sin rastro de la herramienta y a veces lo
+    // imitaba después sin llamarla.
+    const actions =
+      turn.role === "assistant" && turn.tools?.length ? `\n\n[Acciones: ${turn.tools.map((tool) => tool.label).join(" · ")}]` : "";
+    const content = `${turn.content}${actions}`;
+    size += content.length;
     if (picked.length > 0 && size > CONTEXT_CHARS) break;
-    picked.unshift({ role: turn.role, content: turn.content });
+    picked.unshift({ role: turn.role, content });
   }
   // La conversación que recibe el modelo empieza por la persona.
   while (picked[0]?.role === "assistant") picked.shift();

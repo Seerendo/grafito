@@ -1101,7 +1101,9 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
     - **History** lists them, opens one or deletes it. **New conversation**
       starts another.
   - **Context:** each conversation sends only its own turns to the model: the
-    last 30, up to about 24,000 characters (`app/ai-chat.ts`).
+    last 30, up to about 24,000 characters (`app/ai-chat.ts`). Each earlier
+    answer carries what it really did, from its tool chips
+    (`[Acciones: Creó «X» · …]`), not only what it said.
   - **Minimize:** a click outside the panel (on desktop) shrinks it toward its
     button in 200 ms. Opening animates the other way. The draft lives in the
     chat store, so it survives.
@@ -1142,6 +1144,17 @@ to 8 steps.
   (`unpdf`). Images and scanned PDFs give no text.
 - **Response:** streamed as NDJSON. The chat shows each tool used, and you can
   click one to open the note.
+- **Not claiming what it didn't do** (`server/ai/guard.ts`): if the final
+  answer says it created, edited or saved something (`CLAIMS_WRITE`) but no
+  write tool succeeded in that answer, the agent asks the model once more to
+  do it with the tool or to correct itself; if it still claims it, the answer
+  ends with a visible warning that nothing changed in the vault.
+- **Context within an answer:** when the tool results of one answer pass
+  about 40,000 characters, the older ones are shortened (the last two stay
+  whole). Ollama gets `num_ctx` sized to the conversation (8,192 to 32,768
+  tokens, in powers of two): its default of 2–4k tokens cut the start of the
+  conversation, losing the instructions and the tools. LM Studio's context is
+  set when loading the model in LM Studio itself.
 
 Ollama and LM Studio aren't in the compose. Run them outside it with their
 port exposed. Enable the provider in Administration → AI, then connect it in

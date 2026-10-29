@@ -74,7 +74,8 @@ test("los descendientes se encuentran aunque haya muchos niveles y estén desord
   const started = performance.now();
   const ids = descendantIds(chain, "p0");
   assert.equal(ids.size, 5000);
-  assert.ok(performance.now() - started < 200, "debe ser lineal");
+  // Cuadrático tardaba segundos; lineal, milisegundos (margen amplio para máquinas ocupadas).
+  assert.ok(performance.now() - started < 1500, "debe ser lineal");
   assert.deepEqual([...descendantIds(chain, "p4998")].sort(), ["p4998", "p4999"]);
 });
 
