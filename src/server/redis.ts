@@ -147,3 +147,46 @@ export async function redisTouchPresence(
   if (stale.length > 0) await redis.hDel(key, stale);
   return names;
 }
+
+const TREE = "grafito:tree:";
+
+/**
+ * Árboles de lo compartido ya armados (ver `share.ts`), compartidos entre
+ * instancias: así todas sirven la misma versión (y la misma ETag) y solo una
+ * la rehace tras cada cambio. Un hash por elemento y variante con la versión
+ * (`meta`: revisión y hora en que se armó) y el cuerpo comprimido (`gz`, en
+ * base64), escritos juntos; y aparte cuándo se comprobó por última vez que
+ * seguía al día. `null` sin Redis.
+ */
+export type SharedTreeMeta = { revision: number; at: number };
+
+export async function redisTreeState(key: string): Promise<{ meta: SharedTreeMeta | null; checkedAt: number | null } | null> {
+  const redis = await client();
+  if (!redis) return null;
+  const [meta, checked] = await Promise.all([redis.hGet(`${TREE}${key}`, "meta"), redis.get(`${TREE}${key}:checked`)]);
+  return { meta: meta ? (JSON.parse(meta) as SharedTreeMeta) : null, checkedAt: checked ? Number(checked) : null };
+}
+
+/** El cuerpo comprimido de esa versión, si sigue siendo la guardada. */
+export async function redisTreeBody(key: string, want: SharedTreeMeta): Promise<Buffer | null> {
+  const redis = await client();
+  if (!redis) return null;
+  const [meta, gz] = await redis.hmGet(`${TREE}${key}`, ["meta", "gz"]);
+  if (!meta || !gz) return null;
+  const found = JSON.parse(meta) as SharedTreeMeta;
+  return found.revision === want.revision && found.at === want.at ? Buffer.from(gz, "base64") : null;
+}
+
+export async function redisPutTree(key: string, meta: SharedTreeMeta, gzip: Buffer, ttlMs: number): Promise<void> {
+  const redis = await client();
+  if (!redis) return;
+  await redis.hSet(`${TREE}${key}`, { meta: JSON.stringify(meta), gz: gzip.toString("base64") });
+  await redis.pExpire(`${TREE}${key}`, ttlMs);
+  await redis.set(`${TREE}${key}:checked`, String(meta.at), { PX: ttlMs });
+}
+
+export async function redisTreeChecked(key: string, at: number, ttlMs: number): Promise<void> {
+  const redis = await client();
+  if (!redis) return;
+  await redis.set(`${TREE}${key}:checked`, String(at), { PX: ttlMs });
+}

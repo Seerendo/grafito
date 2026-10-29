@@ -164,9 +164,11 @@ docker compose up -d --scale app=4
   5 for sign-ins. With 4 instances that is 80, under Postgres's default
   `max_connections` of 100. For more instances, lower `GRAFITO_DB_POOL` or
   raise `max_connections`.
-- Each instance has its own memory caches (shared trees, permissions,
-  sessions for a few seconds); they never serve anything older than their
-  short limits, so no sticky sessions are needed.
+- The tree of each shared item or workspace is built by one instance and
+  kept in Redis for the rest, so all of them send the same version. Each
+  instance also keeps short caches of its own (permissions, sessions for a
+  few seconds); none serves anything older than its short limit, so no sticky
+  sessions are needed.
 
 ## When something is down
 

@@ -5,7 +5,6 @@ import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import {
-  openByToken,
   ownerShares,
   shareCandidates,
   shareOrgCandidates,
@@ -138,10 +137,3 @@ export const publicDocContent = createServerFn({ method: "GET" })
     return sharedDocText(await getSql(), { token: data.token }, data.docId);
   });
 
-/** Abre un elemento público por su enlace. No requiere sesión. */
-export const openPublic = createServerFn({ method: "GET" })
-  .validator((input: unknown) => z.object({ token: z.string().min(16).max(64) }).parse(input))
-  .handler(async ({ data }) => {
-    const { getSql } = await import("@/lib/db");
-    return openByToken(await getSql(), data.token);
-  });

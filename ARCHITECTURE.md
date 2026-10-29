@@ -204,7 +204,7 @@ The `vault/` pieces:
 | `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
 | `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
 | `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
-| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `sharedDocContent`, `openPublic` and `publicDocContent` (the last two without a session). The tree of something shared with me comes from `GET /api/shared/:id/tree` |
+| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree` |
 | `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
 | `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
@@ -443,13 +443,16 @@ or sends their text:
   JSON row per document instead of one serialized object each. Each document's
   row is cached until the document changes, so rebuilding the tree of
   thousands of notes after a save is cheap.
-- `GET /api/shared/:id/tree` serves it, gzipped once per version, with an
-  ETag (same on every instance: revision, what the person sees and a 10-minute
-  window, so cached signed file links never expire). An unchanged tree is a
-  304. During 15 s the cached tree is served without checking the revision;
-  after creating or deleting something the client asks with `?fresh=1`
-  (`app/shared-open.ts`). The public link still uses the `openPublic` server
-  function.
+- `GET /api/shared/:id/tree` (and `GET /api/public/:token/tree` for a public
+  link, without a session) serves it, gzipped once per version, with an ETag
+  (the version and what the person sees). An unchanged tree is a 304. A
+  version lasts at most 10 minutes, so cached signed file links never expire.
+  During 15 s it is served without checking the revision; after creating or
+  deleting something the client asks with `?fresh=1` (`app/shared-open.ts`).
+- With Redis, the built tree is shared by all app instances
+  (`redisTreeState` and the rest in `redis.ts`): one instance builds a version
+  and the others take it, so every instance sends the same body and ETag and
+  a browser re-downloads the tree only when it really changed.
 - Documents arrive `lazy` (empty `content`): `SharedViewer` asks for the text
   when one is opened (`sharedDocContent`, `publicDocContent`), and the graph
   and mentions use `wikiLinks`. The directory reuses a tree read less than

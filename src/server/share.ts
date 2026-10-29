@@ -1,9 +1,10 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import type { Sql } from "@/lib/db";
 import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
 import { signedFileUrl } from "./file-links";
 import { portfolioLineage } from "./space";
+import { redisPutTree, redisTreeBody, redisTreeChecked, redisTreeState, type SharedTreeMeta } from "./redis";
 import { docContent, vaultIndex, type IndexDoc } from "./vault-index";
 import { packBody, packBodyFrom, packDoc, type PackedTree } from "@/domain/share-pack";
 import { descendantIds } from "@/domain/vault/portfolios";
@@ -377,19 +378,45 @@ const packedDocs = new WeakMap<IndexDoc, string>();
 const TREE_TTL_MS = 10 * 60_000;
 const STALE_MS = 15_000;
 const MAX_TREES = 300;
-type PackedEntry = { body: string; at: number; checkedAt: number; revision: number | null; gzip?: Buffer };
+
+/**
+ * Una versión del árbol. Con Redis, la misma en todas las instancias (ver
+ * `redisTreeState`): la arma una y las demás la toman de ahí, así que todas
+ * mandan el mismo cuerpo con la misma ETag. `body` y `gzip` se sacan uno del
+ * otro cuando hace falta.
+ */
+type PackedEntry = { revision: number | null; at: number; checkedAt: number; body?: string; gzip?: Buffer };
 const packedTrees = new Map<string, PackedEntry>();
+
+function bodyOf(entry: PackedEntry): string {
+  return (entry.body ??= gunzipSync(entry.gzip!).toString("utf8"));
+}
+
+function gzipOf(entry: PackedEntry): Buffer {
+  return (entry.gzip ??= gzipSync(entry.body!, { level: 4 }));
+}
+
+function keepLocal(key: string, entry: PackedEntry): void {
+  packedTrees.delete(key);
+  packedTrees.set(key, entry);
+  while (packedTrees.size > MAX_TREES) packedTrees.delete(packedTrees.keys().next().value!);
+}
+
+/** La versión `meta` guardada en Redis (la local si ya es esa). */
+async function sharedVersion(key: string, meta: SharedTreeMeta, local: PackedEntry | undefined, now: number): Promise<PackedEntry | null> {
+  if (local && local.revision === meta.revision && local.at === meta.at) return local;
+  const gzip = await redisTreeBody(key, meta).catch(() => null);
+  if (!gzip) return null;
+  const entry: PackedEntry = { revision: meta.revision, at: meta.at, checkedAt: now, gzip };
+  keepLocal(key, entry);
+  return entry;
+}
 
 /**
  * Lo compartido, listo para el visor (ver `domain/share-pack.ts`). Los
  * archivos se sirven por `/api/files/:id` con los enlaces que da `links`:
  * firmados para quien tiene sesión, o con el token del enlace público.
  */
-async function packedTree(sql: Sql, item: ItemRecord, variant: string, links: FileLinks): Promise<PackedTree> {
-  const { share, entry } = await packedEntry(sql, item, variant, links, true);
-  return { share, body: entry.body };
-}
-
 async function packedEntry(
   sql: Sql,
   item: ItemRecord,
@@ -406,15 +433,34 @@ async function packedEntry(
     access: accessOf(item),
   };
   const key = `${item.id}:${variant}`;
-  const cached = packedTrees.get(key);
   const now = Date.now();
-  const alive = cached && now - cached.at < TREE_TTL_MS;
-  if (alive && !fresh && now - cached.checkedAt < STALE_MS) return { share, entry: cached, key };
-  const index = await vaultIndex(sql, item.owner_id);
-  if (alive && index && cached.revision === index.revision) {
-    cached.checkedAt = now;
-    return { share, entry: cached, key };
+  const local = packedTrees.get(key);
+  const alive = (entry: { at: number } | null | undefined) => Boolean(entry && now - entry.at < TREE_TTL_MS);
+  // 1. La que tiene esta instancia, comprobada hace poco.
+  if (local && alive(local) && !fresh && now - local.checkedAt < STALE_MS) return { share, entry: local, key };
+  // 2. La compartida, si otra instancia la comprobó hace poco.
+  const state = await redisTreeState(key).catch(() => null);
+  if (state?.meta && alive(state.meta) && !fresh && state.checkedAt !== null && now - state.checkedAt < STALE_MS) {
+    const entry = await sharedVersion(key, state.meta, local, now);
+    if (entry) {
+      entry.checkedAt = state.checkedAt;
+      return { share, entry, key };
+    }
   }
+  // 3. Si la revisión no cambió, la que hay sigue valiendo.
+  const index = await vaultIndex(sql, item.owner_id);
+  if (index) {
+    const meta = state?.meta ?? (local ? { revision: local.revision ?? -1, at: local.at } : null);
+    if (meta && alive(meta) && meta.revision === index.revision) {
+      const entry = state?.meta ? await sharedVersion(key, state.meta, local, now) : local!;
+      if (entry) {
+        entry.checkedAt = now;
+        if (state) await redisTreeChecked(key, now, TREE_TTL_MS - (now - entry.at)).catch(() => undefined);
+        return { share, entry, key };
+      }
+    }
+  }
+  // 4. Armarla.
   let body: string;
   if (index) {
     const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, index.portfolios, index.documents);
@@ -459,25 +505,33 @@ async function packedEntry(
   const entry: PackedEntry = { body, at: now, checkedAt: now, revision: index?.revision ?? null };
   // Sin bóveda en el servidor (copia publicada) no hay revisión: no se guarda.
   if (index) {
-    packedTrees.delete(key);
-    packedTrees.set(key, entry);
-    while (packedTrees.size > MAX_TREES) packedTrees.delete(packedTrees.keys().next().value!);
+    keepLocal(key, entry);
+    if (state) await redisPutTree(key, { revision: index.revision, at: now }, gzipOf(entry), TREE_TTL_MS).catch(() => undefined);
   }
   return { share, entry, key };
 }
 
+type TreeResponse = { share: PackedTree["share"]; body: () => string; etag: string; gzip: () => Buffer };
+
 /**
- * El árbol para `GET /api/shared/:id/tree`: con su ETag (cambia con la
- * revisión de la bóveda y con lo que ve esta persona), para que el navegador
- * no lo vuelva a bajar si no cambió, y comprimido una sola vez por versión.
+ * Para las rutas del árbol: el cuerpo y su ETag, que es igual en todas las
+ * instancias (la versión y lo que ve esta persona), para que el navegador no
+ * lo vuelva a bajar si no cambió.
  */
+function treeResponse(share: PackedTree["share"], entry: PackedEntry, key: string): TreeResponse {
+  const version = entry.revision === null ? createHash("sha1").update(bodyOf(entry)).digest("hex") : `${key}:${entry.revision}:${entry.at}`;
+  const tag = createHash("sha1").update(`${version}|${JSON.stringify(share)}`).digest("base64url");
+  return { share, body: () => bodyOf(entry), etag: `"${tag}"`, gzip: () => gzipOf(entry) };
+}
+
+/** El árbol para `GET /api/shared/:id/tree` (ver `treeResponse`). */
 export async function sharedTreeForUser(
   sql: Sql,
   userId: string,
   shareId: string,
   canDownload: boolean,
   fresh = false,
-): Promise<{ share: PackedTree["share"]; body: string; etag: string; gzip: () => Buffer } | null> {
+): Promise<TreeResponse | null> {
   const item = await grantedItem(sql, userId, shareId);
   if (!item) return null;
   const { share, entry, key } = await packedEntry(
@@ -490,20 +544,24 @@ export async function sharedTreeForUser(
     }),
     fresh,
   );
-  // Igual en todas las instancias (no depende de cuándo armó cada una el suyo):
-  // la revisión, lo que ve esta persona y la ventana de 10 minutos en que se
-  // armó, para que un árbol guardado en el navegador nunca tenga enlaces de
-  // archivo vencidos (valen una hora).
-  const window = Math.floor(entry.at / TREE_TTL_MS);
-  const tag = createHash("sha1")
-    .update(`${entry.revision === null ? entry.body : `${key}:${entry.revision}`}|${window}|${JSON.stringify(share)}`)
-    .digest("base64url");
-  return {
-    share,
-    body: entry.body,
-    etag: `"${tag}"`,
-    gzip: () => (entry.gzip ??= gzipSync(entry.body, { level: 4 })),
-  };
+  return treeResponse(share, entry, key);
+}
+
+/** El árbol para `GET /api/public/:token/tree`: lo publicado por enlace, sin sesión. */
+export async function publicTreeFor(sql: Sql, token: string, fresh = false): Promise<TreeResponse | null> {
+  const item = await publicItem(sql, token);
+  if (!item) return null;
+  const { share, entry, key } = await packedEntry(
+    sql,
+    item,
+    "public",
+    (docId) => {
+      const url = `/api/files/${encodeURIComponent(docId)}?token=${encodeURIComponent(token)}`;
+      return { url, downloadUrl: `${url}&download=1` };
+    },
+    fresh,
+  );
+  return treeResponse({ ...share, token }, entry, key);
 }
 
 /** Si el elemento incluye el documento `docId` (sin armar todo el árbol). */
@@ -637,17 +695,6 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
     limit 1
   `;
   return rows[0] ?? null;
-}
-
-/** Un elemento público, por su enlace. Sin sesión. */
-export async function openByToken(sql: Sql, token: string): Promise<PackedTree | null> {
-  const item = await publicItem(sql, token);
-  if (!item) return null;
-  const tree = await packedTree(sql, item, "public", (docId) => {
-    const url = `/api/files/${encodeURIComponent(docId)}?token=${encodeURIComponent(token)}`;
-    return { url, downloadUrl: `${url}&download=1` };
-  });
-  return { ...tree, share: { ...tree.share, token } };
 }
 
 async function publicItem(sql: Sql, token: string): Promise<ItemRecord | null> {
