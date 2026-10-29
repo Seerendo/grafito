@@ -1,6 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
 import { merge3 } from "@/domain/vault/merge";
+import { descendantIds } from "@/domain/vault/portfolios";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
@@ -80,7 +81,7 @@ function toDocument(row: DocRow): Document {
 }
 
 /** Reserva la siguiente revisión del usuario. */
-async function nextRevision(sql: Sql, userId: string): Promise<number> {
+export async function nextRevision(sql: Sql, userId: string): Promise<number> {
   const rows = await sql<{ revision: number }>`
     insert into vault_state (user_id, revision) values (${userId}, 1)
     on conflict (user_id) do update set revision = vault_state.revision + 1
@@ -586,18 +587,10 @@ async function trashedPortfolios(sql: Sql, userId: string): Promise<TrashedPortf
 
 /** `id` y los portafolios de la papelera que cuelgan de él. */
 function trashedSubtree(trashed: TrashedPortfolio[], id: string): Set<string> {
-  const ids = new Set([id]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const portfolio of trashed) {
-      if (portfolio.parent_id && ids.has(portfolio.parent_id) && !ids.has(portfolio.id)) {
-        ids.add(portfolio.id);
-        grew = true;
-      }
-    }
-  }
-  return ids;
+  return descendantIds(
+    trashed.map((portfolio) => ({ id: portfolio.id, parentId: portfolio.parent_id })),
+    id,
+  );
 }
 
 /**

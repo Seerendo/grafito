@@ -1,6 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { formatBytes } from "@/domain/space";
-import { portfolioLineage } from "./share";
+import { descendantIds } from "@/domain/vault/portfolios";
+import { vaultIndex, type IndexPortfolio } from "./vault-index";
 import { workspaceByOwner, workspaceOwnLimit } from "./workspace";
 
 export { checkShares, formatBytes } from "@/domain/space";
@@ -23,24 +24,64 @@ export const DEFAULT_USER_KEY = "space_default_user";
  * trabajo: eso cuenta en el del espacio de trabajo, no en el personal.
  */
 export async function userUsage(sql: Sql, userId: string): Promise<number> {
+  // Dos sumas que usan índices (lo subido por él, y lo suyo sin `uploaded_by`)
+  // en vez de `coalesce(uploaded_by, user_id)`, que recorría toda la tabla.
   const rows = await sql<{ bytes: unknown }>`
-    select coalesce(sum(file_size), 0)::bigint as bytes from vault_doc
-    where kind = 'file' and coalesce(uploaded_by, user_id) = ${userId}
-      and user_id not in (select owner_id from workspace)
+    select (
+      (select coalesce(sum(file_size), 0) from vault_doc
+        where kind = 'file' and uploaded_by = ${userId} and user_id not in (select owner_id from workspace))
+      + (select coalesce(sum(file_size), 0) from vault_doc
+        where user_id = ${userId} and kind = 'file' and uploaded_by is null)
+    )::bigint as bytes
   `;
   return Number(rows[0]?.bytes ?? 0);
 }
 
+/** Los portafolios vivos del dueño (del índice en memoria, ver `vault-index.ts`). */
+async function ownerPortfolios(sql: Sql, ownerId: string): Promise<IndexPortfolio[]> {
+  const index = await vaultIndex(sql, ownerId);
+  if (index) return index.portfolios;
+  const rows = await sql<{ id: string; name: string; parent_id: string | null }>`
+    select id, name, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
+  `;
+  return rows.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id }));
+}
+
 /** El portafolio y todos sus subportafolios. */
 export async function subtree(sql: Sql, ownerId: string, portfolioId: string): Promise<string[]> {
-  const rows = await sql<{ id: string; parent_id: string | null }>`
-    select id, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
-  `;
-  const out = [portfolioId];
-  for (let index = 0; index < out.length; index += 1) {
-    for (const row of rows) if (row.parent_id === out[index] && !out.includes(row.id)) out.push(row.id);
-  }
+  return [...descendantIds(await ownerPortfolios(sql, ownerId), portfolioId)];
+}
+
+/** Los portafolios del dueño desde `portfolioId` hasta la raíz (él incluido). */
+export async function portfolioLineage(sql: Sql, ownerId: string, portfolioId: string): Promise<string[]> {
+  const parent = new Map((await ownerPortfolios(sql, ownerId)).map((row) => [row.id, row.parentId]));
+  const out: string[] = [];
+  for (let id: string | null = portfolioId; id && parent.has(id) && !out.includes(id); id = parent.get(id) ?? null) out.push(id);
   return out;
+}
+
+/** Lo subido en la bóveda del dueño, por portafolio y por quien lo subió (una sola lectura). */
+async function fileSums(sql: Sql, ownerId: string): Promise<{ uploader: string; portfolioId: string | null; bytes: number }[]> {
+  const rows = await sql<{ uploader: string; portfolio_id: string | null; bytes: unknown }>`
+    select coalesce(uploaded_by, user_id) as uploader, portfolio_id, coalesce(sum(file_size), 0)::bigint as bytes
+    from vault_doc where user_id = ${ownerId} and kind = 'file'
+    group by 1, 2
+  `;
+  return rows.map((row) => ({ uploader: row.uploader, portfolioId: row.portfolio_id, bytes: Number(row.bytes) }));
+}
+
+function usageOf(
+  sums: { uploader: string; portfolioId: string | null; bytes: number }[],
+  ids: Set<string>,
+): { total: number; byUser: Map<string, number> } {
+  const byUser = new Map<string, number>();
+  let total = 0;
+  for (const row of sums) {
+    if (!row.portfolioId || !ids.has(row.portfolioId)) continue;
+    total += row.bytes;
+    byUser.set(row.uploader, (byUser.get(row.uploader) ?? 0) + row.bytes);
+  }
+  return { total, byUser };
 }
 
 /** Lo que ocupa un portafolio (con sus subportafolios), en total y por quien subió cada archivo. */
@@ -49,21 +90,8 @@ export async function portfolioUsage(
   ownerId: string,
   portfolioId: string,
 ): Promise<{ total: number; byUser: Map<string, number> }> {
-  const ids = await subtree(sql, ownerId, portfolioId);
-  const rows = await sql<{ uploader: string; portfolio_id: string | null; bytes: unknown }>`
-    select coalesce(uploaded_by, user_id) as uploader, portfolio_id, coalesce(sum(file_size), 0)::bigint as bytes
-    from vault_doc where user_id = ${ownerId} and kind = 'file'
-    group by 1, 2
-  `;
-  const byUser = new Map<string, number>();
-  let total = 0;
-  for (const row of rows) {
-    if (!row.portfolio_id || !ids.includes(row.portfolio_id)) continue;
-    const bytes = Number(row.bytes);
-    total += bytes;
-    byUser.set(row.uploader, (byUser.get(row.uploader) ?? 0) + bytes);
-  }
-  return { total, byUser };
+  const ids = descendantIds(await ownerPortfolios(sql, ownerId), portfolioId);
+  return usageOf(await fileSums(sql, ownerId), ids);
 }
 
 export async function defaultUserLimit(sql: Sql): Promise<number | null> {
@@ -113,13 +141,40 @@ export async function checkSpace(
     }
   }
   if (!input.portfolioId) return null;
-  const lineage = await portfolioLineage(sql, input.ownerId, input.portfolioId);
+  // Todo de una vez (antes, varias consultas por cada nivel de portafolios).
+  const portfolios = await ownerPortfolios(sql, input.ownerId);
+  const parent = new Map(portfolios.map((row) => [row.id, row.parentId]));
+  const lineage: string[] = [];
+  for (let id: string | null = input.portfolioId; id && parent.has(id) && !lineage.includes(id); id = parent.get(id) ?? null) {
+    lineage.push(id);
+  }
+  const limits = new Map(
+    (
+      await sql<{ portfolio_id: string; bytes: unknown }>`
+        select portfolio_id, bytes from space_portfolio where owner_id = ${input.ownerId}
+      `
+    ).map((row) => [row.portfolio_id, Number(row.bytes)]),
+  );
+  const workspace = await workspaceByOwner(sql, input.ownerId);
+  if (workspace && !limits.has(workspace.root_portfolio_id)) {
+    const own = await workspaceOwnLimit(sql, input.ownerId);
+    if (own !== null) limits.set(workspace.root_portfolio_id, own);
+  }
+  const members = new Map(
+    (
+      await sql<{ portfolio_id: string; bytes: unknown }>`
+        select portfolio_id, bytes from space_member where owner_id = ${input.ownerId} and user_id = ${input.uploaderId}
+      `
+    ).map((row) => [row.portfolio_id, Number(row.bytes)]),
+  );
+  let sums: Awaited<ReturnType<typeof fileSums>> | null = null;
   for (const id of lineage) {
-    const limit = await portfolioLimit(sql, input.ownerId, id);
-    const member = (await memberLimits(sql, input.ownerId, id)).get(input.uploaderId) ?? null;
+    const limit = limits.get(id) ?? null;
+    const member = members.get(id) ?? null;
     if (limit === null && member === null) continue;
-    const usage = await portfolioUsage(sql, input.ownerId, id);
-    const name = await portfolioName(sql, input.ownerId, id);
+    sums ??= await fileSums(sql, input.ownerId);
+    const usage = usageOf(sums, descendantIds(portfolios, id));
+    const name = portfolios.find((row) => row.id === id)?.name ?? "";
     if (limit !== null && usage.total + input.bytes > limit) {
       return `El portafolio «${name}» está lleno: ${formatBytes(usage.total)} de ${formatBytes(limit)}.`;
     }
@@ -131,7 +186,4 @@ export async function checkSpace(
   return null;
 }
 
-async function portfolioName(sql: Sql, ownerId: string, id: string): Promise<string> {
-  const rows = await sql<{ name: string }>`select name from vault_portfolio where user_id = ${ownerId} and id = ${id} limit 1`;
-  return rows[0]?.name ?? "";
-}
+

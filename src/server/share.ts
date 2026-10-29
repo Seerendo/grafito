@@ -1,7 +1,12 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import type { Sql } from "@/lib/db";
 import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
 import { signedFileUrl } from "./file-links";
+import { portfolioLineage } from "./space";
+import { docContent, vaultIndex, type IndexDoc } from "./vault-index";
+import { packBody, packBodyFrom, packDoc, type PackedTree } from "@/domain/share-pack";
+import { descendantIds } from "@/domain/vault/portfolios";
 import type { ManualLink } from "@/domain/vault/types";
 
 /**
@@ -65,6 +70,13 @@ export type PublishedDoc = {
   updatedAt: string;
   /** Vínculos manuales a otros documentos de lo compartido (para el grafo y los vínculos). */
   links?: ManualLink[];
+  /**
+   * Sin el texto (`content` vacío): se pide al abrirlo (`sharedDocContent`,
+   * `publicDocContent`). Para el grafo y las menciones basta `wikiLinks`.
+   */
+  lazy?: boolean;
+  /** Los `[[títulos]]` que nombra, cuando el texto no viene (`lazy`). */
+  wikiLinks?: string[];
 };
 
 type FileLinks = (docId: string) => { url: string; downloadUrl: string | null };
@@ -83,6 +95,8 @@ export type SharedTree = {
     ownerName: string;
     visibility: "shared" | "public";
     access: ShareAccess;
+    /** Abierto por enlace público: con él se pide el texto de cada documento. */
+    token?: string;
   };
   portfolios: PublishedPortfolio[];
   documents: PublishedDoc[];
@@ -327,90 +341,199 @@ async function ownerName(sql: Sql, ownerId: string): Promise<string> {
   return rows[0]?.name?.trim() || "Alguien";
 }
 
-/** La bóveda del dueño en el servidor, sin los datos de los archivos; null si no la tiene. */
-async function vaultContent(
-  sql: Sql,
-  ownerId: string,
-): Promise<{ portfolios: PublishedPortfolio[]; documents: PublishedDoc[] } | null> {
-  const state = await sql<{ user_id: string }>`select user_id from vault_state where user_id = ${ownerId} limit 1`;
-  if (!state[0]) return null;
-  const portfolios = await sql<{ id: string; name: string; parent_id: string | null }>`
-    select id, name, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
-  `;
-  const docs = await sql<{
-    id: string;
-    title: string;
-    kind: "markdown" | "file";
-    portfolio_id: string | null;
-    content: string;
-    file_name: string | null;
-    file_mime: string | null;
-    links_json: string;
-    updated_by: string;
-    updated_at: unknown;
-  }>`
-    select id, title, kind, portfolio_id, content, file_name, file_mime, links_json, updated_by, updated_at
-    from vault_doc where user_id = ${ownerId} and not deleted
-  `;
+/** Un documento del índice (sin texto) como lo recibe el visor. */
+function indexDocument(document: IndexDoc): PublishedDoc {
   return {
-    portfolios: portfolios.map((row) => ({ id: row.id, name: row.name, parentId: row.parent_id })),
-    documents: docs.map((row) => ({
-      id: row.id,
-      title: row.title,
-      kind: row.kind,
-      portfolioId: row.portfolio_id,
-      content: row.content,
-      file: row.file_name ? { name: row.file_name, mime: row.file_mime ?? "application/octet-stream", url: "", downloadUrl: null } : null,
-      updatedBy: row.updated_by,
-      updatedAt: new Date(Number(row.updated_at)).toISOString(),
-      links: parseLinks(row.links_json),
-    })),
+    id: document.id,
+    title: document.title,
+    kind: document.kind,
+    portfolioId: document.portfolioId,
+    content: "",
+    lazy: true,
+    wikiLinks: document.wikiLinks,
+    file: document.file ? { ...document.file, url: "", downloadUrl: null } : null,
+    updatedBy: document.updatedBy,
+    updatedAt: document.updatedAt,
+    links: document.links,
   };
 }
 
-function parseLinks(raw: string): ManualLink[] {
-  try {
-    const links = JSON.parse(raw) as ManualLink[];
-    return Array.isArray(links)
-      ? links.filter((link) => link && typeof link.targetId === "string" && (link.kind === "referencia" || link.kind === "llama"))
-      : [];
-  } catch {
-    return [];
+/** Cada documento del índice ya empaquetado (se descarta solo cuando el documento cambia). */
+const packedDocs = new WeakMap<IndexDoc, string>();
+
+/**
+ * Árboles ya armados y empaquetados, por elemento y variante (con o sin
+ * descarga, o el enlace público), con la revisión de la bóveda del dueño con
+ * la que se armaron: todos los que abren lo mismo reciben el mismo texto sin
+ * volver a armarlo. Los enlaces firmados de los archivos valen una hora, así
+ * que se guardan como mucho 10 minutos.
+ *
+ * En un espacio de trabajo con mucha actividad cada guardado cambia la
+ * revisión; para no rehacer (ni volver a mandar) el árbol entero a cada rato,
+ * se sirve el que hay durante `STALE_MS` sin mirar la revisión. El texto de
+ * cada nota se pide aparte y siempre está al día; quien acaba de crear o
+ * borrar algo pide el árbol con `fresh` y lo ve al momento.
+ */
+const TREE_TTL_MS = 10 * 60_000;
+const STALE_MS = 15_000;
+const MAX_TREES = 300;
+type PackedEntry = { body: string; at: number; checkedAt: number; revision: number | null; gzip?: Buffer };
+const packedTrees = new Map<string, PackedEntry>();
+
+/**
+ * Lo compartido, listo para el visor (ver `domain/share-pack.ts`). Los
+ * archivos se sirven por `/api/files/:id` con los enlaces que da `links`:
+ * firmados para quien tiene sesión, o con el token del enlace público.
+ */
+async function packedTree(sql: Sql, item: ItemRecord, variant: string, links: FileLinks): Promise<PackedTree> {
+  const { share, entry } = await packedEntry(sql, item, variant, links, true);
+  return { share, body: entry.body };
+}
+
+async function packedEntry(
+  sql: Sql,
+  item: ItemRecord,
+  variant: string,
+  links: FileLinks,
+  fresh = false,
+): Promise<{ share: PackedTree["share"]; entry: PackedEntry; key: string }> {
+  const share = {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    ownerName: await ownerName(sql, item.owner_id),
+    visibility: item.visibility,
+    access: accessOf(item),
+  };
+  const key = `${item.id}:${variant}`;
+  const cached = packedTrees.get(key);
+  const now = Date.now();
+  const alive = cached && now - cached.at < TREE_TTL_MS;
+  if (alive && !fresh && now - cached.checkedAt < STALE_MS) return { share, entry: cached, key };
+  const index = await vaultIndex(sql, item.owner_id);
+  if (alive && index && cached.revision === index.revision) {
+    cached.checkedAt = now;
+    return { share, entry: cached, key };
   }
+  let body: string;
+  if (index) {
+    const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, index.portfolios, index.documents);
+    const docs: string[] = [];
+    for (const document of index.documents) {
+      if (!covered.documentIds.has(document.id)) continue;
+      // Lo común (una nota sin archivo y con todos sus vínculos dentro de lo
+      // compartido) se empaqueta una vez y se reutiliza hasta que cambie: así,
+      // tras cada guardado, rehacer el árbol de miles de notas es casi gratis.
+      const plain = !document.file && document.links.every((link) => covered.documentIds.has(link.targetId));
+      if (plain) {
+        let packed = packedDocs.get(document);
+        if (!packed) {
+          packed = packDoc(indexDocument(document));
+          packedDocs.set(document, packed);
+        }
+        docs.push(packed);
+        continue;
+      }
+      const shown = indexDocument(document);
+      docs.push(
+        packDoc({
+          ...shown,
+          links: shown.links?.filter((link) => covered.documentIds.has(link.targetId)),
+          file: shown.file ? { ...shown.file, ...links(document.id) } : null,
+        }),
+      );
+    }
+    body = packBodyFrom(index.portfolios.filter((portfolio) => covered.portfolioIds.has(portfolio.id)), docs);
+  } else {
+    // Sin bóveda en el servidor: la copia publicada (con el texto).
+    const portfolios = await readPortfolios(sql, item.owner_id);
+    const documents = await readDocs(sql, item.owner_id, true);
+    const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, portfolios, documents);
+    body = packBody(
+      portfolios.filter((portfolio) => covered.portfolioIds.has(portfolio.id)),
+      documents
+        .filter((document) => covered.documentIds.has(document.id))
+        .map((document) => ({ ...document, links: document.links?.filter((link) => covered.documentIds.has(link.targetId)) })),
+    );
+  }
+  const entry: PackedEntry = { body, at: now, checkedAt: now, revision: index?.revision ?? null };
+  // Sin bóveda en el servidor (copia publicada) no hay revisión: no se guarda.
+  if (index) {
+    packedTrees.delete(key);
+    packedTrees.set(key, entry);
+    while (packedTrees.size > MAX_TREES) packedTrees.delete(packedTrees.keys().next().value!);
+  }
+  return { share, entry, key };
 }
 
 /**
- * Contenido de un elemento compartido, listo para el visor. Los archivos se
- * sirven por `/api/files/:id` con los enlaces que da `links`: firmados para
- * quien tiene sesión, o con el token del enlace público.
+ * El árbol para `GET /api/shared/:id/tree`: con su ETag (cambia con la
+ * revisión de la bóveda y con lo que ve esta persona), para que el navegador
+ * no lo vuelva a bajar si no cambió, y comprimido una sola vez por versión.
  */
-async function treeFor(sql: Sql, item: ItemRecord, links?: FileLinks): Promise<SharedTree> {
-  const vault = await vaultContent(sql, item.owner_id);
-  const portfolios = vault?.portfolios ?? (await readPortfolios(sql, item.owner_id));
-  const documents = vault?.documents ?? (await readDocs(sql, item.owner_id, true));
-  const covered = coveredBy({ kind: item.kind, targetId: item.target_id }, portfolios, documents);
-  const shown = documents.filter((document) => covered.documentIds.has(document.id));
-  // Solo los vínculos hacia lo que también se comparte: el resto no se ve ni se nombra.
-  for (const document of shown) {
-    if (document.links) document.links = document.links.filter((link) => covered.documentIds.has(link.targetId));
-  }
-  if (vault) {
-    for (const document of shown) {
-      if (document.file && links) document.file = { ...document.file, ...links(document.id) };
-    }
-  }
+export async function sharedTreeForUser(
+  sql: Sql,
+  userId: string,
+  shareId: string,
+  canDownload: boolean,
+  fresh = false,
+): Promise<{ share: PackedTree["share"]; body: string; etag: string; gzip: () => Buffer } | null> {
+  const item = await grantedItem(sql, userId, shareId);
+  if (!item) return null;
+  const { share, entry, key } = await packedEntry(
+    sql,
+    item,
+    canDownload ? "download" : "view",
+    (docId) => ({
+      url: signedFileUrl(docId, item.owner_id),
+      downloadUrl: canDownload ? signedFileUrl(docId, item.owner_id, true) : null,
+    }),
+    fresh,
+  );
+  // Igual en todas las instancias (no depende de cuándo armó cada una el suyo):
+  // la revisión, lo que ve esta persona y la ventana de 10 minutos en que se
+  // armó, para que un árbol guardado en el navegador nunca tenga enlaces de
+  // archivo vencidos (valen una hora).
+  const window = Math.floor(entry.at / TREE_TTL_MS);
+  const tag = createHash("sha1")
+    .update(`${entry.revision === null ? entry.body : `${key}:${entry.revision}`}|${window}|${JSON.stringify(share)}`)
+    .digest("base64url");
   return {
-    share: {
-      id: item.id,
-      kind: item.kind,
-      title: item.title,
-      ownerName: await ownerName(sql, item.owner_id),
-      visibility: item.visibility,
-      access: accessOf(item),
-    },
-    portfolios: portfolios.filter((portfolio) => covered.portfolioIds.has(portfolio.id)),
-    documents: shown,
+    share,
+    body: entry.body,
+    etag: `"${tag}"`,
+    gzip: () => (entry.gzip ??= gzipSync(entry.body, { level: 4 })),
   };
+}
+
+/** Si el elemento incluye el documento `docId` (sin armar todo el árbol). */
+async function covers(sql: Sql, item: ItemRecord, docId: string): Promise<boolean> {
+  const index = await vaultIndex(sql, item.owner_id);
+  if (!index) {
+    const portfolios = await readPortfolios(sql, item.owner_id);
+    const documents = await readDocs(sql, item.owner_id, false);
+    return coveredBy({ kind: item.kind, targetId: item.target_id }, portfolios, documents).documentIds.has(docId);
+  }
+  const document = index.docById.get(docId);
+  if (!document) return false;
+  if (item.kind === "document") return item.target_id === docId;
+  return document.portfolioId !== null && descendantIds(index.portfolios, item.target_id).has(document.portfolioId);
+}
+
+/**
+ * El texto de un documento de lo compartido, al abrirlo (el árbol no lo trae):
+ * por invitación (`userId`) o por enlace público (`token`).
+ */
+export async function sharedDocText(
+  sql: Sql,
+  access: { userId: string; shareId: string } | { token: string },
+  docId: string,
+): Promise<{ content: string; updatedAt: string; updatedBy: string } | null> {
+  const owner =
+    "token" in access
+      ? await publicDocOwner(sql, access.token, docId)
+      : await grantedDocOwner(sql, access.userId, access.shareId, docId);
+  return owner ? docContent(sql, owner, docId) : null;
 }
 
 /** Lo que otros compartieron con `userId` (no incluye lo público por enlace). */
@@ -456,35 +579,16 @@ export async function sharedWith(
   }));
 }
 
-/** Un elemento compartido, si `userId` es su dueño o fue invitado. */
-export async function openForUser(
-  sql: Sql,
-  userId: string,
-  shareId: string,
-  canDownload: boolean,
-): Promise<SharedTree | null> {
-  const item = await grantedItem(sql, userId, shareId);
-  if (!item) return null;
-  return treeFor(sql, item, (docId) => ({
-    url: signedFileUrl(docId, item.owner_id),
-    downloadUrl: canDownload ? signedFileUrl(docId, item.owner_id, true) : null,
-  }));
-}
-
 /** Dueño de `docId` si `userId` lo puede ver a través del elemento compartido `shareId`. */
 export async function grantedDocOwner(sql: Sql, userId: string, shareId: string, docId: string): Promise<string | null> {
   const item = await grantedItem(sql, userId, shareId);
-  if (!item) return null;
-  const tree = await treeFor(sql, item);
-  return tree.documents.some((document) => document.id === docId) ? item.owner_id : null;
+  return item && (await covers(sql, item, docId)) ? item.owner_id : null;
 }
 
 /** Dueño de `docId` si un enlace público (`token`) lo incluye. */
 export async function publicDocOwner(sql: Sql, token: string, docId: string): Promise<string | null> {
   const item = await publicItem(sql, token);
-  if (!item) return null;
-  const tree = await treeFor(sql, item);
-  return tree.documents.some((document) => document.id === docId) ? item.owner_id : null;
+  return item && (await covers(sql, item, docId)) ? item.owner_id : null;
 }
 
 /**
@@ -500,8 +604,7 @@ export async function editableTarget(
 ): Promise<{ ownerId: string } | null> {
   const item = await grantedItem(sql, userId, shareId);
   if (!item || item.owner_id === userId || !canWrite(accessOf(item))) return null;
-  const tree = await treeFor(sql, item);
-  return tree.documents.some((document) => document.id === docId) ? { ownerId: item.owner_id } : null;
+  return (await covers(sql, item, docId)) ? { ownerId: item.owner_id } : null;
 }
 
 /** El elemento, si `userId` es su dueño o fue invitado (directamente o por organización). */
@@ -537,13 +640,14 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
 }
 
 /** Un elemento público, por su enlace. Sin sesión. */
-export async function openByToken(sql: Sql, token: string): Promise<SharedTree | null> {
+export async function openByToken(sql: Sql, token: string): Promise<PackedTree | null> {
   const item = await publicItem(sql, token);
   if (!item) return null;
-  return treeFor(sql, item, (docId) => {
+  const tree = await packedTree(sql, item, "public", (docId) => {
     const url = `/api/files/${encodeURIComponent(docId)}?token=${encodeURIComponent(token)}`;
     return { url, downloadUrl: `${url}&download=1` };
   });
+  return { ...tree, share: { ...tree.share, token } };
 }
 
 async function publicItem(sql: Sql, token: string): Promise<ItemRecord | null> {
@@ -591,16 +695,6 @@ export type PortfolioMember = {
   orgName: string | null;
 };
 
-/** Los portafolios del dueño desde `portfolioId` hasta la raíz (él incluido). */
-export async function portfolioLineage(sql: Sql, ownerId: string, portfolioId: string): Promise<string[]> {
-  const rows = await sql<{ id: string; parent_id: string | null }>`
-    select id, parent_id from vault_portfolio where user_id = ${ownerId} and not deleted
-  `;
-  const parent = new Map(rows.map((row) => [row.id, row.parent_id]));
-  const out: string[] = [];
-  for (let id: string | null = portfolioId; id && parent.has(id) && !out.includes(id); id = parent.get(id) ?? null) out.push(id);
-  return out;
-}
 
 /**
  * Quién tiene acceso a un portafolio por lo compartido: los invitados (y los
@@ -684,7 +778,32 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
 /** El nivel de `userId` en un portafolio del dueño (`null`: sin acceso por lo compartido). */
 export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: string, userId: string): Promise<ShareAccess | null> {
   if (userId === ownerId) return "admin";
-  return (await portfolioMembers(sql, ownerId, portfolioId)).find((member) => member.userId === userId)?.access ?? null;
+  const lineage = await portfolioLineage(sql, ownerId, portfolioId);
+  if (lineage.length === 0) return null;
+  // Solo esa persona (antes se armaba la lista de todos los miembros, con los
+  // de cada organización invitada): en cada elemento manda lo puesto a ella
+  // sobre lo de sus organizaciones, y entre elementos, el nivel más alto.
+  const rows = await sql<{ target_id: string; rank: unknown }>`
+    with recursive mine(id) as (
+      select org_id from app_org_member where user_id = ${userId}
+      union
+      select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
+    )
+    select s.target_id, coalesce(
+      (
+        select case coalesce(g.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end
+        from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+      ),
+      (
+        select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
+        from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+      )
+    ) as rank
+    from share_item s
+    where s.owner_id = ${ownerId} and s.kind = 'portfolio' and s.visibility = 'shared'
+  `;
+  const best = Math.max(0, ...rows.filter((row) => lineage.includes(row.target_id)).map((row) => Number(row.rank ?? 0)));
+  return best > 0 ? fromRank(best) : null;
 }
 
 /**

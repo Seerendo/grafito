@@ -113,3 +113,37 @@ export async function redisDropNote(id: string): Promise<void> {
   const redis = await client();
   if (redis) await redis.del(NOTE_PREFIX + id);
 }
+
+const PRESENCE = "grafito:presence:";
+
+/**
+ * Quién edita una nota, compartido entre todas las instancias de Grafito (ver
+ * `presence.ts`, que hace lo mismo en memoria cuando no hay Redis). Un hash por
+ * nota: cada editor con su nombre y la hora de su último aviso. `null` sin Redis.
+ */
+export async function redisTouchPresence(
+  input: { ownerId: string; docId: string; userId: string; name: string; editing: boolean },
+  ttlMs: number,
+  now = Date.now(),
+): Promise<string[] | null> {
+  const redis = await client();
+  if (!redis) return null;
+  const key = `${PRESENCE}${input.ownerId}:${input.docId}`;
+  if (input.editing) await redis.hSet(key, input.userId, JSON.stringify({ name: input.name, at: now }));
+  else await redis.hDel(key, input.userId);
+  await redis.pExpire(key, ttlMs * 2);
+  const all = await redis.hGetAll(key);
+  const names: string[] = [];
+  const stale: string[] = [];
+  for (const [userId, raw] of Object.entries(all)) {
+    try {
+      const entry = JSON.parse(raw) as { name: string; at: number };
+      if (now - entry.at > ttlMs) stale.push(userId);
+      else if (userId !== input.userId) names.push(entry.name);
+    } catch {
+      stale.push(userId);
+    }
+  }
+  if (stale.length > 0) await redis.hDel(key, stale);
+  return names;
+}

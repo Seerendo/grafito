@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getRequest } from "@tanstack/react-start/server";
 import { getAuth } from "./server";
 
@@ -33,9 +34,53 @@ export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser
     headers = new Headers(request.headers);
     headers.set("Authorization", `Bearer ${bearerToken}`);
   }
+  return sessionUser(headers);
+}
+
+/**
+ * Sesiones verificadas hace poco, por credencial (la cookie de sesión firmada
+ * o el token bearer, tal cual llegan): validar con Better Auth en cada
+ * petición era lo que más CPU gastaba con mucha gente. Se guarda unos
+ * segundos; cerrar sesión deja de valer como mucho en ese tiempo, y quitar el
+ * acceso a alguien (`revokeUser`) corta al momento por el plazo de
+ * `assertLease`, que se mira en cada petición.
+ */
+const SESSION_CACHE_MS = 10_000;
+const MAX_SESSIONS = 10_000;
+const recentSessions = new Map<string, { user: VerifiedUser; until: number }>();
+
+function credentialKey(headers: Headers): string | null {
+  const authorization = headers.get("authorization") ?? "";
+  const cookies = (headers.get("cookie") ?? "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.includes("session_token="))
+    .sort()
+    .join(";");
+  if (!authorization && !cookies) return null;
+  return createHash("sha256").update(`${authorization}\n${cookies}`).digest("base64url");
+}
+
+/** El usuario de la sesión que traen estas cabeceras, o `null`. */
+export async function sessionUser(headers: Headers): Promise<VerifiedUser | null> {
+  const key = credentialKey(headers);
+  if (!key) return null;
+  const now = Date.now();
+  const known = recentSessions.get(key);
+  if (known && known.until > now) return known.user;
   const session = await (await getAuth()).api.getSession({ headers });
-  if (!session?.user) return null;
-  return { id: session.user.id, email: session.user.email ?? null };
+  if (!session?.user) {
+    recentSessions.delete(key);
+    return null;
+  }
+  const user = { id: session.user.id, email: session.user.email ?? null };
+  const expires = new Date(session.session.expiresAt).getTime();
+  recentSessions.set(key, { user, until: Math.min(now + SESSION_CACHE_MS, Number.isFinite(expires) ? expires : now) });
+  if (recentSessions.size > MAX_SESSIONS) {
+    for (const [stale, entry] of recentSessions) if (entry.until <= now) recentSessions.delete(stale);
+    while (recentSessions.size > MAX_SESSIONS) recentSessions.delete(recentSessions.keys().next().value!);
+  }
+  return user;
 }
 
 /** Id del usuario verificado, o `UnauthorizedError`. Mejor vía `authMiddleware`. */

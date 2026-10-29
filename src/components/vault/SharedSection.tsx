@@ -1,12 +1,13 @@
 import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
 import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
 import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
-import { openShared, sharedWithMe } from "@/server/share.functions";
+import { sharedWithMe } from "@/server/share.functions";
+import { fetchSharedTree } from "@/app/shared-open";
 import type { SharedTree } from "@/server/share";
 import { t } from "@/app/i18n";
 
@@ -23,6 +24,8 @@ type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
 const OPEN_KEY = "grafito.shared-open";
 const WORKSPACES_OPEN_KEY = "grafito.workspaces-open";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
+/** Lo compartido leído hace menos de esto no se vuelve a leer al abrir algo. */
+const FRESH_MS = 30_000;
 
 /**
  * Lo último leído, para que al volver a la bóveda (desde la administración,
@@ -145,9 +148,14 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     if (viewed) setTrees((current) => (viewed.share.id in current ? { ...current, [viewed.share.id]: viewed } : current));
   }, [viewed]);
 
+  // Cuándo se leyó cada uno: al abrir algo se vuelve a leer solo si pasó
+  // `FRESH_MS` (el texto de cada nota se pide siempre al abrirla).
+  const readAt = useRef(new Map<string, number>());
   const loadTree = async (shareId: string, fresh = false): Promise<SharedTree | null> => {
-    if (!fresh && trees[shareId] !== undefined) return trees[shareId];
-    const tree = await openShared({ data: { shareId } }).catch(() => null);
+    const recent = Date.now() - (readAt.current.get(shareId) ?? 0) < FRESH_MS;
+    if (trees[shareId] !== undefined && (!fresh || recent)) return trees[shareId];
+    const tree = await fetchSharedTree(shareId).catch(() => null);
+    readAt.current.set(shareId, Date.now());
     setTrees((current) => ({ ...current, [shareId]: tree }));
     return tree;
   };
@@ -160,7 +168,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       return next;
     });
 
-  // Se vuelve a leer al abrir: otra persona con permiso de edición pudo cambiarlo.
+  // Se vuelve a leer al abrir (si no es reciente): otra persona con permiso de edición pudo cambiarlo.
   const openDoc = async (shareId: string, docId: string) => {
     const tree = await loadTree(shareId, true);
     if (!tree?.documents.some((document) => document.id === docId)) return;

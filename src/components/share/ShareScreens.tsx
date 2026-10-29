@@ -3,7 +3,8 @@ import { FileText, FolderOpen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Mark } from "@/components/brand/Mark";
 import { AppFrame } from "@/components/chrome/AppFrame";
-import { openPublic, openShared, sharedWithMe } from "@/server/share.functions";
+import { sharedWithMe } from "@/server/share.functions";
+import { fetchPublicTree, fetchSharedTree } from "@/app/shared-open";
 import type { SharedTree } from "@/server/share";
 import { SharedViewer } from "./SharedViewer";
 import { t } from "@/app/i18n";
@@ -63,7 +64,7 @@ export function SharedWithMeScreen() {
 
 /** `/compartidos/$shareId`: un elemento compartido conmigo. */
 export function SharedItemScreen({ shareId }: { shareId: string }) {
-  const tree = useTree(() => openShared({ data: { shareId } }), shareId);
+  const tree = useTree(() => fetchSharedTree(shareId), shareId);
   return (
     <AppFrame>
       <TreeState tree={tree} missing={t("No existe o ya no está compartido contigo.")} />
@@ -73,7 +74,7 @@ export function SharedItemScreen({ shareId }: { shareId: string }) {
 
 /** `/p/$token`: vista pública por enlace, sin sesión. */
 export function PublicShareScreen({ token }: { token: string }) {
-  const tree = useTree(() => openPublic({ data: { token } }), token);
+  const tree = useTree(() => fetchPublicTree(token), token);
   const title = tree && tree !== "loading" && tree !== "error" ? tree.share.title : "";
   useEffect(() => {
     if (title) document.title = t("{0} · Grafito", { 0: title });

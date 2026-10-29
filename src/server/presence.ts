@@ -1,8 +1,8 @@
 /**
  * Quién está editando una nota ahora mismo (solo servidor, en memoria). Cada
  * editor abierto avisa cada pocos segundos (`notePresence`); quien deja de
- * avisar desaparece a los `TTL_MS`. Vive en el proceso: con varias instancias
- * de Grafito, cada una ve a quienes avisan a ella. Sin `@/` en los imports:
+ * avisar desaparece a los `TTL_MS`. Esto es lo de un solo proceso: con Redis
+ * se usa `redisTouchPresence`, que comparten todas las instancias. Sin `@/` en los imports:
  * se prueba con `node --test`.
  */
 

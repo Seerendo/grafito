@@ -102,7 +102,8 @@ const trustedOrigins = (request?: Request) => [...fixedOrigins, sameSiteOrigin(r
 /** Una sola conexión de Better Auth por proceso, aunque la instancia se rehaga. */
 function database() {
   globalAuthRef.__grafitoAuthDatabase__ ??= env("DATABASE_URL")
-    ? new Pool({ connectionString: env("DATABASE_URL") })
+    ? // Pocas conexiones: solo sesiones e ingresos (el resto va por `db.ts`).
+      new Pool({ connectionString: env("DATABASE_URL"), max: 5 })
     : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
   return globalAuthRef.__grafitoAuthDatabase__;
 }

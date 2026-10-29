@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
+import { nextRevision } from "./vault";
 import { wouldCycle, type Org } from "@/domain/orgs";
 
 /** Acceso a datos de organizaciones (solo servidor). Ver `migrations/0007_orgs_auth.sql`. */
@@ -61,7 +62,9 @@ export async function renameOrg(sql: Sql, id: string, name: string): Promise<{ o
   if (workspace[0]) {
     const { owner_id: owner, root_portfolio_id: root, share_id: share } = workspace[0];
     await sql`update "user" set name = ${clean} where id = ${owner}`;
-    await sql`update vault_portfolio set name = ${clean} where user_id = ${owner} and id = ${root}`;
+    // Con revisión nueva, para que lo vean los índices y la sincronización.
+    const rev = await nextRevision(sql, owner);
+    await sql`update vault_portfolio set name = ${clean}, rev = ${rev} where user_id = ${owner} and id = ${root}`;
     await sql`update share_item set title = ${clean} where id = ${share}`;
   }
   return { ok: true };

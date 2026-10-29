@@ -204,7 +204,7 @@ The `vault/` pieces:
 | `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
 | `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
 | `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
-| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `openShared`, `openPublic` (the last one without a session) |
+| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `sharedDocContent`, `openPublic` and `publicDocContent` (the last two without a session). The tree of something shared with me comes from `GET /api/shared/:id/tree` |
 | `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
 | `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
@@ -427,6 +427,46 @@ Limitations:
   Edits made offline are published when the owner reconnects.
 - Shared files are served from storage through signed links (see
   [Files](#files)).
+
+### Loading shared items and workspaces at scale
+
+A workspace can hold thousands of documents, so opening one no longer reads
+or sends their text:
+
+- `server/vault-index.ts` keeps, per owner and in memory, the portfolios and
+  each document's metadata (title, portfolio, file, manual links and the
+  `[[titles]]` it names), without the text. It is tied to the owner's
+  `vault_state.revision`: when that changes, only rows with a higher `rev` are
+  read, like device sync. `subtree`, `portfolioLineage` and coverage checks
+  (`covers`, used on every shared save and file request) read from it.
+- The tree (`SharedTree`) travels packed (`domain/share-pack.ts`): one compact
+  JSON row per document instead of one serialized object each. Each document's
+  row is cached until the document changes, so rebuilding the tree of
+  thousands of notes after a save is cheap.
+- `GET /api/shared/:id/tree` serves it, gzipped once per version, with an
+  ETag (same on every instance: revision, what the person sees and a 10-minute
+  window, so cached signed file links never expire). An unchanged tree is a
+  304. During 15 s the cached tree is served without checking the revision;
+  after creating or deleting something the client asks with `?fresh=1`
+  (`app/shared-open.ts`). The public link still uses the `openPublic` server
+  function.
+- Documents arrive `lazy` (empty `content`): `SharedViewer` asks for the text
+  when one is opened (`sharedDocContent`, `publicDocContent`), and the graph
+  and mentions use `wikiLinks`. The directory reuses a tree read less than
+  30 s ago when opening a document.
+- `portfolioAccess` asks for one person's level in one query (it used to build
+  the full member list, with every member of each invited organization), and
+  `checkSpace` reads limits and usage once instead of per level.
+
+Other measures for many users: `descendantIds` and the shared index are
+linear (they were quadratic with deep trees); named prepared statements in
+`lib/db.ts` (planning cost more than running the permission queries); a
+10-second cache of verified sessions per credential (`sessionUser` in
+`verify.server.ts`; the lease is still checked on every request); gzip in the
+gateway for text; indexes for organization grants and the trash (migration
+0025). For several app instances: presence in Redis (`redisTouchPresence`),
+`claimJob` (`server/jobs.ts`) so periodic jobs run once per round, an advisory
+lock around migrations, and `GRAFITO_DB_POOL`.
 
 ## Organizations
 
@@ -658,7 +698,7 @@ API and Git keep it). Its `description` column is no longer used. A `ManualLink`
 is reached through that share). `app/shared-links.ts` caches the shared
 trees (two minutes), resolves those targets for the graph, the context pane
 and the portfolio page, and `pruneShareLinks` drops a link when the server
-says there is no access (`openShared` returns `null`) or the target is no
+says there is no access (`fetchSharedTree` returns `null`) or the target is no
 longer in the share. A network error never prunes. In the graph
 (`graphExtras` in `GraphView`), portfolios with or behind a link are
 diamonds and shared targets have a dashed border; `[[wiki]]` links still

@@ -8,7 +8,8 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { listVersions, readVersion } from "@/server/history";
 import { editableTarget, grantedDocOwner } from "@/server/share";
-import { touchPresence } from "@/server/presence";
+import { TTL_MS as PRESENCE_TTL_MS, touchPresence } from "@/server/presence";
+import { redisTouchPresence } from "@/server/redis";
 import { putBlob, readBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
 import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreTrashItem, updateNote, VaultError } from "@/server/vault";
@@ -164,7 +165,9 @@ export const notePresence = createServerFn({ method: "POST" })
       : context.userId;
     if (!ownerId) return { ok: false as const, editors: [] };
     const { actor } = await actorFor(sql, context.userId);
-    const editors = touchPresence({ ownerId, docId: data.docId, userId: context.userId, name: actor, editing: data.editing });
+    const input = { ownerId, docId: data.docId, userId: context.userId, name: actor, editing: data.editing };
+    // Con Redis, la ven todas las instancias de Grafito; sin él, la de este proceso.
+    const editors = (await redisTouchPresence(input, PRESENCE_TTL_MS).catch(() => null)) ?? touchPresence(input);
     return { ok: true as const, editors };
   });
 

@@ -32,7 +32,8 @@ import { Comments } from "@/components/vault/Comments";
 import { GraphView } from "@/components/vault/GraphView";
 import { SharedBoard } from "./SharedBoard";
 import { SharedContext } from "./SharedContext";
-import { openShared } from "@/server/share.functions";
+import { publicDocContent, sharedDocContent } from "@/server/share.functions";
+import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { Modal } from "@/components/ui/Modal";
 import { deleteFromShared } from "@/app/shared-actions";
@@ -73,12 +74,47 @@ export function SharedViewer({
   const activeId = docId ?? ownId;
   const setActiveId = onOpenDoc ?? setOwnId;
   const board = Boolean(onOpenPortfolio) && !docId && tree.share.kind === "portfolio";
-  const active = board ? null : (ordered.find((document) => document.id === activeId) ?? ordered[0] ?? null);
+  const shown = board ? null : (ordered.find((document) => document.id === activeId) ?? ordered[0] ?? null);
+  // El árbol llega sin el texto de las notas (`lazy`): se pide al abrir cada una.
+  const [texts, setTexts] = useState<Record<string, { content: string; updatedAt: string; updatedBy: string }>>({});
+  // Los que ya no están (borrados hace un momento, aunque el árbol aún los muestre).
+  const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
+  const text = shown ? texts[shown.id] : undefined;
+  const missing = Boolean(shown && gone.has(shown.id));
+  const loading = !missing && Boolean(shown?.lazy) && shown?.kind === "markdown" && (!text || text.updatedAt < shown.updatedAt);
+  const active =
+    shown?.lazy && text
+      ? {
+          ...shown,
+          content: text.content,
+          updatedAt: text.updatedAt > shown.updatedAt ? text.updatedAt : shown.updatedAt,
+          updatedBy: text.updatedAt > shown.updatedAt ? text.updatedBy : shown.updatedBy,
+        }
+      : shown;
+  useEffect(() => {
+    if (!loading || !shown) return;
+    let alive = true;
+    const id = shown.id;
+    const token = tree.share.token;
+    void (token
+      ? publicDocContent({ data: { token, docId: id } })
+      : sharedDocContent({ data: { shareId: tree.share.id, docId: id } })
+    )
+      .then((result) => {
+        if (!alive) return;
+        if (result) setTexts((current) => ({ ...current, [id]: result }));
+        else setGone((current) => new Set([...current, id]));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [loading, shown, tree.share.id, tree.share.token]);
   const byTitle = (name: string) => ordered.find((document) => document.title.toLowerCase() === name.toLowerCase());
   const single = tree.share.kind === "document" || !index;
   const Badge = tree.share.visibility === "public" ? Globe : Users;
   const writable = tree.share.access === "edit" || tree.share.access === "admin";
-  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown";
+  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -125,7 +161,7 @@ export function SharedViewer({
     }
   };
   const reload = async (docId?: string) => {
-    const next = await openShared({ data: { shareId: tree.share.id } }).catch(() => null);
+    const next = await fetchSharedTree(tree.share.id, true).catch(() => null);
     if (next) onChange?.(next, docId);
   };
   const addNote = async () => {
@@ -170,6 +206,10 @@ export function SharedViewer({
   }, [active?.id]);
 
   const patchDoc = (id: string, patch: Partial<PublishedDoc>) => {
+    const { content, updatedAt, updatedBy } = patch;
+    if (content !== undefined && updatedAt) {
+      setTexts((current) => ({ ...current, [id]: { content, updatedAt, updatedBy: updatedBy ?? current[id]?.updatedBy ?? "" } }));
+    }
     onChange?.({
       ...tree,
       documents: tree.documents.map((document) => (document.id === id ? { ...document, ...patch } : document)),
@@ -508,6 +548,10 @@ export function SharedViewer({
             shareId={onChange ? tree.share.id : undefined}
             canEdit={writable && Boolean(onChange)}
           />
+        ) : missing ? (
+          <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("Este documento ya no está.")}</p>
+        ) : loading ? (
+          <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("Cargando…")}</p>
         ) : editing ? (
           <textarea
             value={draft}
@@ -544,7 +588,7 @@ export function SharedViewer({
         >
           {contextOpen ? (
             <SharedContext
-              document={documents.find((item) => item.id === active.id) ?? documents[0]!}
+              document={{ ...(documents.find((item) => item.id === active.id) ?? documents[0]!), content: active.content }}
               documents={documents}
               onOpen={openDoc}
             />

@@ -5,6 +5,7 @@ import type { ContextItem } from "@/components/ui/ContextMenu";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
+import { descendantIds } from "@/domain/vault/portfolios";
 import { childrenOf, docsIn } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
 
@@ -56,37 +57,41 @@ export function SharedBoard({
   const docs = docsIn(tree, portfolioId);
 
   // Lo que hay dentro (a cualquier profundidad), para contar y para los recientes.
-  const inside = useMemo(() => {
-    const ids = new Set<string>([portfolioId]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const portfolio of tree.portfolios) {
-        if (portfolio.parentId && ids.has(portfolio.parentId) && !ids.has(portfolio.id)) {
-          ids.add(portfolio.id);
-          grew = true;
-        }
-      }
-    }
-    return ids;
-  }, [tree, portfolioId]);
+  const inside = useMemo(() => descendantIds(tree.portfolios, portfolioId), [tree, portfolioId]);
   const recent = useMemo(
     () =>
       tree.documents
         .filter((document) => document.portfolioId && inside.has(document.portfolioId))
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
         .slice(0, RECENT),
     [tree, inside],
   );
-  const countIn = (id: string) => {
-    let count = 0;
-    const walk = (parentId: string) => {
-      count += tree.documents.filter((document) => document.portfolioId === parentId).length;
-      for (const child of childrenOf(tree, parentId)) walk(child.id);
+  // Documentos de cada portafolio con lo de dentro, contados en una pasada.
+  const totals = useMemo(() => {
+    const own = new Map<string, number>();
+    for (const document of tree.documents) {
+      if (document.portfolioId) own.set(document.portfolioId, (own.get(document.portfolioId) ?? 0) + 1);
+    }
+    const kids = new Map<string, string[]>();
+    for (const portfolio of tree.portfolios) {
+      if (!portfolio.parentId) continue;
+      const list = kids.get(portfolio.parentId);
+      if (list) list.push(portfolio.id);
+      else kids.set(portfolio.parentId, [portfolio.id]);
+    }
+    const memo = new Map<string, number>();
+    const total = (id: string, seen = new Set<string>()): number => {
+      const known = memo.get(id);
+      if (known !== undefined) return known;
+      if (seen.has(id)) return 0;
+      seen.add(id);
+      const sum = (own.get(id) ?? 0) + (kids.get(id) ?? []).reduce((acc, child) => acc + total(child, seen), 0);
+      memo.set(id, sum);
+      return sum;
     };
-    walk(id);
-    return count;
-  };
+    return total;
+  }, [tree]);
+  const countIn = (id: string) => totals(id);
 
   // Del compartido hasta aquí.
   const trail: { id: string; name: string }[] = [];

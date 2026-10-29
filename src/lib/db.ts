@@ -78,7 +78,7 @@ const OID_DATE = 1082;
 const OID_INTERVAL = 1186;
 const identity = (v: string) => v;
 
-type Run = <T>(text: string, params: unknown[]) => Promise<T[]>;
+type Run = <T>(text: string, params: unknown[], prepared?: boolean) => Promise<T[]>;
 
 /** Wrap a query runner in the tagged-template + `.query()` `Sql` surface. */
 function toSql(run: Run): Sql {
@@ -89,7 +89,8 @@ function toSql(run: Run): Sql {
     // Rebuild with $1, $2, … placeholders so values stay parameterized.
     let text = strings[0];
     for (let i = 0; i < values.length; i += 1) text += `$${i + 1}${strings[i + 1]}`;
-    return run<T>(text, values);
+    // Plantillas del código: texto fijo, se pueden preparar (ver `createNeonSql`).
+    return run<T>(text, values, true);
   }) as unknown as Sql;
   sql.query = <T = Record<string, unknown>>(text: string, params: unknown[] = []) =>
     run<T>(text, params);
@@ -112,13 +113,36 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
+    // Conexiones por proceso (15 por defecto, más 5 de Better Auth). Con varias
+    // instancias, la suma tiene que caber en `max_connections` de Postgres (100).
+    const poolSize = Number(process.env.GRAFITO_DB_POOL);
     const pool = new Pool({
       connectionString: databaseUrl,
       connectionTimeoutMillis: 8000,
+      max: Number.isInteger(poolSize) && poolSize > 0 ? poolSize : 15,
     });
     await applyPostgresMigrations(pool);
-    return toSql(async <T>(text: string, params: unknown[]) => {
-      const res = await pool.query(text, params);
+    // Sentencias preparadas con nombre: Postgres guarda el plan en cada
+    // conexión y deja de planificar la consulta en cada petición (con las de
+    // permisos y organizaciones, planificar costaba más que ejecutar). Solo las
+    // plantillas sql`…`, de texto fijo. GRAFITO_DB_PREPARE=0 las apaga (un
+    // pgbouncer antiguo en modo transacción no las admite).
+    const prepare = process.env.GRAFITO_DB_PREPARE !== "0";
+    const { createHash } = await import("node:crypto");
+    const names = new Map<string, string>();
+    const nameOf = (text: string) => {
+      let name = names.get(text);
+      if (!name) {
+        name = `g${createHash("sha1").update(text).digest("hex").slice(0, 20)}`;
+        names.set(text, name);
+      }
+      return name;
+    };
+    return toSql(async <T>(text: string, params: unknown[], prepared = false) => {
+      const res =
+        prepared && prepare
+          ? await pool.query({ name: nameOf(text), text, values: params })
+          : await pool.query(text, params);
       return res.rows as T[];
     });
   })().catch((err) => {
@@ -131,6 +155,9 @@ function createNeonSql(): Promise<Sql> {
 /** Same files as PGLite and `scripts/migrate.mjs`, applied before the first query. */
 async function applyPostgresMigrations(pool: import("pg").Pool): Promise<void> {
   const client = await pool.connect();
+  // Varias instancias arrancando a la vez: una aplica y las demás esperan (el
+  // bloqueo es de esta conexión, que se suelta al final o al cerrarse).
+  await client.query("select pg_advisory_lock(hashtext('grafito:migrations'))");
   try {
     await client.query(
       "create table if not exists _migrations (name text primary key, applied_at timestamptz not null default now())",
@@ -155,6 +182,7 @@ async function applyPostgresMigrations(pool: import("pg").Pool): Promise<void> {
       }
     }
   } finally {
+    await client.query("select pg_advisory_unlock(hashtext('grafito:migrations'))").catch(() => undefined);
     client.release();
   }
 }

@@ -1,3 +1,4 @@
+import { claimJob } from "@/server/jobs";
 import { randomBytes } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { merge3 } from "@/domain/vault/merge";
@@ -619,7 +620,10 @@ export function startGitSync(): void {
     void (async () => {
       try {
         const { getSql } = await import("@/lib/db");
-        await syncDue(await getSql());
+        const sql = await getSql();
+        // Con varias instancias, una sola sincroniza en cada vuelta.
+        if (!(await claimJob(sql, "git-sync", TICK_MS - 1000))) return;
+        await syncDue(sql);
       } catch (error) {
         console.error("[git]", error);
       }

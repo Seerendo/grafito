@@ -6,10 +6,10 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import {
   openByToken,
-  openForUser,
   ownerShares,
   shareCandidates,
   shareOrgCandidates,
+  sharedDocText,
   sharedWith,
   writePublished,
   writeShare,
@@ -121,14 +121,21 @@ export const sharedWithMe = createServerFn({ method: "GET" })
     return sharedWith(sql, context.userId);
   });
 
-/** Abre un elemento compartido conmigo (o propio). */
-export const openShared = createServerFn({ method: "GET" })
+/** El texto de un documento de algo compartido conmigo, al abrirlo (el árbol no lo trae). */
+export const sharedDocContent = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => z.object({ shareId: id }).parse(input))
+  .validator((input: unknown) => z.object({ shareId: id, docId: id }).parse(input))
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
-    const profile = await readUserProfile(sql, context.userId);
-    return openForUser(sql, context.userId, data.shareId, allows(profile, PERMISSION.filesDownload));
+    return sharedDocText(sql, { userId: context.userId, shareId: data.shareId }, data.docId);
+  });
+
+/** Lo mismo por enlace público. No requiere sesión. */
+export const publicDocContent = createServerFn({ method: "GET" })
+  .validator((input: unknown) => z.object({ token: z.string().min(16).max(64), docId: id }).parse(input))
+  .handler(async ({ data }) => {
+    const { getSql } = await import("@/lib/db");
+    return sharedDocText(await getSql(), { token: data.token }, data.docId);
   });
 
 /** Abre un elemento público por su enlace. No requiere sesión. */

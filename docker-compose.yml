@@ -101,6 +101,10 @@ services:
       DATABASE_URL: postgres://grafito:${POSTGRES_PASSWORD:-grafito}@postgres:5432/grafito
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379
+      # Database connections per app instance (plus 5 for sign-ins). With
+      # several instances (`docker compose up -d --scale app=4`), they must add
+      # up to less than Postgres's max_connections (100): 4 × (15 + 5) = 80.
+      GRAFITO_DB_POOL: ${GRAFITO_DB_POOL:-15}
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: grafito
       S3_ACCESS_KEY: grafito

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import { openShared, sharedWithMe } from "@/server/share.functions";
+import { sharedWithMe } from "@/server/share.functions";
+import { fetchSharedTree } from "@/app/shared-open";
 import type { SharedTree } from "@/server/share";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
 import { useVault } from "@/app/vault/store";
@@ -30,7 +31,7 @@ export const useSharedTrees = create<State>(() => ({ trees: {}, loading: new Set
 export async function loadSharedTree(shareId: string, force = false): Promise<SharedTree | null> {
   const known = useSharedTrees.getState().trees[shareId];
   if (!force && known && Date.now() - known.at < FRESH_MS) return known.tree;
-  const tree = await openShared({ data: { shareId } });
+  const tree = await fetchSharedTree(shareId);
   useSharedTrees.setState((state) => ({ trees: { ...state.trees, [shareId]: { tree, at: Date.now() } } }));
   return tree;
 }

@@ -645,7 +645,9 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `ELASTICSEARCH_URL` | Full-text search | Search index in Postgres |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO or S3 for uploaded files | Files stored in Postgres (20 MB limit by default) |
 | `GRAFITO_MAX_UPLOAD_MB` | Per-file upload limit | 100 with S3, 20 without |
-| `REDIS_URL` | Session deadlines | Stored in Postgres |
+| `REDIS_URL` | Session deadlines, and who is editing a note (shared by all app instances) | Stored in Postgres; editing indicator per instance |
+| `GRAFITO_DB_POOL` | Database connections per app instance (plus 5 for sign-ins) | 15 |
+| `GRAFITO_DB_PREPARE` | `0` turns off prepared statements (only for an old pgbouncer in transaction mode) | On |
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session, file link and editor token signing; public URL | A secret created for the installation in `GRAFITO_SECRETS_DIR`; the URL is required in production |
 | `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys and the SMTP password (32+ characters) | A key created for the installation in `GRAFITO_SECRETS_DIR` |
 | `GRAFITO_SECRETS_DIR` | Where those generated secrets are kept | `.data/secrets` (`/app/.data/secrets`, the `grafito_secrets` volume, in Docker) |

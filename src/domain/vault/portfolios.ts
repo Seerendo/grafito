@@ -39,16 +39,23 @@ export function buildForest(portfolios: Portfolio[], documents: Document[]): {
   };
 }
 
-export function descendantIds(portfolios: Portfolio[], id: string): Set<string> {
+export function descendantIds(portfolios: readonly Pick<Portfolio, "id" | "parentId">[], id: string): Set<string> {
+  // Una pasada para saber los hijos de cada uno y otra para recorrer: lineal
+  // aunque haya muchos niveles (antes, una vuelta completa por nivel).
+  const children = new Map<string, string[]>();
+  for (const portfolio of portfolios) {
+    if (!portfolio.parentId) continue;
+    const list = children.get(portfolio.parentId);
+    if (list) list.push(portfolio.id);
+    else children.set(portfolio.parentId, [portfolio.id]);
+  }
   const ids = new Set<string>([id]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const portfolio of portfolios) {
-      if (portfolio.parentId && ids.has(portfolio.parentId) && !ids.has(portfolio.id)) {
-        ids.add(portfolio.id);
-        grew = true;
-      }
+  const queue = [id];
+  for (let index = 0; index < queue.length; index += 1) {
+    for (const child of children.get(queue[index]!) ?? []) {
+      if (ids.has(child)) continue;
+      ids.add(child);
+      queue.push(child);
     }
   }
   return ids;

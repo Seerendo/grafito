@@ -1,7 +1,7 @@
 import { uploadVaultFile } from "@/app/files";
 import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
-import { openShared } from "@/server/share.functions";
+import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { deleteSharedDoc, deleteSharedPortfolio } from "@/server/workspace-trash.functions";
 import { t } from "@/app/i18n";
@@ -14,7 +14,7 @@ import { t } from "@/app/i18n";
  */
 
 async function refresh(shareId: string, docId: string | null): Promise<void> {
-  const tree = await openShared({ data: { shareId } }).catch(() => null);
+  const tree = await fetchSharedTree(shareId, true).catch(() => null);
   if (!tree) return;
   const view = useSharedView.getState();
   const same = view.tree?.share.id === shareId;

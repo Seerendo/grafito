@@ -4,7 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { canWrite, shareForUser } from "@/server/share";
+import { canWrite, sharedWith, shareForUser } from "@/server/share";
 import { subtree } from "@/server/space";
 import { deleteDoc, getDoc, listTrash, pushChanges, purgeTrash, restoreTrashItem, VaultError } from "@/server/vault";
 import { workspaces } from "@/server/workspace";
@@ -29,13 +29,15 @@ async function context(userId: string) {
 async function administered(userId: string) {
   const ctx = await context(userId);
   const rows = await workspaces(ctx.sql);
-  const orgs = await ctx.sql<{ id: string; name: string }>`select id, name from app_org`;
-  const out: { shareId: string; ownerId: string; name: string }[] = [];
-  for (const row of rows) {
-    const mine = ctx.sysadmin || (await shareForUser(ctx.sql, userId, row.share_id))?.access === "admin";
-    if (mine) out.push({ shareId: row.share_id, ownerId: row.owner_id, name: orgs.find((org) => org.id === row.org_id)?.name ?? "" });
-  }
-  return { ...ctx, list: out.sort((a, b) => a.name.localeCompare(b.name)) };
+  const orgs = new Map((await ctx.sql<{ id: string; name: string }>`select id, name from app_org`).map((org) => [org.id, org.name]));
+  // Una consulta para todos (antes, una por espacio de trabajo).
+  const mine = ctx.sysadmin
+    ? null
+    : new Set((await sharedWith(ctx.sql, userId)).filter((item) => item.access === "admin").map((item) => item.id));
+  const list = rows
+    .filter((row) => !mine || mine.has(row.share_id))
+    .map((row) => ({ shareId: row.share_id, ownerId: row.owner_id, name: orgs.get(row.org_id) ?? "" }));
+  return { ...ctx, list: list.sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
 export const myWorkspaceTrashes = createServerFn({ method: "GET" })

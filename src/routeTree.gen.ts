@@ -30,6 +30,7 @@ import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/
 import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
 import { Route as ApiGitHookIdRouteImport } from './routes/api/git/hook/$id'
 import { Route as ApiPortfoliosIdDownloadRouteImport } from './routes/api/portfolios/$id.download'
+import { Route as ApiSharedIdTreeRouteImport } from './routes/api/shared/$id.tree'
 import { Route as ApiV1NotesIdRouteImport } from './routes/api/v1/notes.$id'
 import { Route as WopiFilesIdContentsRouteImport } from './routes/wopi/files/$id.contents'
 import { Route as ApiV1NotesIdFileRouteImport } from './routes/api/v1/notes.$id.file'
@@ -139,6 +140,11 @@ const ApiPortfoliosIdDownloadRoute = ApiPortfoliosIdDownloadRouteImport.update({
   path: '/api/portfolios/$id/download',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSharedIdTreeRoute = ApiSharedIdTreeRouteImport.update({
+  id: '/api/shared/$id/tree',
+  path: '/api/shared/$id/tree',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiV1NotesIdRoute = ApiV1NotesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -177,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
+  '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
+  '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
+  '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
@@ -258,6 +267,7 @@ export interface FileRouteTypes {
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
     | '/api/portfolios/$id/download'
+    | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -284,6 +294,7 @@ export interface FileRouteTypes {
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
     | '/api/portfolios/$id/download'
+    | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -310,6 +321,7 @@ export interface FileRouteTypes {
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
     | '/api/portfolios/$id/download'
+    | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
@@ -335,6 +347,7 @@ export interface RootRouteChildren {
   WopiFilesIdRoute: typeof WopiFilesIdRouteWithChildren
   ApiGitHookIdRoute: typeof ApiGitHookIdRoute
   ApiPortfoliosIdDownloadRoute: typeof ApiPortfoliosIdDownloadRoute
+  ApiSharedIdTreeRoute: typeof ApiSharedIdTreeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -486,6 +499,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPortfoliosIdDownloadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/shared/$id/tree': {
+      id: '/api/shared/$id/tree'
+      path: '/api/shared/$id/tree'
+      fullPath: '/api/shared/$id/tree'
+      preLoaderRoute: typeof ApiSharedIdTreeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/v1/notes/$id': {
       id: '/api/v1/notes/$id'
       path: '/$id'
@@ -580,6 +600,7 @@ const rootRouteChildren: RootRouteChildren = {
   WopiFilesIdRoute: WopiFilesIdRouteWithChildren,
   ApiGitHookIdRoute: ApiGitHookIdRoute,
   ApiPortfoliosIdDownloadRoute: ApiPortfoliosIdDownloadRoute,
+  ApiSharedIdTreeRoute: ApiSharedIdTreeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

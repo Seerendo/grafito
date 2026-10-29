@@ -24,13 +24,28 @@ export function docsIn(tree: SharedTree, portfolioId: string | null): PublishedD
     .sort((a, b) => a.title.localeCompare(b.title, "es"));
 }
 
+function group<T>(map: Map<string | null, T[]>, key: string | null, value: T): void {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
 /** Documentos en el orden del índice, para abrir el primero por defecto. */
 export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   if (tree.share.kind === "document") return tree.documents;
+  // Agrupados una vez (con miles de documentos, filtrar en cada nivel era cuadrático).
+  const kids = new Map<string | null, PublishedPortfolio[]>();
+  for (const portfolio of tree.portfolios) group(kids, portfolio.parentId, portfolio);
+  const docs = new Map<string | null, PublishedDoc[]>();
+  for (const document of tree.documents) group(docs, document.portfolioId, document);
   const out: PublishedDoc[] = [];
+  const seen = new Set<string>();
   const walk = (parentId: string | null) => {
-    for (const portfolio of childrenOf(tree, parentId)) {
-      out.push(...docsIn(tree, portfolio.id));
+    const level = [...(kids.get(parentId) ?? [])].sort((a, b) => a.name.localeCompare(b.name, "es"));
+    for (const portfolio of level) {
+      if (seen.has(portfolio.id)) continue;
+      seen.add(portfolio.id);
+      out.push(...[...(docs.get(portfolio.id) ?? [])].sort((a, b) => a.title.localeCompare(b.title, "es")));
       walk(portfolio.id);
     }
   };
@@ -45,7 +60,9 @@ export function asDocuments(documents: PublishedDoc[]): Document[] {
     title: document.title,
     kind: document.kind,
     portfolioId: document.portfolioId,
-    content: document.content,
+    // Sin el texto (`lazy`), sus `[[vínculos]]` bastan para el grafo y las menciones.
+    content:
+      document.lazy && !document.content ? (document.wikiLinks ?? []).map((title) => `[[${title}]]`).join("\n") : document.content,
     file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
     links: document.links ?? [],
     pinned: false,

@@ -143,6 +143,31 @@ docker compose exec postgres psql -U grafito -c "alter user grafito password 'NE
 
 Then update `.env` and run `docker compose up -d`.
 
+## Many users at once
+
+One app instance is enough for about a thousand people working at the same
+time with normal pauses (measured: 1,000 simultaneous users reading,
+saving and browsing a workspace of 8,900 notes, median 27 ms, 95% under
+70 ms). For more, or for headroom, run several instances behind the gateway:
+
+```bash
+docker compose up -d --scale app=4
+```
+
+- The gateway spreads requests over all of them (it follows the containers'
+  addresses as they change).
+- Who is editing a note is kept in Redis, so every instance sees it.
+- Scheduled jobs (Git sync, mail notices) run once per round, not once per
+  instance; migrations are applied by the first instance that starts while
+  the others wait.
+- Each instance opens up to `GRAFITO_DB_POOL` (15) database connections plus
+  5 for sign-ins. With 4 instances that is 80, under Postgres's default
+  `max_connections` of 100. For more instances, lower `GRAFITO_DB_POOL` or
+  raise `max_connections`.
+- Each instance has its own memory caches (shared trees, permissions,
+  sessions for a few seconds); they never serve anything older than their
+  short limits, so no sticky sessions are needed.
+
 ## When something is down
 
 | Symptom | Check | Fix |

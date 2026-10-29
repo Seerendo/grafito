@@ -51,12 +51,12 @@ export async function apiCaller(request: Request): Promise<ApiCaller> {
     return { sql, userId, profile: await readUserProfile(sql, userId), via: "token" };
   }
   if (!bearer && !sameSite(request)) throw apiError(403, "Petición de otro sitio.");
-  const { getAuth } = await import("@/lib/auth/server");
-  const session = await (await getAuth()).api.getSession({ headers: request.headers });
-  if (!session?.user) throw apiError(401, "Inicia sesión o usa un token personal.");
-  const lease = await assertLease(sql, session.user.id);
+  const { sessionUser } = await import("@/lib/auth/verify.server");
+  const user = await sessionUser(request.headers);
+  if (!user) throw apiError(401, "Inicia sesión o usa un token personal.");
+  const lease = await assertLease(sql, user.id);
   if (!lease.ok) throw apiError(401, "La sesión venció.");
-  return { sql, userId: session.user.id, profile: await readUserProfile(sql, session.user.id), via: "session" };
+  return { sql, userId: user.id, profile: await readUserProfile(sql, user.id), via: "session" };
 }
 
 export function requirePermission(profile: UserProfile, key: string, message: string): void {

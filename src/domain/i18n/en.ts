@@ -966,4 +966,5 @@ export const en: Record<string, string> = {
   "Tu rol no puede eliminar portafolios.": "Your role can't delete portfolios.",
   "Ese portafolio no se puede eliminar aquí.": "That portfolio can't be deleted here.",
   "Ese portafolio ya no está en la papelera.": "That portfolio is no longer in the trash.",
+  "Este documento ya no está.": "This document is no longer here.",
 };
