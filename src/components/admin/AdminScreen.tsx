@@ -1,7 +1,8 @@
-import { Activity, Building2, FolderOpen, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, ChevronRight, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
+import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { leaveApp } from "@/app/leave";
 import { SESSION_PRESETS } from "@/domain/session";
 import { setPluginFlags } from "@/app/plugins";
@@ -12,6 +13,7 @@ import { Switch } from "@/components/ui/Switch";
 import { UsageMeter } from "@/components/ui/UsageMeter";
 import { OptionGrid } from "@/components/ui/OptionGrid";
 import { SettingsNav } from "@/components/chrome/SettingsNav";
+import { useAutoContextMenu } from "@/components/ui/use-auto-context-menu";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/server/admin.functions";
@@ -19,6 +21,8 @@ import { setSessionTtl, storageReport } from "@/server/session.functions";
 import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
 import { QuotaBoard } from "./QuotaBoard";
+import { WorkspaceBoard } from "./WorkspaceBoard";
+import { AssignedSpaceBoard } from "./AssignedSpaceBoard";
 import { DesignPanel } from "./DesignPanel";
 import { AiBoard } from "./AiBoard";
 import { MailBoard } from "./MailBoard";
@@ -26,7 +30,7 @@ import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -63,9 +67,75 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     id: "monitor",
     label: "Monitorización y logs",
     icon: Activity,
-    need: ["monitor.view", "admin.access", "sources.manage"],
+    need: ["monitor.view", "admin.access", "sources.manage", "space.manage"],
   },
 ];
+
+const NAV_KEY = "grafito.admin.nav";
+
+function readNav(): { section: Section | null; leaf: Leaf | null; roleId: string | null } {
+  try {
+    const data = readReloadState<{ section?: unknown; leaf?: unknown; roleId?: unknown }>(NAV_KEY) ?? {};
+    const section = NAV.some((item) => item.id === data.section) ? (data.section as Section) : null;
+    return {
+      section,
+      leaf: section && typeof data.leaf === "string" ? (data.leaf as Leaf) : null,
+      roleId: section && typeof data.roleId === "string" ? data.roleId : null,
+    };
+  } catch {
+    return { section: null, leaf: null, roleId: null };
+  }
+}
+
+/**
+ * Los subapartados de cada sección (los mismos en sus tarjetas y en la barra
+ * lateral), según los permisos del rol.
+ */
+function leavesOf(view: AdminView, section: Section): { id: Leaf; label: string; icon: typeof Users }[] {
+  if (section === "usuarios") {
+    return [
+      ...(allowed(view, "users.create") || allowed(view, "users.update") || allowed(view, "users.delete")
+        ? [{ id: "usuarios" as const, label: "Usuarios", icon: Users }]
+        : []),
+      ...(allowed(view, "roles.manage") ? [{ id: "roles" as const, label: "Roles", icon: KeyRound }] : []),
+      ...(allowed(view, "orgs.manage") ? [{ id: "organizaciones" as const, label: "Organizaciones", icon: Building2 }] : []),
+      ...(allowed(view, "space.manage")
+        ? [
+            { id: "cuotas" as const, label: "Espacio por usuario", icon: HardDrive },
+            { id: "cuotas-portafolio" as const, label: "Espacio por portafolio", icon: FolderOpen },
+            { id: "espacios-trabajo" as const, label: "Espacios de trabajo", icon: Building2 },
+          ]
+        : []),
+    ];
+  }
+  if (section === "autenticacion") {
+    return [
+      { id: "ldap", label: "LDAP", icon: Network },
+      { id: "oauth", label: "OAuth", icon: KeyRound },
+      { id: "sso", label: "SSO", icon: ShieldCheck },
+    ];
+  }
+  if (section === "monitor") {
+    return [
+      ...(allowed(view, "monitor.view")
+        ? [
+            { id: "monitor" as const, label: "Monitor de sistema", icon: Activity },
+            { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
+          ]
+        : []),
+      ...(allowed(view, "admin.access") ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }] : []),
+      ...(allowed(view, "space.manage") ? [{ id: "asignado" as const, label: "Espacio asignado", icon: PieChart }] : []),
+      ...(allowed(view, "sources.manage") ? [{ id: "fuentes" as const, label: "Fuentes", icon: Database }] : []),
+    ];
+  }
+  if (section === "apariencia") {
+    return [
+      { id: "diseno", label: "Diseño", icon: LayoutTemplate },
+      { id: "temas", label: "Temas", icon: Palette },
+    ];
+  }
+  return [];
+}
 
 function allowed(view: AdminView, key: string) {
   return view.owner || view.actorPermissions.includes(key);
@@ -78,9 +148,12 @@ function visibleNav(view: AdminView) {
 export function AdminScreen() {
   const { user, isPending } = useCurrentUserState();
   const [view, setState] = useState<State | null>(null);
-  const [section, setSection] = useState<Section | null>(null);
-  const [leaf, setLeaf] = useState<Leaf | null>(null);
-  const [roleId, setRoleId] = useState<string | null>(null);
+  // Dónde estaba: solo al recargar la página; entrar de nuevo empieza desde el principio.
+  const [section, setSection] = useState<Section | null>(() => readNav().section);
+  const [leaf, setLeaf] = useState<Leaf | null>(() => readNav().leaf);
+  const [roleId, setRoleId] = useState<string | null>(() => readNav().roleId);
+  const autoMenu = useAutoContextMenu();
+  useSaveOnReload(NAV_KEY, { section, leaf, roleId });
   const [error, setError] = useState("");
   const [probe, setProbe] = useState<{ elastic: string; bucket: string } | null>(null);
 
@@ -179,6 +252,33 @@ export function AdminScreen() {
     setRoleId(null);
   };
   const title = heading(view, current?.id ?? null, leaf, roleId);
+  // Administración › sección › subapartado › rol: cada paso lleva de vuelta a él.
+  const leafLabel = current && leaf ? leavesOf(view, current.id).find((item) => item.id === leaf)?.label : null;
+  const crumbs: { label: string; go?: () => void }[] = current
+    ? [
+        {
+          label: t("Administración"),
+          go: () => {
+            setSection(null);
+            setLeaf(null);
+            setRoleId(null);
+          },
+        },
+        {
+          label: t(current.label),
+          go: leaf
+            ? () => {
+                setLeaf(null);
+                setRoleId(null);
+              }
+            : undefined,
+        },
+        ...(leaf
+          ? [{ label: leafLabel ? t(leafLabel) : title, go: roleId ? () => setRoleId(null) : undefined }]
+          : []),
+        ...(roleId ? [{ label: title }] : []),
+      ]
+    : [];
 
   return (
     <AppFrame>
@@ -188,6 +288,12 @@ export function AdminScreen() {
           allLabel={t("Todas")}
           items={items}
           active={current?.id ?? null}
+          subItems={current ? leavesOf(view, current.id) : []}
+          activeSub={leaf}
+          onSelectSub={(id) => {
+            setLeaf(id);
+            setRoleId(null);
+          }}
           onSelect={(id) => {
             if (id) openSection(id);
             else {
@@ -199,22 +305,33 @@ export function AdminScreen() {
           footer={view.loginName}
         />
         <div data-ui="workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            data-ui="admin-content"
+            className="min-h-0 flex-1 overflow-y-auto"
+            // En un subapartado, clic derecho en cualquier parte: lo mismo que sus botones.
+            onContextMenu={leaf ? autoMenu.onContextMenu : undefined}
+          >
             <div className="grafito-in w-full px-4 py-6 sm:px-8">
               {current ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (roleId) setRoleId(null);
-                    else if (leaf) setLeaf(null);
-                    else setSection(null);
-                  }}
-                  className="mb-3 text-sm text-accent md:hidden"
-                >
-                  {t("Atrás")}
-                </button>
+                <nav data-ui="breadcrumb" data-menu-skip aria-label={t("Ruta")} className="mb-2 flex flex-wrap items-center gap-1 text-xs text-faint">
+                  {crumbs.map((crumb, index) => (
+                    <span key={crumb.label} className="flex items-center gap-1">
+                      {index > 0 ? <ChevronRight className="size-3 shrink-0" /> : null}
+                      {crumb.go ? (
+                        <button type="button" onClick={crumb.go} className="hover:text-fg">
+                          {crumb.label}
+                        </button>
+                      ) : (
+                        <span aria-current="page" className="text-muted">
+                          {crumb.label}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </nav>
               ) : null}
               <h1 className="font-serif text-3xl tracking-tight">{title}</h1>
+              {autoMenu.element}
               <div className="mt-6">
                 {!current ? <OptionGrid items={items} onPick={openSection} /> : null}
                 {current?.id === "usuarios" && !leaf ? (
@@ -224,32 +341,7 @@ export function AdminScreen() {
                   allowed(view, "roles.manage") ||
                   allowed(view, "orgs.manage") ||
                   allowed(view, "space.manage") ? (
-                    <OptionGrid
-                      items={[
-                        ...(allowed(view, "users.create") || allowed(view, "users.update") || allowed(view, "users.delete")
-                          ? [{ id: "usuarios" as const, label: "Usuarios", icon: Users }]
-                          : []),
-                        ...(allowed(view, "roles.manage")
-                          ? [{ id: "roles" as const, label: "Roles", icon: KeyRound }]
-                          : []),
-                        ...(allowed(view, "orgs.manage")
-                          ? [
-                              {
-                                id: "organizaciones" as const,
-                                label: "Organizaciones",
-                                icon: Building2,
-                              },
-                            ]
-                          : []),
-                        ...(allowed(view, "space.manage")
-                          ? [
-                              { id: "cuotas" as const, label: "Espacio por usuario", icon: HardDrive },
-                              { id: "cuotas-portafolio" as const, label: "Espacio por portafolio", icon: FolderOpen },
-                            ]
-                          : []),
-                      ]}
-                      onPick={(id) => setLeaf(id)}
-                    />
+                    <OptionGrid items={leavesOf(view, "usuarios")} onPick={(id) => setLeaf(id)} />
                   ) : (
                     <p className="text-sm text-muted">{t("Este rol no administra cuentas.")}</p>
                   )
@@ -258,44 +350,23 @@ export function AdminScreen() {
                 {current?.id === "usuarios" && leaf === "organizaciones" ? <OrgsBoard view={view} /> : null}
                 {current?.id === "usuarios" && leaf === "cuotas" ? <QuotaBoard view="users" /> : null}
                 {current?.id === "usuarios" && leaf === "cuotas-portafolio" ? <QuotaBoard view="portfolios" /> : null}
+                {current?.id === "usuarios" && leaf === "espacios-trabajo" ? <WorkspaceBoard /> : null}
                 {current?.id === "usuarios" && leaf === "roles" ? (
                   <RolesBoard view={view} reload={load} roleId={roleId} onOpen={setRoleId} />
                 ) : null}
                 {current?.id === "autenticacion" && !leaf ? (
-                  <OptionGrid
-                    items={[
-                      { id: "ldap" as const, label: "LDAP", icon: Network },
-                      { id: "oauth" as const, label: "OAuth", icon: KeyRound },
-                      { id: "sso" as const, label: "SSO", icon: ShieldCheck },
-                    ]}
-                    onPick={(id) => setLeaf(id)}
-                  />
+                  <OptionGrid items={leavesOf(view, "autenticacion")} onPick={(id) => setLeaf(id)} />
                 ) : null}
                 {current?.id === "autenticacion" && leaf === "ldap" ? <LdapPanel /> : null}
                 {current?.id === "autenticacion" && leaf === "oauth" ? <OAuthPanel /> : null}
                 {current?.id === "autenticacion" && leaf === "sso" ? <SsoPanel /> : null}
                 {current?.id === "monitor" && !leaf ? (
-                  <OptionGrid
-                    items={[
-                      ...(allowed(view, "monitor.view")
-                        ? [
-                            { id: "monitor" as const, label: "Monitor de sistema", icon: Activity },
-                            { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
-                          ]
-                        : []),
-                      ...(allowed(view, "admin.access")
-                        ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }]
-                        : []),
-                      ...(allowed(view, "sources.manage")
-                        ? [{ id: "fuentes" as const, label: "Fuentes", icon: Database }]
-                        : []),
-                    ]}
-                    onPick={(id) => setLeaf(id)}
-                  />
+                  <OptionGrid items={leavesOf(view, "monitor")} onPick={(id) => setLeaf(id)} />
                 ) : null}
                 {current?.id === "monitor" && leaf === "monitor" ? <MonitorBoard /> : null}
                 {current?.id === "monitor" && leaf === "logs" ? <LogsBoard /> : null}
                 {current?.id === "monitor" && leaf === "espacio" ? <SpacePanel /> : null}
+                {current?.id === "monitor" && leaf === "asignado" ? <AssignedSpaceBoard /> : null}
                 {current?.id === "monitor" && leaf === "fuentes" ? (
                   <Sources
                     view={view}
@@ -312,13 +383,7 @@ export function AdminScreen() {
                   />
                 ) : null}
                 {current?.id === "apariencia" && !leaf ? (
-                  <OptionGrid
-                    items={[
-                      { id: "diseno", label: "Diseño", icon: LayoutTemplate },
-                      { id: "temas", label: "Temas", icon: Palette },
-                    ]}
-                    onPick={(id) => setLeaf(id)}
-                  />
+                  <OptionGrid items={leavesOf(view, "apariencia")} onPick={(id) => setLeaf(id)} />
                 ) : null}
                 {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
@@ -344,6 +409,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
   if (section === "usuarios" && leaf === "organizaciones") return t("Organizaciones");
   if (section === "usuarios" && leaf === "cuotas") return t("Espacio por usuario");
   if (section === "usuarios" && leaf === "cuotas-portafolio") return t("Espacio por portafolio");
+  if (section === "usuarios" && leaf === "espacios-trabajo") return t("Espacios de trabajo");
   if (section === "usuarios") return t("Usuarios y permisos");
   if (section === "autenticacion" && leaf === "ldap") return "LDAP";
   if (section === "autenticacion" && leaf === "oauth") return t("OAuth");
@@ -354,6 +420,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
   if (section === "monitor" && leaf === "monitor") return t("Monitor de sistema");
   if (section === "monitor" && leaf === "logs") return t("Logs de sistema");
   if (section === "monitor" && leaf === "espacio") return t("Espacio");
+  if (section === "monitor" && leaf === "asignado") return t("Espacio asignado");
   if (section === "monitor" && leaf === "fuentes") return t("Fuentes");
   if (section === "monitor") return t("Monitorización y logs");
   return t(NAV.find((item) => item.id === section)?.label ?? "Administración");

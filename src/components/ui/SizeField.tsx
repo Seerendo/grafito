@@ -3,15 +3,19 @@ import { t } from "@/app/i18n";
 
 const MB = 1024 ** 2;
 const GB = 1024 ** 3;
+const TB = 1024 ** 4;
+const UNIT = { MB, GB, TB } as const;
+type Unit = keyof typeof UNIT;
 
-function split(bytes: number | null): { amount: string; unit: "MB" | "GB" } {
+function split(bytes: number | null): { amount: string; unit: Unit } {
   if (bytes === null) return { amount: "", unit: "GB" };
+  if (bytes >= TB && bytes % (TB / 10) === 0) return { amount: String(Math.round((bytes / TB) * 10) / 10), unit: "TB" };
   if (bytes >= GB && bytes % (GB / 10) === 0) return { amount: String(Math.round((bytes / GB) * 10) / 10), unit: "GB" };
   return { amount: String(Math.round(bytes / MB)), unit: "MB" };
 }
 
 /**
- * Un tope de espacio: cantidad y unidad (MB o GB). Vacío es «sin tope». Se
+ * Un tope de espacio: cantidad y unidad (MB, GB o TB). Vacío es «sin tope». Se
  * guarda al pulsar Enter o al salir del campo, si cambió; `onSave` devuelve el
  * error a mostrar, o `null`. Queda alineado al final de su celda, como piden
  * las tablas de espacio.
@@ -29,7 +33,7 @@ export function SizeField({
 }) {
   const initial = split(value);
   const [amount, setAmount] = useState(initial.amount);
-  const [unit, setUnit] = useState<"MB" | "GB">(initial.unit);
+  const [unit, setUnit] = useState<Unit>(initial.unit);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -46,7 +50,7 @@ export function SizeField({
       setError(t("Escribe un número."));
       return;
     }
-    const bytes = clean ? Math.round(number * (nextUnit === "GB" ? GB : MB)) : null;
+    const bytes = clean ? Math.round(number * UNIT[nextUnit]) : null;
     if (bytes === value) return;
     setSaving(true);
     setError("");
@@ -78,7 +82,7 @@ export function SizeField({
           value={unit}
           disabled={disabled || saving}
           onChange={(event) => {
-            const next = event.target.value as "MB" | "GB";
+            const next = event.target.value as Unit;
             setUnit(next);
             if (amount.trim()) void save(next);
           }}
@@ -87,6 +91,7 @@ export function SizeField({
         >
           <option value="MB">MB</option>
           <option value="GB">GB</option>
+          <option value="TB">TB</option>
         </select>
       </div>
       {error ? <p className="mt-1 text-right text-xs text-danger">{t(error)}</p> : null}

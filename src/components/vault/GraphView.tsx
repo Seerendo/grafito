@@ -52,6 +52,8 @@ function readColor(name: string, fallback: string): string {
  * sus documentos (solo lectura).
  */
 export type GraphSource = {
+  /** Qué se dibuja (un espacio de trabajo, lo compartido), junto al título. */
+  name?: string;
   documents: Document[];
   portfolios: Portfolio[];
   activeId: string | null;
@@ -725,7 +727,10 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <div className="min-w-0">
-          <h2 className="font-serif text-xl">{t("Grafo")}</h2>
+          <h2 className="font-serif text-xl">
+            {t("Grafo")}
+            {source?.name ? <span className="text-muted"> · {source.name}</span> : null}
+          </h2>
           <p className="text-xs text-faint">
             {visibleNotes.length}{" "}{t("documentos ·")}{" "}{visibleEdges.length}{" "}{t("vínculos")}
           </p>

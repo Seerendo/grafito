@@ -193,16 +193,13 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
   const rev = await nextRevision(sql, userId);
   const now = Date.now();
   for (const portfolio of changes.portfolios) {
-    // Descripción y vínculos solo cambian si llegan (la API y Git no los mandan).
-    const description = portfolio.description ?? null;
+    // Los vínculos solo cambian si llegan (la API y Git no los mandan).
     const links = portfolio.links ? JSON.stringify(portfolio.links) : null;
     await sql`
-      insert into vault_portfolio (user_id, id, name, parent_id, rev, deleted, description, links_json)
-      values (${userId}, ${portfolio.id}, ${portfolio.name}, ${portfolio.parentId}, ${rev}, false,
-        ${description ?? ""}, ${links ?? "[]"})
+      insert into vault_portfolio (user_id, id, name, parent_id, rev, deleted, links_json)
+      values (${userId}, ${portfolio.id}, ${portfolio.name}, ${portfolio.parentId}, ${rev}, false, ${links ?? "[]"})
       on conflict (user_id, id) do update set
         name = excluded.name, parent_id = excluded.parent_id, rev = excluded.rev, deleted = false, deleted_at = null,
-        description = coalesce(${description}, vault_portfolio.description),
         links_json = coalesce(${links}, vault_portfolio.links_json)
     `;
   }
@@ -291,10 +288,9 @@ export async function pullChanges(sql: Sql, userId: string, since: number): Prom
     name: string;
     parent_id: string | null;
     deleted: unknown;
-    description: string | null;
     links_json: string | null;
   }>`
-    select id, name, parent_id, deleted, description, links_json from vault_portfolio where user_id = ${userId} and rev > ${since}
+    select id, name, parent_id, deleted, links_json from vault_portfolio where user_id = ${userId} and rev > ${since}
   `;
   return {
     revision,
@@ -306,7 +302,6 @@ export async function pullChanges(sql: Sql, userId: string, since: number): Prom
         id: row.id,
         name: row.name,
         parentId: row.parent_id,
-        description: row.description ?? "",
         links: parseLinks(row.links_json ?? "[]"),
       })),
     deletedPortfolios: portfolios.filter((row) => flag(row.deleted)).map((row) => row.id),

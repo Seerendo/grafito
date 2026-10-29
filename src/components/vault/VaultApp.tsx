@@ -23,11 +23,13 @@ import { useAiChat } from "@/app/ai-chat";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
+import { asDocuments, orderDocuments } from "@/components/share/shared-tree";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
 import { sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
+import { newSharedPortfolio } from "@/app/shared-actions";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -104,6 +106,7 @@ function VaultWorkspace() {
   const activeId = useVault((state) => state.activeId);
   const sharedTree = useSharedView((state) => state.tree);
   const sharedDoc = useSharedView((state) => state.docId);
+  const sharedPortfolio = useSharedView((state) => state.portfolioId);
   const trashOpen = useTrashView((state) => state.open);
   const setGraph = useVault((state) => state.setGraph);
   const setPalette = useVault((state) => state.setPalette);
@@ -115,11 +118,32 @@ function VaultWorkspace() {
 
   const holdGraph = graph && !mobile;
 
+
   const openNote = (id: string) => {
     if (id) useVault.getState().setActive(id);
     setGraph(false);
     setPane("note");
   };
+
+  // El grafo es el de lo que está abierto: un espacio de trabajo o algo
+  // compartido conmigo, o si no la Carpeta Personal.
+  const graphView = sharedTree ? (
+    <GraphView
+      onOpenNote={(id) => {
+        setGraph(false);
+        useSharedView.getState().openShared(sharedTree, id);
+      }}
+      source={{
+        name: sharedTree.share.title,
+        documents: asDocuments(orderDocuments(sharedTree)),
+        portfolios: sharedTree.portfolios,
+        activeId: sharedDoc,
+        onSelect: (id) => useSharedView.getState().openShared(sharedTree, id),
+      }}
+    />
+  ) : (
+    <GraphView onOpenNote={openNote} />
+  );
 
   const inspect = (id: string) => {
     if (id) useVault.getState().selectInGraph(id);
@@ -156,9 +180,15 @@ function VaultWorkspace() {
       <SharedViewer
         tree={sharedTree}
         docId={sharedDoc}
+        portfolioId={sharedPortfolio}
         index={false}
         onOpenDoc={(id) => useSharedView.getState().openShared(sharedTree, id)}
-        onChange={(next, id) => useSharedView.getState().openShared(next, id ?? sharedDoc)}
+        onOpenPortfolio={(id) => useSharedView.getState().openSharedPortfolio(sharedTree, id)}
+        onChange={(next, id) =>
+          id || sharedDoc
+            ? useSharedView.getState().openShared(next, id ?? sharedDoc)
+            : useSharedView.getState().openSharedPortfolio(next, sharedPortfolio)
+        }
       />
     </div>
   ) : null;
@@ -386,7 +416,7 @@ function VaultWorkspace() {
             />
           ) : pane === "graph" ? (
             <FileDrop enabled={canAddFiles} onAdded={openNote}>
-              <GraphView onOpenNote={openNote} />
+              {graphView}
             </FileDrop>
           ) : pane === "links" ? (
             <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
@@ -416,7 +446,7 @@ function VaultWorkspace() {
             <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
               <FileDrop enabled={canAddFiles} onAdded={openNote}>
                 {graph ? (
-                  <GraphView onOpenNote={openNote} />
+                  graphView
                 ) : sharedPane ? (
                   sharedPane
                 ) : (
@@ -582,6 +612,10 @@ function VaultDialogs() {
 
   useEffect(() => {
     if (dialog?.type === "portfolio") setName("");
+    if (dialog?.type === "shared-portfolio") {
+      setName("");
+      setRenameError("");
+    }
     if (dialog?.type === "rename-document") {
       setName(useVault.getState().documents.find((item) => item.id === dialog.id)?.title ?? "");
       setRenameError("");
@@ -636,6 +670,38 @@ function VaultDialogs() {
 
   if (dialog.type === "share") {
     return <ShareDialog kind={dialog.kind} id={dialog.id} onClose={() => setDialog(null)} />;
+  }
+
+  if (dialog.type === "shared-portfolio") {
+    return (
+      <Modal title={t("Nuevo portafolio")} onClose={() => setDialog(null)}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const clean = name.trim();
+            if (!clean) return;
+            void newSharedPortfolio(dialog.shareId, dialog.parentId, clean).then((error) => {
+              if (error) setRenameError(error);
+              else setDialog(null);
+            });
+          }}
+        >
+          <input
+            autoFocus
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={120}
+            aria-label={t("Nombre del portafolio")}
+            className="h-11 w-full rounded-md border border-line bg-inset px-3 text-sm outline-none"
+          />
+          {renameError ? <p className="mt-2 text-sm text-danger">{t(renameError)}</p> : null}
+          <div className="mt-4 flex justify-end gap-2">
+            <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
+            <Primary type="submit">{t("Crear")}</Primary>
+          </div>
+        </form>
+      </Modal>
+    );
   }
 
   if (dialog.type === "space") {

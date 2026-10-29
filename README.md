@@ -287,8 +287,7 @@ After that, the start screen is a normal sign-in.
     passing over a portfolio doesn't select it (and with it, everything
     inside). Add a whole portfolio with Ctrl+click.
   - What is inside a selected portfolio travels with it and isn't taken out.
-- **Portfolio description and links:** a portfolio's page has a description
-  (click to write it) and its own links, like a note's.
+- **Portfolio links:** a portfolio's page has its own links, like a note's.
 - **Links to anything:** **Vincular** offers your notes, files and
   portfolios, and what is shared with you (a note, file or portfolio of
   someone else, with their name). Links to portfolios show up in the graph as
@@ -348,11 +347,48 @@ After that, the start screen is a normal sign-in.
   - **per user in a portfolio**, out of the portfolio's space: set in
     **Espacio y permisos** (right-click a portfolio, the drive button on its
     page, or the same button in a portfolio shared with you) by its owner,
-    whoever manages it (**Administra**) or the system administrator. No one's
+    whoever manages it (**Administrador**) or the system administrator. No one's
     share can exceed the portfolio's, and neither can their sum.
 
   Limits apply when a new file is uploaded: the upload is refused with the
-  reason. Saving changes to an existing file (Office, drawings) is never cut
+  reason.
+- **Workspaces:** an organization (and each of its sub-organizations) can
+  have a **workspace**: portfolios of the team rather than of a person. They
+  appear under **Espacios de trabajo** in the directory of their members,
+  above **Compartidos conmigo**.
+  - The system administrator creates them in **Administración → Usuarios y
+    permisos → Espacios de trabajo**, gives each its space and picks its
+    administrators.
+  - A sub-organization's space comes out of the one above: with MSP at 1 TB
+    and Tecnologías at 800 GB, Estadística can get at most 200 GB, and MSP's
+    own content uses what is left.
+  - Members can edit by default: add notes, files and portfolios. The
+    workspace's administrators (and the system administrator) share out its
+    space per person and change each person's permission in **Espacio y
+    permisos**.
+  - What is uploaded to a workspace counts in the workspace, not in anyone's
+    personal space.
+  - Members of a sub-organization also see the workspaces above it (MSP's,
+    for someone in Tecnologías), as with anything shared with an
+    organization.
+  - A level set for a person overrides the one they get through their
+    organization, also to lower it.
+  - Only someone from the organization or its sub-organizations can be a
+    workspace's administrator.
+  - Clicking a workspace (or one of its portfolios) opens its page, like the
+    Carpeta Personal's: its portfolios, its documents and the recent ones,
+    with a path back up. Only what is open stays highlighted in the
+    directory: the Carpeta Personal is no longer marked.
+  - Right-click a workspace, one of its portfolios or a document, in the
+    directory or on its page (also on an empty spot of the page, as in the
+    Carpeta Personal): new note, new portfolio, upload a file, **Espacio y
+    permisos** or delete (with permission to edit). Opening is a click, so
+    it is not in the menu.
+  - What is deleted in a workspace goes to its own trash. **Papelera** has a
+    tab per workspace you administer, where you restore or delete for good;
+    other members don't see it.
+  - The graph (**Abrir grafo**) is the one of what is open: the workspace (or
+    anything shared with you) or, otherwise, your Carpeta Personal. Saving changes to an existing file (Office, drawings) is never cut
   off, so no work is lost.
 - **Git (optional):** a portfolio, or the whole vault, can be kept in sync
   with a folder of a GitHub or GitLab repository, both ways. See
@@ -390,7 +426,7 @@ portfolio. Your role needs the share permission.
 | Option | Who can see it |
 | --- | --- |
 | **Privada** | Only you |
-| **Compartida** | The users and organizations you pick, with **Solo lectura** (read-only), **Puede editar** (can edit) or, for a portfolio, **Administra** (manages it). Sharing with an organization includes its sub-organizations. |
+| **Compartida** | The users and organizations you pick, with **Solo lectura** (read-only), **Puede editar** (can edit) or, for a portfolio, **Administrador** (administrator). Sharing with an organization includes its sub-organizations. |
 | **Pública** | Anyone with the link (`/p/<token>`), without signing in |
 
 Public links are always read-only.
@@ -399,7 +435,7 @@ Public links are always read-only.
   - **Puede editar** also lets people add to it: **Nueva nota** and **Subir
     archivo** in the shared portfolio's header add to the portfolio of the open
     document (or the shared one).
-  - **Administra** also lets them share out the portfolio's space and change
+  - **Administrador** also lets them share out the portfolio's space and change
     the others' permissions in **Espacio y permisos**.
   - The level is set for everyone in **Compartir…** and can then be changed per
     person in **Espacio y permisos**. Re-saving the share keeps those changes.
@@ -498,12 +534,16 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Inteligencia artificial** | Which AI providers users may connect |
 | **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
 | **Plugins** | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default) |
+| **Organizaciones** | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization. |
+| **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user. |
 | **Apariencia** | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
 | **Monitorización y logs** | System monitor, audit log, storage usage and backend health checks |
 
 Role changes take effect within a few seconds, without signing in again. The
 initial administrator always keeps every permission.
+
+Right-click anywhere in an administration page gives the actions of its buttons: on a row (a user, a role, a member), that row's; elsewhere, the page's own (new user, new organization…). What a click already does (opening a row, switching a tab, picking a card, a switch) is left out. The same goes for the trash, where an empty spot only offers **Vaciar papelera**. The side bar of the administration shows, under the open section, its sub-options (click the section again to fold them; it scrolls when they don't fit), and a path above the title (Administración › Usuarios y permisos › Usuarios) leads back to each step. The administration and account pages keep where you were when you reload the page (or change the language). Leaving them any other way, such as the logo, starts them over.
 
 ## AI assistant
 

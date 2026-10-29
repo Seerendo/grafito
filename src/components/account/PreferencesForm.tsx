@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { flushSync } from "react-dom";
 import { setLocale, t, useLocale } from "@/app/i18n";
+import { keepForRemount } from "@/app/reload-state";
 import { Select } from "@/components/ui/Select";
 import { LOCALES, isLocale, type Locale } from "@/domain/i18n";
 import { savePreferences } from "@/server/session.functions";
 
 /** Cambia el idioma con un fundido suave (View Transitions si el navegador las tiene). */
 function switchLocale(locale: Locale): void {
+  // La aplicación se vuelve a montar: que la página siga donde estaba.
+  keepForRemount();
   const start = (document as Document & { startViewTransition?: (update: () => void) => unknown }).startViewTransition;
   if (!start) {
     setLocale(locale);

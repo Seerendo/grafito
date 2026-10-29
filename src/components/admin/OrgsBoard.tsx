@@ -1,6 +1,7 @@
 import { Building2, ChevronRight, Plus, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
+import { useContextMenu } from "@/components/ui/use-context-menu";
 import { TextAction } from "@/components/ui/TextAction";
 import { childOrgs, orgPath, orgSubtree } from "@/domain/orgs";
 import {
@@ -18,7 +19,9 @@ type OrgRow = Extract<Awaited<ReturnType<typeof orgsState>>, { ok: true }>["orgs
 /**
  * Organizaciones: árbol a la izquierda y la elegida a la derecha, con sus
  * sub-organizaciones y miembros. Compartir con una organización llega también
- * a los miembros de sus sub-organizaciones.
+ * a los miembros de sus sub-organizaciones. Clic derecho en una organización:
+ * sub-organización, renombrar, eliminar; en el espacio libre del árbol: una
+ * organización nueva.
  */
 export function OrgsBoard({ view }: { view: AdminView }) {
   const [orgs, setOrgs] = useState<OrgRow[] | null>(null);
@@ -26,6 +29,13 @@ export function OrgsBoard({ view }: { view: AdminView }) {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState<{ parentId: string | null } | null>(null);
   const [name, setName] = useState("");
+  // Lo pedido desde el clic derecho a la organización elegida (renombrar, eliminar).
+  const [request, setRequest] = useState<{ kind: "rename" | "delete"; at: number } | null>(null);
+  const menu = useContextMenu();
+  const startCreate = (parentId: string | null) => {
+    setCreating({ parentId });
+    setName("");
+  };
 
   const load = () =>
     orgsState()
@@ -60,7 +70,11 @@ export function OrgsBoard({ view }: { view: AdminView }) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
-      <div className="rounded-lg border border-line bg-surface p-2">
+      <div
+        data-ui="orgs-tree"
+        className="min-h-48 rounded-lg border border-line bg-surface p-2"
+        onContextMenu={(event) => menu.open(event, [{ label: t("Nueva organización"), onClick: () => startCreate(null) }])}
+      >
         <div className="flex items-center justify-between px-2 pb-2">
           <span className="text-xs font-semibold tracking-wider text-muted uppercase">{t("Organizaciones")}</span>
           <button
@@ -69,6 +83,7 @@ export function OrgsBoard({ view }: { view: AdminView }) {
               setCreating({ parentId: null });
               setName("");
             }}
+            data-menu-label={t("Nueva organización")}
             className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-accent hover:text-fg"
           >
             <Plus className="size-3.5" />
@@ -76,7 +91,34 @@ export function OrgsBoard({ view }: { view: AdminView }) {
           </button>
         </div>
         {orgs.length === 0 ? <p className="px-2 py-3 text-sm text-muted">{t("Todavía no hay organizaciones.")}</p> : null}
-        <OrgTree orgs={orgs} parentId={null} depth={0} selected={selected} onSelect={setSelected} />
+        <OrgTree
+          orgs={orgs}
+          parentId={null}
+          depth={0}
+          selected={selected}
+          onSelect={setSelected}
+          onMenu={(event, org) => {
+            menu.open(event, [
+              { label: t("Nueva sub-organización"), onClick: () => startCreate(org.id) },
+              {
+                label: t("Renombrar"),
+                onClick: () => {
+                  setSelected(org.id);
+                  setRequest({ kind: "rename", at: Date.now() });
+                },
+              },
+              {
+                label: t("Eliminar"),
+                danger: true,
+                onClick: () => {
+                  setSelected(org.id);
+                  setRequest({ kind: "delete", at: Date.now() });
+                },
+              },
+            ]);
+          }}
+        />
+        {menu.element}
       </div>
 
       <div className="min-w-0 space-y-4">
@@ -117,6 +159,7 @@ export function OrgsBoard({ view }: { view: AdminView }) {
             view={view}
             reload={load}
             onError={setError}
+            request={request}
             onCreateChild={() => {
               setCreating({ parentId: current.id });
               setName("");
@@ -140,17 +183,20 @@ function OrgTree({
   depth,
   selected,
   onSelect,
+  onMenu,
 }: {
   orgs: OrgRow[];
   parentId: string | null;
   depth: number;
   selected: string | null;
   onSelect: (id: string) => void;
+  onMenu: (event: React.MouseEvent, org: OrgRow) => void;
 }) {
   const children = childOrgs(orgs, parentId);
   if (children.length === 0) return null;
+  // Separadas: el resaltado al pasar el ratón no se pega a la fila elegida.
   return (
-    <ul>
+    <ul className={`flex flex-col gap-1 ${depth > 0 ? "mt-1" : ""}`}>
       {children.map((org) => {
         const on = org.id === selected;
         const subs = childOrgs(orgs, org.id).length;
@@ -159,6 +205,10 @@ function OrgTree({
             <button
               type="button"
               onClick={() => onSelect(org.id)}
+              onContextMenu={(event) => {
+                onSelect(org.id);
+                onMenu(event, org);
+              }}
               aria-current={on ? "true" : undefined}
               className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${
                 on ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
@@ -170,7 +220,7 @@ function OrgTree({
               <span className="min-w-0 flex-1 truncate">{org.name}</span>
               <span className="shrink-0 text-[11px] text-faint tabular-nums">{org.memberIds.length}</span>
             </button>
-            <OrgTree orgs={orgs} parentId={org.id} depth={depth + 1} selected={selected} onSelect={onSelect} />
+            <OrgTree orgs={orgs} parentId={org.id} depth={depth + 1} selected={selected} onSelect={onSelect} onMenu={onMenu} />
           </li>
         );
       })}
@@ -186,12 +236,14 @@ function OrgDetail({
   onError,
   onCreateChild,
   onDeleted,
+  request,
 }: {
   org: OrgRow;
   orgs: OrgRow[];
   view: AdminView;
   reload: () => Promise<void>;
   onError: (message: string) => void;
+  request: { kind: "rename" | "delete"; at: number } | null;
   onCreateChild: () => void;
   onDeleted: () => void;
 }) {
@@ -199,6 +251,15 @@ function OrgDetail({
   const [draft, setDraft] = useState(org.name);
   const [query, setQuery] = useState("");
   const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!request) return;
+    if (request.kind === "rename") {
+      setDraft(org.name);
+      setRenaming(true);
+    } else setConfirming(true);
+    // Solo cuando llega una petición nueva.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.at]);
   const members = new Set(org.memberIds);
   const subtree = orgSubtree(orgs, org.id);
   const reach = new Set(orgs.filter((item) => subtree.has(item.id)).flatMap((item) => item.memberIds));

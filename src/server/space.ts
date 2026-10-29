@@ -1,6 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { formatBytes } from "@/domain/space";
 import { portfolioLineage } from "./share";
+import { workspaceByOwner, workspaceOwnLimit } from "./workspace";
 
 export { checkShares, formatBytes } from "@/domain/space";
 
@@ -17,11 +18,15 @@ export { checkShares, formatBytes } from "@/domain/space";
 
 export const DEFAULT_USER_KEY = "space_default_user";
 
-/** Lo que un usuario tiene subido, en cualquier bóveda. */
+/**
+ * Lo que un usuario tiene subido, en cualquier bóveda menos los espacios de
+ * trabajo: eso cuenta en el del espacio de trabajo, no en el personal.
+ */
 export async function userUsage(sql: Sql, userId: string): Promise<number> {
   const rows = await sql<{ bytes: unknown }>`
     select coalesce(sum(file_size), 0)::bigint as bytes from vault_doc
     where kind = 'file' and coalesce(uploaded_by, user_id) = ${userId}
+      and user_id not in (select owner_id from workspace)
   `;
   return Number(rows[0]?.bytes ?? 0);
 }
@@ -78,7 +83,10 @@ export async function portfolioLimit(sql: Sql, ownerId: string, portfolioId: str
   const rows = await sql<{ bytes: unknown }>`
     select bytes from space_portfolio where owner_id = ${ownerId} and portfolio_id = ${portfolioId} limit 1
   `;
-  return rows[0] ? Number(rows[0].bytes) : null;
+  if (rows[0]) return Number(rows[0].bytes);
+  // El portafolio raíz de un espacio de trabajo: lo que le queda a ese espacio.
+  const workspace = await workspaceByOwner(sql, ownerId);
+  return workspace && workspace.root_portfolio_id === portfolioId ? workspaceOwnLimit(sql, ownerId) : null;
 }
 
 export async function memberLimits(sql: Sql, ownerId: string, portfolioId: string): Promise<Map<string, number>> {
@@ -96,7 +104,8 @@ export async function checkSpace(
   sql: Sql,
   input: { ownerId: string; portfolioId: string | null; uploaderId: string; bytes: number },
 ): Promise<string | null> {
-  const mine = await userLimit(sql, input.uploaderId);
+  // En un espacio de trabajo no cuenta el espacio personal.
+  const mine = (await workspaceByOwner(sql, input.ownerId)) ? { bytes: null } : await userLimit(sql, input.uploaderId);
   if (mine.bytes !== null) {
     const used = await userUsage(sql, input.uploaderId);
     if (used + input.bytes > mine.bytes) {

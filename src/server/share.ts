@@ -417,21 +417,24 @@ async function treeFor(sql: Sql, item: ItemRecord, links?: FileLinks): Promise<S
 export async function sharedWith(
   sql: Sql,
   userId: string,
-): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess }[]> {
-  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown }>`
+): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess; workspace: boolean }[]> {
+  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown; workspace: unknown }>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
     select s.id, s.kind, s.title, u.name as owner_name,
-      (
-        select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
-        from (
-          select g.access from share_grant g where g.share_id = s.id and g.user_id = ${userId}
-          union all
-          select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)
-        ) x
+      exists (select 1 from workspace w where w.owner_id = s.owner_id) as workspace,
+      coalesce(
+        (
+          select case coalesce(g.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end
+          from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+        ),
+        (
+          select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
+          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+        )
       ) as rank
     from share_item s
     join "user" u on u.id = s.owner_id
@@ -449,6 +452,7 @@ export async function sharedWith(
     title: row.title,
     ownerName: row.owner_name?.trim() || "Alguien",
     access: fromRank(row.rank),
+    workspace: row.workspace === true || row.workspace === "t" || row.workspace === 1,
   }));
 }
 
@@ -509,14 +513,14 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
     select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.public_token,
-      case when s.owner_id = ${userId} then 'admin' else (
-        select case max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
-          when 3 then 'admin' when 2 then 'edit' else 'read' end
-        from (
-          select g.access from share_grant g where g.share_id = s.id and g.user_id = ${userId}
-          union all
-          select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)
-        ) x
+      case when s.owner_id = ${userId} then 'admin' else coalesce(
+        -- Lo puesto a la persona manda sobre lo de sus organizaciones.
+        (select coalesce(g.access, s.access) from share_grant g where g.share_id = s.id and g.user_id = ${userId}),
+        (
+          select case max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
+            when 3 then 'admin' when 2 then 'edit' else 'read' end
+          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+        )
       ) end as access
     from share_item s
     where s.id = ${shareId}
@@ -566,7 +570,7 @@ export async function shareCandidates(sql: Sql, userId: string): Promise<{ id: s
     from "user" u
     left join app_user_role m on m.user_id = u.id
     left join app_admin a on a.user_id = u.id
-    where u.id <> ${userId}
+    where u.id <> ${userId} and u.id not in (select owner_id from workspace)
     order by u.name
   `;
   return rows.map((row) => ({ id: row.id, name: row.name?.trim() || "Sin nombre", loginName: row.login_name ?? "" }));
@@ -613,6 +617,7 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
     `
   ).filter((item) => lineage.includes(item.target_id));
   const byUser = new Map<string, PortfolioMember>();
+  // Entre elementos distintos (este portafolio y los que lo contienen) cuenta el nivel más alto.
   const add = (member: PortfolioMember) => {
     const known = byUser.get(member.userId);
     if (!known || RANK[member.access] > RANK[known.access] || (RANK[member.access] === RANK[known.access] && member.direct && !known.direct)) {
@@ -620,6 +625,8 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
     }
   };
   for (const item of items) {
+    // Dentro de un elemento, lo puesto a la persona manda sobre lo de su organización.
+    const here = new Map<string, PortfolioMember>();
     const direct = await sql<{ user_id: string; name: string; login: string | null; access: string | null }>`
       select g.user_id, u.name, coalesce(m.login_name, a.login_name) as login, g.access
       from share_grant g join "user" u on u.id = g.user_id
@@ -628,7 +635,7 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
       where g.share_id = ${item.id}
     `;
     for (const row of direct) {
-      add({
+      here.set(row.user_id, {
         userId: row.user_id,
         name: row.name?.trim() || row.login || "",
         loginName: row.login ?? "",
@@ -655,16 +662,21 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
     `;
     for (const row of viaOrg) {
       if (row.user_id === ownerId) continue;
-      add({
+      const known = here.get(row.user_id);
+      if (known?.direct) continue;
+      const access = isAccess(row.access) ? row.access : accessOf(item);
+      if (known && RANK[known.access] >= RANK[access]) continue;
+      here.set(row.user_id, {
         userId: row.user_id,
         name: row.name?.trim() || row.login || "",
         loginName: row.login ?? "",
-        access: isAccess(row.access) ? row.access : accessOf(item),
+        access,
         shareId: item.id,
         direct: false,
         orgName: row.org_name,
       });
     }
+    for (const member of here.values()) add(member);
   }
   return [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -675,10 +687,16 @@ export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: st
   return (await portfolioMembers(sql, ownerId, portfolioId)).find((member) => member.userId === userId)?.access ?? null;
 }
 
-/** Cambia el nivel de un invitado directo de un elemento compartido. */
+/**
+ * Pone el nivel de una persona en un elemento compartido. Si llegaba por su
+ * organización, queda invitada directamente con ese nivel (que manda sobre el
+ * de la organización, también para bajarlo).
+ */
 export async function setGrantAccess(sql: Sql, shareId: string, userId: string, access: ShareAccess): Promise<boolean> {
   const rows = await sql<{ user_id: string }>`
-    update share_grant set access = ${access} where share_id = ${shareId} and user_id = ${userId} returning user_id
+    insert into share_grant (share_id, user_id, access) values (${shareId}, ${userId}, ${access})
+    on conflict (share_id, user_id) do update set access = excluded.access
+    returning user_id
   `;
   return rows.length > 0;
 }

@@ -138,9 +138,9 @@ function parseSaved(raw: string): Persisted | null {
   const documents = data.documents.filter(isDocument).map(normalize);
   if (documents.length === 0) return null;
   const portfolios = Array.isArray(data.portfolios) ? data.portfolios.filter(isPortfolio) : [];
-  const activeId = documents.some((document) => document.id === data.activeId)
-    ? (data.activeId as string)
-    : documents[0]!.id;
+  // Sin documento abierto (la Carpeta Personal) se queda así al recargar; uno
+  // que ya no existe también: no se abre otro cualquiera en su lugar.
+  const activeId = documents.some((document) => document.id === data.activeId) ? (data.activeId as string) : null;
   const mode: ViewMode =
     data.mode === "edit" || data.mode === "split" || data.mode === "read" ? data.mode : "read";
   const draft =
@@ -332,7 +332,6 @@ type VaultState = Persisted & {
   ) => void;
   removeManualLink: (sourceId: string, link: Pick<ManualLink, "targetId" | "anchor">) => void;
   /** La descripción de un portafolio (en su página). */
-  setPortfolioDescription: (id: string, description: string) => void;
   /**
    * Quita los vínculos a lo compartido por `shareId` cuyo destino ya no se ve:
    * todos si `keep` es `null` (sin acceso), o los que no están en `keep`.
@@ -356,7 +355,7 @@ function freshVault(saved: Persisted | null) {
   return {
     documents: saved?.documents ?? seed.documents,
     portfolios: saved?.portfolios ?? seed.portfolios,
-    activeId: saved?.activeId ?? seed.activeId,
+    activeId: saved ? saved.activeId : seed.activeId,
     mode: saved?.mode ?? ("read" as ViewMode),
     draft: saved?.draft ?? null,
     selectedPortfolioId: "p-inicio" as string | null,
@@ -862,16 +861,6 @@ export const useVault = create<VaultState>((set, get) => ({
         portfolio.id === sourceId
           ? { ...portfolio, links: (portfolio.links ?? []).filter((link) => linkKey(link) !== key) }
           : portfolio,
-      ),
-    });
-  },
-
-  setPortfolioDescription: (id, description) => {
-    if (!can(PERMISSION.portfoliosManage)) return;
-    const clean = description.slice(0, 4000);
-    set({
-      portfolios: get().portfolios.map((portfolio) =>
-        portfolio.id === id && (portfolio.description ?? "") !== clean ? { ...portfolio, description: clean } : portfolio,
       ),
     });
   },

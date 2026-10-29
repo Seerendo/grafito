@@ -1,4 +1,5 @@
 import { Braces, KeyRound, Mail, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
+import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { useEffect, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -43,24 +44,13 @@ export function AccountScreen() {
   const can = usePermissions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
-  // La sección abierta sobrevive al cambio de idioma (que vuelve a montar la página).
-  const [section, setSectionState] = useState<Section | null>(() => {
-    try {
-      const saved = typeof window === "undefined" ? null : window.sessionStorage.getItem(SECTION_KEY);
-      return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
-    } catch {
-      return null;
-    }
+  // La sección abierta sobrevive a recargar y al cambio de idioma (que vuelve a
+  // montar la página); entrar de nuevo a Cuenta empieza desde el principio.
+  const [section, setSection] = useState<Section | null>(() => {
+    const saved = readReloadState<string>(SECTION_KEY);
+    return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
   });
-  const setSection = (next: Section | null) => {
-    setSectionState(next);
-    try {
-      if (next) window.sessionStorage.setItem(SECTION_KEY, next);
-      else window.sessionStorage.removeItem(SECTION_KEY);
-    } catch {
-      /* solo es una comodidad */
-    }
-  };
+  useSaveOnReload(SECTION_KEY, section);
 
   useEffect(() => {
     if (!user?.id) return;

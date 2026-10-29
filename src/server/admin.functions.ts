@@ -230,6 +230,7 @@ export const adminState = createServerFn({ method: "GET" })
       left join app_role r on r.id = m.role_id
       left join app_profile p on p.user_id = u.id
       left join app_temp_access t on t.user_id = u.id
+      where u.id not in (select owner_id from workspace)
       order by u.name
     `;
     const byRole = new Map<string, string[]>();

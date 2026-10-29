@@ -10,6 +10,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
 import { useRowMenu, type RowMenuTarget } from "./RowMenu";
 import { SharedSection } from "./SharedSection";
+import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { VisibilityMark } from "./visibility";
 import { t } from "@/app/i18n";
@@ -96,9 +97,12 @@ export function Sidebar({
   const rootPicked = useVault((state) => state.rootPicked);
   // Una carpeta solo se resalta si fue lo último que se eligió (ver `folderPicked`).
   const folderPicked = useVault((state) => state.folderPicked);
-  const rootLit = selectedId === null && rootPicked && folderPicked;
+  const trashShown = useTrashView((state) => state.open);
+  // Con la papelera o algo compartido abierto, lo propio no queda resaltado.
+  const elsewhere = useSharedView((state) => state.tree !== null) || trashShown;
+  const rootLit = selectedId === null && rootPicked && folderPicked && !elsewhere;
   // Una sola fila resaltada: la carpeta si fue lo último elegido, si no el documento abierto.
-  const litId = folderPicked ? null : activeId;
+  const litId = folderPicked || elsewhere ? null : activeId;
   const trashOpen = useTrashView((state) => state.open);
   const collapsed = useVault((state) => state.collapsed);
   const setQuery = useVault((state) => state.setQuery);
@@ -409,7 +413,7 @@ export function Sidebar({
                 node={node}
                 depth={0}
                 activeId={litId}
-                selectedId={folderPicked ? selectedId : null}
+                selectedId={folderPicked && !elsewhere ? selectedId : null}
                 collapsed={collapsed}
                 dropOver={dropOver}
                 onOpen={open}
@@ -440,6 +444,7 @@ export function Sidebar({
               onToggle={toggleCollapsed}
               onContextMenu={(event, id) => openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })}
             />
+            <SharedSection workspaces onOpen={onOpenShared} />
             <SharedSection onOpen={onOpenShared} />
             <button
               type="button"

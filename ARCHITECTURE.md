@@ -121,7 +121,7 @@ routes ─▶ components ─▶ app ─▶ domain
 | `admin/` | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO) |
 | `session/` | `SessionWatch`: watches the session deadline and signs out when it expires |
 | `ai/` | `AiChat`: floating button and chat panel (Ctrl+B) |
-| `share/` | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
+| `share/` | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`, and with no document open shows `SharedBoard`, the page of a shared portfolio or workspace: its portfolios, documents and recent ones), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
 | `vault/` | The vault (listed below) |
 
 The `ui/` pieces:
@@ -162,7 +162,7 @@ The `vault/` pieces:
 | `ai-chat.ts` | AI chat state: open or closed, chosen model, conversation and NDJSON reading |
 | `files.ts` | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile` |
 | `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
-| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`). Opening an own note, the Carpeta Personal or signing out closes it. |
+| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it. |
 | `trash-view.ts` | Whether the trash fills the main area (`useTrashView`), with the same closing rules |
 | `permissions.ts` | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them. |
 | `actor.ts` | Name of whoever creates or edits notes |
@@ -599,11 +599,56 @@ shared portfolio counts for them.
   administrator (`space.manage`) also sets user and portfolio limits
   (`QuotaBoard`).
 
+## Workspaces
+
+Migration 0024. A workspace is the vault of an internal account
+(`workspace.owner_id`, a `user` row with no password or provider, hidden from
+user lists) shared with its organization (`share_org_grant`, `edit`), so
+members, per-person levels, space shares and adding content all reuse the
+sharing and space code. Its administrators are direct grants with `admin`.
+`workspace.bytes` is its total; `workspaceChildren` finds the nearest
+workspaces below, whose totals must fit in it (`checkWorkspaceBytes`), and
+`workspaceOwnLimit` (what is left) is the root portfolio's limit in
+`portfolioLimit`. `userUsage` leaves workspaces out and `checkSpace` skips
+the personal limit for them. Renaming the organization renames the account,
+the root portfolio and the share. `sharedWith` marks workspace shares so the
+directory lists them apart (`SharedSection workspaces`). Members can create
+notes, files and subportfolios there (`createSharedNote`, `addSharedFile`,
+`createSharedPortfolio`); there is no delete, since the internal account's
+trash isn't reachable by anyone.
+
+### Right-click from a page's own buttons
+
+`components/ui/use-auto-context-menu.tsx` builds a context menu from the
+buttons of the area that was right-clicked: those of the row under the
+pointer (`li`, `tr`, `[data-menu-row]`) or, elsewhere, the ones not inside a
+row. Each item clicks its button, so every admin sub-page and the trash get
+right-click actions without a second list to maintain. `data-menu-label`
+renames an item, `data-menu-skip` leaves a part out (the breadcrumb), and a
+row's own menu (which stops the event) still wins. Only actions make it in:
+buttons that are a whole row, multi-line cards, and tabs, switches, radios,
+pressed, selected, expandable or current buttons are left out, since a
+click already does that.
+
+### Trash, menus and graph of a workspace
+
+`deleteSharedDoc` (`server/workspace-trash.functions.ts`) sends a document
+of a portfolio shared with edit access to its owner's trash. For a
+workspace that trash is the internal account's, so `myWorkspaceTrashes`,
+`workspaceTrashList`, `…Restore` and `…Purge` let its administrators (and
+`space.manage`) use it; `TrashBoard` shows one tab per workspace. Right-click
+menus use `components/ui/ContextMenu.tsx` and `use-context-menu.tsx`; the
+directory's shared rows call `app/shared-actions.ts`, the same actions as the
+viewer's buttons. `VaultApp` draws the graph of the open shared tree
+(`asDocuments` in `share/shared-tree.ts`) when there is one. Workspace
+administrators must belong to the organization or a sub-organization
+(`orgMemberIds`).
+
 ## Links to portfolios and shared items
 
-Migration 0023 gives `vault_portfolio` a `description` and `links_json`
-(synced like a note's; `pushChanges` only overwrites them when the browser
-sends them, so the API and Git keep them). A `ManualLink` may carry
+Migration 0023 gives `vault_portfolio` a `links_json` (synced like a
+note's; `pushChanges` only overwrites it when the browser sends it, so the
+API and Git keep it). Its `description` column is no longer used. A `ManualLink` may carry
 `target: "portfolio"` and `shareId` (the target belongs to someone else and
 is reached through that share). `app/shared-links.ts` caches the shared
 trees (two minutes), resolves those targets for the graph, the context pane

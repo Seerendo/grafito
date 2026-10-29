@@ -41,7 +41,7 @@ function docSignature(doc: Document): string {
 }
 
 function portfolioSignature(portfolio: Portfolio): string {
-  return `${portfolio.name}|${portfolio.parentId ?? ""}|${portfolio.description ?? ""}|${JSON.stringify(portfolio.links ?? [])}`;
+  return `${portfolio.name}|${portfolio.parentId ?? ""}|${JSON.stringify(portfolio.links ?? [])}`;
 }
 
 function readMeta(userId: string): Meta | null {

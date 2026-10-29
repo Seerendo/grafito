@@ -19,7 +19,7 @@ const ACCESS_LABEL: Record<SpaceMember["access"], string> = {
   owner: "Dueño",
   read: "Solo lectura",
   edit: "Puede editar",
-  admin: "Administra",
+  admin: "Administrador",
 };
 
 /**
@@ -134,7 +134,7 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
                           >
                             <option value="read">{t("Solo lectura")}</option>
                             <option value="edit">{t("Puede editar")}</option>
-                            <option value="admin">{t("Administra")}</option>
+                            <option value="admin">{t("Administrador")}</option>
                           </select>
                         ) : (
                           <span className="text-muted">{t(ACCESS_LABEL[member.access])}</span>

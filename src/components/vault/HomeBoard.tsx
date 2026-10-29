@@ -7,7 +7,7 @@ import { downloadPortfolio } from "@/app/export";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { createDrawing } from "./ingest-files";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
 import { useRowMenu } from "./RowMenu";
@@ -282,37 +282,19 @@ function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | n
   );
 }
 
-/** Descripción del portafolio y sus vínculos (a notas, archivos, portafolios o lo compartido conmigo). */
+/** Vínculos del portafolio (a notas, archivos, portafolios o lo compartido conmigo). */
 function PortfolioAbout({ portfolio, onOpenNote }: { portfolio: Portfolio; onOpenNote: (id: string) => void }) {
   const can = usePermissions();
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const trees = useSharedTrees((state) => state.trees);
   const setDialog = useVault((state) => state.setDialog);
-  const setDescription = useVault((state) => state.setPortfolioDescription);
   const removeLink = useVault((state) => state.removeManualLink);
-  const canEdit = can(PERMISSION.portfoliosManage);
   const canLink = can(PERMISSION.linksManage);
-  const [draft, setDraft] = useState(portfolio.description ?? "");
-  useEffect(() => setDraft(portfolio.description ?? ""), [portfolio.id, portfolio.description]);
   const links = (portfolio.links ?? []).map((link) => ({ link, target: resolveLink(link, documents, portfolios, trees) }));
 
   return (
     <div data-ui="portfolio-about" className="mt-4 space-y-3">
-      {canEdit ? (
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => setDescription(portfolio.id, draft.trim())}
-          rows={Math.min(8, Math.max(2, draft.split("\n").length))}
-          maxLength={4000}
-          aria-label={t("Descripción del portafolio")}
-          placeholder={t("Añade una descripción…")}
-          className="w-full resize-y rounded-md border border-transparent bg-transparent px-0 py-1 text-sm leading-relaxed text-muted outline-none placeholder:text-faint hover:border-line focus:border-line focus:bg-inset focus:px-2"
-        />
-      ) : portfolio.description ? (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted">{portfolio.description}</p>
-      ) : null}
       {links.length > 0 || canLink ? (
         <div className="flex flex-wrap items-center gap-1.5">
           {links.map(({ link, target }) =>

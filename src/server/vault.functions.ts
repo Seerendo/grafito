@@ -59,7 +59,6 @@ const portfolioSchema = z.object({
   id,
   name: z.string().max(120),
   parentId: id.nullable(),
-  description: z.string().max(4000).optional(),
   links: z.array(linkSchema).max(500).optional(),
 });
 

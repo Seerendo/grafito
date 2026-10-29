@@ -54,6 +54,16 @@ export async function renameOrg(sql: Sql, id: string, name: string): Promise<{ o
   if (!rows[0]) return { ok: false, error: "Esa organización no existe." };
   if (await nameTaken(sql, clean, rows[0].parent_id, id)) return { ok: false, error: "Ya hay una organización con ese nombre ahí." };
   await sql`update app_org set name = ${clean} where id = ${id}`;
+  // Su espacio de trabajo (si tiene) se llama igual: la cuenta, el portafolio raíz y lo compartido.
+  const workspace = await sql<{ owner_id: string; root_portfolio_id: string; share_id: string }>`
+    select owner_id, root_portfolio_id, share_id from workspace where org_id = ${id} limit 1
+  `;
+  if (workspace[0]) {
+    const { owner_id: owner, root_portfolio_id: root, share_id: share } = workspace[0];
+    await sql`update "user" set name = ${clean} where id = ${owner}`;
+    await sql`update vault_portfolio set name = ${clean} where user_id = ${owner} and id = ${root}`;
+    await sql`update share_item set title = ${clean} where id = ${share}`;
+  }
   return { ok: true };
 }
 
@@ -72,7 +82,23 @@ export async function deleteOrg(sql: Sql, id: string): Promise<void> {
   await sql`delete from app_org where id = ${id}`;
 }
 
+/**
+ * Los miembros directos de una organización. Quien entra en una
+ * sub-organización entra también en todas las de arriba (quitarlo de una no lo
+ * quita de las demás).
+ */
 export async function setOrgMembers(sql: Sql, id: string, userIds: string[]): Promise<void> {
+  const before = new Set(
+    (await sql<{ user_id: string }>`select user_id from app_org_member where org_id = ${id}`).map((row) => row.user_id),
+  );
+  const ancestors = await sql<{ id: string }>`
+    with recursive up(id, parent_id) as (
+      select id, parent_id from app_org where id = ${id}
+      union
+      select o.id, o.parent_id from app_org o join up on o.id = up.parent_id
+    )
+    select id from up where id <> ${id}
+  `;
   await sql`delete from app_org_member where org_id = ${id}`;
   for (const userId of new Set(userIds)) {
     await sql`
@@ -80,5 +106,13 @@ export async function setOrgMembers(sql: Sql, id: string, userIds: string[]): Pr
       select ${id}, u.id from "user" u where u.id = ${userId}
       on conflict do nothing
     `;
+    if (before.has(userId)) continue;
+    for (const ancestor of ancestors) {
+      await sql`
+        insert into app_org_member (org_id, user_id)
+        select ${ancestor.id}, u.id from "user" u where u.id = ${userId}
+        on conflict do nothing
+      `;
+    }
   }
 }

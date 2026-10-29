@@ -1,4 +1,5 @@
 import type { PublishedDoc, PublishedPortfolio, SharedTree } from "@/server/share";
+import type { Document } from "@/domain/vault/types";
 
 /**
  * Recorrido de un elemento compartido (portafolios y documentos de otro
@@ -35,4 +36,22 @@ export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   };
   walk(rootParent(tree));
   return out;
+}
+
+/** Lo publicado como documentos de la bóveda, para el grafo y los vínculos. */
+export function asDocuments(documents: PublishedDoc[]): Document[] {
+  return documents.map((document) => ({
+    id: document.id,
+    title: document.title,
+    kind: document.kind,
+    portfolioId: document.portfolioId,
+    content: document.content,
+    file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
+    links: document.links ?? [],
+    pinned: false,
+    createdAt: Date.parse(document.updatedAt),
+    updatedAt: Date.parse(document.updatedAt),
+    createdBy: document.updatedBy,
+    updatedBy: document.updatedBy,
+  }));
 }

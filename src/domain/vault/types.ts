@@ -23,8 +23,6 @@ export type Portfolio = {
   id: string;
   name: string;
   parentId: string | null;
-  /** Texto libre que lo describe (en su página). */
-  description?: string;
   /** Sus vínculos, como los de una nota. */
   links?: ManualLink[];
 };
@@ -87,6 +85,8 @@ export type DialogState =
   | { type: "git"; portfolioId: string }
   /** Espacio y permisos de un portafolio propio o (con `shareId`) compartido conmigo. */
   | { type: "space"; portfolioId: string; shareId?: string }
+  /** Nuevo portafolio dentro de uno compartido conmigo (en `parentId`). */
+  | { type: "shared-portfolio"; shareId: string; parentId: string | null }
   | { type: "upload-error"; message: string; title?: string }
   | { type: "reset" }
   | null;

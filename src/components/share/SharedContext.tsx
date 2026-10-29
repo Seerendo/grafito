@@ -92,7 +92,12 @@ export function SharedContext({
           <ul>
             {outgoing.map((item, index) => (
               <li key={`${item.id}-${index}`}>
-                <Row onClick={() => onOpen(item.id)} title={item.title} badge={t(item.label)} detail={item.detail} />
+                <Row
+                  onClick={() => onOpen(item.id)}
+                  title={item.title}
+                  badge={t(item.label)}
+                  detail={item.detail}
+                />
               </li>
             ))}
           </ul>
@@ -132,7 +137,17 @@ function Empty({ children }: { children: ReactNode }) {
   return <p className="px-1.5 py-1 text-sm text-faint italic">{children}</p>;
 }
 
-function Row({ onClick, title, badge, detail }: { onClick: () => void; title: string; badge?: string; detail?: string }) {
+function Row({
+  onClick,
+  title,
+  badge,
+  detail,
+}: {
+  onClick: () => void;
+  title: string;
+  badge?: string;
+  detail?: string;
+}) {
   return (
     <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated">
       {badge ? (

@@ -111,7 +111,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
             </Choice>
             {kind === "portfolio" ? (
               <Choice active={access === "admin"} onClick={() => setAccess("admin")} icon={<ShieldCheck className="size-4" />}>
-                {t("Administra")}
+                {t("Administrador")}
               </Choice>
             ) : null}
           </div>

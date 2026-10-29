@@ -1,6 +1,10 @@
-import { ChevronRight, File, FileText, FolderOpen, Pencil, Users } from "lucide-react";
+import { Building2, ChevronRight, File, FileText, FolderOpen, Pencil, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
+import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
+import { useVault } from "@/app/vault/store";
+import { useContextMenu } from "@/components/ui/use-context-menu";
+import type { ContextItem } from "@/components/ui/ContextMenu";
 import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
 import { openShared, sharedWithMe } from "@/server/share.functions";
 import type { SharedTree } from "@/server/share";
@@ -10,46 +14,110 @@ import { t } from "@/app/i18n";
  * «Compartidos conmigo» como segunda raíz del directorio: lo que otros
  * usuarios u organizaciones me dejaron ver, en solo lectura. Los portafolios
  * se despliegan aquí mismo y los documentos se abren en el área principal.
+ * Con `workspaces`, la raíz «Espacios de trabajo»: los de mis organizaciones
+ * (que también llegan como compartidos; ver `server/workspace.ts`).
  */
 
 type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
 
 const OPEN_KEY = "grafito.shared-open";
+const WORKSPACES_OPEN_KEY = "grafito.workspaces-open";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 
-export function SharedSection({ onOpen }: { onOpen: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Inbox | null>(null);
+/**
+ * Lo último leído, para que al volver a la bóveda (desde la administración,
+ * por ejemplo) las secciones salgan ya como estaban, sin aparecer y
+ * desaparecer mientras se vuelve a leer. Solo vale para la misma cuenta.
+ */
+let lastInbox: { owner: string | null; inbox: Inbox } | null = null;
+
+function storedOpen(key: string, workspaces: boolean): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    // Los espacios de trabajo salen desplegados hasta que se pliegan.
+    return value === "1" || (workspaces && value === null);
+  } catch {
+    return false;
+  }
+}
+
+export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => void; workspaces?: boolean }) {
+  const openKey = workspaces ? WORKSPACES_OPEN_KEY : OPEN_KEY;
+  const [open, setOpen] = useState(() => storedOpen(openKey, workspaces));
+  const [all, setItems] = useState<Inbox | null>(() =>
+    lastInbox && lastInbox.owner === useVault.getState().owner ? lastInbox.inbox : null,
+  );
+  const items = all ? all.filter((item) => Boolean(item.workspace) === workspaces) : null;
   const [failed, setFailed] = useState(false);
   const [trees, setTrees] = useState<Record<string, SharedTree | null>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const activeDoc = useSharedView((state) => state.docId);
   const showShared = useSharedView((state) => state.openShared);
+  const showPortfolio = useSharedView((state) => state.openSharedPortfolio);
+  // La página abierta (sin documento): el compartido o uno de sus portafolios.
+  const boardShare = useSharedView((state) => (state.tree && !state.docId ? state.tree.share.id : null));
+  const boardPortfolio = useSharedView((state) => state.portfolioId);
+  const menu = useContextMenu();
+
+  /**
+   * Clic derecho en lo compartido (abrir ya es un clic): con permiso de
+   * edición en un portafolio, añadir aquí o eliminar (a la papelera de su dueño, que en un
+   * espacio de trabajo ven sus administradores).
+   */
+  const menuFor = (item: NonNullable<Inbox>[number], tree: SharedTree | null | undefined, target: { kind: "portfolio" | "doc"; id: string | null }): ContextItem[] => {
+    const writable = item.kind === "portfolio" && (item.access === "edit" || item.access === "admin");
+    if (target.kind === "doc" && target.id) {
+      const docId = target.id;
+      return [
+        ...(writable
+          ? [{ label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(item.id, docId).then(report) }]
+          : []),
+      ];
+    }
+    const here = target.id;
+    return [
+      ...(writable
+        ? [
+            { label: t("Nueva nota"), onClick: () => void newSharedNote(item.id, here).then((error) => (error ? report(error) : onOpen())) },
+            {
+              label: t("Nuevo portafolio"),
+              onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId: item.id, parentId: here }),
+            },
+            { label: t("Subir archivo"), onClick: () => pickAndUpload(item.id, here) },
+          ]
+        : []),
+      ...(item.kind === "portfolio" && here
+        ? [
+            {
+              label: t("Espacio y permisos…"),
+              onClick: () => useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: item.id }),
+            },
+          ]
+        : []),
+    ];
+  };
 
   const refresh = () =>
     sharedWithMe()
       .then((next) => {
+        lastInbox = { owner: useVault.getState().owner, inbox: next };
         setItems(next);
         setFailed(false);
       })
       .catch(() => setFailed(true));
 
   useEffect(() => {
-    let stored = false;
-    try {
-      stored = localStorage.getItem(OPEN_KEY) === "1";
-    } catch {
-      /* sin almacenamiento: queda plegado */
-    }
+    const stored = storedOpen(openKey, workspaces);
     setOpen(stored);
-    if (stored) void refresh();
-  }, []);
+    // Los espacios de trabajo se leen siempre: sin ninguno, la sección no sale.
+    if (stored || workspaces) void refresh();
+  }, [openKey, workspaces]);
 
   const toggleOpen = () => {
     const next = !open;
     setOpen(next);
     try {
-      localStorage.setItem(OPEN_KEY, next ? "1" : "0");
+      localStorage.setItem(openKey, next ? "1" : "0");
     } catch {
       /* solo es una preferencia */
     }
@@ -85,6 +153,9 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
     onOpen();
   };
 
+  // Hasta saber si hay alguno (o si no hay), la sección de espacios no sale.
+  if (workspaces && (!items || items.length === 0)) return null;
+
   return (
     <div className="mt-1" onDragOver={(event) => event.stopPropagation()} onDrop={(event) => event.stopPropagation()}>
       <button
@@ -93,15 +164,15 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
         aria-expanded={open}
         className="flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg"
       >
-        <Users className="size-4 shrink-0 text-faint" />
-        <span className="truncate font-medium">{t("Compartidos conmigo")}</span>
+        {workspaces ? <Building2 className="size-4 shrink-0 text-faint" /> : <Users className="size-4 shrink-0 text-faint" />}
+        <span className="truncate font-medium">{workspaces ? t("Espacios de trabajo") : t("Compartidos conmigo")}</span>
         <ChevronRight className={`ml-auto size-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open ? (
         <ul>
           {failed ? <li className="px-3 py-2 text-xs text-danger">{t("No se pudo leer lo compartido.")}</li> : null}
           {!items && !failed ? <li className="px-3 py-2 text-xs text-faint">{t("Cargando…")}</li> : null}
-          {items && items.length === 0 ? (
+          {items && items.length === 0 && !workspaces ? (
             <li className="px-3 py-2 text-xs text-faint">{t("Nadie ha compartido nada contigo todavía.")}</li>
           ) : null}
           {items?.map((item) => {
@@ -110,15 +181,34 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
             const portfolio = item.kind === "portfolio";
             const Icon = portfolio ? FolderOpen : FileText;
             const single = !portfolio && tree ? tree.documents[0] : undefined;
+            const rootId = tree ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : null;
+            const lit =
+              (single && single.id === activeDoc) ||
+              (portfolio && boardShare === item.id && (boardPortfolio === null || boardPortfolio === rootId));
             return (
               <li key={item.id}>
                 <button
                   type="button"
                   title={t("De {0}", { 0: item.ownerName })}
+                  onContextMenu={async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const { clientX, clientY } = event;
+                    const loaded = tree ?? (await loadTree(item.id));
+                    const root = loaded ? (childrenOf(loaded, rootParent(loaded))[0]?.id ?? null) : null;
+                    const target = portfolio ? { kind: "portfolio" as const, id: root } : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
+                    menu.openAt(clientX, clientY, menuFor(item, loaded, target));
+                  }}
                   onClick={async () => {
                     if (portfolio) {
-                      toggle(item.id);
-                      await loadTree(item.id);
+                      // Se abre su página (sus portafolios y recientes); pulsarlo
+                      // con la página ya abierta lo pliega.
+                      if (!isOpen || lit) toggle(item.id);
+                      const loaded = await loadTree(item.id, true);
+                      if (loaded) {
+                        showPortfolio(loaded, null);
+                        onOpen();
+                      }
                       return;
                     }
                     const loaded = await loadTree(item.id);
@@ -126,8 +216,9 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                     if (doc) await openDoc(item.id, doc.id);
                   }}
                   className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${PAD[0]} ${
-                    single && single.id === activeDoc ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                    lit ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
                   }`}
+                  aria-current={lit ? "page" : undefined}
                 >
                   {portfolio ? (
                     <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`} />
@@ -139,7 +230,9 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                   {item.access === "edit" || item.access === "admin" ? (
                     <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} />
                   ) : null}
-                  <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
+                  {workspaces ? null : (
+                    <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
+                  )}
                 </button>
                 {portfolio && isOpen ? (
                   tree === undefined ? (
@@ -154,8 +247,14 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
                       skipRoot
                       expanded={expanded}
                       activeDoc={activeDoc}
+                      litPortfolio={boardShare === item.id ? boardPortfolio : null}
                       onToggle={toggle}
                       onOpenDoc={(docId) => void openDoc(item.id, docId)}
+                      onOpenPortfolio={(id) => {
+                        showPortfolio(tree, id);
+                        onOpen();
+                      }}
+                      onMenu={(event, target) => menu.open(event, menuFor(item, tree, target))}
                     />
                   )
                 ) : null}
@@ -164,6 +263,7 @@ export function SharedSection({ onOpen }: { onOpen: () => void }) {
           })}
         </ul>
       ) : null}
+      {menu.element}
     </div>
   );
 }
@@ -179,8 +279,11 @@ function SharedBranch({
   skipRoot,
   expanded,
   activeDoc,
+  litPortfolio,
   onToggle,
   onOpenDoc,
+  onOpenPortfolio,
+  onMenu,
 }: {
   tree: SharedTree;
   parentId: string | null;
@@ -188,8 +291,11 @@ function SharedBranch({
   skipRoot?: boolean;
   expanded: Set<string>;
   activeDoc: string | null;
+  litPortfolio: string | null;
   onToggle: (key: string) => void;
   onOpenDoc: (docId: string) => void;
+  onOpenPortfolio: (id: string) => void;
+  onMenu: (event: React.MouseEvent, target: { kind: "portfolio" | "doc"; id: string }) => void;
 }) {
   const pad = PAD[Math.min(depth, PAD.length - 1)];
   const portfolios = childrenOf(tree, parentId);
@@ -204,8 +310,11 @@ function SharedBranch({
             depth={depth}
             expanded={expanded}
             activeDoc={activeDoc}
+            litPortfolio={litPortfolio}
             onToggle={onToggle}
             onOpenDoc={onOpenDoc}
+            onOpenPortfolio={onOpenPortfolio}
+            onMenu={onMenu}
           />
         ))}
       </>
@@ -216,12 +325,20 @@ function SharedBranch({
       {portfolios.map((portfolio) => {
         const key = `${tree.share.id}:${portfolio.id}`;
         const isOpen = expanded.has(key);
+        const lit = litPortfolio === portfolio.id;
         return (
           <li key={portfolio.id}>
             <button
               type="button"
-              onClick={() => onToggle(key)}
-              className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg ${pad}`}
+              onClick={() => {
+                if (!isOpen || lit) onToggle(key);
+                onOpenPortfolio(portfolio.id);
+              }}
+              onContextMenu={(event) => onMenu(event, { kind: "portfolio", id: portfolio.id })}
+              aria-current={lit ? "page" : undefined}
+              className={`flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${pad} ${
+                lit ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+              }`}
             >
               <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${isOpen ? "rotate-90" : ""}`} />
               <FolderOpen className="size-3.5 shrink-0 text-faint" />
@@ -234,8 +351,11 @@ function SharedBranch({
                 depth={depth + 1}
                 expanded={expanded}
                 activeDoc={activeDoc}
+                litPortfolio={litPortfolio}
                 onToggle={onToggle}
                 onOpenDoc={onOpenDoc}
+                onOpenPortfolio={onOpenPortfolio}
+                onMenu={onMenu}
               />
             ) : null}
           </li>
@@ -250,6 +370,7 @@ function SharedBranch({
                 <button
                   type="button"
                   onClick={() => onOpenDoc(document.id)}
+                  onContextMenu={(event) => onMenu(event, { kind: "doc", id: document.id })}
                   aria-current={on ? "page" : undefined}
                   className={`relative flex h-9 w-full items-center gap-1.5 rounded-md pr-2 text-left text-sm ${pad} ${
                     on ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
