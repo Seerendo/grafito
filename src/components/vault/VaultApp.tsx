@@ -29,7 +29,7 @@ import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
 import { sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
-import { newSharedPortfolio } from "@/app/shared-actions";
+import { deletePortfolioFromShared, newSharedPortfolio, report } from "@/app/shared-actions";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -821,14 +821,23 @@ function VaultDialogs() {
 
   if (dialog.type === "delete-portfolio") {
     const portfolio = portfolios.find((item) => item.id === dialog.id);
+    const shareId = dialog.shareId;
     return (
       <Modal title={t("Eliminar portafolio")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          {t("«{0}» y todo lo que contiene irán a la papelera.", { 0: portfolio?.name ?? t("Este portafolio") })}
+          {t("«{0}» y todo lo que contiene irán a la papelera.", { 0: dialog.name ?? portfolio?.name ?? t("Este portafolio") })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
-          <Danger onClick={() => deletePortfolio(dialog.id)}>{t("Eliminar portafolio")}</Danger>
+          <Danger
+            onClick={() => {
+              if (!shareId) return deletePortfolio(dialog.id);
+              setDialog(null);
+              void deletePortfolioFromShared(shareId, dialog.id).then(report);
+            }}
+          >
+            {t("Eliminar portafolio")}
+          </Danger>
         </div>
       </Modal>
     );

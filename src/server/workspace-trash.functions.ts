@@ -6,7 +6,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { canWrite, shareForUser } from "@/server/share";
 import { subtree } from "@/server/space";
-import { deleteDoc, getDoc, listTrash, purgeTrash, restoreFromTrash, VaultError } from "@/server/vault";
+import { deleteDoc, getDoc, listTrash, pushChanges, purgeTrash, restoreTrashItem, VaultError } from "@/server/vault";
 import { workspaces } from "@/server/workspace";
 
 /**
@@ -67,8 +67,8 @@ export const workspaceTrashRestore = createServerFn({ method: "POST" })
     const ctx = await ownerFor(auth.userId, data.shareId);
     if (!ctx) return { ok: false as const, error: "Solo los administradores del espacio de trabajo pueden recuperar." };
     try {
-      const doc = await restoreFromTrash(ctx.sql, ctx.ownerId, data.id, ctx.profile.displayName || ctx.profile.loginName);
-      return { ok: true as const, id: doc.id };
+      const item = await restoreTrashItem(ctx.sql, ctx.ownerId, data.id, ctx.profile.displayName || ctx.profile.loginName);
+      return { ok: true as const, id: item.id, kind: item.kind };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
       throw error;
@@ -100,5 +100,32 @@ export const deleteSharedDoc = createServerFn({ method: "POST" })
     const needed = doc.kind === "file" ? PERMISSION.filesDelete : PERMISSION.notesDelete;
     if (!allows(profile, needed)) return { ok: false as const, error: "Tu rol no puede eliminar esto." };
     await deleteDoc(sql, share.ownerId, data.docId);
+    return { ok: true as const };
+  });
+
+/**
+ * Manda a la papelera (del dueño) un portafolio de lo compartido con permiso
+ * de edición, con todo lo que contiene. El compartido en sí no se elimina.
+ */
+export const deleteSharedPortfolio = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ shareId: id, portfolioId: id }).parse(input))
+  .handler(async ({ context: auth, data }) => {
+    const { sql, profile } = await context(auth.userId);
+    const share = await shareForUser(sql, auth.userId, data.shareId);
+    if (!share || share.kind !== "portfolio" || !canWrite(share.access)) return { ok: false as const, error: "No puedes eliminar aquí." };
+    if (data.portfolioId === share.targetId || !(await subtree(sql, share.ownerId, share.targetId)).includes(data.portfolioId)) {
+      return { ok: false as const, error: "Ese portafolio no se puede eliminar aquí." };
+    }
+    if (!allows(profile, PERMISSION.portfoliosManage)) return { ok: false as const, error: "Tu rol no puede eliminar portafolios." };
+    const folders = await subtree(sql, share.ownerId, data.portfolioId);
+    const docs: string[] = [];
+    for (const folder of folders) {
+      const rows = await sql<{ id: string }>`
+        select id from vault_doc where user_id = ${share.ownerId} and portfolio_id = ${folder} and not deleted
+      `;
+      docs.push(...rows.map((row) => row.id));
+    }
+    await pushChanges(sql, share.ownerId, { docs: [], deletedDocs: docs, portfolios: [], deletedPortfolios: folders });
     return { ok: true as const };
   });

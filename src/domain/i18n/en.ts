@@ -962,4 +962,8 @@ export const en: Record<string, string> = {
   "Eliminar «{0}»": "Delete «{0}»",
   "Irá a la papelera de su dueño (en un espacio de trabajo, la de sus administradores), que puede recuperarlo.": "It goes to its owner's trash (in a workspace, its administrators'), who can restore it.",
   "Vaciar papelera": "Empty trash",
+  "documentos": "documents",
+  "Tu rol no puede eliminar portafolios.": "Your role can't delete portfolios.",
+  "Ese portafolio no se puede eliminar aquí.": "That portfolio can't be deleted here.",
+  "Ese portafolio ya no está en la papelera.": "That portfolio is no longer in the trash.",
 };

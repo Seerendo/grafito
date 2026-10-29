@@ -75,7 +75,8 @@ export type GraphEdge = {
 export type DialogState =
   | { type: "portfolio"; parentId: string | null }
   | { type: "delete-document"; id: string }
-  | { type: "delete-portfolio"; id: string }
+  /** Con `shareId`, uno de lo compartido conmigo (un espacio de trabajo): `name` es su nombre. */
+  | { type: "delete-portfolio"; id: string; shareId?: string; name?: string }
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }

@@ -11,7 +11,7 @@ import { editableTarget, grantedDocOwner } from "@/server/share";
 import { touchPresence } from "@/server/presence";
 import { putBlob, readBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
-import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreFromTrash, updateNote, VaultError } from "@/server/vault";
+import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreTrashItem, updateNote, VaultError } from "@/server/vault";
 
 /**
  * Historial de versiones, edición de lo compartido y papelera.
@@ -188,8 +188,8 @@ export const trashRestore = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Tu rol no puede recuperar documentos." };
     }
     try {
-      const doc = await restoreFromTrash(sql, context.userId, data.id, actor);
-      return { ok: true as const, id: doc.id };
+      const item = await restoreTrashItem(sql, context.userId, data.id, actor);
+      return { ok: true as const, id: item.id, kind: item.kind };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
       throw error;

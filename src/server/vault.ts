@@ -567,27 +567,104 @@ export async function replaceFile(
 export type TrashItem = {
   id: string;
   title: string;
-  kind: "markdown" | "file";
+  kind: "markdown" | "file" | "portfolio";
   portfolioName: string | null;
   deletedAt: number;
+  /** En un portafolio: cuántos documentos vuelven con él. */
+  count?: number;
 };
 
+type TrashedPortfolio = { id: string; name: string; parent_id: string | null; deleted_at: unknown };
+
+/** Portafolios en la papelera (borrados y todavía recuperables). */
+async function trashedPortfolios(sql: Sql, userId: string): Promise<TrashedPortfolio[]> {
+  return sql<TrashedPortfolio>`
+    select id, name, parent_id, deleted_at from vault_portfolio
+    where user_id = ${userId} and deleted and deleted_at is not null
+  `;
+}
+
+/** `id` y los portafolios de la papelera que cuelgan de él. */
+function trashedSubtree(trashed: TrashedPortfolio[], id: string): Set<string> {
+  const ids = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const portfolio of trashed) {
+      if (portfolio.parent_id && ids.has(portfolio.parent_id) && !ids.has(portfolio.id)) {
+        ids.add(portfolio.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * La papelera: un portafolio borrado sale una vez (con lo que contiene dentro,
+ * que vuelve con él); un documento, si se borró solo (su portafolio sigue).
+ */
 export async function listTrash(sql: Sql, userId: string): Promise<TrashItem[]> {
   await purgeExpired(sql, userId);
-  const rows = await sql<{ id: string; title: string; kind: "markdown" | "file"; portfolio_name: string | null; deleted_at: unknown }>`
-    select d.id, d.title, d.kind, p.name as portfolio_name, d.deleted_at
+  const trashed = await trashedPortfolios(sql, userId);
+  const trashedIds = new Set(trashed.map((portfolio) => portfolio.id));
+  const rows = await sql<{ id: string; title: string; kind: "markdown" | "file"; portfolio_id: string | null; portfolio_name: string | null; deleted_at: unknown }>`
+    select d.id, d.title, d.kind, d.portfolio_id, p.name as portfolio_name, d.deleted_at
     from vault_doc d
     left join vault_portfolio p on p.user_id = d.user_id and p.id = d.portfolio_id
     where d.user_id = ${userId} and d.deleted and d.deleted_at is not null
-    order by d.deleted_at desc
   `;
-  return rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    kind: row.kind,
-    portfolioName: row.portfolio_name,
-    deletedAt: Number(row.deleted_at),
-  }));
+  const names = await sql<{ id: string; name: string }>`select id, name from vault_portfolio where user_id = ${userId}`;
+  const nameOf = (id: string | null) => (id ? (names.find((row) => row.id === id)?.name ?? null) : null);
+  const docs: TrashItem[] = rows
+    .filter((row) => !row.portfolio_id || !trashedIds.has(row.portfolio_id))
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      kind: row.kind,
+      portfolioName: row.portfolio_name,
+      deletedAt: Number(row.deleted_at),
+    }));
+  const portfolios: TrashItem[] = trashed
+    .filter((portfolio) => !portfolio.parent_id || !trashedIds.has(portfolio.parent_id))
+    .map((portfolio) => {
+      const inside = trashedSubtree(trashed, portfolio.id);
+      return {
+        id: portfolio.id,
+        title: portfolio.name,
+        kind: "portfolio" as const,
+        portfolioName: nameOf(portfolio.parent_id),
+        deletedAt: Number(portfolio.deleted_at),
+        count: rows.filter((row) => row.portfolio_id && inside.has(row.portfolio_id)).length,
+      };
+    });
+  return [...portfolios, ...docs].sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+/**
+ * Vuelve a poner en su sitio los portafolios borrados por encima de
+ * `portfolioId` (para recuperar algo que estaba dentro). Devuelve dónde queda:
+ * el mismo, o la raíz si alguno de ellos ya se borró para siempre.
+ */
+async function reviveParents(sql: Sql, userId: string, portfolioId: string | null, rev: number): Promise<string | null> {
+  let cursor = portfolioId;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const found = await sql<{ parent_id: string | null; deleted: unknown; deleted_at: unknown }>`
+      select parent_id, deleted, deleted_at from vault_portfolio where user_id = ${userId} and id = ${cursor} limit 1
+    `;
+    const folder = found[0];
+    if (!folder || (flag(folder.deleted) && folder.deleted_at == null)) return null;
+    if (flag(folder.deleted)) {
+      await sql`
+        update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
+        where user_id = ${userId} and id = ${cursor}
+      `;
+    }
+    cursor = folder.parent_id;
+  }
+  return portfolioId;
 }
 
 /**
@@ -602,54 +679,103 @@ export async function restoreFromTrash(sql: Sql, userId: string, id: string, act
   const row = rows[0];
   if (!row) throw new VaultError("Ese documento ya no está en la papelera.", 404);
   const rev = await nextRevision(sql, userId);
-  let portfolioId = row.portfolio_id;
-  let cursor = portfolioId;
-  const seen = new Set<string>();
-  while (cursor && !seen.has(cursor)) {
-    seen.add(cursor);
-    const found = await sql<{ parent_id: string | null; deleted: unknown; deleted_at: unknown }>`
-      select parent_id, deleted, deleted_at from vault_portfolio where user_id = ${userId} and id = ${cursor} limit 1
-    `;
-    const folder = found[0];
-    if (!folder || (flag(folder.deleted) && folder.deleted_at == null)) {
-      portfolioId = cursor === portfolioId ? null : portfolioId;
-      break;
-    }
-    if (flag(folder.deleted)) {
-      await sql`
-        update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
-        where user_id = ${userId} and id = ${cursor}
-      `;
-    }
-    cursor = folder.parent_id;
-  }
+  const portfolioId = await reviveParents(sql, userId, row.portfolio_id, rev);
+  await reviveDoc(sql, userId, id, row, portfolioId, actor, rev);
+  const doc = await getDoc(sql, userId, id);
+  if (!doc) throw new VaultError("No se pudo recuperar.", 500);
+  return doc;
+}
+
+async function reviveDoc(
+  sql: Sql,
+  userId: string,
+  id: string,
+  row: { title: string; kind: string },
+  portfolioId: string | null,
+  actor: string,
+  rev: number,
+): Promise<void> {
   const title = row.kind === "markdown" ? await freeTitle(sql, userId, row.title, id) : row.title;
   await sql`
     update vault_doc set deleted = false, deleted_at = null, title = ${title}, portfolio_id = ${portfolioId},
       updated_at = ${Date.now()}, updated_by = ${actor}, rev = ${rev}
     where user_id = ${userId} and id = ${id}
   `;
-  const doc = await getDoc(sql, userId, id);
-  if (!doc) throw new VaultError("No se pudo recuperar.", 500);
-  return doc;
 }
 
-/** Borra para siempre lo indicado de la papelera (o todo, sin ids). */
+/**
+ * Saca de la papelera un portafolio con todo lo que tenía dentro (sus
+ * portafolios y documentos borrados), y los portafolios de encima si también
+ * se borraron. Si alguno de encima ya no existe, vuelve a la raíz.
+ */
+async function restorePortfolio(sql: Sql, userId: string, id: string, actor: string): Promise<void> {
+  const trashed = await trashedPortfolios(sql, userId);
+  const portfolio = trashed.find((item) => item.id === id);
+  if (!portfolio) throw new VaultError("Ese portafolio ya no está en la papelera.", 404);
+  const rev = await nextRevision(sql, userId);
+  const parentId = await reviveParents(sql, userId, portfolio.parent_id, rev);
+  for (const folder of trashedSubtree(trashed, id)) {
+    await sql`
+      update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
+      where user_id = ${userId} and id = ${folder}
+    `;
+    const docs = await sql<{ id: string; title: string; kind: string }>`
+      select id, title, kind from vault_doc
+      where user_id = ${userId} and deleted and deleted_at is not null and portfolio_id = ${folder}
+    `;
+    for (const doc of docs) await reviveDoc(sql, userId, doc.id, doc, folder, actor, rev);
+  }
+  await sql`update vault_portfolio set parent_id = ${parentId} where user_id = ${userId} and id = ${id}`;
+}
+
+/** Saca de la papelera un documento o un portafolio (ver `listTrash`). */
+export async function restoreTrashItem(
+  sql: Sql,
+  userId: string,
+  id: string,
+  actor: string,
+): Promise<{ id: string; kind: "document" | "portfolio" }> {
+  const trashed = await trashedPortfolios(sql, userId);
+  if (trashed.some((portfolio) => portfolio.id === id)) {
+    await restorePortfolio(sql, userId, id, actor);
+    return { id, kind: "portfolio" };
+  }
+  const doc = await restoreFromTrash(sql, userId, id, actor);
+  return { id: doc.id, kind: "document" };
+}
+
+async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
+  const keys = await sql<{ file_key: string | null }>`
+    select file_key from vault_doc where user_id = ${userId} and id = ${id} and deleted
+  `;
+  const versions = await versionKeys(sql, userId, id);
+  for (const key of new Set([keys[0]?.file_key, ...versions])) await removeFile(sql, key);
+  await sql`
+    update vault_doc set content = '', file_data = null, file_key = null, file_size = null, links_json = '[]',
+      deleted_at = null
+    where user_id = ${userId} and id = ${id} and deleted
+  `;
+  await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
+  await purgeComments(sql, userId, id);
+}
+
+/** Borra para siempre lo indicado de la papelera (o todo, sin ids); un portafolio, con lo que tenía dentro. */
 export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Promise<void> {
   const targets = ids ?? (await listTrash(sql, userId)).map((item) => item.id);
+  const trashed = await trashedPortfolios(sql, userId);
   for (const id of targets) {
-    const keys = await sql<{ file_key: string | null }>`
-      select file_key from vault_doc where user_id = ${userId} and id = ${id} and deleted
-    `;
-    const versions = await versionKeys(sql, userId, id);
-    for (const key of new Set([keys[0]?.file_key, ...versions])) await removeFile(sql, key);
-    await sql`
-      update vault_doc set content = '', file_data = null, file_key = null, file_size = null, links_json = '[]',
-        deleted_at = null
-      where user_id = ${userId} and id = ${id} and deleted
-    `;
-    await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
-    await purgeComments(sql, userId, id);
+    if (!trashed.some((portfolio) => portfolio.id === id)) {
+      await purgeDoc(sql, userId, id);
+      continue;
+    }
+    for (const folder of trashedSubtree(trashed, id)) {
+      const docs = await sql<{ id: string }>`
+        select id from vault_doc
+        where user_id = ${userId} and deleted and deleted_at is not null and portfolio_id = ${folder}
+      `;
+      for (const doc of docs) await purgeDoc(sql, userId, doc.id);
+      await sql`update vault_portfolio set deleted_at = null where user_id = ${userId} and id = ${folder}`;
+    }
   }
 }
 

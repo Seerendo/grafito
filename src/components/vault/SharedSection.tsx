@@ -94,6 +94,21 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
             },
           ]
         : []),
+      ...(writable && here && tree && here !== (childrenOf(tree, rootParent(tree))[0]?.id ?? null)
+        ? [
+            {
+              label: t("Eliminar"),
+              danger: true,
+              onClick: () =>
+                useVault.getState().setDialog({
+                  type: "delete-portfolio",
+                  id: here,
+                  shareId: item.id,
+                  name: tree.portfolios.find((portfolio) => portfolio.id === here)?.name,
+                }),
+            },
+          ]
+        : []),
     ];
   };
 

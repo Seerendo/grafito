@@ -632,8 +632,13 @@ click already does that.
 
 ### Trash, menus and graph of a workspace
 
-`deleteSharedDoc` (`server/workspace-trash.functions.ts`) sends a document
-of a portfolio shared with edit access to its owner's trash. For a
+`deleteSharedDoc` and `deleteSharedPortfolio` (`server/workspace-trash.functions.ts`)
+send a document, or a portfolio with all it contains (never the shared
+portfolio itself), of a portfolio shared with edit access to its owner's
+trash. In any trash, `listTrash` (`server/vault.ts`) shows a deleted
+portfolio once, top-most, with its documents counted and hidden;
+`restoreTrashItem` brings it back with what was inside (and its deleted
+parents), and `purgeTrash` purges its documents. For a
 workspace that trash is the internal account's, so `myWorkspaceTrashes`,
 `workspaceTrashList`, `…Restore` and `…Purge` let its administrators (and
 `space.manage`) use it; `TrashBoard` shows one tab per workspace. Right-click

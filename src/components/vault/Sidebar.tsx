@@ -594,7 +594,7 @@ function DocButton({
         onOpenContent(document.id);
       }}
       aria-current={active ? "page" : undefined}
-      className={`relative flex h-9 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm select-none active:cursor-grabbing ${pad} ${
+      className={`relative flex h-9 w-full shrink-0 cursor-pointer items-center gap-1.5 rounded-md pr-2 text-left text-sm select-none ${pad} ${
         isPicked
           ? "bg-accent/15 text-fg ring-1 ring-accent/40 ring-inset"
           : active
@@ -695,7 +695,7 @@ function PortfolioBranch({
             if (!onPick(event, key)) onSelect(node.portfolio.id);
           }}
           onContextMenu={menuEvent}
-          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg select-none active:cursor-grabbing"
+          className="flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg select-none"
         >
           {isCollapsed ? (
             <Folder className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`} />

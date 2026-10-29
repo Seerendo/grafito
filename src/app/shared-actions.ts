@@ -3,7 +3,7 @@ import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 import { openShared } from "@/server/share.functions";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
-import { deleteSharedDoc } from "@/server/workspace-trash.functions";
+import { deleteSharedDoc, deleteSharedPortfolio } from "@/server/workspace-trash.functions";
 import { t } from "@/app/i18n";
 
 /**
@@ -56,6 +56,14 @@ export async function uploadToShared(shareId: string, portfolioId: string | null
 
 export async function deleteFromShared(shareId: string, docId: string): Promise<string | null> {
   const result = await deleteSharedDoc({ data: { shareId, docId } }).catch(() => null);
+  if (!result?.ok) return result?.error ?? t("No se pudo eliminar.");
+  await refresh(shareId, null);
+  return null;
+}
+
+/** Un portafolio con lo que contiene, a la papelera de su dueño (en un espacio de trabajo, la de sus administradores). */
+export async function deletePortfolioFromShared(shareId: string, portfolioId: string): Promise<string | null> {
+  const result = await deleteSharedPortfolio({ data: { shareId, portfolioId } }).catch(() => null);
   if (!result?.ok) return result?.error ?? t("No se pudo eliminar.");
   await refresh(shareId, null);
   return null;

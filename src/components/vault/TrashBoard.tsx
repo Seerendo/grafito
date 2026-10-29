@@ -1,4 +1,4 @@
-import { Building2, File, FileText, House } from "lucide-react";
+import { Building2, File, FileText, Folder, House } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/app/permissions";
 import { useTrashView } from "@/app/trash-view";
@@ -23,7 +23,8 @@ type Item = Awaited<ReturnType<typeof trashList>>[number];
 const TRASH_DAYS = 30;
 
 /**
- * Papelera: recuperar o borrar para siempre lo eliminado. Una pestaña para la
+ * Papelera: recuperar o borrar para siempre lo eliminado (un portafolio, con
+ * lo que contiene dentro). Una pestaña para la
  * Carpeta Personal y otra por cada espacio de trabajo que administro (solo sus
  * administradores ven y recuperan lo que se borró allí).
  */
@@ -93,7 +94,8 @@ export function TrashBoard() {
       const owner = useVault.getState().owner;
       if (owner) await syncVault(owner);
       useTrashView.getState().setOpen(false);
-      useVault.getState().setActive(result.id);
+      if (result.kind === "portfolio") useVault.getState().openPortfolio(result.id);
+      else useVault.getState().setActive(result.id);
     } catch {
       setError(t("No se pudo recuperar."));
     } finally {
@@ -168,7 +170,7 @@ export function TrashBoard() {
         {items && items.length > 0 ? (
           <ul data-ui="trash-list" className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
             {items.map((item) => {
-              const Icon = item.kind === "file" ? File : FileText;
+              const Icon = item.kind === "portfolio" ? Folder : item.kind === "file" ? File : FileText;
               const left = Math.max(0, TRASH_DAYS - Math.floor((Date.now() - item.deletedAt) / 86_400_000));
               return (
                 <li
@@ -185,6 +187,9 @@ export function TrashBoard() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{item.title}</span>
                     <span className="block text-xs text-faint">
+                      {item.kind === "portfolio"
+                        ? `${t("Portafolio")} · ${item.count ?? 0} ${item.count === 1 ? t("documento") : t("documentos")} · `
+                        : ""}
                       {item.portfolioName ?? t("Carpeta Personal")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
                     </span>
                   </span>

@@ -158,7 +158,21 @@ export function SharedBoard({
                 <button
                   type="button"
                   onClick={() => onOpenPortfolio(portfolio.id)}
-                  onContextMenu={(event) => menu.open(event, addHere(portfolio.id))}
+                  onContextMenu={(event) =>
+                    menu.open(event, [
+                      ...addHere(portfolio.id),
+                      ...(writable
+                        ? [
+                            {
+                              label: t("Eliminar"),
+                              danger: true,
+                              onClick: () =>
+                                useVault.getState().setDialog({ type: "delete-portfolio", id: portfolio.id, shareId, name: portfolio.name }),
+                            },
+                          ]
+                        : []),
+                    ])
+                  }
                   className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                 >
                   <Folder className="size-4 shrink-0 text-faint" />

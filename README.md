@@ -382,8 +382,9 @@ After that, the start screen is a normal sign-in.
   - Right-click a workspace, one of its portfolios or a document, in the
     directory or on its page (also on an empty spot of the page, as in the
     Carpeta Personal): new note, new portfolio, upload a file, **Espacio y
-    permisos** or delete (with permission to edit). Opening is a click, so
-    it is not in the menu.
+    permisos** or delete (with permission to edit; a portfolio inside the
+    workspace goes with all it contains, the workspace itself can't be
+    deleted). Opening is a click, so it is not in the menu.
   - What is deleted in a workspace goes to its own trash. **Papelera** has a
     tab per workspace you administer, where you restore or delete for good;
     other members don't see it.
@@ -480,7 +481,8 @@ Public links are always read-only.
   version.
 - **Trash:** deleting a note, file or portfolio moves it to **Papelera**.
   - From there you can **Recuperar** it. A note returns to its portfolio, which
-    is recovered too if it was deleted.
+    is recovered too if it was deleted. A deleted portfolio shows up once,
+    with how many documents it holds, and comes back with everything inside.
   - Or you can delete it for good.
   - Items are removed automatically after 30 days.
 
