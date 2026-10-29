@@ -1,9 +1,10 @@
-import { ChevronRight, File, FileText, Folder } from "lucide-react";
+import { ChevronRight, File, FileText, Folder, Sheet } from "lucide-react";
+import { isTableName } from "@/domain/vault/table";
 import { useMemo } from "react";
 import type { PublishedDoc, SharedTree } from "@/server/share";
 import type { ContextItem } from "@/components/ui/ContextMenu";
 import { useContextMenu } from "@/components/ui/use-context-menu";
-import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
+import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
 import { descendantIds } from "@/domain/vault/portfolios";
 import { childrenOf, docsIn } from "./shared-tree";
@@ -39,6 +40,7 @@ export function SharedBoard({
     ...(writable
       ? [
           { label: t("Nueva nota"), onClick: () => void newSharedNote(shareId, id).then(report) },
+          { label: t("Nueva tabla"), onClick: () => void newSharedTable(shareId, id).then(report) },
           {
             label: t("Nuevo portafolio"),
             onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId, parentId: id }),
@@ -101,7 +103,7 @@ export function SharedBoard({
   }
 
   const docRow = (document: PublishedDoc, place: boolean) => {
-    const Icon = document.kind === "file" ? File : FileText;
+    const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
     return (
       <li key={document.id} className="border-b border-line last:border-b-0">
         <button

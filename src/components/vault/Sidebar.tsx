@@ -1,4 +1,5 @@
-import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Trash2, X } from "lucide-react";
+import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Sheet, Trash2, X } from "lucide-react";
+import { isTableName } from "@/domain/vault/table";
 import { createContext, useContext, useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
@@ -608,7 +609,7 @@ function DocButton({
   onContextMenu: (event: MouseEvent, id: string) => void;
 }) {
   const pad = PAD[Math.min(depth, PAD.length - 1)];
-  const Icon = document.kind === "file" ? File : FileText;
+  const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
   const { picked, onPick } = useContext(PickContext);
   const key = `doc:${document.id}` as const;
   const isPicked = picked.has(key);

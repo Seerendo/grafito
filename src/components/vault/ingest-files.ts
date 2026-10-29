@@ -3,6 +3,7 @@ import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
 import { DRAWING_MIME, emptyDrawing } from "@/domain/vault/drawing";
+import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
 
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -56,5 +57,11 @@ export async function ingestExternalFiles(files: FileList | File[], portfolioId:
 /** «Nuevo dibujo»: un dibujo de Excalidraw vacío en `portfolioId`, que queda abierto. */
 export async function createDrawing(portfolioId: string | null): Promise<void> {
   const file = new File([emptyDrawing()], `${t("Dibujo")}.excalidraw`, { type: DRAWING_MIME });
+  await ingestExternalFiles([file], portfolioId);
+}
+
+/** «Nueva tabla»: una tabla de datos vacía en `portfolioId`, que queda abierta (ver `domain/vault/table.ts`). */
+export async function createTable(portfolioId: string | null): Promise<void> {
+  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
   await ingestExternalFiles([file], portfolioId);
 }

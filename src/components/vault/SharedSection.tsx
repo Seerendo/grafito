@@ -1,7 +1,8 @@
-import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Users } from "lucide-react";
+import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Sheet, Users } from "lucide-react";
+import { isTableName } from "@/domain/vault/table";
 import { useEffect, useRef, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
-import { deleteFromShared, newSharedNote, pickAndUpload, report } from "@/app/shared-actions";
+import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
@@ -82,6 +83,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       ...(writable
         ? [
             { label: t("Nueva nota"), onClick: () => void newSharedNote(item.id, here).then((error) => (error ? report(error) : onOpen())) },
+            { label: t("Nueva tabla"), onClick: () => void newSharedTable(item.id, here).then((error) => (error ? report(error) : onOpen())) },
             {
               label: t("Nuevo portafolio"),
               onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId: item.id, parentId: here }),
@@ -432,7 +434,7 @@ function SharedBranch({
       })}
       {parentId
         ? docsIn(tree, parentId).map((document) => {
-            const Icon = document.kind === "file" ? File : FileText;
+            const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
             const on = document.id === activeDoc;
             return (
               <li key={document.id}>

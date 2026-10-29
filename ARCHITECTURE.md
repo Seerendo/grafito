@@ -774,6 +774,39 @@ portfolio at that moment, and the note's text as the merge base).
   the body) or GitLab's `X-Gitlab-Token`, compared in constant time; marks
   the link pending and runs it.
 
+## Data tables (phase 1)
+
+- **A document like any other:** a table is a `.tabla` file
+  (`domain/vault/table.ts`, created by upload like a drawing), so portfolios,
+  sharing, workspaces, moving, the trash and manual links work unchanged.
+  `FileView` opens it in `components/vault/TableView.tsx`; a public link shows
+  a notice instead (the API needs a session).
+- **Data in Postgres** (migration 0026, `server/table.ts`): `data_field`
+  (columns: type, options, position) and `data_row` (`cells` as `jsonb`, one
+  key per column) per owner and document. A cell is written alone
+  (`cells || jsonb_build_object(…)`), so concurrent edits of different cells
+  don't overwrite each other. Deleted rows keep a tombstone so clients learn
+  about them; purging the document from the trash deletes its data.
+- **Access** (`server/table.functions.ts`): one's own table, or one in
+  something shared with edit (or read) access, with the same checks as a note
+  (`editableTarget`, `grantedDocOwner`); reading needs `notes.read`, changing
+  `notes.edit`. Values are cleaned per type on the server (`cleanCell`).
+- **Live:** the view polls `tableChanges` every 10 s (rows changed since its
+  last read, deleted ones and the columns).
+- **Vault links:** `syncTableLinks` turns the targets of link cells into the
+  table document's manual links (`links_json`, with a new revision), so they
+  show in the graph and in Mentions with nothing else. `data_meta` remembers
+  which links came from cells, so links added by hand with **Vincular** are
+  kept.
+- **View:** the grid draws only the visible rows (fixed row height), so
+  thousands of rows scroll smoothly. Search, per-column filters and sorting
+  run in the browser over the loaded rows (up to 20,000). CSV import and
+  export (`parseCsv`, `toCsv`, `guessType`) happen in the browser too; rows
+  are sent in batches of 500.
+- **Next phases:** forms (also by public link), relations between tables,
+  attachments, search and AI tools; then kanban, gallery, calendar,
+  formulas, row history and a REST API.
+
 ## Drawings (Excalidraw)
 
 - **A file like any other:** a drawing is a `.excalidraw` file

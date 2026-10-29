@@ -5,6 +5,7 @@ import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { deleteSharedDoc, deleteSharedPortfolio } from "@/server/workspace-trash.functions";
 import { t } from "@/app/i18n";
+import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
 
 /**
  * Lo que se hace dentro de un portafolio compartido conmigo con permiso de
@@ -67,6 +68,12 @@ export async function deletePortfolioFromShared(shareId: string, portfolioId: st
   if (!result?.ok) return result?.error ?? t("No se pudo eliminar.");
   await refresh(shareId, null);
   return null;
+}
+
+/** «Nueva tabla» en un portafolio de lo compartido (un espacio de trabajo). */
+export async function newSharedTable(shareId: string, portfolioId: string | null): Promise<string | null> {
+  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
+  return uploadToShared(shareId, portfolioId, [file]);
 }
 
 /** Pide archivos con el selector del sistema (desde un clic) y los sube. */

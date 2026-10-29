@@ -404,6 +404,31 @@ After that, the start screen is a normal sign-in.
   right-click (long-press) menu. It accepts several files and treats `.md` the
   same way.
 
+### Data tables
+
+A **table** is structured data inside the vault: typed columns and rows, like
+a simple spreadsheet. Create one with **Nueva tabla** on a portfolio's page,
+on right-click in the directory, or inside a workspace. It lives in a
+portfolio, is shared, moved and deleted like any document, and opens in the
+work area.
+
+- **Column types:** text, number, date, select (with its options), checkbox
+  and **vault link**. A link cell points to notes, files and portfolios of the
+  same vault; they appear in the table's links, in the graph and in each
+  target's Mentions.
+- **Editing:** click a cell to edit it; Enter moves down, Tab moves right,
+  Esc cancels. Each cell is saved on its own, so several people can edit the
+  same table; what others change arrives every few seconds.
+- **Columns:** click a header to rename it, change its type (values are
+  converted), set the options of a select, sort, filter or delete it. **+**
+  adds a column.
+- **Rows:** **Nueva fila** adds one; tick rows to delete them.
+- **Search** across all cells, and **Importar CSV** / **Exportar CSV**
+  (commas or semicolons; columns are matched by name, and new ones are
+  created with the type their values suggest).
+- Up to 100 columns and 20,000 rows per table. Tables can't be opened from a
+  public link yet.
+
 ### Graph
 
 The graph button in the header, or **Ctrl+G**, shows notes and files as nodes

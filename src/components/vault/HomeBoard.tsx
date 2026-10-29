@@ -1,4 +1,5 @@
-import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, Link2, PenTool, Plus, X } from "lucide-react";
+import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, Link2, PenTool, Plus, Sheet, X } from "lucide-react";
+import { isTableName } from "@/domain/vault/table";
 import { resolveLink, useSharedTrees } from "@/app/shared-links";
 import { linkKey } from "@/domain/vault/anchor";
 import type { Portfolio } from "@/domain/vault/types";
@@ -6,7 +7,7 @@ import { usePluginEnabled } from "@/app/plugins";
 import { downloadPortfolio } from "@/app/export";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
-import { createDrawing } from "./ingest-files";
+import { createDrawing, createTable } from "./ingest-files";
 import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
@@ -52,6 +53,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Carpeta Personal")}</h1>
           <span className="ml-auto flex flex-wrap gap-2">
+            <NewTableButton portfolioId={null} onOpenNote={onOpenNote} />
             <NewDrawingButton portfolioId={null} onOpenNote={onOpenNote} />
             {onCreate ? (
               <button
@@ -91,7 +93,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
             <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Recientes")}</h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {recent.map((document) => {
-                const Icon = document.kind === "file" ? File : FileText;
+                const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
                 return (
                   <li key={document.id} className="border-b border-line last:border-b-0">
                     <button
@@ -198,6 +200,7 @@ export function PortfolioBoard({
             <SpaceButton portfolioId={portfolioId} />
             <GitButton portfolioId={portfolioId} />
             <ZipButton portfolioId={portfolioId} />
+            <NewTableButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
             <NewDrawingButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
             {onCreate ? (
               <button
@@ -241,7 +244,7 @@ export function PortfolioBoard({
             <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Notas y archivos")}</h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {items.map((document) => {
-                const Icon = document.kind === "file" ? File : FileText;
+                const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
                 return (
                   <li key={document.id} className="border-b border-line last:border-b-0">
                     <button
@@ -263,6 +266,22 @@ export function PortfolioBoard({
       </div>
       {menu}
     </div>
+  );
+}
+
+/** «Nueva tabla» (datos con columnas y filas) en la carpeta que se está viendo. */
+function NewTableButton({ portfolioId, onOpenNote }: { portfolioId: string | null; onOpenNote: (id: string) => void }) {
+  const can = usePermissions();
+  if (!can(PERMISSION.filesUpload)) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))}
+      className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated"
+    >
+      <Sheet className="size-4" />
+      {t("Nueva tabla")}
+    </button>
   );
 }
 

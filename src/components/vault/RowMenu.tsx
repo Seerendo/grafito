@@ -8,7 +8,7 @@ import { usePluginEnabled } from "@/app/plugins";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import type { Document } from "@/domain/vault/types";
-import { createDrawing, ingestExternalFiles } from "./ingest-files";
+import { createDrawing, createTable, ingestExternalFiles } from "./ingest-files";
 import { requestNotePdf } from "./NotePdf";
 
 export type RowMenuTarget = ({ kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string }) & {
@@ -153,6 +153,10 @@ function RowContextMenu({
     items.push({
       label: t("Nuevo dibujo"),
       onClick: act(() => void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
+    });
+    items.push({
+      label: t("Nueva tabla"),
+      onClick: act(() => void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
     });
     items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
   }

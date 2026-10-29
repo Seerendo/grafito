@@ -750,6 +750,10 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
   `;
   await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
   await purgeComments(sql, userId, id);
+  // Si era una tabla de datos, sus columnas y filas (ver `table.ts`).
+  await sql`delete from data_meta where owner_id = ${userId} and doc_id = ${id}`;
+  await sql`delete from data_row where owner_id = ${userId} and doc_id = ${id}`;
+  await sql`delete from data_field where owner_id = ${userId} and doc_id = ${id}`;
 }
 
 /** Borra para siempre lo indicado de la papelera (o todo, sin ids); un portafolio, con lo que tenía dentro. */

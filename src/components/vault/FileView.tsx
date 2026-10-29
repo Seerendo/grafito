@@ -9,6 +9,8 @@ import { OfficeEditor } from "./OfficeEditor";
 import { PdfView } from "./PdfView";
 import { DrawingView } from "./DrawingView";
 import { isDrawingName } from "@/domain/vault/drawing";
+import { isTableName } from "@/domain/vault/table";
+import { TableView } from "./TableView";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import type { TextAnchor } from "@/domain/vault/anchor";
@@ -58,6 +60,23 @@ export function FileView({
   /** En lo compartido: si se puede editar (dibujos). */
   canEdit?: boolean;
 }) {
+  const can = usePermissions();
+  // Una tabla de datos: sus filas viven en el servidor, no en el archivo.
+  if (isTableName(file.name)) {
+    // Por enlace público no hay sesión: las tablas solo se ven dentro de Grafito.
+    if (links && !shareId) {
+      return <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">{t("Las tablas no se pueden ver por enlace público.")}</p>;
+    }
+    return (
+      <TableView
+        docId={docId}
+        title={title}
+        shareId={links ? shareId : undefined}
+        canEdit={links ? canEdit && Boolean(shareId) : can(PERMISSION.notesEdit)}
+        onOpenNote={onOpenNote}
+      />
+    );
+  }
   return links ? (
     <FileBody
       title={title}
