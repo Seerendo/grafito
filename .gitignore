@@ -7,7 +7,6 @@ node_modules/
 .env
 .env.local
 *.log
-_respaldo-grok/
 .claude/
 .DS_Store
 Thumbs.db

@@ -300,51 +300,6 @@ soon as any key is pressed. Tab turns the ring back on.
   being listed. `BETTER_AUTH_TRUSTED_ORIGINS` adds other sites. Better Auth's
   "Invalid origin" is shown as a message naming that variable.
 
-## Cleanup performed (origin: the Grok App Builder template)
-
-The project started in the Grok sandbox. Everything that belonged to that
-platform rather than to Grafito was removed. Removed files were moved to
-`_respaldo-grok/` with the same relative paths, so they can be recovered. That
-folder is not versioned.
-
-- Agent instructions and skills: `.grok/`, `AGENTS.md`, `startup.sh`.
-- QA leftovers and artifacts: `screenshots/`, `artifacts/`, `.vercel/` (build
-  output), `.tanstack/`, `.node_modules.lock`.
-- Platform integrations that Grafito didn't use:
-  - Grok's OAuth broker, "gate" sessions and the sign-in popup.
-  - The preview bridge and its route rewriting.
-  - The `app-data` and `multiplayer` connectors.
-  - The PWA/branding injector (`server/`, `public/__grok/`).
-  - Their test scripts.
-- Dependencies that nothing imported: Radix UI, react-query, react-table,
-  recharts, react-hook-form, date-fns, sonner, clsx/tailwind-merge/cva,
-  playwright and others.
-
-Code changes:
-
-- `requireUserId` lost its "dev user" branch, which never ran because auth was
-  always on.
-- `password.ts` and `bearer.ts` centralize calls and token handling that were
-  duplicated in `AccessGate` and `AccountScreen`.
-- Shared components: `ui/TextField` (previously `Field`, in two files) and
-  `chrome/AppFrame` (previously identical `Shell` / `Frame` copies in admin and
-  account).
-- The theme script in `__root.tsx` is generated from `THEMES`. It used to be a
-  hand-made copy of the table.
-- The app has its own PWA manifest and icon in `public/`, and Open Graph
-  metadata in `__root.tsx`.
-- Fixed: after signing in, creating the administrator or changing the password,
-  the screen didn't advance until a reload.
-  - Cause: `password.ts` uses a direct `fetch` (to read `set-auth-token`), but
-    Better Auth only refreshes `useSession()` for calls made through
-    `authClient`.
-  - Fix: `$sessionSignal` is now emitted by hand.
-
-The legacy names `__Host-grok-auth.*` (cookies) and `grok-auth.bearer-token`
-(sessionStorage) were kept on purpose, because renaming them would sign out
-every open session. They are centralized in `lib/auth/cookies.ts` and
-`lib/auth/bearer.ts` in case they are renamed later.
-
 ## Known gaps
 
 - PGLite isn't included in the production build (its `.wasm` isn't bundled),
@@ -355,8 +310,6 @@ every open session. They are centralized in `lib/auth/cookies.ts` and
 - MinIO's capacity shows in the storage panel because the compose file sets
   `MINIO_PROMETHEUS_AUTH_TYPE=public`, reachable only inside the Docker
   network and on `127.0.0.1`.
-- `migrations/0001_auth.sql` still has a comment that mentions Grok. Applied
-  migrations aren't edited.
 
 ## Role permissions
 

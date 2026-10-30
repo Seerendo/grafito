@@ -64,7 +64,6 @@ Credentials were used only on the disposable stack: administrator `admin`
 | `GET /` | 200 | ✅ 200 |
 | `/manifest.webmanifest`, `/icon-180.png`, `/favicon.svg`, `/og.jpg` | 200 | ✅ |
 | `/api/auth/get-session` without a session | 200 (`null`) | ✅ |
-| Removed Grok routes: `/__grok/manifest.webmanifest`, `/auth/popup`, `/__app-env` | 404 | ✅ |
 | `_migrations` on an empty database | `0001`–`0005` | ✅ |
 | `grafito-docs` index in Elasticsearch | Created | ✅ |
 

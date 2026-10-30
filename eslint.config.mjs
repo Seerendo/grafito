@@ -15,7 +15,6 @@ export default tseslint.config(
       ".nitro/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
-      "_respaldo-grok/**",
     ],
   },
   js.configs.recommended,

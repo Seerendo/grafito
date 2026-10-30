@@ -5,6 +5,5 @@ node_modules
 .git
 .env
 .env.local
-_respaldo-grok
 *.log
 dev

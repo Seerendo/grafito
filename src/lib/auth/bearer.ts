@@ -8,23 +8,13 @@
  * sobre http fuera de localhost, p. ej. un servidor sin HTTPS), el cliente
  * sigue autenticado mandando este token. Con la cookie funcionando, el token
  * es redundante e inofensivo.
- *
- * Antes vivía en `sessionStorage` (una sesión por pestaña); se migra al leerlo.
- * La clave conserva el nombre heredado para no perder sesiones abiertas.
  */
-const BEARER_KEY = "grok-auth.bearer-token";
+const BEARER_KEY = "grafito-auth.bearer-token";
 
 export function getBearerToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const shared = window.localStorage.getItem(BEARER_KEY);
-    if (shared) return shared;
-    const legacy = window.sessionStorage.getItem(BEARER_KEY);
-    if (legacy) {
-      window.localStorage.setItem(BEARER_KEY, legacy);
-      window.sessionStorage.removeItem(BEARER_KEY);
-    }
-    return legacy;
+    return window.localStorage.getItem(BEARER_KEY);
   } catch {
     return null;
   }
@@ -35,7 +25,6 @@ export function setBearerToken(token: string | null): void {
   try {
     if (token) window.localStorage.setItem(BEARER_KEY, token);
     else window.localStorage.removeItem(BEARER_KEY);
-    window.sessionStorage.removeItem(BEARER_KEY);
   } catch {
     /* almacenamiento no disponible */
   }
