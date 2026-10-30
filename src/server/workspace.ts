@@ -136,7 +136,7 @@ export async function createWorkspace(sql: Sql, orgId: string): Promise<{ ok: tr
     insert into share_item (id, owner_id, kind, target_id, title, visibility, access)
     values (${shareId}, ${ownerId}, 'portfolio', ${root.id}, ${org.name}, 'shared', 'edit')
   `;
-  await sql`insert into share_org_grant (share_id, org_id) values (${shareId}, ${orgId})`;
+  await sql`insert into share_org_grant (share_id, org_id, granted_at) values (${shareId}, ${orgId}, ${Date.now()})`;
   await sql`
     insert into workspace (org_id, owner_id, root_portfolio_id, share_id, bytes, created_at)
     values (${orgId}, ${ownerId}, ${root.id}, ${shareId}, null, ${Date.now()})

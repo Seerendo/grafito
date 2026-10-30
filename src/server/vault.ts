@@ -354,7 +354,11 @@ export async function listDocs(
     from vault_doc
     where user_id = ${userId} and not deleted
       and (${!byPortfolio} or coalesce(portfolio_id, '') = coalesce(${filter.portfolioId ?? null}, ''))
-      and (${term === null} or title ilike ${term ?? ""} or content ilike ${term ?? ""})
+      and (${term === null} or title ilike ${term ?? ""} or content ilike ${term ?? ""}
+        or exists (
+          select 1 from data_meta m
+          where m.owner_id = vault_doc.user_id and m.doc_id = vault_doc.id and m.search_text ilike ${term ?? ""}
+        ))
     order by updated_at desc
     limit ${limit}
   `;
@@ -752,7 +756,9 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
   await purgeComments(sql, userId, id);
   // Si era una tabla de datos, sus columnas y filas (ver `table.ts`).
   await sql`delete from data_meta where owner_id = ${userId} and doc_id = ${id}`;
+  await sql`delete from data_form where owner_id = ${userId} and doc_id = ${id}`;
   await sql`delete from data_row where owner_id = ${userId} and doc_id = ${id}`;
+  await sql`delete from data_row_history where owner_id = ${userId} and doc_id = ${id}`;
   await sql`delete from data_field where owner_id = ${userId} and doc_id = ${id}`;
 }
 

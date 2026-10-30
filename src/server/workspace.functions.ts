@@ -5,6 +5,7 @@ import type { Sql } from "@/lib/db";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { portfolioUsage } from "@/server/space";
+import { endUserGrant, personName } from "@/server/access-trace";
 import { checkWorkspaceBytes, createWorkspace, orgMemberIds, workspaceChildren, workspaces } from "@/server/workspace";
 
 /**
@@ -34,6 +35,7 @@ export const workspaceOverview = createServerFn({ method: "GET" })
     const admins = await sql<{ share_id: string; user_id: string; name: string }>`
       select g.share_id, g.user_id, u.name from share_grant g join "user" u on u.id = g.user_id
       where g.access = 'admin' and g.share_id in (select share_id from workspace)
+        and (g.expires_at is null or g.expires_at > ${Date.now()})
     `;
     const users = await sql<{ id: string; name: string; login: string | null }>`
       select u.id, u.name, coalesce(r.login_name, a.login_name) as login from "user" u
@@ -120,12 +122,17 @@ export const setWorkspaceAdmin = createServerFn({ method: "POST" })
     }
     if (data.admin) {
       await sql`
-        insert into share_grant (share_id, user_id, access) values (${row.share_id}, ${data.userId}, 'admin')
+        insert into share_grant (share_id, user_id, access, granted_at) values (${row.share_id}, ${data.userId}, 'admin', ${Date.now()})
         on conflict (share_id, user_id) do update set access = 'admin'
       `;
     } else {
       // Sigue con el acceso de su organización, si es miembro.
-      await sql`delete from share_grant where share_id = ${row.share_id} and user_id = ${data.userId}`;
+      await endUserGrant(sql, {
+        ownerId: row.owner_id,
+        shareId: row.share_id,
+        userId: data.userId,
+        endedBy: await personName(sql, context.userId),
+      });
     }
     return { ok: true as const };
   });

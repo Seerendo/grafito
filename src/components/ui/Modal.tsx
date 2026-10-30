@@ -26,7 +26,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onMouseDown={(event) => event.stopPropagation()}
-        className={`w-full rounded-lg border border-line bg-surface p-4 shadow-2xl ${wide ? "max-w-4xl" : "max-w-md"}`}
+        className={`max-h-[85vh] w-full overflow-y-auto rounded-lg border border-line bg-surface p-4 shadow-2xl ${wide ? "max-w-4xl" : "max-w-md"}`}
       >
         <h2 className="font-serif text-2xl">{title}</h2>
         <div className="mt-3">{children}</div>

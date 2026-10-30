@@ -1,49 +1,74 @@
 import {
   ArrowDown,
   ArrowUp,
+  Calendar,
   CalendarDays,
   CheckSquare,
+  ClipboardList,
+  Columns3,
   Download,
   File,
   FileText,
   Folder,
   Hash,
+  History,
+  LayoutGrid,
   Link2,
   List,
+  Paperclip,
   Plus,
   Search,
+  Sigma,
+  Table2,
   Trash2,
   Type,
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { rememberTableText } from "@/app/table-index";
+import { computeFormulas, type FormulaRun } from "@/domain/vault/formula";
+import { fetchSharedTree } from "@/app/shared-open";
 import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
+import { createPortal } from "react-dom";
 import { Modal } from "@/components/ui/Modal";
+import { uploadVaultFile } from "@/app/files";
 import {
   compareKeys,
   FIELD_TYPES,
   guessType,
+  isTableName,
+  isVaultRef,
   parseCsv,
+  plainCell,
   sortKey,
   toCsv,
   type CellValue,
   type FieldType,
+  type RowRef,
   type TableField,
+  type TableForm,
+  type TableLayout,
   type TableRow,
   type VaultRef,
+  type ViewMode,
 } from "@/domain/vault/table";
 import {
   tableAddRows,
+  tableAttach,
   tableChanges,
   tableDeleteField,
   tableDeleteRows,
   tableOpen,
+  tableRowChoices,
   tableSaveField,
+  tableSaveLayout,
   tableUpdateCell,
 } from "@/server/table.functions";
+import { RowHistoryDialog, TableBoards } from "./TableBoards";
+import { FormDialog } from "./TableForm";
 import { intl, t } from "@/app/i18n";
 
 /**
@@ -65,6 +90,9 @@ const TYPE_LABEL: Record<FieldType, string> = {
   select: "Selección",
   checkbox: "Casilla",
   link: "Vínculo a la bóveda",
+  relation: "Relación",
+  file: "Adjunto",
+  formula: "Fórmula",
 };
 
 const TYPE_ICON: Record<FieldType, typeof Type> = {
@@ -74,11 +102,24 @@ const TYPE_ICON: Record<FieldType, typeof Type> = {
   select: List,
   checkbox: CheckSquare,
   link: Link2,
+  relation: Table2,
+  file: Paperclip,
+  formula: Sigma,
 };
 
-const WIDTH: Record<FieldType, number> = { text: 220, number: 120, date: 140, select: 160, checkbox: 90, link: 260 };
+const WIDTH: Record<FieldType, number> = {
+  text: 220,
+  number: 120,
+  date: 140,
+  select: 160,
+  checkbox: 90,
+  link: 260,
+  relation: 220,
+  file: 220,
+  formula: 160,
+};
 
-type Target = { id: string; title: string; kind: "document" | "portfolio"; file: boolean; place: string };
+type Target = { id: string; title: string; kind: "document" | "portfolio"; file: boolean; table: boolean; place: string };
 
 /** Lo que se puede vincular y cómo abrirlo: la bóveda propia, o la del elemento compartido. */
 function useTargets(shareId: string | undefined, selfId: string, onOpenNote?: (id: string) => void) {
@@ -90,17 +131,31 @@ function useTargets(shareId: string | undefined, selfId: string, onOpenNote?: (i
     if (shareId) {
       if (!tree) return [];
       return [
-        ...tree.portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, place: folderName(tree.portfolios, portfolio.parentId) })),
+        ...tree.portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, table: false, place: folderName(tree.portfolios, portfolio.parentId) })),
         ...tree.documents
           .filter((document) => document.id !== selfId)
-          .map((document) => ({ id: document.id, title: document.title, kind: "document" as const, file: document.kind === "file", place: folderName(tree.portfolios, document.portfolioId) })),
+          .map((document) => ({
+            id: document.id,
+            title: document.title,
+            kind: "document" as const,
+            file: document.kind === "file",
+            table: isTableName(document.file?.name ?? ""),
+            place: folderName(tree.portfolios, document.portfolioId),
+          })),
       ];
     }
     return [
-      ...portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, place: folderName(portfolios, portfolio.parentId) })),
+      ...portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, table: false, place: folderName(portfolios, portfolio.parentId) })),
       ...documents
         .filter((document) => document.id !== selfId)
-        .map((document) => ({ id: document.id, title: document.title, kind: "document" as const, file: document.kind === "file", place: folderName(portfolios, document.portfolioId) || t("Carpeta Personal") })),
+        .map((document) => ({
+          id: document.id,
+          title: document.title,
+          kind: "document" as const,
+          file: document.kind === "file",
+          table: isTableName(document.file?.name ?? ""),
+          place: folderName(portfolios, document.portfolioId) || t("Carpeta Personal"),
+        })),
     ];
   }, [shareId, tree, documents, portfolios, selfId]);
   const byKey = useMemo(() => new Map(targets.map((target) => [`${target.kind}:${target.id}`, target])), [targets]);
@@ -137,6 +192,12 @@ export function TableView({
   const [rows, setRows] = useState<TableRow[]>([]);
   const [canEdit, setCanEdit] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [form, setForm] = useState<TableForm | null>(null);
+  const [layout, setLayout] = useState<TableLayout>({ mode: "grid", kanbanFieldId: null, calendarFieldId: null });
+  const [formOpen, setFormOpen] = useState(false);
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const sinceRef = useRef(0);
   const [search, setSearch] = useState("");
@@ -166,6 +227,9 @@ export function TableView({
         }
         setFields(result.fields);
         setRows(result.rows);
+        setLabels(result.labels);
+        setForm(result.form);
+        if (result.layout) setLayout(result.layout);
         setCanEdit(result.canEdit);
         sinceRef.current = result.at;
         setLoaded(true);
@@ -178,6 +242,7 @@ export function TableView({
           if (!alive || !result.ok) return;
           sinceRef.current = result.at;
           setFields(result.fields);
+          setLabels((current) => ({ ...current, ...result.labels }));
           if (result.rows.length || result.deleted.length) {
             const gone = new Set(result.deleted);
             setRows((current) => {
@@ -197,17 +262,28 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, shareId]);
 
+  const rowTitle = (ref: RowRef) => labels[`${ref.tableId}:${ref.rowId}`] ?? t("(sin nombre)");
+  const labelOf = (ref: VaultRef) => names[ref.id] ?? refTitle(ref);
+  const formulas = useMemo(() => {
+    const map = new Map<string, FormulaRun>();
+    if (!fields.some((field) => field.type === "formula")) return map;
+    for (const row of rows) map.set(row.id, computeFormulas(fields, row.cells));
+    return map;
+  }, [fields, rows]);
+  const cellOf = (row: TableRow, field: TableField): CellValue =>
+    field.type === "formula" ? (formulas.get(row.id)?.values[field.id] ?? null) : (row.cells[field.id] ?? null);
+
   // Lo que se ve: búsqueda, filtros por columna y orden.
   const shown = useMemo(() => {
-    const text = (field: TableField, value: CellValue) => String(sortKey(field.type, value, refTitle)).toLowerCase();
+    const text = (field: TableField, value: CellValue) => String(sortKey(field.type, value, labelOf, rowTitle)).toLowerCase();
     const needle = search.trim().toLowerCase();
     const active = Object.entries(filters).filter(([, value]) => value.trim());
     let list = rows.filter((row) => {
-      if (needle && !fields.some((field) => text(field, row.cells[field.id] ?? null).includes(needle))) return false;
+      if (needle && !fields.some((field) => text(field, cellOf(row, field)).includes(needle))) return false;
       return active.every(([fieldId, value]) => {
         const field = fields.find((item) => item.id === fieldId);
         if (!field) return true;
-        const cell = row.cells[fieldId] ?? null;
+        const cell = cellOf(row, field);
         if (field.type === "checkbox") return (value === "sí") === Boolean(cell);
         if (field.type === "select") return String(cell ?? "") === value;
         return text(field, cell).includes(value.trim().toLowerCase());
@@ -217,17 +293,18 @@ export function TableView({
       const field = fields.find((item) => item.id === sort.fieldId);
       if (field) {
         list = [...list].sort((a, b) => {
-          const order = compareKeys(sortKey(field.type, a.cells[field.id] ?? null, refTitle), sortKey(field.type, b.cells[field.id] ?? null, refTitle));
-          // Las vacías siempre al final.
-          const blankA = (a.cells[field.id] ?? null) === null;
-          const blankB = (b.cells[field.id] ?? null) === null;
+          const left = cellOf(a, field);
+          const right = cellOf(b, field);
+          const order = compareKeys(sortKey(field.type, left, labelOf, rowTitle), sortKey(field.type, right, labelOf, rowTitle));
+          const blankA = left === null || left === "";
+          const blankB = right === null || right === "";
           return blankA !== blankB ? (blankA ? 1 : -1) : order * sort.dir;
         });
       }
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, fields, search, filters, sort, targets]);
+  }, [rows, fields, search, filters, sort, targets, labels, names, formulas]);
 
   // Solo se dibujan las filas visibles (y unas cuantas más): miles de filas sin trabarse.
   const first = Math.max(0, Math.floor(scroll.top / ROW_HEIGHT) - OVERSCAN);
@@ -245,11 +322,19 @@ export function TableView({
 
   const report = (error?: string) => setMessage(error ? t(error) : "");
   const linkChanged = (field: TableField) => {
-    // Los vínculos de la tabla cambiaron en el servidor: que el grafo y las menciones los vean.
-    if (field.type !== "link" || shareId) return;
+    if ((field.type !== "link" && field.type !== "file" && field.type !== "relation") || shareId) return;
     const owner = useVault.getState().owner;
     if (owner) void syncVault(owner);
   };
+
+  useEffect(() => {
+    const text = rows
+      .map((row) =>
+        fields.map((field) => plainCell(field.type, cellOf(row, field), (ref) => ("kind" in ref ? labelOf(ref as VaultRef) : rowTitle(ref as RowRef)))).join(" "),
+      )
+      .join("\n");
+    rememberTableText(docId, text);
+  }, [docId, rows, fields, labels, names, formulas]);
 
   const setCell = async (row: TableRow, field: TableField, value: CellValue) => {
     setRows((current) => current.map((item) => (item.id === row.id ? { ...item, cells: { ...item.cells, [field.id]: value } } : item)));
@@ -272,14 +357,14 @@ export function TableView({
     setFilters({});
     const created = result.rows[0];
     const firstField = fields[0];
-    if (created && firstField && firstField.type !== "checkbox") setEditing({ rowId: created.id, fieldId: firstField.id });
+    if (created && firstField && firstField.type !== "checkbox" && firstField.type !== "formula") setEditing({ rowId: created.id, fieldId: firstField.id });
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));
   };
 
   const saveField = async (field: TableField) => {
     setFields((current) => (current.some((item) => item.id === field.id) ? current.map((item) => (item.id === field.id ? field : item)) : [...current, field]));
     const result = await tableSaveField({
-      data: { ...where, field: { id: field.id, name: field.name, type: field.type, choices: field.choices, position: field.position, width: field.width ?? null } },
+      data: { ...where, field: { id: field.id, name: field.name, type: field.type, choices: field.choices, position: field.position, width: field.width ?? null, relatedTableId: field.relatedTableId ?? null, formula: field.formula ?? null } },
     }).catch(() => null);
     if (!result?.ok) return report(result?.error ?? "No se pudo guardar la columna.");
     // Al cambiar de tipo, los valores se convierten en el servidor.
@@ -315,18 +400,19 @@ export function TableView({
       const result = await tableDeleteRows({ data: { ...where, rowIds: ids.slice(index, index + 1000) } }).catch(() => null);
       if (!result?.ok) return report(result?.error ?? "No se pudieron borrar las filas.");
     }
-    if (fields.some((field) => field.type === "link")) linkChanged(fields.find((field) => field.type === "link")!);
+    if (fields.some((field) => field.type === "link" || field.type === "file" || field.type === "relation")) linkChanged(fields.find((field) => field.type === "link" || field.type === "file" || field.type === "relation")!);
   };
 
   const display = (field: TableField, value: CellValue): string => {
     if (value === null || value === undefined) return "";
-    if (field.type === "number" && typeof value === "number") return new Intl.NumberFormat(intl()).format(value);
-    if (field.type === "date" && typeof value === "string") {
-      const date = new Date(`${value}T00:00:00`);
+    if ((field.type === "number" || field.type === "formula") && typeof value === "number") return new Intl.NumberFormat(intl()).format(value);
+    if (typeof value === "string" && (field.type === "date" || (field.type === "formula" && /^\d{4}-\d{2}-\d{2}$/.test(value)))) {
+      const date = new Date(`${value.slice(0, 10)}T00:00:00`);
       return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", year: "numeric" }).format(date);
     }
-    if (field.type === "checkbox") return value ? t("Sí") : "";
-    if (field.type === "link" && Array.isArray(value)) return value.map(refTitle).join(", ");
+    if (field.type === "checkbox" || (field.type === "formula" && typeof value === "boolean")) return value ? t("Sí") : "";
+    if ((field.type === "link" || field.type === "file") && Array.isArray(value)) return value.filter((ref) => "kind" in ref).map((ref) => labelOf(ref as VaultRef)).join(", ");
+    if (field.type === "relation" && Array.isArray(value)) return value.filter((ref) => "rowId" in ref).map((ref) => rowTitle(ref as RowRef)).join(", ");
     return String(value);
   };
 
@@ -334,7 +420,7 @@ export function TableView({
     const header = fields.map((field) => field.name);
     const body = shown.map((row) =>
       fields.map((field) => {
-        const value = row.cells[field.id] ?? null;
+        const value = cellOf(row, field);
         if (field.type === "checkbox") return value ? "sí" : "no";
         if (field.type === "number" || field.type === "date") return value === null ? "" : String(value);
         return display(field, value);
@@ -400,17 +486,77 @@ export function TableView({
     setMessage(t("Importadas {n} filas.", { n: data.length }));
   };
 
+  const portfolioId = shareId
+    ? (useSharedView.getState().tree?.documents.find((document) => document.id === docId)?.portfolioId ?? null)
+    : (useVault.getState().documents.find((document) => document.id === docId)?.portfolioId ?? null);
+
+  const attach = async (file: File): Promise<VaultRef | null> => {
+    try {
+      const stored = await uploadVaultFile(file, { portfolioId, ...(shareId ? { shareId } : {}) });
+      const created = await tableAttach({
+        data: { ...where, name: file.name, mime: file.type || "application/octet-stream", key: stored.key, size: stored.size },
+      });
+      if (!created.ok) {
+        report(created.error);
+        return null;
+      }
+      setNames((current) => ({ ...current, [created.id]: created.title }));
+      if (shareId) {
+        const next = await fetchSharedTree(shareId, true).catch(() => null);
+        if (next) useSharedView.setState((state) => ({ ...state, tree: next }));
+      } else {
+        const owner = useVault.getState().owner;
+        if (owner) void syncVault(owner);
+      }
+      return { id: created.id, kind: "document" };
+    } catch (error) {
+      report(error instanceof Error ? error.message : "No se pudo subir.");
+      return null;
+    }
+  };
+
   if (!loaded) {
     return <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{message || t("Cargando…")}</p>;
   }
 
+  const tables = targets.filter((target) => target.table).map((target) => ({ id: target.id, title: target.title }));
   const widthOf = (field: TableField) => field.width ?? WIDTH[field.type];
-  const totalWidth = 44 + fields.reduce((sum, field) => sum + widthOf(field), 0) + (editable ? 44 : 0);
+  const totalWidth = 64 + fields.reduce((sum, field) => sum + widthOf(field), 0) + (editable ? 44 : 0);
   const allPicked = shown.length > 0 && shown.every((row) => picked.has(row.id));
+  const updateLayout = (patch: Partial<TableLayout>) => {
+    const next = { ...layout, ...patch };
+    setLayout(next);
+    if (editable) void tableSaveLayout({ data: { ...where, layout: next } }).catch(() => undefined);
+  };
+  const modes: { id: ViewMode; label: string; icon: typeof Table2 }[] = [
+    { id: "grid", label: "Tabla", icon: Table2 },
+    { id: "kanban", label: "Tablero", icon: Columns3 },
+    { id: "gallery", label: "Galería", icon: LayoutGrid },
+    { id: "calendar", label: "Calendario", icon: Calendar },
+  ];
 
   return (
     <div data-ui="table-view" className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 sm:px-4">
+        <div className="flex h-9 items-center rounded-md border border-line p-0.5">
+          {modes.map((item) => {
+            const Icon = item.icon;
+            const active = layout.mode === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                title={t(item.label)}
+                aria-pressed={active}
+                onClick={() => updateLayout({ mode: item.id })}
+                className={`inline-flex h-8 items-center gap-1 rounded px-2 text-xs ${active ? "bg-accent text-accent-fg" : "text-muted hover:text-fg"}`}
+              >
+                <Icon className="size-3.5" />
+                <span className="hidden lg:inline">{t(item.label)}</span>
+              </button>
+            );
+          })}
+        </div>
         <label className="flex h-9 min-w-40 flex-1 items-center gap-2 rounded-md border border-line bg-inset px-2.5 text-sm sm:max-w-xs">
           <Search className="size-4 shrink-0 text-faint" />
           <input
@@ -462,6 +608,7 @@ export function TableView({
             </>
           ) : null}
           <ToolButton icon={<Download className="size-4" />} label={t("Exportar CSV")} onClick={exportCsv} />
+          <ToolButton icon={<ClipboardList className="size-4" />} label={t("Formulario")} onClick={() => setFormOpen(true)} />
           {editable ? (
             <button
               type="button"
@@ -477,6 +624,7 @@ export function TableView({
         {message ? <p className="w-full text-xs text-muted">{message}</p> : null}
       </div>
 
+      {layout.mode === "grid" ? (
       <div
         ref={scrollRef}
         className="relative min-h-0 flex-1 overflow-auto"
@@ -484,7 +632,7 @@ export function TableView({
       >
         <table className="border-separate border-spacing-0 text-sm" style={{ width: totalWidth, tableLayout: "fixed" }}>
           <colgroup>
-            <col style={{ width: 44 }} />
+            <col style={{ width: 64 }} />
             {fields.map((field) => (
               <col key={field.id} style={{ width: widthOf(field) }} />
             ))}
@@ -520,6 +668,7 @@ export function TableView({
                     {fieldMenu === field.id ? (
                       <FieldMenu
                         field={field}
+                        tables={tables}
                         editable={editable}
                         filter={filters[field.id] ?? ""}
                         sort={sorted}
@@ -555,34 +704,49 @@ export function TableView({
               </tr>
             ) : null}
             {visible.map((row) => (
-              <tr key={row.id} className={picked.has(row.id) ? "bg-accent/10" : "hover:bg-elevated/60"} style={{ height: ROW_HEIGHT }}>
-                <td className="border-b border-line px-2 text-center">
-                  {editable ? (
-                    <input
-                      type="checkbox"
-                      aria-label={t("Elegir fila")}
-                      checked={picked.has(row.id)}
-                      onChange={() =>
-                        setPicked((current) => {
-                          const next = new Set(current);
-                          if (next.has(row.id)) next.delete(row.id);
-                          else next.add(row.id);
-                          return next;
-                        })
-                      }
-                    />
-                  ) : null}
+              <tr key={row.id} className={`group ${picked.has(row.id) ? "bg-accent/10" : "hover:bg-elevated/60"}`} style={{ height: ROW_HEIGHT }}>
+                <td className="border-b border-line px-1 text-center">
+                  <span className="inline-flex items-center justify-center gap-0.5">
+                    {editable ? (
+                      <input
+                        type="checkbox"
+                        aria-label={t("Elegir fila")}
+                        checked={picked.has(row.id)}
+                        onChange={() =>
+                          setPicked((current) => {
+                            const next = new Set(current);
+                            if (next.has(row.id)) next.delete(row.id);
+                            else next.add(row.id);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : null}
+                    <button
+                      type="button"
+                      aria-label={t("Historial")}
+                      title={t("Historial")}
+                      onClick={() => setHistoryId(row.id)}
+                      className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+                    >
+                      <History className="size-3.5" />
+                    </button>
+                  </span>
                 </td>
                 {fields.map((field, column) => (
                   <Cell
                     key={field.id}
                     field={field}
-                    value={row.cells[field.id] ?? null}
-                    text={display(field, row.cells[field.id] ?? null)}
-                    editable={editable}
+                    value={cellOf(row, field)}
+                    text={display(field, cellOf(row, field))}
+                    hint={field.type === "formula" ? formulas.get(row.id)?.errors[field.id] : undefined}
+                    editable={editable && field.type !== "formula"}
                     editing={editing?.rowId === row.id && editing.fieldId === field.id}
                     targets={targets}
-                    refTitle={refTitle}
+                    refTitle={labelOf}
+                    rowTitle={rowTitle}
+                    onAttach={attach}
+                    where={where}
                     onOpenRef={openRef}
                     onEdit={() => setEditing({ rowId: row.id, fieldId: field.id })}
                     onCommit={(value, move) => {
@@ -596,7 +760,7 @@ export function TableView({
                         move === "down"
                           ? { row: shown[index + 1], field }
                           : { row, field: fields[column + 1] ?? undefined };
-                      if (next.row && next.field && next.field.type !== "checkbox") setEditing({ rowId: next.row.id, fieldId: next.field.id });
+                      if (next.row && next.field && next.field.type !== "checkbox" && next.field.type !== "formula") setEditing({ rowId: next.row.id, fieldId: next.field.id });
                     }}
                     onCancel={() => setEditing(null)}
                   />
@@ -617,6 +781,20 @@ export function TableView({
           </p>
         ) : null}
       </div>
+      ) : (
+        <TableBoards
+          mode={layout.mode}
+          fields={fields}
+          rows={shown}
+          kanbanFieldId={layout.kanbanFieldId}
+          calendarFieldId={layout.calendarFieldId}
+          editable={editable}
+          textOf={(row, field) => display(field, cellOf(row, field))}
+          onKanbanField={(id) => updateLayout({ kanbanFieldId: id })}
+          onCalendarField={(id) => updateLayout({ calendarFieldId: id })}
+          onMove={(row, field, value) => void setCell(row, field, value)}
+        />
+      )}
 
       {confirmDelete ? (
         <Modal
@@ -651,6 +829,19 @@ export function TableView({
           </div>
         </Modal>
       ) : null}
+      {formOpen ? (
+        <FormDialog
+          title={title}
+          fields={fields}
+          form={form}
+          where={where}
+          editable={editable}
+          onClose={() => setFormOpen(false)}
+          onSaved={(next) => setForm(next)}
+          onAdded={(created) => setRows((current) => [...current, ...created])}
+        />
+      ) : null}
+      {historyId ? <RowHistoryDialog where={where} rowId={historyId} onClose={() => setHistoryId(null)} /> : null}
     </div>
   );
 }
@@ -672,6 +863,7 @@ function ToolButton({ icon, label, onClick, disabled }: { icon: ReactNode; label
 /** Menú de una columna: ordenar, filtrar y (con permiso) nombre, tipo, opciones y borrar. */
 function FieldMenu({
   field,
+  tables,
   editable,
   filter,
   sort,
@@ -682,6 +874,7 @@ function FieldMenu({
   onClose,
 }: {
   field: TableField;
+  tables: { id: string; title: string }[];
   editable: boolean;
   filter: string;
   sort: 0 | 1 | -1;
@@ -693,11 +886,18 @@ function FieldMenu({
 }) {
   const [name, setName] = useState(field.name);
   const [choices, setChoices] = useState((field.choices ?? []).join(", "));
+  const [formula, setFormula] = useState(field.formula ?? "");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (event: MouseEvent) => {
-      // La cabecera de la columna lo abre y lo cierra ella misma.
-      if (!ref.current?.parentElement?.contains(event.target as Node)) onClose();
+      const target = event.target as Node | null;
+      if (target && ref.current?.parentElement?.contains(target)) return;
+      // La lista de opciones se dibuja fuera del menú (para que no la recorte
+      // la tabla). Un clic ahí no es «fuera».
+      if (target instanceof Element && target.closest("[data-ui=popover]")) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLSelectElement && ref.current?.contains(active)) return;
+      onClose();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -743,17 +943,12 @@ function FieldMenu({
           </label>
           <label className="block">
             <span className="text-xs text-faint">{t("Tipo")}</span>
-            <select
+            <PickList
               value={field.type}
-              onChange={(event) => onSave({ ...field, name: name.trim() || field.name, type: event.target.value as FieldType })}
-              className="mt-1 h-9 w-full rounded-md border border-line bg-inset px-2"
-            >
-              {FIELD_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {t(TYPE_LABEL[type])}
-                </option>
-              ))}
-            </select>
+              options={FIELD_TYPES.map((type) => ({ value: type, label: t(TYPE_LABEL[type]) }))}
+              onChange={(type) => onSave({ ...field, name: name.trim() || field.name, type: type as FieldType })}
+              className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
+            />
           </label>
           {field.type === "select" ? (
             <label className="block">
@@ -765,6 +960,34 @@ function FieldMenu({
                 onKeyDown={(event) => event.key === "Enter" && commitChoices()}
                 className="mt-1 h-9 w-full rounded-md border border-line bg-inset px-2 outline-none"
               />
+            </label>
+          ) : null}
+          {field.type === "relation" ? (
+            <label className="block">
+              <span className="text-xs text-faint">{t("Tabla relacionada")}</span>
+              <PickList
+                value={field.relatedTableId ?? ""}
+                options={[{ value: "", label: t("Elige una tabla") }, ...tables.map((table) => ({ value: table.id, label: table.title }))]}
+                onChange={(tableId) => onSave({ ...field, name: name.trim() || field.name, relatedTableId: tableId || null })}
+                className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
+              />
+            </label>
+          ) : null}
+          {field.type === "formula" ? (
+            <label className="block">
+              <span className="text-xs text-faint">{t("Fórmula")}</span>
+              <textarea
+                value={formula}
+                rows={3}
+                maxLength={500}
+                spellCheck={false}
+                onChange={(event) => setFormula(event.target.value)}
+                onBlur={() => {
+                  if (formula.trim() !== (field.formula ?? "")) onSave({ ...field, name: name.trim() || field.name, formula: formula.trim() });
+                }}
+                className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 font-mono text-xs outline-none"
+              />
+              <span className="mt-1 block text-xs text-faint">{t("Cita una columna entre llaves. También: si, redondear, hoy, dias, vacio, largo y contiene.")}</span>
             </label>
           ) : null}
         </>
@@ -790,20 +1013,23 @@ function FieldMenu({
       <label className="block">
         <span className="text-xs text-faint">{t("Filtrar")}</span>
         {field.type === "checkbox" ? (
-          <select value={filter} onChange={(event) => onFilter(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-line bg-inset px-2">
-            <option value="">{t("Todas")}</option>
-            <option value="sí">{t("Marcadas")}</option>
-            <option value="no">{t("Sin marcar")}</option>
-          </select>
+          <PickList
+            value={filter}
+            options={[
+              { value: "", label: t("Todas") },
+              { value: "sí", label: t("Marcadas") },
+              { value: "no", label: t("Sin marcar") },
+            ]}
+            onChange={onFilter}
+            className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
+          />
         ) : field.type === "select" ? (
-          <select value={filter} onChange={(event) => onFilter(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-line bg-inset px-2">
-            <option value="">{t("Todas")}</option>
-            {(field.choices ?? []).map((choice) => (
-              <option key={choice} value={choice}>
-                {choice}
-              </option>
-            ))}
-          </select>
+          <PickList
+            value={filter}
+            options={[{ value: "", label: t("Todas") }, ...(field.choices ?? []).map((choice) => ({ value: choice, label: choice }))]}
+            onChange={onFilter}
+            className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
+          />
         ) : (
           <input
             value={filter}
@@ -828,10 +1054,14 @@ function Cell({
   field,
   value,
   text,
+  hint,
   editable,
   editing,
   targets,
   refTitle,
+  rowTitle,
+  onAttach,
+  where,
   onOpenRef,
   onEdit,
   onCommit,
@@ -840,16 +1070,27 @@ function Cell({
   field: TableField;
   value: CellValue;
   text: string;
+  hint?: string;
   editable: boolean;
   editing: boolean;
   targets: Target[];
   refTitle: (ref: VaultRef) => string;
+  rowTitle: (ref: RowRef) => string;
+  onAttach: (file: File) => Promise<VaultRef | null>;
+  where: { docId: string; shareId?: string };
   onOpenRef: (ref: VaultRef) => void;
   onEdit: () => void;
   onCommit: (value: CellValue, move?: "down" | "right") => void;
   onCancel: () => void;
 }) {
   const base = "border-b border-l border-line px-2";
+  if (field.type === "formula") {
+    return (
+      <td title={hint || field.formula || text} className={`${base} truncate text-muted`}>
+        {hint && !text ? <span className="text-xs text-danger">!</span> : text}
+      </td>
+    );
+  }
   if (field.type === "checkbox") {
     return (
       <td className={`${base} text-center`}>
@@ -863,8 +1104,63 @@ function Cell({
       </td>
     );
   }
+  if (field.type === "file") {
+    const refs = Array.isArray(value) ? value.filter((ref): ref is VaultRef => "kind" in ref) : [];
+    return (
+      <td className={`${base} relative`}>
+        <div className="flex h-9 items-center gap-1 overflow-hidden">
+          {refs.map((ref) => (
+            <button
+              key={ref.id}
+              type="button"
+              onClick={() => onOpenRef(ref)}
+              className="inline-flex h-6 max-w-36 shrink-0 items-center gap-1 rounded-full border border-line px-2 text-xs hover:border-accent"
+            >
+              <Paperclip className="size-3 shrink-0 text-faint" />
+              <span className="truncate">{refTitle(ref)}</span>
+            </button>
+          ))}
+          {editable ? (
+            <label className="inline-flex h-6 cursor-pointer items-center rounded-full px-1.5 text-xs text-faint hover:text-fg">
+              {t("Adjuntar…")}
+              <input
+                type="file"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  void onAttach(file).then((ref) => {
+                    if (ref) onCommit([...refs, ref].slice(0, 50));
+                  });
+                }}
+              />
+            </label>
+          ) : null}
+        </div>
+      </td>
+    );
+  }
+  if (field.type === "relation") {
+    const refs = Array.isArray(value) ? value.filter((ref): ref is RowRef => "rowId" in ref) : [];
+    return (
+      <td className={`${base} relative`}>
+        <div className="flex h-9 items-center gap-1 overflow-hidden" onClick={editable && !editing ? onEdit : undefined}>
+          {refs.map((ref) => (
+            <span key={`${ref.tableId}:${ref.rowId}`} className="inline-flex h-6 max-w-40 shrink-0 items-center rounded-full border border-line px-2 text-xs">
+              <span className="truncate">{rowTitle(ref)}</span>
+            </span>
+          ))}
+          {editable && refs.length === 0 ? <span className="text-xs text-faint">{t("Relacionar…")}</span> : null}
+        </div>
+        {editing ? (
+          <RelationPicker field={field} refs={refs} where={where} rowTitle={rowTitle} onCommit={onCommit} onCancel={onCancel} />
+        ) : null}
+      </td>
+    );
+  }
   if (field.type === "link") {
-    const refs = Array.isArray(value) ? value : [];
+    const refs = Array.isArray(value) ? value.filter(isVaultRef) : [];
     return (
       <td className={`${base} relative`}>
         <div className="flex h-9 items-center gap-1 overflow-hidden" onClick={editable && !editing ? onEdit : undefined}>
@@ -944,27 +1240,7 @@ function CellEditor({
   };
   const className = "h-9 w-full bg-inset px-2 text-sm outline-none ring-1 ring-accent ring-inset";
   if (field.type === "select") {
-    return (
-      <select
-        autoFocus
-        value={draft}
-        onChange={(event) => {
-          done.current = true;
-          onCommit(event.target.value || null);
-        }}
-        onBlur={() => commit()}
-        onKeyDown={keys}
-        className={className}
-      >
-        <option value="">—</option>
-        {(field.choices ?? []).map((choice) => (
-          <option key={choice} value={choice}>
-            {choice}
-          </option>
-        ))}
-        {draft && !(field.choices ?? []).includes(draft) ? <option value={draft}>{draft}</option> : null}
-      </select>
-    );
+    return <SelectEditor field={field} value={value} onCommit={onCommit} onCancel={onCancel} />;
   }
   return (
     <input
@@ -977,6 +1253,202 @@ function CellEditor({
       onKeyDown={keys}
       className={`${className} ${field.type === "number" ? "text-right" : ""}`}
     />
+  );
+}
+
+/** Lista propia, en vez de un `<select>`: el del navegador se cierra al instante dentro del recuadro. */
+function PickList({
+  value,
+  options,
+  onChange,
+  className,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState({ top: 0, left: 0, width: 180 });
+  useLayoutEffect(() => {
+    if (!open) return;
+    const rect = button.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.max(rect.width, 180);
+    let left = rect.left;
+    if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+    let top = rect.bottom + 4;
+    const height = menu.current?.getBoundingClientRect().height ?? 0;
+    if (height > 0 && top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+    setPlace({ top, left, width });
+  }, [open, options.length]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menu.current?.contains(target) || button.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const label = options.find((option) => option.value === value)?.label ?? value;
+  return (
+    <>
+      <button type="button" ref={button} aria-expanded={open} onMouseDown={(event) => event.stopPropagation()} onClick={() => setOpen((current) => !current)} className={className}>
+        <span className="min-w-0 flex-1 truncate">{label || "—"}</span>
+      </button>
+      {open
+        ? createPortal(
+            <div
+              ref={menu}
+              tabIndex={-1}
+              role="listbox"
+              data-ui="popover"
+              className="fixed z-50 max-h-64 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+              style={{ top: place.top, left: place.left, width: place.width }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {options.map((option) => (
+                <button
+                  key={option.value || "empty"}
+                  type="button"
+                  role="option"
+                  aria-selected={option.value === value}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`flex h-9 w-full items-center rounded-md px-2 text-left text-sm hover:bg-elevated ${option.value === value ? "text-accent" : ""}`}
+                >
+                  <span className="truncate">{option.label}</span>
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
+/**
+ * Lista de una celda de selección. El `<select>` nativo se cerraba al abrirse:
+ * al perder el foco la celda se desmontaba y no daba tiempo a elegir.
+ */
+function SelectEditor({
+  field,
+  value,
+  onCommit,
+  onCancel,
+}: {
+  field: TableField;
+  value: CellValue;
+  onCommit: (value: CellValue, move?: "down" | "right") => void;
+  onCancel: () => void;
+}) {
+  const choices = field.choices ?? [];
+  const current = typeof value === "string" ? value : "";
+  const options = [
+    { value: "", label: t("Ninguna") },
+    ...choices.map((choice) => ({ value: choice, label: choice })),
+    ...(current && !choices.includes(current) ? [{ value: current, label: current }] : []),
+  ];
+  const anchor = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [cursor, setCursor] = useState(() => Math.max(0, options.findIndex((option) => option.value === current)));
+  const [place, setPlace] = useState({ top: 0, left: 0, width: 180, ready: false });
+  const placeMenu = () => {
+    const rect = anchor.current?.getBoundingClientRect();
+    const box = menu.current?.getBoundingClientRect();
+    if (!rect) return;
+    const margin = 8;
+    const width = Math.min(280, Math.max(rect.width, 180));
+    let left = rect.left;
+    if (left + width > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - width - margin);
+    let top = rect.bottom + 4;
+    const height = box?.height ?? 0;
+    if (height > 0 && top + height > window.innerHeight - margin) top = Math.max(margin, rect.top - height - 4);
+    setPlace({ top, left, width, ready: true });
+  };
+  useLayoutEffect(() => {
+    placeMenu();
+  }, []);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (menu.current?.contains(target) || anchor.current?.contains(target)) return;
+      onCancel();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCursor((index) => Math.min(options.length - 1, index + 1));
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCursor((index) => Math.max(0, index - 1));
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        const option = options[Math.max(0, Math.min(cursor, options.length - 1))];
+        onCommit(option ? option.value || null : null);
+      }
+    };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", placeMenu);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", placeMenu);
+    };
+  }, [onCancel, onCommit, options, cursor]);
+  return (
+    <>
+      <div ref={anchor} className="flex h-9 items-center bg-inset px-2 text-sm ring-1 ring-accent ring-inset">
+        <span className="truncate">{current || t("Ninguna")}</span>
+      </div>
+      {createPortal(
+        <div
+          ref={menu}
+          tabIndex={-1}
+          role="listbox"
+          data-ui="popover"
+          className="fixed z-50 max-h-64 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+          style={{ top: place.top, left: place.left, width: place.width, visibility: place.ready ? "visible" : "hidden" }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {choices.length === 0 ? <p className="px-2 py-1.5 text-xs text-faint">{t("Opciones, separadas por comas")}</p> : null}
+          {options.map((option, index) => (
+            <button
+              key={option.value || "empty"}
+              type="button"
+              role="option"
+              aria-selected={option.value === current}
+              onMouseEnter={() => setCursor(index)}
+              onClick={() => onCommit(option.value || null)}
+              className={`flex h-9 w-full items-center rounded-md px-2 text-left text-sm hover:bg-elevated ${option.value === current ? "text-accent" : ""} ${index === cursor ? "bg-elevated" : ""}`}
+            >
+              <span className="truncate">{option.label}</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -1073,6 +1545,92 @@ function LinkPicker({
           {t("Listo")}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Elige filas de la tabla relacionada. */
+function RelationPicker({
+  field,
+  refs,
+  where,
+  rowTitle,
+  onCommit,
+  onCancel,
+}: {
+  field: TableField;
+  refs: RowRef[];
+  where: { docId: string; shareId?: string };
+  rowTitle: (ref: RowRef) => string;
+  onCommit: (value: CellValue) => void;
+  onCancel: () => void;
+}) {
+  const tableId = field.relatedTableId ?? "";
+  const [chosen, setChosen] = useState<RowRef[]>(refs.filter((ref) => ref.tableId === tableId));
+  const [options, setOptions] = useState<{ id: string; label: string }[]>([]);
+  const [query, setQuery] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+  const latest = useRef(chosen);
+  latest.current = chosen;
+  useEffect(() => {
+    if (!tableId) return;
+    const timer = window.setTimeout(() => {
+      void tableRowChoices({ data: { ...where, tableId, query } })
+        .then((result) => {
+          if (result.ok) setOptions(result.rows);
+        })
+        .catch(() => undefined);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [tableId, query, where.docId, where.shareId]);
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) onCommit(latest.current.length ? latest.current : null);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [onCommit]);
+  if (!tableId) {
+    return (
+      <div className="absolute top-full left-0 z-20 mt-1 w-64 rounded-lg border border-line bg-surface p-3 text-xs text-muted shadow-2xl">
+        {t("Elige una tabla en la columna.")}
+        <button type="button" onClick={onCancel} className="mt-2 block text-accent">
+          {t("Cerrar")}
+        </button>
+      </div>
+    );
+  }
+  const picked = (id: string) => chosen.some((item) => item.rowId === id);
+  return (
+    <div ref={box} data-ui="popover" className="absolute top-full left-0 z-20 mt-1 w-72 rounded-lg border border-line bg-surface p-2 text-sm shadow-2xl">
+      <input
+        autoFocus
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("Buscar filas")}
+        className="h-9 w-full rounded-md border border-line bg-inset px-2 outline-none"
+      />
+      <ul className="mt-1 max-h-56 overflow-y-auto">
+        {options.map((option) => (
+          <li key={option.id}>
+            <button
+              type="button"
+              onClick={() =>
+                setChosen((current) =>
+                  picked(option.id) ? current.filter((item) => item.rowId !== option.id) : [...current, { tableId, rowId: option.id }],
+                )
+              }
+              className={`flex h-9 w-full items-center rounded-md px-2 text-left hover:bg-elevated ${picked(option.id) ? "text-accent" : ""}`}
+            >
+              <span className="truncate">{option.label}</span>
+            </button>
+          </li>
+        ))}
+        {options.length === 0 ? <li className="px-2 py-3 text-xs text-faint">{t("Sin filas")}</li> : null}
+      </ul>
+      <button type="button" onClick={() => onCommit(chosen.length ? chosen : null)} className="mt-1 h-8 w-full rounded-md text-xs text-accent hover:bg-elevated">
+        {chosen.length ? chosen.map((item) => rowTitle(item)).join(", ") : t("Listo")}
+      </button>
     </div>
   );
 }

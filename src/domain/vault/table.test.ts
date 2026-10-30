@@ -23,6 +23,17 @@ test("cada tipo guarda solo lo que le corresponde", () => {
     { id: "a", kind: "document" },
   ]);
   assert.equal(cleanCell("link", "a"), null);
+  assert.deepEqual(cleanCell("file", [{ id: "f", kind: "document" }, { id: "p", kind: "portfolio" }]), [{ id: "f", kind: "document" }]);
+  assert.deepEqual(
+    cleanCell("relation", [
+      { tableId: "t", rowId: "r" },
+      { tableId: "t", rowId: "r" },
+      { tableId: "", rowId: "x" },
+    ]),
+    [{ tableId: "t", rowId: "r" }],
+  );
+  assert.equal(cleanCell("relation", "fila"), null);
+
 });
 
 test("al ordenar, las vacías van al final y los números como números", () => {

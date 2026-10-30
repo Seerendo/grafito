@@ -2,6 +2,7 @@ import { Command } from "cmdk";
 import { FilePlus, Link2, Network, RotateCcw, Search } from "lucide-react";
 import type { ReactNode } from "react";
 import { extractTags } from "@/domain/vault/links";
+import { useTableIndex } from "@/app/table-index";
 import { useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
@@ -30,6 +31,7 @@ export function CommandPalette({
   const setTag = useVault((state) => state.setTag);
   const selectedPortfolioId = useVault((state) => state.selectedPortfolioId);
   const activeId = useVault((state) => state.activeId);
+  const tableText = useTableIndex((state) => state.text);
 
   if (!open) return null;
 
@@ -124,8 +126,8 @@ export function CommandPalette({
             {documents.map((document) => (
               <Command.Item
                 key={document.id}
-                value={`${document.title} ${portfolioName(document.portfolioId)} ${document.kind}`}
-                keywords={[portfolioName(document.portfolioId), document.kind]}
+                value={`${document.title} ${portfolioName(document.portfolioId)} ${document.kind} ${tableText[document.id] ?? ""}`}
+                keywords={[portfolioName(document.portfolioId), document.kind, tableText[document.id] ?? ""]}
                 onSelect={() => go(document.id)}
               >
                 <Row

@@ -2,7 +2,9 @@ import type { Sql } from "@/lib/db";
 import { PERMISSION } from "@/domain/permissions";
 import type { Portfolio } from "@/domain/vault/types";
 import type { UserProfile } from "@/server/profile";
+import { isTableName } from "@/domain/vault/table";
 import { fileText } from "@/server/files";
+import { addNamedRow, queryRows, readFields, updateCell } from "@/server/table";
 import { createNote, createPortfolio, getDoc, listDocs, listPortfolios, updateNote, VaultError } from "@/server/vault";
 import type { ToolCall, ToolSpec } from "./types.ts";
 
@@ -34,6 +36,22 @@ const MAX_NOTE = 30_000;
 function text(args: Record<string, unknown>, key: string): string {
   const value = args[key];
   return typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
+}
+
+/** `cells` llega como JSON en texto (el esquema de herramientas no admite objetos). */
+function namedCells(args: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = args.cells;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
 }
 
 function path(portfolios: Portfolio[], id: string | null): string {
@@ -340,6 +358,105 @@ export function vaultTools(sql: Sql, userId: string, profile: UserProfile, optio
         return {
           result: { ...portfolio, note: "Para crear notas dentro, usa este id en portfolio_id." },
           event: { label: `Creó el portafolio «${portfolio.name}»`, ok: true, changed: true },
+        };
+      },
+    },
+    {
+      permission: PERMISSION.notesRead,
+      spec: {
+        name: "query_table",
+        description:
+          "Lee filas de una tabla de datos de la bóveda (un archivo .tabla). Filtra por texto opcional. Devuelve como mucho 40 filas, con las columnas por su nombre. Las fórmulas llegan ya calculadas.",
+        parameters: {
+          type: "object",
+          properties: {
+            table: { type: "string", description: "Id o título de la tabla" },
+            query: { type: "string", description: "Texto que debe aparecer en la fila; vacío para las primeras" },
+            limit: { type: "number", description: "Máximo de filas (1 a 40)" },
+          },
+          required: ["table"],
+        },
+      },
+      run: async (args) => {
+        const doc = await findDoc(sql, userId, text(args, "table"));
+        if (!doc?.file || !isTableName(doc.file.name)) {
+          return {
+            result: { error: "No encontré esa tabla. Usa el id o el título exacto.", similar: await similarDocs(sql, userId, text(args, "table")) },
+            event: { label: "No encontró la tabla", ok: false },
+          };
+        }
+        const limit = Math.min(40, Math.max(1, Number(args.limit) || 20));
+        const found = await queryRows(sql, userId, doc.id, text(args, "query"), limit);
+        return {
+          result: { id: doc.id, title: doc.title, ...(found ?? { fields: [], rows: [] }) },
+          event: { label: `Consultó «${doc.title}»`, ok: true, docId: doc.id },
+        };
+      },
+    },
+    {
+      permission: PERMISSION.notesEdit,
+      writes: true,
+      spec: {
+        name: "add_table_row",
+        description: "Añade una fila a una tabla de datos. cells es un objeto JSON en texto: las claves son los nombres de las columnas.",
+        parameters: {
+          type: "object",
+          properties: {
+            table: { type: "string", description: "Id o título de la tabla" },
+            cells: {
+              type: "string",
+              description: "Objeto JSON en texto. Las claves son los nombres de las columnas. Ejemplo: {\"Estado\":\"pendiente\",\"Importe\":12}",
+            },
+          },
+          required: ["table", "cells"],
+        },
+      },
+      run: async (args) => {
+        const doc = await findDoc(sql, userId, text(args, "table"));
+        if (!doc?.file || !isTableName(doc.file.name)) {
+          return { result: { error: "No encontré esa tabla." }, event: { label: "No encontró la tabla", ok: false } };
+        }
+        const named = namedCells(args);
+        if (!named) return { result: { error: "cells tiene que ser un objeto JSON, por ejemplo {\"Estado\":\"pendiente\"}." }, event: { label: "La fila no se pudo leer", ok: false } };
+        const created = await addNamedRow(sql, userId, doc.id, named, actor);
+        if (!created.ok) return { result: created, event: { label: created.error, ok: false } };
+        return {
+          result: { id: doc.id, title: doc.title, rowId: created.row.id },
+          event: { label: `Añadió una fila a «${doc.title}»`, ok: true, docId: doc.id, changed: true },
+        };
+      },
+    },
+    {
+      permission: PERMISSION.notesEdit,
+      writes: true,
+      spec: {
+        name: "set_table_cell",
+        description: "Cambia una celda. Identifica la fila por su id (el que devuelve query_table) y la columna por su nombre.",
+        parameters: {
+          type: "object",
+          properties: {
+            table: { type: "string", description: "Id o título de la tabla" },
+            row_id: { type: "string", description: "Id de la fila" },
+            column: { type: "string", description: "Nombre de la columna" },
+            value: { type: "string", description: "Valor nuevo como texto (número, fecha AAAA-MM-DD, sí/no). Vacío para borrar la celda." },
+          },
+          required: ["table", "row_id", "column"],
+        },
+      },
+      run: async (args) => {
+        const doc = await findDoc(sql, userId, text(args, "table"));
+        if (!doc?.file || !isTableName(doc.file.name)) {
+          return { result: { error: "No encontré esa tabla." }, event: { label: "No encontró la tabla", ok: false } };
+        }
+        const fields = await readFields(sql, userId, doc.id);
+        const column = text(args, "column").trim().toLowerCase();
+        const field = fields.find((item) => item.name.trim().toLowerCase() === column || item.id === text(args, "column"));
+        if (!field) return { result: { error: "Esa columna no existe.", columns: fields.map((item) => item.name) }, event: { label: "No encontró la columna", ok: false } };
+        const saved = await updateCell(sql, userId, doc.id, { rowId: text(args, "row_id"), fieldId: field.id, value: args.value ?? null }, actor);
+        if (!saved.ok) return { result: saved, event: { label: saved.error, ok: false } };
+        return {
+          result: { id: doc.id, title: doc.title, rowId: saved.row.id },
+          event: { label: `Editó «${doc.title}»`, ok: true, docId: doc.id, changed: true },
         };
       },
     },

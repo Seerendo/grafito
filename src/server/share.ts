@@ -1,6 +1,17 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { Sql } from "@/lib/db";
+import {
+  endOrgGrant,
+  endPublicLink,
+  endUserGrant,
+  noteAccess,
+  personName,
+  readTrail,
+  retireExpired,
+  type AccessHit,
+  type GrantPeriod,
+} from "@/server/access-trace";
 import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
 import { signedFileUrl } from "./file-links";
 import { portfolioLineage } from "./space";
@@ -46,6 +57,8 @@ function isAccess(value: unknown): value is ShareAccess {
   return value === "read" || value === "edit" || value === "admin";
 }
 
+export type ShareGrant = { id: string; grantedAt: number; expiresAt: number | null };
+
 export type ShareRow = {
   id: string;
   kind: ShareKind;
@@ -54,6 +67,13 @@ export type ShareRow = {
   visibility: "shared" | "public";
   access: ShareAccess;
   publicToken: string | null;
+  /** Caducidad común de los invitados, si todos la tienen igual. */
+  grantExpiresAt: number | null;
+  linkGrantedAt: number | null;
+  linkExpiresAt: number | null;
+  linkRevokedAt: number | null;
+  grants: ShareGrant[];
+  orgGrants: ShareGrant[];
 };
 
 /**
@@ -112,13 +132,32 @@ type ItemRecord = {
   visibility: "shared" | "public";
   access: ShareAccess;
   public_token: string | null;
+  link_granted_at?: unknown;
+  link_expires_at?: unknown;
+  link_revoked_at?: unknown;
 };
 
 function accessOf(item: ItemRecord): ShareAccess {
   return item.visibility === "shared" && isAccess(item.access) ? item.access : "read";
 }
 
-function toRow(item: ItemRecord): ShareRow {
+function millis(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function uniformExpiry(grants: ShareGrant[]): number | null {
+  if (grants.length === 0) return null;
+  const first = grants[0]?.expiresAt ?? null;
+  return grants.every((grant) => grant.expiresAt === first) ? first : null;
+}
+
+function toRow(
+  item: ItemRecord,
+  grants: ShareGrant[] = [],
+  orgGrants: ShareGrant[] = [],
+): ShareRow {
   return {
     id: item.id,
     kind: item.kind,
@@ -127,6 +166,12 @@ function toRow(item: ItemRecord): ShareRow {
     visibility: item.visibility,
     access: accessOf(item),
     publicToken: item.public_token,
+    grantExpiresAt: uniformExpiry([...grants, ...orgGrants]),
+    linkGrantedAt: millis(item.link_granted_at),
+    linkExpiresAt: millis(item.link_expires_at),
+    linkRevokedAt: millis(item.link_revoked_at),
+    grants,
+    orgGrants,
   };
 }
 
@@ -139,25 +184,53 @@ export async function ownerShares(
   sql: Sql,
   ownerId: string,
 ): Promise<(ShareRow & { userIds: string[]; orgIds: string[] })[]> {
+  await retireExpired(sql);
   const items = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, access, public_token
+    select id, owner_id, kind, target_id, title, visibility, access, public_token,
+      link_granted_at, link_expires_at, link_revoked_at
     from share_item where owner_id = ${ownerId}
   `;
-  const grants = await sql<{ share_id: string; user_id: string }>`
-    select g.share_id, g.user_id from share_grant g
+  const grants = await sql<{ share_id: string; user_id: string; granted_at: unknown; expires_at: unknown }>`
+    select g.share_id, g.user_id, g.granted_at, g.expires_at from share_grant g
     join share_item s on s.id = g.share_id
     where s.owner_id = ${ownerId}
   `;
-  const orgGrants = await sql<{ share_id: string; org_id: string }>`
-    select g.share_id, g.org_id from share_org_grant g
+  const orgGrants = await sql<{ share_id: string; org_id: string; granted_at: unknown; expires_at: unknown }>`
+    select g.share_id, g.org_id, g.granted_at, g.expires_at from share_org_grant g
     join share_item s on s.id = g.share_id
     where s.owner_id = ${ownerId}
   `;
-  return items.map((item) => ({
-    ...toRow(item),
-    userIds: grants.filter((grant) => grant.share_id === item.id).map((grant) => grant.user_id),
-    orgIds: orgGrants.filter((grant) => grant.share_id === item.id).map((grant) => grant.org_id),
-  }));
+  return items.map((item) => {
+    const people = grants
+      .filter((grant) => grant.share_id === item.id)
+      .map((grant) => ({ id: grant.user_id, grantedAt: millis(grant.granted_at) ?? 0, expiresAt: millis(grant.expires_at) }));
+    const orgs = orgGrants
+      .filter((grant) => grant.share_id === item.id)
+      .map((grant) => ({ id: grant.org_id, grantedAt: millis(grant.granted_at) ?? 0, expiresAt: millis(grant.expires_at) }));
+    return { ...toRow(item, people, orgs), userIds: people.map((grant) => grant.id), orgIds: orgs.map((grant) => grant.id) };
+  });
+}
+
+/** Cierra en el historial los permisos y el enlace que sigan abiertos. */
+async function archiveShare(sql: Sql, ownerId: string, shareId: string, endedBy: string): Promise<void> {
+  const users = await sql<{ user_id: string }>`select user_id from share_grant where share_id = ${shareId}`;
+  for (const row of users) await endUserGrant(sql, { ownerId, shareId, userId: row.user_id, endedBy });
+  const orgs = await sql<{ org_id: string }>`select org_id from share_org_grant where share_id = ${shareId}`;
+  for (const row of orgs) await endOrgGrant(sql, { ownerId, shareId, orgId: row.org_id, endedBy });
+  const links = await sql<{ title: string; public_token: string | null; link_granted_at: unknown; link_expires_at: unknown }>`
+    select title, public_token, link_granted_at, link_expires_at from share_item where id = ${shareId} limit 1
+  `;
+  const link = links[0];
+  if (link?.public_token) {
+    await endPublicLink(sql, {
+      ownerId,
+      shareId,
+      title: link.title,
+      grantedAt: millis(link.link_granted_at),
+      expiresAt: millis(link.link_expires_at),
+      endedBy,
+    });
+  }
 }
 
 /** Crea, cambia o quita (privado) la visibilidad de una nota o portafolio del dueño. */
@@ -170,63 +243,128 @@ export async function writeShare(
     access: ShareAccess;
     userIds: string[];
     orgIds: string[];
+    /** Si viene, todos los invitados que se quedan pasan a caducar entonces (`null`: no caduca). */
+    expiresAt?: number | null;
+    /** Igual para el enlace público. */
+    linkExpiresAt?: number | null;
   },
 ): Promise<void> {
+  const endedBy = await personName(sql, ownerId);
+  const now = Date.now();
   const existing = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, access, public_token from share_item
+    select id, owner_id, kind, target_id, title, visibility, access, public_token,
+      link_granted_at, link_expires_at, link_revoked_at
+    from share_item
     where owner_id = ${ownerId} and kind = ${input.kind} and target_id = ${input.targetId}
     limit 1
   `;
   const current = existing[0];
   if (input.visibility === "private") {
-    if (current) await sql`delete from share_item where id = ${current.id}`;
+    if (current) {
+      await archiveShare(sql, ownerId, current.id, endedBy);
+      await sql`delete from share_item where id = ${current.id}`;
+    }
     await prunePublished(sql, ownerId);
     return;
   }
-  const token = input.visibility === "public" ? (current?.public_token ?? newPublicToken()) : null;
   const access: ShareAccess = input.visibility === "shared" ? input.access : "read";
   const id = current?.id ?? randomUUID();
+  let token = input.visibility === "public" ? current?.public_token ?? null : null;
+  let linkGranted = input.visibility === "public" ? millis(current?.link_granted_at) : null;
+  let linkExpires = input.visibility === "public" ? millis(current?.link_expires_at) : null;
+  let linkRevoked = input.visibility === "public" ? millis(current?.link_revoked_at) : null;
+  if (input.visibility !== "public" && current?.public_token) {
+    await endPublicLink(sql, {
+      ownerId,
+      shareId: id,
+      title: current.title,
+      grantedAt: millis(current.link_granted_at),
+      expiresAt: millis(current.link_expires_at),
+      endedBy,
+    });
+    token = null;
+    linkGranted = null;
+    linkExpires = null;
+    linkRevoked = now;
+  }
+  if (input.visibility === "public") {
+    if (!token || linkRevoked) {
+      token = newPublicToken();
+      linkGranted = now;
+      linkRevoked = null;
+    }
+    if (input.linkExpiresAt !== undefined) linkExpires = input.linkExpiresAt;
+  }
   if (current) {
     await sql`
       update share_item
       set title = ${input.title}, visibility = ${input.visibility}, access = ${access}, public_token = ${token},
+        link_granted_at = ${linkGranted}, link_expires_at = ${linkExpires}, link_revoked_at = ${linkRevoked},
         updated_at = now()
       where id = ${id}
     `;
   } else {
     await sql`
-      insert into share_item (id, owner_id, kind, target_id, title, visibility, access, public_token)
-      values (${id}, ${ownerId}, ${input.kind}, ${input.targetId}, ${input.title}, ${input.visibility}, ${access}, ${token})
+      insert into share_item (
+        id, owner_id, kind, target_id, title, visibility, access, public_token,
+        link_granted_at, link_expires_at, link_revoked_at
+      ) values (
+        ${id}, ${ownerId}, ${input.kind}, ${input.targetId}, ${input.title}, ${input.visibility}, ${access}, ${token},
+        ${linkGranted}, ${linkExpires}, ${linkRevoked}
+      )
     `;
   }
-  // El nivel propio de cada invitado (si se le puso) se conserva.
+  if (input.visibility !== "shared") {
+    const users = await sql<{ user_id: string }>`select user_id from share_grant where share_id = ${id}`;
+    for (const row of users) await endUserGrant(sql, { ownerId, shareId: id, userId: row.user_id, endedBy });
+    const orgs = await sql<{ org_id: string }>`select org_id from share_org_grant where share_id = ${id}`;
+    for (const row of orgs) await endOrgGrant(sql, { ownerId, shareId: id, orgId: row.org_id, endedBy });
+    return;
+  }
   const userAccess = new Map(
-    (await sql<{ user_id: string; access: string | null }>`select user_id, access from share_grant where share_id = ${id}`).map(
-      (row) => [row.user_id, row.access],
-    ),
+    (await sql<{ user_id: string; access: string | null }>`select user_id, access from share_grant where share_id = ${id}`).map((row) => [
+      row.user_id,
+      row.access,
+    ]),
   );
   const orgAccess = new Map(
-    (await sql<{ org_id: string; access: string | null }>`select org_id, access from share_org_grant where share_id = ${id}`).map(
-      (row) => [row.org_id, row.access],
-    ),
+    (await sql<{ org_id: string; access: string | null }>`select org_id, access from share_org_grant where share_id = ${id}`).map((row) => [
+      row.org_id,
+      row.access,
+    ]),
   );
-  await sql`delete from share_grant where share_id = ${id}`;
-  await sql`delete from share_org_grant where share_id = ${id}`;
-  if (input.visibility === "shared") {
-    for (const orgId of new Set(input.orgIds)) {
+  const keepUsers = new Set(input.userIds.filter((userId) => userId !== ownerId));
+  const keepOrgs = new Set(input.orgIds);
+  const currentUsers = await sql<{ user_id: string }>`select user_id from share_grant where share_id = ${id}`;
+  for (const row of currentUsers) {
+    if (!keepUsers.has(row.user_id)) await endUserGrant(sql, { ownerId, shareId: id, userId: row.user_id, endedBy });
+  }
+  const currentOrgs = await sql<{ org_id: string }>`select org_id from share_org_grant where share_id = ${id}`;
+  for (const row of currentOrgs) {
+    if (!keepOrgs.has(row.org_id)) await endOrgGrant(sql, { ownerId, shareId: id, orgId: row.org_id, endedBy });
+  }
+  for (const orgId of keepOrgs) {
+    const known = orgAccess.has(orgId);
+    if (!known) {
       await sql`
-        insert into share_org_grant (share_id, org_id, access)
-        select ${id}, o.id, ${orgAccess.get(orgId) ?? null} from app_org o where o.id = ${orgId}
+        insert into share_org_grant (share_id, org_id, access, granted_at, expires_at)
+        select ${id}, o.id, null, ${now}, ${input.expiresAt ?? null} from app_org o where o.id = ${orgId}
         on conflict do nothing
       `;
+    } else if (input.expiresAt !== undefined) {
+      await sql`update share_org_grant set expires_at = ${input.expiresAt} where share_id = ${id} and org_id = ${orgId}`;
     }
-    for (const userId of new Set(input.userIds)) {
-      if (userId === ownerId) continue;
+  }
+  for (const userId of keepUsers) {
+    const known = userAccess.has(userId);
+    if (!known) {
       await sql`
-        insert into share_grant (share_id, user_id, access)
-        select ${id}, id, ${userAccess.get(userId) ?? null} from "user" where id = ${userId}
+        insert into share_grant (share_id, user_id, access, granted_at, expires_at)
+        select ${id}, id, null, ${now}, ${input.expiresAt ?? null} from "user" where id = ${userId}
         on conflict do nothing
       `;
+    } else if (input.expiresAt !== undefined) {
+      await sql`update share_grant set expires_at = ${input.expiresAt} where share_id = ${id} and user_id = ${userId}`;
     }
   }
 }
@@ -245,7 +383,10 @@ export async function writePublished(
   const portfolioIds = new Set(vault.portfolios.map((portfolio) => portfolio.id));
   for (const share of await ownerShares(sql, ownerId)) {
     const gone = share.kind === "document" ? !known.has(share.targetId) : !portfolioIds.has(share.targetId);
-    if (gone) await sql`delete from share_item where id = ${share.id}`;
+    if (gone) {
+      await archiveShare(sql, ownerId, share.id, "");
+      await sql`delete from share_item where id = ${share.id}`;
+    }
   }
   const shares = await ownerShares(sql, ownerId);
   const covered = coveredByAll(shares, vault.portfolios, vault.documents);
@@ -599,6 +740,7 @@ export async function sharedWith(
   sql: Sql,
   userId: string,
 ): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess; workspace: boolean }[]> {
+  await retireExpired(sql);
   const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown; workspace: unknown }>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
@@ -610,11 +752,11 @@ export async function sharedWith(
       coalesce(
         (
           select case coalesce(g.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end
-          from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+          from share_grant g where g.share_id = s.id and g.user_id = ${userId} and (g.expires_at is null or g.expires_at > ${Date.now()})
         ),
         (
           select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
-          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine) and (g.expires_at is null or g.expires_at > ${Date.now()})) x
         )
       ) as rank
     from share_item s
@@ -622,8 +764,8 @@ export async function sharedWith(
     where s.visibility = 'shared'
       and s.owner_id <> ${userId}
       and (
-        exists (select 1 from share_grant g where g.share_id = s.id and g.user_id = ${userId})
-        or exists (select 1 from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine))
+        exists (select 1 from share_grant g where g.share_id = s.id and g.user_id = ${userId} and (g.expires_at is null or g.expires_at > ${Date.now()}))
+        or exists (select 1 from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine) and (g.expires_at is null or g.expires_at > ${Date.now()}))
       )
     order by u.name, s.title
   `;
@@ -667,6 +809,7 @@ export async function editableTarget(
 
 /** El elemento, si `userId` es su dueño o fue invitado (directamente o por organización). */
 async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<ItemRecord | null> {
+  await retireExpired(sql);
   const rows = await sql<ItemRecord>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
@@ -676,11 +819,11 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
     select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.public_token,
       case when s.owner_id = ${userId} then 'admin' else coalesce(
         -- Lo puesto a la persona manda sobre lo de sus organizaciones.
-        (select coalesce(g.access, s.access) from share_grant g where g.share_id = s.id and g.user_id = ${userId}),
+        (select coalesce(g.access, s.access) from share_grant g where g.share_id = s.id and g.user_id = ${userId} and (g.expires_at is null or g.expires_at > ${Date.now()})),
         (
           select case max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
             when 3 then 'admin' when 2 then 'edit' else 'read' end
-          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+          from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine) and (g.expires_at is null or g.expires_at > ${Date.now()})) x
         )
       ) end as access
     from share_item s
@@ -688,22 +831,45 @@ async function grantedItem(sql: Sql, userId: string, shareId: string): Promise<I
       and (
         s.owner_id = ${userId}
         or (s.visibility = 'shared' and (
-          exists (select 1 from share_grant g where g.share_id = s.id and g.user_id = ${userId})
-          or exists (select 1 from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine))
+          exists (select 1 from share_grant g where g.share_id = s.id and g.user_id = ${userId} and (g.expires_at is null or g.expires_at > ${Date.now()}))
+          or exists (select 1 from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine) and (g.expires_at is null or g.expires_at > ${Date.now()}))
         ))
       )
     limit 1
   `;
-  return rows[0] ?? null;
+  const item = rows[0] ?? null;
+  if (item && item.owner_id !== userId) {
+    await noteAccess(sql, {
+      ownerId: item.owner_id,
+      shareId: item.id,
+      channel: "grant",
+      actorId: userId,
+      actorName: "",
+    }).catch(() => undefined);
+  }
+  return item;
 }
 
 async function publicItem(sql: Sql, token: string): Promise<ItemRecord | null> {
+  await retireExpired(sql);
   const rows = await sql<ItemRecord>`
-    select id, owner_id, kind, target_id, title, visibility, access, public_token
-    from share_item where public_token = ${token} and visibility = 'public'
+    select id, owner_id, kind, target_id, title, visibility, access, public_token, link_expires_at, link_revoked_at
+    from share_item
+    where public_token = ${token} and visibility = 'public' and link_revoked_at is null
+      and (link_expires_at is null or link_expires_at > ${Date.now()})
     limit 1
   `;
-  return rows[0] ?? null;
+  const item = rows[0] ?? null;
+  if (item) {
+    await noteAccess(sql, {
+      ownerId: item.owner_id,
+      shareId: item.id,
+      channel: "public",
+      actorId: "",
+      actorName: "Enlace público",
+    }).catch(() => undefined);
+  }
+  return item;
 }
 
 /** Organizaciones con las que se puede compartir. */
@@ -749,6 +915,7 @@ export type PortfolioMember = {
  * que lo contienen. Si alguien llega por varios, cuenta el nivel más alto.
  */
 export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: string): Promise<PortfolioMember[]> {
+  await retireExpired(sql);
   const lineage = await portfolioLineage(sql, ownerId, portfolioId);
   if (lineage.length === 0) return [];
   const items = (
@@ -773,7 +940,7 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
       from share_grant g join "user" u on u.id = g.user_id
       left join app_user_role m on m.user_id = g.user_id
       left join app_admin a on a.user_id = g.user_id
-      where g.share_id = ${item.id}
+      where g.share_id = ${item.id} and (g.expires_at is null or g.expires_at > ${Date.now()})
     `;
     for (const row of direct) {
       here.set(row.user_id, {
@@ -788,14 +955,15 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
     }
     const viaOrg = await sql<{ user_id: string; name: string; login: string | null; access: string | null; org_name: string }>`
       with recursive tree(id, root) as (
-        select o.id, o.id from app_org o join share_org_grant g on g.org_id = o.id where g.share_id = ${item.id}
+        select o.id, o.id from app_org o join share_org_grant g on g.org_id = o.id
+        where g.share_id = ${item.id} and (g.expires_at is null or g.expires_at > ${Date.now()})
         union
         select c.id, t.root from app_org c join tree t on c.parent_id = t.id
       )
       select distinct mem.user_id, u.name, coalesce(r.login_name, a.login_name) as login, g.access, o.name as org_name
       from tree t
       join app_org_member mem on mem.org_id = t.id
-      join share_org_grant g on g.share_id = ${item.id} and g.org_id = t.root
+      join share_org_grant g on g.share_id = ${item.id} and g.org_id = t.root and (g.expires_at is null or g.expires_at > ${Date.now()})
       join app_org o on o.id = t.root
       join "user" u on u.id = mem.user_id
       left join app_user_role r on r.user_id = mem.user_id
@@ -825,6 +993,7 @@ export async function portfolioMembers(sql: Sql, ownerId: string, portfolioId: s
 /** El nivel de `userId` en un portafolio del dueño (`null`: sin acceso por lo compartido). */
 export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: string, userId: string): Promise<ShareAccess | null> {
   if (userId === ownerId) return "admin";
+  await retireExpired(sql);
   const lineage = await portfolioLineage(sql, ownerId, portfolioId);
   if (lineage.length === 0) return null;
   // Solo esa persona (antes se armaba la lista de todos los miembros, con los
@@ -839,11 +1008,11 @@ export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: st
     select s.target_id, coalesce(
       (
         select case coalesce(g.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end
-        from share_grant g where g.share_id = s.id and g.user_id = ${userId}
+        from share_grant g where g.share_id = s.id and g.user_id = ${userId} and (g.expires_at is null or g.expires_at > ${Date.now()})
       ),
       (
         select max(case coalesce(x.access, s.access) when 'admin' then 3 when 'edit' then 2 else 1 end)
-        from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine)) x
+        from (select g.access from share_org_grant g where g.share_id = s.id and g.org_id in (select id from mine) and (g.expires_at is null or g.expires_at > ${Date.now()})) x
       )
     ) as rank
     from share_item s
@@ -860,7 +1029,7 @@ export async function portfolioAccess(sql: Sql, ownerId: string, portfolioId: st
  */
 export async function setGrantAccess(sql: Sql, shareId: string, userId: string, access: ShareAccess): Promise<boolean> {
   const rows = await sql<{ user_id: string }>`
-    insert into share_grant (share_id, user_id, access) values (${shareId}, ${userId}, ${access})
+    insert into share_grant (share_id, user_id, access, granted_at) values (${shareId}, ${userId}, ${access}, ${Date.now()})
     on conflict (share_id, user_id) do update set access = excluded.access
     returning user_id
   `;
@@ -876,4 +1045,97 @@ export async function shareForUser(
   const item = await grantedItem(sql, userId, shareId);
   if (!item) return null;
   return { ownerId: item.owner_id, kind: item.kind, targetId: item.target_id, access: item.owner_id === userId ? "admin" : accessOf(item) };
+}
+
+async function ownItem(sql: Sql, ownerId: string, kind: ShareKind, targetId: string): Promise<ItemRecord | null> {
+  const rows = await sql<ItemRecord>`
+    select id, owner_id, kind, target_id, title, visibility, access, public_token,
+      link_granted_at, link_expires_at, link_revoked_at
+    from share_item where owner_id = ${ownerId} and kind = ${kind} and target_id = ${targetId} limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+/** Quita a una persona o una organización y deja el periodo en el historial. */
+export async function revokeShareSubject(
+  sql: Sql,
+  ownerId: string,
+  input: { kind: ShareKind; targetId: string; subjectKind: "user" | "org"; subjectId: string },
+): Promise<boolean> {
+  const item = await ownItem(sql, ownerId, input.kind, input.targetId);
+  if (!item) return false;
+  const endedBy = await personName(sql, ownerId);
+  if (input.subjectKind === "org") return endOrgGrant(sql, { ownerId, shareId: item.id, orgId: input.subjectId, endedBy });
+  return endUserGrant(sql, { ownerId, shareId: item.id, userId: input.subjectId, endedBy });
+}
+
+/** Invalida el enlace público. El que ya se copió deja de abrir. */
+export async function revokeShareLink(sql: Sql, ownerId: string, input: { kind: ShareKind; targetId: string }): Promise<boolean> {
+  const item = await ownItem(sql, ownerId, input.kind, input.targetId);
+  if (!item?.public_token) return false;
+  const endedBy = await personName(sql, ownerId);
+  await endPublicLink(sql, {
+    ownerId,
+    shareId: item.id,
+    title: item.title,
+    grantedAt: millis(item.link_granted_at),
+    expiresAt: millis(item.link_expires_at),
+    endedBy,
+  });
+  await sql`
+    update share_item set public_token = null, link_revoked_at = ${Date.now()} where id = ${item.id}
+  `;
+  return true;
+}
+
+/** Permisos vigentes, los ya cerrados y las últimas aperturas. */
+export async function shareActivity(
+  sql: Sql,
+  ownerId: string,
+  input: { kind: ShareKind; targetId: string },
+): Promise<{ periods: GrantPeriod[]; events: AccessHit[] }> {
+  await retireExpired(sql);
+  const item = await ownItem(sql, ownerId, input.kind, input.targetId);
+  if (!item) return { periods: [], events: [] };
+  const trail = await readTrail(sql, ownerId, "share", item.id);
+  const users = await sql<{ user_id: string; name: string; granted_at: unknown; expires_at: unknown }>`
+    select g.user_id, u.name, g.granted_at, g.expires_at from share_grant g
+    join "user" u on u.id = g.user_id where g.share_id = ${item.id}
+  `;
+  const orgs = await sql<{ org_id: string; name: string; granted_at: unknown; expires_at: unknown }>`
+    select g.org_id, o.name, g.granted_at, g.expires_at from share_org_grant g
+    join app_org o on o.id = g.org_id where g.share_id = ${item.id}
+  `;
+  const open: GrantPeriod[] = [
+    ...users.map((row) => ({
+      subjectKind: "user" as const,
+      subjectId: row.user_id,
+      subjectName: row.name?.trim() || "",
+      grantedAt: millis(row.granted_at) ?? 0,
+      expiresAt: millis(row.expires_at),
+      endedAt: null,
+      endKind: "" as const,
+    })),
+    ...orgs.map((row) => ({
+      subjectKind: "org" as const,
+      subjectId: row.org_id,
+      subjectName: row.name?.trim() || "",
+      grantedAt: millis(row.granted_at) ?? 0,
+      expiresAt: millis(row.expires_at),
+      endedAt: null,
+      endKind: "" as const,
+    })),
+  ];
+  if (item.public_token && !millis(item.link_revoked_at)) {
+    open.push({
+      subjectKind: "link",
+      subjectId: "",
+      subjectName: item.title,
+      grantedAt: millis(item.link_granted_at) ?? 0,
+      expiresAt: millis(item.link_expires_at),
+      endedAt: null,
+      endKind: "",
+    });
+  }
+  return { periods: [...open, ...trail.periods], events: trail.events };
 }

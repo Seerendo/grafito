@@ -6,7 +6,7 @@ import type { ChatMessage } from "./types.ts";
  */
 
 /** Herramientas que crean o cambian algo en la bóveda. */
-export const WRITE_TOOLS = new Set(["create_note", "update_note", "create_portfolio"]);
+export const WRITE_TOOLS = new Set(["create_note", "update_note", "create_portfolio", "add_table_row", "set_table_cell"]);
 
 /**
  * Lo que caben los resultados de herramientas de este turno (caracteres). Al

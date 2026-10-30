@@ -425,9 +425,35 @@ work area.
 - **Rows:** **Nueva fila** adds one; tick rows to delete them.
 - **Search** across all cells, and **Importar CSV** / **Exportar CSV**
   (commas or semicolons; columns are matched by name, and new ones are
-  created with the type their values suggest).
-- Up to 100 columns and 20,000 rows per table. Tables can't be opened from a
-  public link yet.
+  created with the type their values suggest). Cell text is also indexed, so
+  the vault search, the command palette and the AI can find a table by what
+  is written in it.
+- **Relation:** a column can point at rows of another table. **Attachment:**
+  a column uploads a file into the same portfolio; the file counts toward
+  quota and opens like any other file. Both show up in the graph and in
+  Mentions (a relation links the tables; an attachment links the file).
+- **Form:** **Formulario** on the table. Choose the columns, which are
+  required, and optionally a **public link**. Anyone with the link can add a
+  row (including attachments up to 6 MB) and cannot see the other rows.
+  Vault links and relations are filled in inside Grafito, not on the public
+  page. To keep it from being flooded, each address can send 5 rows (and 10
+  files) a minute, and each form 60 rows a minute in total.
+- The AI can `query_table`, `add_table_row` and `set_table_cell`. Formula
+  columns are already calculated when the AI reads a table.
+- **Views:** **Tabla**, **Tablero**, **Galería** and **Calendario** on the
+  table. The board groups a select column (drag a card to move it). The
+  gallery is cards. The calendar uses a date column. The choice is
+  remembered for the next time you open the table.
+- **Formula:** a column type. It reads other columns of the same row, for
+  example `{Precio} * {Cantidad}`. Also `si`, `redondear`, `hoy`, `dias`,
+  `vacio`, `largo` and `contiene`. The cell is not edited; change the
+  expression on the column.
+- **History:** the clock on a row shows who changed it and the previous
+  value. The last 40 changes are kept.
+- **REST API:** list and create tables, read rows, add, patch and delete a
+  row, read its history and add a column. See below.
+- Up to 100 columns and 20,000 rows per table. The table itself still can't
+  be opened from a document's public share link; use the form link instead.
 
 ### Graph
 
@@ -649,6 +675,14 @@ curl -H "Authorization: Bearer gft_..." http://127.0.0.1:8080/api/v1/notes
 | `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | Update a note. Renaming also updates `[[links]]`. |
 | `DELETE /api/v1/notes/:id` | Delete a note or file |
 | `GET /api/v1/notes/:id/file` | Download a file |
+| `GET /api/v1/tables` | List tables |
+| `POST /api/v1/tables` `{ title, portfolioId? }` | Create an empty table |
+| `GET /api/v1/tables/:id?q=<text>&limit=<n>` | Columns, rows (cells by column name) and calculated formulas |
+| `POST /api/v1/tables/:id/rows` `{ cells }` | Add a row |
+| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }` | Change cells |
+| `DELETE /api/v1/tables/:id/rows/:rowId` | Delete a row |
+| `GET /api/v1/tables/:id/rows/:rowId/history` | Recent changes to that row |
+| `POST /api/v1/tables/:id/fields` `{ name, type?, choices?, formula?, relatedTableId? }` | Add a column |
 | `GET /api/portfolios/:id/download` | Download a portfolio (`all`: the whole vault) as `.zip` |
 
 To upload a file through the API, use the same three steps as the app:

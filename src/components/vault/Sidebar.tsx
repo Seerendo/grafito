@@ -6,6 +6,7 @@ import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
 import { useUploads } from "@/app/files";
 import { usePermissions } from "@/app/permissions";
+import { useTableIndex } from "@/app/table-index";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION } from "@/domain/permissions";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
@@ -186,6 +187,7 @@ export function Sidebar({
   };
   const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote);
 
+  const tableText = useTableIndex((state) => state.text);
   const filtered = documents.filter((document) => {
     if (tag && document.kind === "markdown") {
       if (!extractTags(document.content).some((item) => item.toLowerCase() === tag.toLowerCase())) return false;
@@ -195,7 +197,8 @@ export function Sidebar({
     return (
       document.title.toLowerCase().includes(needle) ||
       document.file?.name.toLowerCase().includes(needle) ||
-      document.content.toLowerCase().includes(needle)
+      document.content.toLowerCase().includes(needle) ||
+      (tableText[document.id] ?? "").toLowerCase().includes(needle)
     );
   });
   const searching = query.trim().length > 0 || Boolean(tag);

@@ -37,10 +37,12 @@ async function sharedReaders(sql: Sql, ownerId: string, docId: string): Promise<
     ),
     orgs(id) as (
       select org_id from share_org_grant where share_id in (select id from items)
+        and (expires_at is null or expires_at > ${Date.now()})
       union
       select o.id from app_org o join orgs g on o.parent_id = g.id
     )
     select user_id from share_grant where share_id in (select id from items)
+      and (expires_at is null or expires_at > ${Date.now()})
     union
     select user_id from app_org_member where org_id in (select id from orgs)
   `;

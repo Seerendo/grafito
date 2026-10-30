@@ -394,7 +394,15 @@ export const syncDocuments = createServerFn({ method: "POST" })
     const sources = await sql<{ enabled: unknown }>`select enabled from app_source where id = 'documents' limit 1`;
     if (sources[0] && !flag(sources[0].enabled)) return { indexed: 0, elastic: false };
     await sql`delete from doc_index where user_id = ${context.userId}`;
-    for (const doc of data.docs) {
+    const extras = await sql<{ doc_id: string; search_text: string }>`
+      select doc_id, search_text from data_meta where owner_id = ${context.userId} and search_text <> ''
+    `;
+    const extra = new Map(extras.map((row) => [row.doc_id, row.search_text]));
+    const mirrored = data.docs.map((doc) => {
+      const cells = extra.get(doc.id);
+      return cells ? { ...doc, body: `${doc.body}\n${cells}`.slice(0, 8000) } : doc;
+    });
+    for (const doc of mirrored) {
       await sql`
         insert into doc_index (user_id, doc_id, title, kind, portfolio_id, body, links_json, updated_at)
         values (
@@ -409,7 +417,7 @@ export const syncDocuments = createServerFn({ method: "POST" })
         )
       `;
     }
-    const mirror = await mirrorToElastic(context.userId, data.docs as IndexDoc[]);
+    const mirror = await mirrorToElastic(context.userId, mirrored as IndexDoc[]);
     return { indexed: data.docs.length, elastic: mirror.ok };
   });
 

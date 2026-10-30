@@ -196,6 +196,7 @@ The `vault/` pieces:
 | `platform.ts` | Administrator constants and backend detection from environment variables |
 | `profile.ts` | A user's profile and permissions (`allows()`) |
 | `share.ts` | Sharing data: items, grants, published copies, and reading by user or by link |
+| `access-trace.ts` | Expiry and revocation: closed windows in `access_grant_log`, openings in `access_event` (at most one per person and channel each hour, kept 180 days) |
 | `vault.ts` / `vault.functions.ts` | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and the AI |
 | `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts` | REST API: authentication (token or session), responses and personal tokens |
 | `crypto.ts` | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`. `open()` also accepts `GRAFITO_ENCRYPTION_KEY_PREVIOUS` during a rotation and reports `stale`, so callers re-encrypt. |
@@ -204,7 +205,7 @@ The `vault/` pieces:
 | `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
 | `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
 | `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
-| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree` |
+| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `revokeShareGrant`, `revokePublicShare`, `shareTrail`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree` |
 | `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
 | `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
@@ -416,8 +417,11 @@ fallback for owners without a server vault:
 - **Coverage check:** the server recomputes what each item covers
   (`domain/share.ts`) and drops anything extra the client sends.
 - **Revoking:**
-  - Making an item private deletes its copy.
-  - Deleting a shared note or portfolio removes its share item.
+  - Making an item private deletes its copy and records every open grant and the public link as revoked.
+  - Deleting a shared note or portfolio removes its share item the same way.
+  - **Revocar** on a person or organization ends that grant at once. **Revocar enlace** clears the public token, so the old URL stops opening. Saving as public again mints a new token.
+  - Each grant and each public link can expire: never, in 1, 7, 30 or 90 days, or at the end of a chosen day (UTC). An expired row is retired on the next read. The same applies to a table form's public link.
+  - **Actividad** lists who had access (from when, until when, and whether it is still open, revoked or expired) and recent openings.
 - **Access:** the server only serves an item to its owner, to its grantees,
   or, if it is public, to whoever has the token.
 
@@ -774,38 +778,67 @@ portfolio at that moment, and the note's text as the merge base).
   the body) or GitLab's `X-Gitlab-Token`, compared in constant time; marks
   the link pending and runs it.
 
-## Data tables (phase 1)
+## Data tables (phases 1 to 3)
 
 - **A document like any other:** a table is a `.tabla` file
   (`domain/vault/table.ts`, created by upload like a drawing), so portfolios,
   sharing, workspaces, moving, the trash and manual links work unchanged.
-  `FileView` opens it in `components/vault/TableView.tsx`; a public link shows
-  a notice instead (the API needs a session).
+  `FileView` opens it in `components/vault/TableView.tsx`. A public share of
+  the document shows a notice (the grid needs a session). A **form** has its
+  own link, `/f/:token` (`routes/f/$token.tsx`), which only inserts a row.
 - **Data in Postgres** (migration 0026, `server/table.ts`): `data_field`
   (columns: type, options, position) and `data_row` (`cells` as `jsonb`, one
   key per column) per owner and document. A cell is written alone
   (`cells || jsonb_build_object(…)`), so concurrent edits of different cells
   don't overwrite each other. Deleted rows keep a tombstone so clients learn
   about them; purging the document from the trash deletes its data.
+- **Column types:** text, number, date, select, checkbox, vault link,
+  **relation** (row ids of another table, `options.tableId`) and **file**
+  (vault documents created from an upload in the table's portfolio).
+- **Forms** (migration 0027, `data_form`): one per table. `fields` is the
+  columns it asks for. `public_token` plus `enabled` opens `/f/:token`. Without a session, sending is limited (`server/form-limit.ts`): 5 rows and
+  10 files a minute per address (the last `X-Forwarded-For` entry, the one the
+  gateway adds) and 60 rows a minute per form, in each instance's memory.
+  Public submissions and public attachments (up to 6 MB, stored like any
+  file) do not require a session and never return existing rows.
+- **Search:** `indexTable` writes cell text to `data_meta.search_text` and
+  `doc_index`, and upserts that one document in Elasticsearch when it is
+  configured. The sidebar and the command palette read the same text
+  (`tableSearchTexts`). `listDocs` matches it, so the AI's `search_notes`
+  does too. `syncDocuments` folds the text into the body it mirrors.
+- **AI:** `query_table`, `add_table_row`, `set_table_cell` in
+  `server/ai/tools.ts`, gated by `notes.read` / `notes.edit`.
 - **Access** (`server/table.functions.ts`): one's own table, or one in
   something shared with edit (or read) access, with the same checks as a note
   (`editableTarget`, `grantedDocOwner`); reading needs `notes.read`, changing
   `notes.edit`. Values are cleaned per type on the server (`cleanCell`).
 - **Live:** the view polls `tableChanges` every 10 s (rows changed since its
   last read, deleted ones and the columns).
-- **Vault links:** `syncTableLinks` turns the targets of link cells into the
-  table document's manual links (`links_json`, with a new revision), so they
-  show in the graph and in Mentions with nothing else. `data_meta` remembers
-  which links came from cells, so links added by hand with **Vincular** are
-  kept.
-- **View:** the grid draws only the visible rows (fixed row height), so
-  thousands of rows scroll smoothly. Search, per-column filters and sorting
-  run in the browser over the loaded rows (up to 20,000). CSV import and
-  export (`parseCsv`, `toCsv`, `guessType`) happen in the browser too; rows
-  are sent in batches of 500.
-- **Next phases:** forms (also by public link), relations between tables,
-  attachments, search and AI tools; then kanban, gallery, calendar,
-  formulas, row history and a REST API.
+- **Vault links:** `syncTableLinks` turns link cells, file cells and the
+  target of a relation column into the table document's manual links
+  (`links_json`, with a new revision), so they show in the graph and in
+  Mentions. `data_meta` remembers which links came from cells, so links added
+  by hand with **Vincular** are kept.
+- **View:** the grid draws only the visible rows (fixed row height). Search,
+  per-column filters and sorting run in the browser over the loaded rows
+  (up to 20,000). CSV import and export happen in the browser too. The
+  toolbar switches to a **kanban** (group a select column; drag a card to
+  change it), a **gallery** of cards or a **month calendar** (a date
+  column). The choice is stored in `data_meta.layout` (migration 0028).
+- **Formulas:** a column of type `formula` stores an expression in
+  `options.formula` (`domain/vault/formula.ts`), not a cell value. It can
+  name other columns in the same row (`{Precio} * {Cantidad}`), with
+  `si`, `redondear`, `hoy`, `dias`, `vacio`, `largo`, `contiene`, `y`, `o`
+  and `no`. The result is computed when the table is shown, searched,
+  indexed or returned by the API. A cycle or a bad expression is an error
+  on that column only.
+- **Row history:** `data_row_history` keeps the last 40 changes of each row
+  (create, cell update, delete), with the previous and next value. The
+  clock on a row opens them. Purging the document deletes the history.
+- **REST** (same bearer token as the notes API): `GET/POST /api/v1/tables`,
+  `GET /api/v1/tables/:id`, `POST …/rows`, `PATCH/DELETE …/rows/:rowId`,
+  `GET …/rows/:rowId/history`, `POST …/fields`. Cells are keyed by column
+  name. Formula columns come back already computed and cannot be patched.
 
 ## Drawings (Excalidraw)
 
@@ -1102,6 +1135,14 @@ Every operation checks the role's permission.
 | `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | `notes.edit` | Updates a note. Renaming updates `[[links]]`. |
 | `DELETE /api/v1/notes/:id` | `notes.delete` / `files.delete` | Deletes it |
 | `GET /api/v1/notes/:id/file` | `files.download` | Downloads the file |
+| `GET /api/v1/tables` | `notes.read` | Tables in the vault |
+| `POST /api/v1/tables` `{ title, portfolioId? }` | `files.upload` | Creates an empty table |
+| `GET /api/v1/tables/:id` | `notes.read` | Fields, rows and calculated formulas |
+| `POST /api/v1/tables/:id/rows` `{ cells }` | `notes.edit` | Adds a row (cells by column name) |
+| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }` | `notes.edit` | Changes cells |
+| `DELETE /api/v1/tables/:id/rows/:rowId` | `notes.edit` | Deletes a row |
+| `GET /api/v1/tables/:id/rows/:rowId/history` | `notes.read` | Recent row changes |
+| `POST /api/v1/tables/:id/fields` `{ name, type?, … }` | `notes.edit` | Adds a column |
 
 Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
 

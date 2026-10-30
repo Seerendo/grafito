@@ -71,6 +71,29 @@ export async function mirrorToElastic(userId: string, docs: IndexDoc[]): Promise
   }
 }
 
+/** Una sola nota o tabla, sin borrar el resto del índice. */
+export async function upsertElasticDoc(userId: string, doc: IndexDoc): Promise<void> {
+  const base = elasticUrl();
+  if (!base) return;
+  try {
+    await ensureIndex(base);
+    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${doc.id}`)}?refresh=true`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        userId,
+        docId: doc.id,
+        title: doc.title,
+        kind: doc.kind,
+        body: doc.body,
+        links: doc.links.map((link) => `${link.kind}:${link.targetId}`).join(" "),
+      }),
+    });
+  } catch {
+    /* Sin Elasticsearch la búsqueda sigue en Postgres. */
+  }
+}
+
 export async function searchElastic(
   userId: string,
   query: string,

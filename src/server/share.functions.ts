@@ -6,6 +6,9 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import {
   ownerShares,
+  revokeShareLink,
+  revokeShareSubject,
+  shareActivity,
   shareCandidates,
   shareOrgCandidates,
   sharedDocText,
@@ -81,6 +84,8 @@ export const setShare = createServerFn({ method: "POST" })
         access: z.enum(["read", "edit", "admin"]).default("read"),
         userIds: z.array(id).max(200),
         orgIds: z.array(id).max(200).default([]),
+        expiresAt: z.number().int().nullable().optional(),
+        linkExpiresAt: z.number().int().nullable().optional(),
       })
       .parse(input),
   )
@@ -92,6 +97,42 @@ export const setShare = createServerFn({ method: "POST" })
     }
     await writeShare(sql, context.userId, data);
     return { ok: true as const, shares: await ownerShares(sql, context.userId) };
+  });
+
+const target = z.object({ kind: z.enum(["document", "portfolio"]), targetId: id });
+
+/** Quita a un invitado y guarda desde cuándo tenía permiso. */
+export const revokeShareGrant = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.extend({ subjectKind: z.enum(["user", "org"]), subjectId: id }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, canShare } = await sharer(context.userId);
+    if (!canShare) return { ok: false as const, error: "Tu rol no permite compartir." };
+    const done = await revokeShareSubject(sql, context.userId, data);
+    if (!done) return { ok: false as const, error: "Ese permiso ya no está." };
+    return { ok: true as const, shares: await ownerShares(sql, context.userId) };
+  });
+
+/** El enlace público deja de servir. Hay que crear otro para volver a abrirlo. */
+export const revokePublicShare = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, canShare } = await sharer(context.userId);
+    if (!canShare) return { ok: false as const, error: "Tu rol no permite compartir." };
+    const done = await revokeShareLink(sql, context.userId, data);
+    if (!done) return { ok: false as const, error: "No hay un enlace que revocar." };
+    return { ok: true as const, shares: await ownerShares(sql, context.userId) };
+  });
+
+/** Periodos de permiso y últimas aperturas de un elemento propio. */
+export const shareTrail = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, canShare } = await sharer(context.userId);
+    if (!canShare) return { periods: [], events: [] };
+    return shareActivity(sql, context.userId, data);
   });
 
 /** Publica la copia de solo lectura de lo que el dueño tiene compartido. */

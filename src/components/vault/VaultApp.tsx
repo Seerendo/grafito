@@ -16,6 +16,7 @@ import { pluginFlagsFresh, setPluginFlags } from "@/app/plugins";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { TableIndexSync } from "./TableIndexSync";
 import { VaultMirror } from "./VaultMirror";
 import { VaultSync } from "./VaultSync";
 import { AiChat } from "@/components/ai/AiChat";
@@ -98,6 +99,7 @@ function NoReadAccess() {
 }
 
 function VaultWorkspace() {
+  const owner = useVault((state) => state.owner);
   const mobile = useIsMobile();
   const [pane, setPane] = useState<Pane>("note");
   const [treeOpen, setTreeOpen] = useState(true);
@@ -500,6 +502,7 @@ function VaultWorkspace() {
       <CommandPalette onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} />
       <VaultDialogs />
       <VaultMirror />
+      <TableIndexSync ownerId={owner} />
       <VaultSync />
       <ShareMirror />
       <NotePdfHost />

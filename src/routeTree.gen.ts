@@ -16,6 +16,7 @@ import { Route as CuentaRouteImport } from './routes/cuenta'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as CompartidosIndexRouteImport } from './routes/compartidos/index'
 import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$shareId'
+import { Route as FTokenRouteImport } from './routes/f/$token'
 import { Route as PTokenRouteImport } from './routes/p/$token'
 import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -25,6 +26,7 @@ import { Route as ApiFilesUploadsRouteImport } from './routes/api/files/uploads'
 import { Route as ApiV1MeRouteImport } from './routes/api/v1/me'
 import { Route as ApiV1NotesRouteImport } from './routes/api/v1/notes'
 import { Route as ApiV1PortfoliosRouteImport } from './routes/api/v1/portfolios'
+import { Route as ApiV1TablesRouteImport } from './routes/api/v1/tables'
 import { Route as WopiFilesIdRouteImport } from './routes/wopi/files/$id'
 import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/uploads.complete'
 import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
@@ -33,8 +35,13 @@ import { Route as ApiPortfoliosIdDownloadRouteImport } from './routes/api/portfo
 import { Route as ApiPublicTokenTreeRouteImport } from './routes/api/public/$token.tree'
 import { Route as ApiSharedIdTreeRouteImport } from './routes/api/shared/$id.tree'
 import { Route as ApiV1NotesIdRouteImport } from './routes/api/v1/notes.$id'
+import { Route as ApiV1TablesIdRouteImport } from './routes/api/v1/tables.$id'
 import { Route as WopiFilesIdContentsRouteImport } from './routes/wopi/files/$id.contents'
 import { Route as ApiV1NotesIdFileRouteImport } from './routes/api/v1/notes.$id.file'
+import { Route as ApiV1TablesIdFieldsRouteImport } from './routes/api/v1/tables.$id.fields'
+import { Route as ApiV1TablesIdRowsRouteImport } from './routes/api/v1/tables.$id.rows'
+import { Route as ApiV1TablesIdRowsRowIdRouteImport } from './routes/api/v1/tables.$id.rows.$rowId'
+import { Route as ApiV1TablesIdRowsRowIdHistoryRouteImport } from './routes/api/v1/tables.$id.rows.$rowId.history'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -69,6 +76,11 @@ const CompartidosIndexRoute = CompartidosIndexRouteImport.update({
 const CompartidosShareIdRoute = CompartidosShareIdRouteImport.update({
   id: '/compartidos/$shareId',
   path: '/compartidos/$shareId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FTokenRoute = FTokenRouteImport.update({
+  id: '/f/$token',
+  path: '/f/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PTokenRoute = PTokenRouteImport.update({
@@ -116,6 +128,11 @@ const ApiV1PortfoliosRoute = ApiV1PortfoliosRouteImport.update({
   path: '/api/v1/portfolios',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1TablesRoute = ApiV1TablesRouteImport.update({
+  id: '/api/v1/tables',
+  path: '/api/v1/tables',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WopiFilesIdRoute = WopiFilesIdRouteImport.update({
   id: '/wopi/files/$id',
   path: '/wopi/files/$id',
@@ -156,6 +173,11 @@ const ApiV1NotesIdRoute = ApiV1NotesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiV1NotesRoute,
 } as any)
+const ApiV1TablesIdRoute = ApiV1TablesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiV1TablesRoute,
+} as any)
 const WopiFilesIdContentsRoute = WopiFilesIdContentsRouteImport.update({
   id: '/contents',
   path: '/contents',
@@ -166,6 +188,27 @@ const ApiV1NotesIdFileRoute = ApiV1NotesIdFileRouteImport.update({
   path: '/file',
   getParentRoute: () => ApiV1NotesIdRoute,
 } as any)
+const ApiV1TablesIdFieldsRoute = ApiV1TablesIdFieldsRouteImport.update({
+  id: '/fields',
+  path: '/fields',
+  getParentRoute: () => ApiV1TablesIdRoute,
+} as any)
+const ApiV1TablesIdRowsRoute = ApiV1TablesIdRowsRouteImport.update({
+  id: '/rows',
+  path: '/rows',
+  getParentRoute: () => ApiV1TablesIdRoute,
+} as any)
+const ApiV1TablesIdRowsRowIdRoute = ApiV1TablesIdRowsRowIdRouteImport.update({
+  id: '/$rowId',
+  path: '/$rowId',
+  getParentRoute: () => ApiV1TablesIdRowsRoute,
+} as any)
+const ApiV1TablesIdRowsRowIdHistoryRoute =
+  ApiV1TablesIdRowsRowIdHistoryRouteImport.update({
+    id: '/history',
+    path: '/history',
+    getParentRoute: () => ApiV1TablesIdRowsRowIdRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -174,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
+  '/f/$token': typeof FTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -184,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/v1/tables': typeof ApiV1TablesRouteWithChildren
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
@@ -192,8 +237,13 @@ export interface FileRoutesByFullPath {
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/api/v1/tables/$id': typeof ApiV1TablesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
+  '/api/v1/tables/$id/fields': typeof ApiV1TablesIdFieldsRoute
+  '/api/v1/tables/$id/rows': typeof ApiV1TablesIdRowsRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId': typeof ApiV1TablesIdRowsRowIdRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId/history': typeof ApiV1TablesIdRowsRowIdHistoryRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -202,6 +252,7 @@ export interface FileRoutesByTo {
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
+  '/f/$token': typeof FTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -212,6 +263,7 @@ export interface FileRoutesByTo {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/v1/tables': typeof ApiV1TablesRouteWithChildren
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
@@ -220,8 +272,13 @@ export interface FileRoutesByTo {
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/api/v1/tables/$id': typeof ApiV1TablesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
+  '/api/v1/tables/$id/fields': typeof ApiV1TablesIdFieldsRoute
+  '/api/v1/tables/$id/rows': typeof ApiV1TablesIdRowsRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId': typeof ApiV1TablesIdRowsRowIdRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId/history': typeof ApiV1TablesIdRowsRowIdHistoryRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -231,6 +288,7 @@ export interface FileRoutesById {
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
+  '/f/$token': typeof FTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -241,6 +299,7 @@ export interface FileRoutesById {
   '/api/v1/me': typeof ApiV1MeRoute
   '/api/v1/notes': typeof ApiV1NotesRouteWithChildren
   '/api/v1/portfolios': typeof ApiV1PortfoliosRoute
+  '/api/v1/tables': typeof ApiV1TablesRouteWithChildren
   '/wopi/files/$id': typeof WopiFilesIdRouteWithChildren
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
@@ -249,8 +308,13 @@ export interface FileRoutesById {
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
   '/api/v1/notes/$id': typeof ApiV1NotesIdRouteWithChildren
+  '/api/v1/tables/$id': typeof ApiV1TablesIdRouteWithChildren
   '/wopi/files/$id/contents': typeof WopiFilesIdContentsRoute
   '/api/v1/notes/$id/file': typeof ApiV1NotesIdFileRoute
+  '/api/v1/tables/$id/fields': typeof ApiV1TablesIdFieldsRoute
+  '/api/v1/tables/$id/rows': typeof ApiV1TablesIdRowsRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId': typeof ApiV1TablesIdRowsRowIdRouteWithChildren
+  '/api/v1/tables/$id/rows/$rowId/history': typeof ApiV1TablesIdRowsRowIdHistoryRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -261,6 +325,7 @@ export interface FileRouteTypes {
     | '/cuenta'
     | '/login'
     | '/compartidos/$shareId'
+    | '/f/$token'
     | '/p/$token'
     | '/compartidos/'
     | '/api/ai/chat'
@@ -271,6 +336,7 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/v1/tables'
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
@@ -279,8 +345,13 @@ export interface FileRouteTypes {
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
+    | '/api/v1/tables/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
+    | '/api/v1/tables/$id/fields'
+    | '/api/v1/tables/$id/rows'
+    | '/api/v1/tables/$id/rows/$rowId'
+    | '/api/v1/tables/$id/rows/$rowId/history'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -289,6 +360,7 @@ export interface FileRouteTypes {
     | '/cuenta'
     | '/login'
     | '/compartidos/$shareId'
+    | '/f/$token'
     | '/p/$token'
     | '/compartidos'
     | '/api/ai/chat'
@@ -299,6 +371,7 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/v1/tables'
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
@@ -307,8 +380,13 @@ export interface FileRouteTypes {
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
+    | '/api/v1/tables/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
+    | '/api/v1/tables/$id/fields'
+    | '/api/v1/tables/$id/rows'
+    | '/api/v1/tables/$id/rows/$rowId'
+    | '/api/v1/tables/$id/rows/$rowId/history'
   id:
     | '__root__'
     | '/'
@@ -317,6 +395,7 @@ export interface FileRouteTypes {
     | '/cuenta'
     | '/login'
     | '/compartidos/$shareId'
+    | '/f/$token'
     | '/p/$token'
     | '/compartidos/'
     | '/api/ai/chat'
@@ -327,6 +406,7 @@ export interface FileRouteTypes {
     | '/api/v1/me'
     | '/api/v1/notes'
     | '/api/v1/portfolios'
+    | '/api/v1/tables'
     | '/wopi/files/$id'
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
@@ -335,8 +415,13 @@ export interface FileRouteTypes {
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
     | '/api/v1/notes/$id'
+    | '/api/v1/tables/$id'
     | '/wopi/files/$id/contents'
     | '/api/v1/notes/$id/file'
+    | '/api/v1/tables/$id/fields'
+    | '/api/v1/tables/$id/rows'
+    | '/api/v1/tables/$id/rows/$rowId'
+    | '/api/v1/tables/$id/rows/$rowId/history'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -346,6 +431,7 @@ export interface RootRouteChildren {
   CuentaRoute: typeof CuentaRoute
   LoginRoute: typeof LoginRoute
   CompartidosShareIdRoute: typeof CompartidosShareIdRoute
+  FTokenRoute: typeof FTokenRoute
   PTokenRoute: typeof PTokenRoute
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   ApiAiChatRoute: typeof ApiAiChatRoute
@@ -356,6 +442,7 @@ export interface RootRouteChildren {
   ApiV1MeRoute: typeof ApiV1MeRoute
   ApiV1NotesRoute: typeof ApiV1NotesRouteWithChildren
   ApiV1PortfoliosRoute: typeof ApiV1PortfoliosRoute
+  ApiV1TablesRoute: typeof ApiV1TablesRouteWithChildren
   WopiFilesIdRoute: typeof WopiFilesIdRouteWithChildren
   ApiGitHookIdRoute: typeof ApiGitHookIdRoute
   ApiPortfoliosIdDownloadRoute: typeof ApiPortfoliosIdDownloadRoute
@@ -412,6 +499,13 @@ declare module '@tanstack/react-router' {
       path: '/compartidos/$shareId'
       fullPath: '/compartidos/$shareId'
       preLoaderRoute: typeof CompartidosShareIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/f/$token': {
+      id: '/f/$token'
+      path: '/f/$token'
+      fullPath: '/f/$token'
+      preLoaderRoute: typeof FTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$token': {
@@ -477,6 +571,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1PortfoliosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/tables': {
+      id: '/api/v1/tables'
+      path: '/api/v1/tables'
+      fullPath: '/api/v1/tables'
+      preLoaderRoute: typeof ApiV1TablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/wopi/files/$id': {
       id: '/wopi/files/$id'
       path: '/wopi/files/$id'
@@ -533,6 +634,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1NotesIdRouteImport
       parentRoute: typeof ApiV1NotesRoute
     }
+    '/api/v1/tables/$id': {
+      id: '/api/v1/tables/$id'
+      path: '/$id'
+      fullPath: '/api/v1/tables/$id'
+      preLoaderRoute: typeof ApiV1TablesIdRouteImport
+      parentRoute: typeof ApiV1TablesRoute
+    }
     '/wopi/files/$id/contents': {
       id: '/wopi/files/$id/contents'
       path: '/contents'
@@ -546,6 +654,34 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/v1/notes/$id/file'
       preLoaderRoute: typeof ApiV1NotesIdFileRouteImport
       parentRoute: typeof ApiV1NotesIdRoute
+    }
+    '/api/v1/tables/$id/fields': {
+      id: '/api/v1/tables/$id/fields'
+      path: '/fields'
+      fullPath: '/api/v1/tables/$id/fields'
+      preLoaderRoute: typeof ApiV1TablesIdFieldsRouteImport
+      parentRoute: typeof ApiV1TablesIdRoute
+    }
+    '/api/v1/tables/$id/rows': {
+      id: '/api/v1/tables/$id/rows'
+      path: '/rows'
+      fullPath: '/api/v1/tables/$id/rows'
+      preLoaderRoute: typeof ApiV1TablesIdRowsRouteImport
+      parentRoute: typeof ApiV1TablesIdRoute
+    }
+    '/api/v1/tables/$id/rows/$rowId': {
+      id: '/api/v1/tables/$id/rows/$rowId'
+      path: '/$rowId'
+      fullPath: '/api/v1/tables/$id/rows/$rowId'
+      preLoaderRoute: typeof ApiV1TablesIdRowsRowIdRouteImport
+      parentRoute: typeof ApiV1TablesIdRowsRoute
+    }
+    '/api/v1/tables/$id/rows/$rowId/history': {
+      id: '/api/v1/tables/$id/rows/$rowId/history'
+      path: '/history'
+      fullPath: '/api/v1/tables/$id/rows/$rowId/history'
+      preLoaderRoute: typeof ApiV1TablesIdRowsRowIdHistoryRouteImport
+      parentRoute: typeof ApiV1TablesIdRowsRowIdRoute
     }
   }
 }
@@ -588,6 +724,57 @@ const ApiV1NotesRouteWithChildren = ApiV1NotesRoute._addFileChildren(
   ApiV1NotesRouteChildren,
 )
 
+interface ApiV1TablesIdRowsRowIdRouteChildren {
+  ApiV1TablesIdRowsRowIdHistoryRoute: typeof ApiV1TablesIdRowsRowIdHistoryRoute
+}
+
+const ApiV1TablesIdRowsRowIdRouteChildren: ApiV1TablesIdRowsRowIdRouteChildren =
+  {
+    ApiV1TablesIdRowsRowIdHistoryRoute: ApiV1TablesIdRowsRowIdHistoryRoute,
+  }
+
+const ApiV1TablesIdRowsRowIdRouteWithChildren =
+  ApiV1TablesIdRowsRowIdRoute._addFileChildren(
+    ApiV1TablesIdRowsRowIdRouteChildren,
+  )
+
+interface ApiV1TablesIdRowsRouteChildren {
+  ApiV1TablesIdRowsRowIdRoute: typeof ApiV1TablesIdRowsRowIdRouteWithChildren
+}
+
+const ApiV1TablesIdRowsRouteChildren: ApiV1TablesIdRowsRouteChildren = {
+  ApiV1TablesIdRowsRowIdRoute: ApiV1TablesIdRowsRowIdRouteWithChildren,
+}
+
+const ApiV1TablesIdRowsRouteWithChildren =
+  ApiV1TablesIdRowsRoute._addFileChildren(ApiV1TablesIdRowsRouteChildren)
+
+interface ApiV1TablesIdRouteChildren {
+  ApiV1TablesIdFieldsRoute: typeof ApiV1TablesIdFieldsRoute
+  ApiV1TablesIdRowsRoute: typeof ApiV1TablesIdRowsRouteWithChildren
+}
+
+const ApiV1TablesIdRouteChildren: ApiV1TablesIdRouteChildren = {
+  ApiV1TablesIdFieldsRoute: ApiV1TablesIdFieldsRoute,
+  ApiV1TablesIdRowsRoute: ApiV1TablesIdRowsRouteWithChildren,
+}
+
+const ApiV1TablesIdRouteWithChildren = ApiV1TablesIdRoute._addFileChildren(
+  ApiV1TablesIdRouteChildren,
+)
+
+interface ApiV1TablesRouteChildren {
+  ApiV1TablesIdRoute: typeof ApiV1TablesIdRouteWithChildren
+}
+
+const ApiV1TablesRouteChildren: ApiV1TablesRouteChildren = {
+  ApiV1TablesIdRoute: ApiV1TablesIdRouteWithChildren,
+}
+
+const ApiV1TablesRouteWithChildren = ApiV1TablesRoute._addFileChildren(
+  ApiV1TablesRouteChildren,
+)
+
 interface WopiFilesIdRouteChildren {
   WopiFilesIdContentsRoute: typeof WopiFilesIdContentsRoute
 }
@@ -607,6 +794,7 @@ const rootRouteChildren: RootRouteChildren = {
   CuentaRoute: CuentaRoute,
   LoginRoute: LoginRoute,
   CompartidosShareIdRoute: CompartidosShareIdRoute,
+  FTokenRoute: FTokenRoute,
   PTokenRoute: PTokenRoute,
   CompartidosIndexRoute: CompartidosIndexRoute,
   ApiAiChatRoute: ApiAiChatRoute,
@@ -617,6 +805,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1MeRoute: ApiV1MeRoute,
   ApiV1NotesRoute: ApiV1NotesRouteWithChildren,
   ApiV1PortfoliosRoute: ApiV1PortfoliosRoute,
+  ApiV1TablesRoute: ApiV1TablesRouteWithChildren,
   WopiFilesIdRoute: WopiFilesIdRouteWithChildren,
   ApiGitHookIdRoute: ApiGitHookIdRoute,
   ApiPortfoliosIdDownloadRoute: ApiPortfoliosIdDownloadRoute,
