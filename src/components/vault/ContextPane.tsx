@@ -16,11 +16,14 @@ import { useEffect, useState, type ReactNode } from "react";
 import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
 import { resolveLink, useSharedTrees } from "@/app/shared-links";
+import { useSharedView } from "@/app/shared-view";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
 import { linkKey } from "@/domain/vault/anchor";
+import { asDocuments } from "@/components/share/shared-tree";
+import { SharedContext } from "@/components/share/SharedContext";
 import { Comments } from "./Comments";
 
 const KIND_LABEL: Record<ManualKind, string> = {
@@ -66,6 +69,9 @@ export function ContextPane({
   holdGraph: boolean;
 }) {
   const document = useActiveDocument();
+  const sharedTree = useSharedView((state) => state.tree);
+  const sharedDocId = useSharedView((state) => state.docId);
+  const sharedBody = useSharedView((state) => state.body);
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const trees = useSharedTrees((state) => state.trees);
@@ -94,6 +100,39 @@ export function ContextPane({
   const toggleSection = (key: SectionKey) => {
     setOpenSections((state) => ({ ...state, [key]: !state[key] }));
   };
+
+  const sharedDoc = sharedTree && sharedDocId ? sharedTree.documents.find((item) => item.id === sharedDocId) : undefined;
+  if (sharedTree && sharedDoc) {
+    const sharedDocuments = asDocuments(sharedTree.documents).map((item) =>
+      sharedBody && item.id === sharedBody.id ? { ...item, content: sharedBody.content, kind: item.kind } : item,
+    );
+    const opened = sharedDocuments.find((item) => item.id === sharedDoc.id);
+    if (opened) {
+      return (
+        <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
+          <CollapseButton onCollapse={onCollapse} />
+          <SharedContext
+            document={opened}
+            documents={sharedDocuments}
+            onOpen={(id) => {
+              const tree = useSharedView.getState().tree;
+              if (tree) useSharedView.getState().openShared(tree, id);
+            }}
+          />
+          <section className="border-b border-line py-3">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">
+              <MessageSquare className="size-3.5" />
+              {t("Comentarios")}
+              {commentCount > 0 ? (
+                <span className="rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">{commentCount}</span>
+              ) : null}
+            </p>
+            <Comments docId={opened.id} shareId={sharedTree.share.id} onCount={setCommentCount} />
+          </section>
+        </aside>
+      );
+    }
+  }
 
   if (!document) {
     return (

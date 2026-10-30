@@ -380,10 +380,13 @@ After that, the start screen is a normal sign-in.
   - A sub-organization's space comes out of the one above: with MSP at 1 TB
     and Tecnologías at 800 GB, Estadística can get at most 200 GB, and MSP's
     own content uses what is left.
-  - Members can edit by default: add notes, files and portfolios. The
-    workspace's administrators (and the system administrator) share out its
-    space per person and change each person's permission in **Espacio y
-    permisos**.
+  - Only a workspace's administrators can edit, create and delete in it by
+    default, and only they see who has access. Other members of the
+    organization see the workspace, not its contents, until an administrator
+    grants **Solo lectura** or **Puede editar** on a portfolio in **Espacio y
+    permisos**. **Replicar en subportafolios** applies that grant, or its
+    removal, to the portfolios inside. The administrators (and the system
+    administrator) also share out its space per person.
   - What is uploaded to a workspace counts in the workspace, not in anyone's
     personal space.
   - Members of a sub-organization also see the workspaces above it (MSP's,
@@ -399,10 +402,15 @@ After that, the start screen is a normal sign-in.
     directory: the Carpeta Personal is no longer marked.
   - Right-click a workspace, one of its portfolios or a document, in the
     directory or on its page (also on an empty spot of the page, as in the
-    Carpeta Personal): new note, new portfolio, upload a file, **Espacio y
-    permisos** or delete (with permission to edit; a portfolio inside the
-    workspace goes with all it contains, the workspace itself can't be
-    deleted). Opening is a click, so it is not in the menu.
+    Carpeta Personal): new note, new portfolio, upload a file, upload a
+    folder, or delete, where you can edit that portfolio. **Espacio y
+    permisos** is only for an administrator of the workspace. A portfolio
+    inside it is deleted with everything it contains only if you can edit
+    every portfolio inside it; the workspace itself can't be deleted.
+    Opening is a click, so it is not in the menu.
+  - Opening a note or a file in a workspace uses the same right-hand pane as
+    the rest of Grafito (outline, links, mentions, comments). It is not drawn
+    again beside the document.
   - What is deleted in a workspace goes to its own trash. **Papelera** has a
     tab per workspace you administer, where you restore or delete for good;
     other members don't see it.
@@ -412,9 +420,10 @@ After that, the start screen is a normal sign-in.
 - **Git (optional):** a portfolio, or the whole vault, can be kept in sync
   with a folder of a GitHub or GitLab repository, both ways. See
   [docs/GIT.md](docs/GIT.md).
-- On a phone, or without drag and drop, use **Subir archivo** in the
-  right-click (long-press) menu. It accepts several files and treats `.md` the
-  same way.
+- On a phone, or without drag and drop, use **Subir archivo** or **Subir
+  carpeta** in the right-click (long-press) menu, in the Carpeta Personal or
+  in a workspace portfolio you can edit. A folder keeps its subfolders. In
+  the Carpeta Personal, `.md` files become notes.
 
 ### Data tables
 

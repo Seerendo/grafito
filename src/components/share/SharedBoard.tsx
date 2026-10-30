@@ -7,7 +7,7 @@ import { useContextMenu } from "@/components/ui/use-context-menu";
 import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
 import { descendantIds } from "@/domain/vault/portfolios";
-import { childrenOf, docsIn } from "./shared-tree";
+import { canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
 
 const RECENT = 12;
@@ -23,21 +23,20 @@ export function SharedBoard({
   tree,
   portfolioId,
   rootId,
-  writable,
   onOpenPortfolio,
   onOpenDoc,
 }: {
   tree: SharedTree;
   portfolioId: string;
   rootId: string | null;
-  writable: boolean;
   onOpenPortfolio: (id: string) => void;
   onOpenDoc: (id: string) => void;
 }) {
   const menu = useContextMenu();
   const shareId = tree.share.id;
+  const manage = canManageSharedSpace(tree);
   const addHere = (id: string): ContextItem[] => [
-    ...(writable
+    ...(canEditSharedPortfolio(tree, id)
       ? [
           { label: t("Nueva nota"), onClick: () => void newSharedNote(shareId, id).then(report) },
           { label: t("Nueva tabla"), onClick: () => void newSharedTable(shareId, id).then(report) },
@@ -46,12 +45,17 @@ export function SharedBoard({
             onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId, parentId: id }),
           },
           { label: t("Subir archivo"), onClick: () => pickAndUpload(shareId, id) },
+          { label: t("Subir carpeta"), onClick: () => pickAndUpload(shareId, id, true) },
         ]
       : []),
-    {
-      label: t("Espacio y permisos…"),
-      onClick: () => useVault.getState().setDialog({ type: "space", portfolioId: id, shareId }),
-    },
+    ...(manage
+      ? [
+          {
+            label: t("Espacio y permisos…"),
+            onClick: () => useVault.getState().setDialog({ type: "space", portfolioId: id, shareId }),
+          },
+        ]
+      : []),
   ];
   const byId = useMemo(() => new Map(tree.portfolios.map((portfolio) => [portfolio.id, portfolio])), [tree]);
   const here = byId.get(portfolioId);
@@ -109,14 +113,12 @@ export function SharedBoard({
         <button
           type="button"
           onClick={() => onOpenDoc(document.id)}
-          onContextMenu={(event) =>
-            menu.open(
-              event,
-              writable
-                ? [{ label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(shareId, document.id).then(report) }]
-                : [],
-            )
-          }
+          onContextMenu={(event) => {
+            if (!canEditSharedPortfolio(tree, document.portfolioId)) return;
+            menu.open(event, [
+              { label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(shareId, document.id).then(report) },
+            ]);
+          }}
           className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
         >
           <Icon className="size-4 shrink-0 text-faint" />
@@ -134,7 +136,9 @@ export function SharedBoard({
 
   return (
     <div data-ui="shared-board" className="min-h-0 flex-1 overflow-y-auto bg-bg px-4 py-8 sm:px-8" onContextMenu={(event) => {
-        if (!(event.target as HTMLElement).closest("button")) menu.open(event, addHere(portfolioId));
+        if ((event.target as HTMLElement).closest("button")) return;
+        const items = addHere(portfolioId);
+        if (items.length > 0) menu.open(event, items);
       }}
     >
       {trail.length > 1 ? (
@@ -165,10 +169,10 @@ export function SharedBoard({
                 <button
                   type="button"
                   onClick={() => onOpenPortfolio(portfolio.id)}
-                  onContextMenu={(event) =>
-                    menu.open(event, [
+                  onContextMenu={(event) => {
+                    const items = [
                       ...addHere(portfolio.id),
-                      ...(writable
+                      ...(canEditSharedPortfolio(tree, portfolio.id)
                         ? [
                             {
                               label: t("Eliminar"),
@@ -178,8 +182,9 @@ export function SharedBoard({
                             },
                           ]
                         : []),
-                    ])
-                  }
+                    ];
+                    if (items.length > 0) menu.open(event, items);
+                  }}
                   className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                 >
                   <Folder className="size-4 shrink-0 text-faint" />

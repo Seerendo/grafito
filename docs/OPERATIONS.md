@@ -165,7 +165,8 @@ docker compose up -d --scale app=4
   `max_connections` of 100. For more instances, lower `GRAFITO_DB_POOL` or
   raise `max_connections`.
 - The tree of each shared item or workspace is built by one instance and
-  kept in Redis for the rest, so all of them send the same version. Each
+  kept in Redis for the rest. A workspace is filtered per reader after that
+  cache (which folders they can see); the cached tree stays the full one. Each
   instance also keeps short caches of its own (permissions, sessions for a
   few seconds); none serves anything older than its short limit, so no sticky
   sessions are needed.

@@ -5,7 +5,9 @@ import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { deleteSharedDoc, deleteSharedPortfolio } from "@/server/workspace-trash.functions";
 import { t } from "@/app/i18n";
+import { folderPlan, ignoredUpload } from "@/domain/vault/folders";
 import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
+import type { IncomingFile } from "@/components/vault/ingest-files";
 
 /**
  * Lo que se hace dentro de un portafolio compartido conmigo con permiso de
@@ -76,13 +78,99 @@ export async function newSharedTable(shareId: string, portfolioId: string | null
   return uploadToShared(shareId, portfolioId, [file]);
 }
 
-/** Pide archivos con el selector del sistema (desde un clic) y los sube. */
-export function pickAndUpload(shareId: string, portfolioId: string | null): void {
+/**
+ * Sube una carpeta con sus subcarpetas. Los portafolios se crean antes de
+ * refrescar el árbol: hasta entonces la ruta vive en `ids`.
+ */
+export async function uploadFolderToShared(
+  shareId: string,
+  portfolioId: string | null,
+  incoming: Array<File | IncomingFile>,
+): Promise<string | null> {
+  const items = incoming
+    .map((item) =>
+      item instanceof File
+        ? { file: item, relativePath: item.webkitRelativePath || item.name }
+        : { file: item.file, relativePath: item.relativePath || item.file.name },
+    )
+    .filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
+  if (items.length === 0) return null;
+  const byPath = new Map<string, { file: File; relativePath: string }>();
+  for (const item of items) {
+    const planned = folderPlan([item.relativePath]).files[0];
+    if (planned) byPath.set(planned.relativePath, item);
+  }
+  const plan = folderPlan([...byPath.keys()]);
+  const ids = new Map<string, string | null>([["", portfolioId]]);
+  const visible = () => {
+    const tree = useSharedView.getState().tree;
+    return tree?.share.id === shareId ? tree : null;
+  };
+  let folderError: string | null = null;
+  for (const folder of plan.folders) {
+    const slash = folder.lastIndexOf("/");
+    const parentKey = slash === -1 ? "" : folder.slice(0, slash);
+    if (!ids.has(parentKey)) continue;
+    const parentId = ids.get(parentKey) ?? null;
+    const name = slash === -1 ? folder : folder.slice(slash + 1);
+    const known = visible()?.portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name);
+    if (known) {
+      ids.set(folder, known.id);
+      continue;
+    }
+    const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(() => null);
+    if (!result?.ok) {
+      folderError = result?.error ?? t("No se pudo crear el portafolio.");
+      continue;
+    }
+    ids.set(folder, result.id);
+  }
+  let last: string | null = null;
+  let error = folderError;
+  for (const planned of plan.files) {
+    if (planned.folder !== "" && !ids.has(planned.folder)) continue;
+    const dest = planned.folder === "" ? portfolioId : (ids.get(planned.folder) ?? null);
+    const item = byPath.get(planned.relativePath);
+    if (!item) continue;
+    try {
+      const stored = await uploadVaultFile(item.file, { shareId, portfolioId: dest });
+      const result = await addSharedFile({
+        data: { shareId, portfolioId: dest, key: stored.key, name: item.file.name, mime: item.file.type },
+      });
+      if (!result.ok) {
+        error = result.error;
+        break;
+      }
+      last = result.id;
+    } catch (failure) {
+      error = failure instanceof Error ? failure.message : t("No se pudo subir.");
+      break;
+    }
+  }
+  if (plan.folders.length > 0 || last) await refresh(shareId, last);
+  return error;
+}
+
+/** Pide archivos con el selector del sistema (desde un clic) y los sube. Con `directory`, una carpeta. */
+export function pickAndUpload(shareId: string, portfolioId: string | null, directory = false): void {
   const input = document.createElement("input");
   input.type = "file";
   input.multiple = true;
+  if (directory) {
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+  }
   input.onchange = () => {
-    if (input.files?.length) void uploadToShared(shareId, portfolioId, input.files).then(report);
+    const list = input.files;
+    if (!list?.length) return;
+    const run = directory
+      ? uploadFolderToShared(
+          shareId,
+          portfolioId,
+          [...list].map((file) => ({ file, relativePath: file.webkitRelativePath || file.name })),
+        )
+      : uploadToShared(shareId, portfolioId, list);
+    void run.then(report);
   };
   input.click();
 }

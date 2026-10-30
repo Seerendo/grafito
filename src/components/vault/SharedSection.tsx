@@ -6,7 +6,7 @@ import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report 
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
-import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
+import { canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
 import { sharedExpandKeys } from "@/domain/vault/nav";
 import { sharedWithMe } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
@@ -70,7 +70,15 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
    * espacio de trabajo ven sus administradores).
    */
   const menuFor = (item: NonNullable<Inbox>[number], tree: SharedTree | null | undefined, target: { kind: "portfolio" | "doc"; id: string | null }): ContextItem[] => {
-    const writable = item.kind === "portfolio" && (item.access === "edit" || item.access === "admin");
+    const folderId = () => {
+      if (target.kind === "portfolio") return target.id;
+      if (!target.id || !tree) return null;
+      return tree.documents.find((document) => document.id === target.id)?.portfolioId ?? null;
+    };
+    const writable = tree
+      ? canEditSharedPortfolio(tree, folderId())
+      : item.kind === "portfolio" && (item.access === "edit" || item.access === "admin");
+    const manage = tree ? canManageSharedSpace(tree) : !item.workspace || item.access === "admin";
     if (target.kind === "doc" && target.id) {
       const docId = target.id;
       return [
@@ -80,6 +88,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       ];
     }
     const here = target.id;
+    const rootId = tree ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : null;
     return [
       ...(writable
         ? [
@@ -90,9 +99,10 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
               onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId: item.id, parentId: here }),
             },
             { label: t("Subir archivo"), onClick: () => pickAndUpload(item.id, here) },
+            { label: t("Subir carpeta"), onClick: () => pickAndUpload(item.id, here, true) },
           ]
         : []),
-      ...(item.kind === "portfolio" && here
+      ...(manage && item.kind === "portfolio" && here
         ? [
             {
               label: t("Espacio y permisos…"),
@@ -100,7 +110,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
             },
           ]
         : []),
-      ...(writable && here && tree && here !== (childrenOf(tree, rootParent(tree))[0]?.id ?? null)
+      ...(writable && here && tree && here !== rootId
         ? [
             {
               label: t("Eliminar"),
@@ -275,7 +285,9 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
             const lit =
               (single && single.id === activeDoc) ||
               (portfolio && boardShare === item.id && (boardPortfolio === null || boardPortfolio === rootId));
-            const editable = item.access === "edit" || item.access === "admin";
+            const editable = tree
+              ? canEditSharedPortfolio(tree, rootId)
+              : item.access === "edit" || item.access === "admin";
             const rootMenu = async (event: React.MouseEvent) => {
               event.preventDefault();
               event.stopPropagation();
@@ -283,7 +295,8 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
               const loaded = tree ?? (await loadTree(item.id));
               const root = loaded ? (childrenOf(loaded, rootParent(loaded))[0]?.id ?? null) : null;
               const target = portfolio ? { kind: "portfolio" as const, id: root } : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
-              menu.openAt(clientX, clientY, menuFor(item, loaded, target));
+              const items = menuFor(item, loaded, target);
+              if (items.length > 0) menu.openAt(clientX, clientY, items);
             };
             return (
               <li key={item.id}>
@@ -380,7 +393,10 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                         showPortfolio(tree, id);
                         onOpen();
                       }}
-                      onMenu={(event, target) => menu.open(event, menuFor(item, tree, target))}
+                      onMenu={(event, target) => {
+                        const items = menuFor(item, tree, target);
+                        if (items.length > 0) menu.open(event, items);
+                      }}
                     />
                   )
                 ) : null}
@@ -482,6 +498,9 @@ function SharedBranch({
                   <Folder className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
                 )}
                 <span className="truncate">{portfolio.name}</span>
+                {canEditSharedPortfolio(tree, portfolio.id) ? (
+                  <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} />
+                ) : null}
               </button>
             </div>
             {isOpen ? (

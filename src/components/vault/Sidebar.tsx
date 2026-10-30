@@ -10,7 +10,7 @@ import { useTableIndex } from "@/app/table-index";
 import { useDirectoryPick } from "@/app/directory-pick";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION } from "@/domain/permissions";
-import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
+import { ingestExternalFiles, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { useRowMenu, type RowMenuTarget } from "./RowMenu";
 import { SharedSection } from "./SharedSection";
 import { useSharedView } from "@/app/shared-view";
@@ -255,8 +255,11 @@ export function Sidebar({
     if (dropOver !== key) setDropOver(key);
   };
 
-  const takeExternal = (files: FileList, portfolioId: string | null) => {
-    void ingestExternalFiles(files, portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""));
+  const takeExternal = (data: DataTransfer, portfolioId: string | null) => {
+    void readDroppedEntries(data).then((files) => {
+      if (files.length === 0) return;
+      void ingestExternalFiles(files, portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""));
+    });
   };
 
   const takeDrop = (event: DragEvent, portfolioId: string | null) => {
@@ -267,8 +270,9 @@ export function Sidebar({
     event.preventDefault();
     event.stopPropagation();
     setDropOver(null);
-    if (external && event.dataTransfer.files.length > 0) {
-      takeExternal(event.dataTransfer.files, portfolioId);
+    // Una carpeta puede llegar sin `files` y sí con entradas: no exigir la lista.
+    if (external) {
+      takeExternal(event.dataTransfer, portfolioId);
       return;
     }
     const many = readMany(event.dataTransfer);
@@ -346,7 +350,7 @@ export function Sidebar({
         event.preventDefault();
         event.stopPropagation();
         setDropOver(null);
-        takeExternal(event.dataTransfer.files, selectedId);
+        takeExternal(event.dataTransfer, selectedId);
       }}
     >
       <div className="flex items-center gap-2 px-2 pt-2">

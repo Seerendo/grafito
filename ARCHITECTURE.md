@@ -647,21 +647,39 @@ shared portfolio counts for them.
 
 ## Workspaces
 
-Migration 0024. A workspace is the vault of an internal account
-(`workspace.owner_id`, a `user` row with no password or provider, hidden from
-user lists) shared with its organization (`share_org_grant`, `edit`), so
-members, per-person levels, space shares and adding content all reuse the
-sharing and space code. Its administrators are direct grants with `admin`.
+Migration 0024, and 0032 for per-folder access. A workspace is the vault of an
+internal account (`workspace.owner_id`, a `user` row with no password or
+provider, hidden from user lists) shared with its organization
+(`share_org_grant`). The share item's access is `read` (0032 also rewrites
+older rows that were `edit`), so a member of the organization sees the
+workspace and not what is inside. Its administrators are direct grants with
+`admin`: only they can edit, create and delete by default, and only they see
+who has access. `SpaceDialog` lists no one unless the caller administers the
+workspace. An administrator grants `read` or `edit` on one portfolio in
+`workspace_access` (`setWorkspaceAccess`) and can replicate that grant, or
+its removal, onto the portfolios inside it (`descendantIds`).
+`visibleWorkspace` (`domain/workspace-view.ts`) keeps the root and the
+ancestors of a granted portfolio as shells (the path, no documents) and
+includes documents only in granted portfolios. The full tree stays in the
+shared-tree cache; `limitWorkspaceTree` filters a copy for that reader and
+puts `folderAccess` in the packed body, so the ETag changes when the grants
+do. A direct `edit` grant on the share still sees and edits the whole tree.
 `workspace.bytes` is its total; `workspaceChildren` finds the nearest
 workspaces below, whose totals must fit in it (`checkWorkspaceBytes`), and
 `workspaceOwnLimit` (what is left) is the root portfolio's limit in
 `portfolioLimit`. `userUsage` leaves workspaces out and `checkSpace` skips
 the personal limit for them. Renaming the organization renames the account,
 the root portfolio and the share. `sharedWith` marks workspace shares so the
-directory lists them apart (`SharedSection workspaces`). Members can create
-notes, files and subportfolios there (`createSharedNote`, `addSharedFile`,
-`createSharedPortfolio`); there is no delete, since the internal account's
-trash isn't reachable by anyone.
+directory lists them apart (`SharedSection workspaces`). Creating and
+uploading use `mayWriteInPortfolio`: an administrator or a whole-share editor
+anywhere, anyone else only in portfolios granted `edit`. A subportfolio they
+create is granted back to them. Deleting a portfolio requires `edit` on it
+and on every descendant, so a hidden child is not removed. Inside the vault
+(`SharedViewer` with `index={false}`) the outline, links and comments are the
+existing context pane; the viewer's own aside stays only on the standalone
+shared and public screens. A folder from the computer, with its subfolders,
+uploads to the Carpeta Personal or to a writable workspace portfolio
+(`folderPlan` in `domain/vault/folders.ts`).
 
 ### Right-click from a page's own buttons
 
@@ -680,8 +698,8 @@ click already does that.
 
 `deleteSharedDoc` and `deleteSharedPortfolio` (`server/workspace-trash.functions.ts`)
 send a document, or a portfolio with all it contains (never the shared
-portfolio itself), of a portfolio shared with edit access to its owner's
-trash. In any trash, `listTrash` (`server/vault.ts`) shows a deleted
+portfolio itself), to its owner's trash. In a workspace that requires `edit`
+on the document's portfolio, and on every portfolio inside a deleted one. In any trash, `listTrash` (`server/vault.ts`) shows a deleted
 portfolio once, top-most, with its documents counted and hidden;
 `restoreTrashItem` brings it back with what was inside (and its deleted
 parents), and `purgeTrash` purges its documents. For a

@@ -24,14 +24,14 @@ import { useAiChat } from "@/app/ai-chat";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
-import { asDocuments, orderDocuments } from "@/components/share/shared-tree";
+import { asDocuments, canEditSharedPortfolio, orderDocuments, rootParent } from "@/components/share/shared-tree";
 import { SignatureDialog } from "./SignatureDialog";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
 import { sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
-import { deletePortfolioFromShared, newSharedPortfolio, report } from "@/app/shared-actions";
+import { deletePortfolioFromShared, newSharedPortfolio, report, uploadFolderToShared } from "@/app/shared-actions";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -42,7 +42,7 @@ import { EditorPane } from "./EditorPane";
 import { GraphView } from "./GraphView";
 import { Sidebar, SidebarRail } from "./Sidebar";
 import { NotePdfHost } from "./NotePdf";
-import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
+import { ingestExternalFiles, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { t } from "@/app/i18n";
 import { useFullscreen, watchFullscreen } from "@/app/fullscreen";
 
@@ -400,11 +400,9 @@ function VaultWorkspace() {
         {fullscreen ? (
           // Pantalla completa: solo la nota o el archivo abierto (ver `app/fullscreen.ts`).
           <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
-            {sharedPane ?? (
-              <FileDrop enabled={canAddFiles} onAdded={openNote}>
-                <EditorPane mobile={mobile} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
-              </FileDrop>
-            )}
+            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+              {sharedPane ?? <EditorPane mobile={mobile} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />}
+            </FileDrop>
           </div>
         ) : mobile ? (
           pane === "files" ? (
@@ -424,7 +422,9 @@ function VaultWorkspace() {
           ) : pane === "links" ? (
             <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
           ) : sharedPane ? (
-            sharedPane
+            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+              {sharedPane}
+            </FileDrop>
           ) : (
             <FileDrop enabled={canAddFiles} onAdded={openNote}>
               <EditorPane mobile onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
@@ -524,11 +524,26 @@ function FileDrop({
 }) {
   const [over, setOver] = useState(false);
   const place = () => {
+    const view = useSharedView.getState();
+    const tree = view.tree;
+    if (tree?.share.kind === "portfolio") {
+      const root = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
+      const fromDoc = view.docId ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null) : null;
+      const portfolioId = view.docId
+        ? fromDoc && tree.portfolios.some((portfolio) => portfolio.id === fromDoc)
+          ? fromDoc
+          : root
+        : view.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === view.portfolioId)
+          ? view.portfolioId
+          : root;
+      const name = tree.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? tree.share.title;
+      return { kind: "shared" as const, shareId: tree.share.id, portfolioId, name, ok: canEditSharedPortfolio(tree, portfolioId) };
+    }
     const state = useVault.getState();
     const active = state.documents.find((document) => document.id === state.activeId);
     const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
     const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? t("Carpeta Personal");
-    return { portfolioId, name };
+    return { kind: "personal" as const, portfolioId, name, ok: true };
   };
 
   return (
@@ -554,16 +569,27 @@ function FileDrop({
         event.preventDefault();
         event.stopPropagation();
         setOver(false);
-        const { portfolioId } = place();
-        void ingestExternalFiles(event.dataTransfer.files, portfolioId).then(() => {
-          onAdded(useVault.getState().activeId ?? "");
+        const target = place();
+        void readDroppedEntries(event.dataTransfer).then((files) => {
+          if (files.length === 0) return;
+          if (target.kind === "shared") {
+            if (!target.ok) {
+              report(t("No puedes añadir nada a ese portafolio."));
+              return;
+            }
+            void uploadFolderToShared(target.shareId, target.portfolioId, files).then(report);
+            return;
+          }
+          void ingestExternalFiles(files, target.portfolioId).then(() => {
+            onAdded(useVault.getState().activeId ?? "");
+          });
         });
       }}
     >
       {children}
       {over ? (
         <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-lg border-2 border-dashed border-accent bg-bg/80 text-sm text-fg">
-          {t("Soltar para agregar a")}{" "}{place().name}
+          {place().ok ? <>{t("Soltar para agregar a")}{" "}{place().name}</> : t("No puedes añadir nada a ese portafolio.")}
         </div>
       ) : null}
     </div>

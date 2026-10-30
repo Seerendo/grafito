@@ -53,6 +53,28 @@ export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   return out;
 }
 
+/** Si se puede crear o cambiar en ese portafolio de lo compartido. */
+export function canEditSharedPortfolio(tree: SharedTree, portfolioId: string | null): boolean {
+  if (tree.share.access === "admin") return true;
+  if (tree.share.folderAccess) return Boolean(portfolioId && tree.share.folderAccess[portfolioId] === "edit");
+  return tree.share.access === "edit";
+}
+
+/** Nivel que se muestra en el portafolio abierto de lo compartido. */
+export function sharedPortfolioLevel(tree: SharedTree, portfolioId: string | null): "admin" | "edit" | "read" {
+  if (tree.share.access === "admin") return "admin";
+  if (tree.share.folderAccess) {
+    const level = portfolioId ? tree.share.folderAccess[portfolioId] : undefined;
+    return level === "edit" || level === "read" ? level : "read";
+  }
+  return tree.share.access === "edit" ? "edit" : "read";
+}
+
+/** Quién ve «Espacio y permisos». En un espacio, solo su administrador. */
+export function canManageSharedSpace(tree: SharedTree): boolean {
+  return !tree.share.workspace || tree.share.access === "admin";
+}
+
 /** Lo publicado como documentos de la bóveda, para el grafo y los vínculos. */
 export function asDocuments(documents: PublishedDoc[]): Document[] {
   return documents.map((document) => ({

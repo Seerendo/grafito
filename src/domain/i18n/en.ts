@@ -1168,4 +1168,16 @@ export const en: Record<string, string> = {
   "Hola, {0}. {1} te invitó a rellenar el formulario «{2}».": "Hello, {0}. {1} invited you to fill in the form «{2}».",
   "Rellenar formulario": "Fill in the form",
   "Si no esperabas este correo, puedes ignorarlo.": "If you weren't expecting this email, you can ignore it.",
+  // Organizaciones, espacios de trabajo y carpetas
+  "Subir carpeta": "Upload folder",
+  "Subir carpeta a {0}": "Upload a folder to {0}",
+  "Sin acceso": "No access",
+  "Replicar en subportafolios": "Apply to portfolios inside",
+  "Al dar o quitar el acceso, aplicarlo también a los portafolios de dentro.": "When you grant or remove access, apply it to the portfolios inside as well.",
+  "Sin acceso, ve el espacio pero no lo que hay en esta carpeta.": "With no access, they see the workspace but not what is in this folder.",
+  "Esa persona no es de la organización.": "That person is not in the organization.",
+  "Los administradores ya ven todo el espacio.": "Administrators already see the whole workspace.",
+  "Este portafolio no es de un espacio de trabajo.": "This portfolio is not part of a workspace.",
+  "En un espacio de trabajo el acceso se da por carpeta.": "In a workspace, access is granted per folder.",
+  "Todos los usuarios ya son miembros.": "Every user is already a member.",
 };

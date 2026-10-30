@@ -69,10 +69,10 @@ export function OrgsBoard({ view }: { view: AdminView }) {
   if (!orgs) return <p className="text-sm text-muted">{t("Cargando…")}</p>;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
+    <div className="grid items-start gap-4 lg:grid-cols-[18rem_1fr]">
       <div
         data-ui="orgs-tree"
-        className="min-h-48 rounded-lg border border-line bg-surface p-2"
+        className="max-h-[calc(100dvh-9rem)] self-start overflow-y-auto rounded-lg border border-line bg-surface p-2"
         onContextMenu={(event) => menu.open(event, [{ label: t("Nueva organización"), onClick: () => startCreate(null) }])}
       >
         <div className="flex items-center justify-between px-2 pb-2">
@@ -273,7 +273,6 @@ function OrgDetail({
         (person) =>
           !needle || person.name.toLowerCase().includes(needle) || (person.loginName ?? "").toLowerCase().includes(needle),
       )
-      .slice(0, 8);
     // `members` se deriva de `org.memberIds`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, view.users, org.memberIds]);
@@ -369,25 +368,27 @@ function OrgDetail({
         </ul>
         <div className="border-t border-line p-3">
           <SearchField value={query} onChange={setQuery} placeholder={t("Añadir miembros: buscar usuario")} />
-          {query.trim() ? (
-            <ul className="mt-2">
-              {candidates.length === 0 ? <li className="px-1 py-2 text-sm text-muted">{t("Ningún usuario coincide.")}</li> : null}
-              {candidates.map((person) => (
-                <li key={person.id} className="flex items-center gap-3 px-1 py-2 text-sm">
+          <ul className="mt-2 max-h-60 overflow-y-auto">
+            {candidates.length === 0 ? (
+              <li className="px-1 py-2 text-sm text-muted">
+                {query.trim() ? t("Ningún usuario coincide.") : t("Todos los usuarios ya son miembros.")}
+              </li>
+            ) : null}
+            {candidates.map((person) => (
+              <li key={person.id}>
+                <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-sm hover:bg-elevated">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    aria-label={person.name}
+                    onChange={() => void saveMembers([...new Set([...org.memberIds, person.id])])}
+                  />
                   <span className="min-w-0 flex-1 truncate">{person.name}</span>
                   {person.loginName ? <span className="text-xs text-faint">{person.loginName}</span> : null}
-                  <TextAction
-                    onClick={() => {
-                      setQuery("");
-                      void saveMembers([...org.memberIds, person.id]);
-                    }}
-                  >
-                    {t("Añadir")}
-                  </TextAction>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+                </label>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>

@@ -7,10 +7,10 @@ import { createPortfolio } from "./vault";
  * Espacios de trabajo (solo servidor). Ver `migrations/0024_workspaces.sql`.
  *
  * Un espacio de trabajo es la bóveda de una cuenta interna, compartida con su
- * organización: así funcionan sin más los permisos por persona, el reparto de
- * espacio (`space.ts`) y añadir notas y archivos desde el visor de lo
- * compartido. El espacio de una organización sale del de la organización con
- * espacio de trabajo más cercana por encima.
+ * organización. Los miembros ven el espacio; lo de dentro solo lo ve quien
+ * administra o quien tiene una fila en `workspace_access` (migración 0032).
+ * El espacio de una organización sale del de la organización con espacio de
+ * trabajo más cercana por encima.
  */
 
 export type WorkspaceRow = {
@@ -134,7 +134,7 @@ export async function createWorkspace(sql: Sql, orgId: string): Promise<{ ok: tr
   const shareId = randomUUID();
   await sql`
     insert into share_item (id, owner_id, kind, target_id, title, visibility, access)
-    values (${shareId}, ${ownerId}, 'portfolio', ${root.id}, ${org.name}, 'shared', 'edit')
+    values (${shareId}, ${ownerId}, 'portfolio', ${root.id}, ${org.name}, 'shared', 'read')
   `;
   await sql`insert into share_org_grant (share_id, org_id, granted_at) values (${shareId}, ${orgId}, ${Date.now()})`;
   await sql`
@@ -155,4 +155,104 @@ export async function orgMemberIds(sql: Sql, orgId: string): Promise<Set<string>
     select distinct m.user_id from app_org_member m join tree t on t.id = m.org_id
   `;
   return new Set(rows.map((row) => row.user_id));
+}
+
+export type FolderLevel = "read" | "edit";
+
+/** Acceso de una persona a un portafolio del espacio (`null`: no ve lo de dentro). */
+export async function workspaceFolderLevel(
+  sql: Sql,
+  ownerId: string,
+  portfolioId: string,
+  userId: string,
+): Promise<FolderLevel | null> {
+  const rows = await sql<{ access: string }>`
+    select access from workspace_access
+    where owner_id = ${ownerId} and portfolio_id = ${portfolioId} and user_id = ${userId}
+    limit 1
+  `;
+  const access = rows[0]?.access;
+  return access === "read" || access === "edit" ? access : null;
+}
+
+/** Concesiones de una persona en un espacio de trabajo, para filtrar el árbol. */
+export async function workspaceGrants(sql: Sql, ownerId: string, userId: string): Promise<[string, FolderLevel][]> {
+  const rows = await sql<{ portfolio_id: string; access: string }>`
+    select portfolio_id, access from workspace_access where owner_id = ${ownerId} and user_id = ${userId}
+  `;
+  return rows.flatMap((row) =>
+    row.access === "read" || row.access === "edit" ? [[row.portfolio_id, row.access] as [string, FolderLevel]] : [],
+  );
+}
+
+/** Da, cambia o quita el acceso de una persona en esos portafolios. */
+export async function grantWorkspaceFolders(
+  sql: Sql,
+  ownerId: string,
+  portfolioIds: readonly string[],
+  userId: string,
+  access: FolderLevel | null,
+): Promise<void> {
+  for (const portfolioId of portfolioIds) {
+    if (access === null) {
+      await sql`
+        delete from workspace_access
+        where owner_id = ${ownerId} and portfolio_id = ${portfolioId} and user_id = ${userId}
+      `;
+    } else {
+      await sql`
+        insert into workspace_access (owner_id, portfolio_id, user_id, access)
+        values (${ownerId}, ${portfolioId}, ${userId}, ${access})
+        on conflict (owner_id, portfolio_id, user_id) do update set access = excluded.access
+      `;
+    }
+  }
+}
+
+export type WorkspacePerson = {
+  userId: string;
+  name: string;
+  loginName: string;
+  /** `null`: ve el espacio, no esta carpeta. */
+  access: FolderLevel | null;
+  admin: boolean;
+};
+
+/** Miembros de la organización del espacio y el acceso que tienen en un portafolio. */
+export async function workspaceAudience(
+  sql: Sql,
+  orgId: string,
+  ownerId: string,
+  portfolioId: string,
+): Promise<WorkspacePerson[]> {
+  const rows = await sql<{ id: string; name: string; login: string | null; folder_access: string | null; admin: unknown }>`
+    with recursive tree(id) as (
+      select id from app_org where id = ${orgId}
+      union
+      select c.id from app_org c join tree t on c.parent_id = t.id
+    )
+    select distinct u.id, u.name, coalesce(r.login_name, a.login_name) as login,
+      g.access as folder_access,
+      exists (
+        select 1 from share_grant sg
+        join workspace w on w.share_id = sg.share_id
+        where w.owner_id = ${ownerId} and sg.user_id = u.id and sg.access = 'admin'
+          and (sg.expires_at is null or sg.expires_at > ${Date.now()})
+      ) as admin
+    from app_org_member m
+    join tree t on t.id = m.org_id
+    join "user" u on u.id = m.user_id
+    left join app_user_role r on r.user_id = u.id
+    left join app_admin a on a.user_id = u.id
+    left join workspace_access g
+      on g.owner_id = ${ownerId} and g.portfolio_id = ${portfolioId} and g.user_id = u.id
+    order by u.name
+  `;
+  return rows.map((row) => ({
+    userId: row.id,
+    name: row.name?.trim() || row.login || "",
+    loginName: row.login ?? "",
+    access: row.folder_access === "read" || row.folder_access === "edit" ? row.folder_access : null,
+    admin: row.admin === true || row.admin === "t" || row.admin === 1,
+  }));
 }

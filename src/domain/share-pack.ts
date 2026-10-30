@@ -54,9 +54,13 @@ export function packBody(portfolios: PublishedPortfolio[], documents: PublishedD
 }
 
 export function unpackTree(packed: PackedTree): SharedTree {
-  const [folders, docs] = JSON.parse(packed.body) as [PortfolioTuple[], DocTuple[]];
+  const parsed = JSON.parse(packed.body) as [PortfolioTuple[], DocTuple[], [string, "read" | "edit"][]?];
+  const [folders, docs, access] = parsed;
   return {
-    share: packed.share,
+    share: {
+      ...packed.share,
+      ...(access && access.length > 0 ? { folderAccess: Object.fromEntries(access) } : {}),
+    },
     portfolios: folders.map(([id, name, parentId]) => ({ id, name, parentId })),
     documents: docs.map(([id, title, file, portfolioId, updatedAt, updatedBy, wikiLinks, links, fileInfo, content]) => ({
       id,

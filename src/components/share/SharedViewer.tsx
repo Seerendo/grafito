@@ -3,6 +3,7 @@ import {
   ChevronRight,
   FilePlus,
   FolderPlus,
+  FolderUp,
   HardDrive,
   Upload,
   File,
@@ -23,7 +24,7 @@ import { HistoryDialog } from "@/components/vault/HistoryDialog";
 import { MarkdownView } from "@/components/vault/MarkdownView";
 import { editSharedDoc } from "@/server/history.functions";
 import type { PublishedDoc, SharedTree } from "@/server/share";
-import { asDocuments, childrenOf, docsIn, orderDocuments, rootParent } from "./shared-tree";
+import { asDocuments, canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn, orderDocuments, rootParent, sharedPortfolioLevel } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
 import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
@@ -37,8 +38,9 @@ import { publicDocContent, sharedDocContent } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { Modal } from "@/components/ui/Modal";
-import { deleteFromShared } from "@/app/shared-actions";
+import { deleteFromShared, uploadFolderToShared } from "@/app/shared-actions";
 import { uploadVaultFile } from "@/app/files";
+import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 
 /**
@@ -114,8 +116,6 @@ export function SharedViewer({
   const byTitle = (name: string) => ordered.find((document) => document.title.toLowerCase() === name.toLowerCase());
   const single = tree.share.kind === "document" || !index;
   const Badge = tree.share.visibility === "public" ? Globe : Users;
-  const writable = tree.share.access === "edit" || tree.share.access === "admin";
-  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -137,9 +137,7 @@ export function SharedViewer({
     setActiveId(id);
     setView("doc");
   };
-  // Añadir a un portafolio compartido con permiso de edición: en el portafolio
-  // del documento abierto o, si no, en el compartido.
-  const canAdd = writable && Boolean(onChange) && tree.share.kind === "portfolio";
+  // Añadir en el portafolio abierto: en un espacio, solo donde esta persona puede editar.
   const sharedRoot = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
   const here = board
     ? portfolioId && tree.portfolios.some((portfolio) => portfolio.id === portfolioId)
@@ -147,6 +145,11 @@ export function SharedViewer({
       : sharedRoot
     : active?.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === active.portfolioId) ? active.portfolioId : sharedRoot;
   const hereName = tree.portfolios.find((portfolio) => portfolio.id === here)?.name ?? tree.share.title;
+  const level = sharedPortfolioLevel(tree, here);
+  const writable = canEditSharedPortfolio(tree, here);
+  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
+  const canAdd = writable && Boolean(onChange) && tree.share.kind === "portfolio";
+  const showSpace = Boolean(onChange) && canManageSharedSpace(tree) && tree.share.kind === "portfolio" && Boolean(here);
   const [adding, setAdding] = useState(false);
   const [naming, setNaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -199,12 +202,33 @@ export function SharedViewer({
     setAdding(false);
     if (last) await reload(last);
   };
+  const addFolder = async (files: FileList) => {
+    setAdding(true);
+    setMessage("");
+    const error = await uploadFolderToShared(
+      tree.share.id,
+      here,
+      [...files].map((file) => ({ file, relativePath: file.webkitRelativePath || file.name })),
+    );
+    setAdding(false);
+    if (error) setMessage(error);
+  };
 
   useEffect(() => {
     setEditing(false);
     setConflict(null);
     setMessage("");
   }, [active?.id]);
+
+  // El panel de la bóveda (no este visor) dibuja el esquema cuando está embebido.
+  useEffect(() => {
+    if (index) return;
+    if (!active) {
+      useSharedView.getState().setBody(null);
+      return;
+    }
+    useSharedView.getState().setBody({ id: active.id, content: active.content });
+  }, [index, active?.id, active?.content]);
 
   const patchDoc = (id: string, patch: Partial<PublishedDoc>) => {
     const { content, updatedAt, updatedBy } = patch;
@@ -271,11 +295,11 @@ export function SharedViewer({
           <Badge className="size-3.5 shrink-0 text-faint" />
           <span className="min-w-0 flex-1 truncate">
             {active ? <span className="font-medium text-fg">{active.title} · </span> : null}
-            {t("Compartido por")}{" "}{tree.share.ownerName} · {tree.share.access === "admin" ? t("Administrador") : writable ? t("Puedes editar") : t("Solo lectura")}
+            {t("Compartido por")}{" "}{tree.share.ownerName} · {level === "admin" ? t("Administrador") : level === "edit" ? t("Puedes editar") : t("Solo lectura")}
             {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
           </span>
           {message ? <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
-          {canComment ? (
+          {index && canComment ? (
             <button
               type="button"
               aria-pressed={commentsOpen}
@@ -326,6 +350,26 @@ export function SharedViewer({
                   }}
                 />
               </label>
+              <label
+                aria-label={t("Subir carpeta a {0}", { 0: hereName })}
+                title={t("Subir carpeta a {0}", { 0: hereName })}
+                className={`grid size-9 cursor-pointer place-items-center rounded-md text-muted hover:text-fg ${adding ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <FolderUp className="size-4" />
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  ref={(node) => {
+                    node?.setAttribute("webkitdirectory", "");
+                    node?.setAttribute("directory", "");
+                  }}
+                  onChange={(event) => {
+                    if (event.target.files?.length) void addFolder(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
             </>
           ) : null}
           {canAdd && active ? (
@@ -339,7 +383,7 @@ export function SharedViewer({
               <Trash2 className="size-4" />
             </button>
           ) : null}
-          {onChange && tree.share.kind === "portfolio" && here ? (
+          {showSpace ? (
             <button
               type="button"
               aria-label={t("Espacio y permisos")}
@@ -362,7 +406,7 @@ export function SharedViewer({
               <Waypoints className="size-4" />
             </button>
           ) : null}
-          {active && !showGraph ? (
+          {index && active && !showGraph ? (
             <button
               type="button"
               aria-pressed={contextOpen}
@@ -534,7 +578,7 @@ export function SharedViewer({
             />
           </div>
         ) : board && here && onOpenPortfolio ? (
-          <SharedBoard tree={tree} portfolioId={here} rootId={sharedRoot} writable={writable} onOpenPortfolio={onOpenPortfolio} onOpenDoc={openDoc} />
+          <SharedBoard tree={tree} portfolioId={here} rootId={sharedRoot} onOpenPortfolio={onOpenPortfolio} onOpenDoc={openDoc} />
         ) : !active ? (
           <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
             {tree.share.kind === "portfolio"
@@ -583,7 +627,7 @@ export function SharedViewer({
           </div>
         )}
       </div>
-      {active && !showGraph && (contextOpen || (canComment && commentsOpen)) ? (
+      {index && active && !showGraph && (contextOpen || (canComment && commentsOpen)) ? (
         <aside
           aria-label={t("Esquema y vínculos")}
           className="max-h-[45vh] shrink-0 space-y-5 overflow-y-auto border-t border-line bg-surface p-3 md:max-h-none md:w-80 md:border-t-0 md:border-l"

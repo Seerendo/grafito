@@ -1,7 +1,8 @@
 import type { Sql } from "@/lib/db";
 import { ownsKey } from "./files";
-import { canWrite, shareForUser } from "./share";
+import { mayWriteInPortfolio, shareForUser } from "./share";
 import { subtree } from "./space";
+import { workspaceByOwner } from "./workspace";
 
 /**
  * Dónde va una subida (solo servidor): a la bóveda propia o, con `shareId`, a
@@ -29,9 +30,10 @@ export async function uploadTarget(
     return { ownerId: userId, portfolioId: known[0] ? portfolioId : null, shared: false };
   }
   const share = await shareForUser(sql, userId, input.shareId);
-  if (!share || share.kind !== "portfolio" || !canWrite(share.access)) return "No puedes añadir nada a ese portafolio.";
+  if (!share || share.kind !== "portfolio") return "No puedes añadir nada a ese portafolio.";
   const target = portfolioId ?? share.targetId;
   if (!(await subtree(sql, share.ownerId, share.targetId)).includes(target)) return "Ese portafolio no es parte de lo compartido.";
+  if (!(await mayWriteInPortfolio(sql, share, userId, target))) return "No puedes añadir nada a ese portafolio.";
   return { ownerId: share.ownerId, portfolioId: target, shared: share.ownerId !== userId };
 }
 
@@ -40,5 +42,14 @@ export async function mayUpload(sql: Sql, userId: string, key: string, shareId: 
   if (ownsKey(userId, key)) return true;
   if (!shareId) return false;
   const share = await shareForUser(sql, userId, shareId);
-  return Boolean(share && share.kind === "portfolio" && canWrite(share.access) && ownsKey(share.ownerId, key));
+  if (!share || share.kind !== "portfolio" || !ownsKey(share.ownerId, key)) return false;
+  if (share.access === "admin" || share.access === "edit") return true;
+  const workspace = await workspaceByOwner(sql, share.ownerId);
+  if (!workspace) return false;
+  const rows = await sql<{ user_id: string }>`
+    select user_id from workspace_access
+    where owner_id = ${share.ownerId} and user_id = ${userId} and access = 'edit'
+    limit 1
+  `;
+  return rows.length > 0;
 }

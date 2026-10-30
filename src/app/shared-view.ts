@@ -13,8 +13,11 @@ type SharedViewState = {
   tree: SharedTree | null;
   docId: string | null;
   portfolioId: string | null;
+  /** Texto del documento abierto, para el esquema del panel de la bóveda. */
+  body: { id: string; content: string } | null;
   openShared: (tree: SharedTree, docId: string | null) => void;
   openSharedPortfolio: (tree: SharedTree, portfolioId: string | null) => void;
+  setBody: (body: { id: string; content: string } | null) => void;
   closeShared: () => void;
 };
 
@@ -22,7 +25,9 @@ export const useSharedView = create<SharedViewState>((set) => ({
   tree: null,
   docId: null,
   portfolioId: null,
+  body: null,
   openShared: (tree, docId) => set({ tree, docId, portfolioId: null }),
-  openSharedPortfolio: (tree, portfolioId) => set({ tree, docId: null, portfolioId }),
-  closeShared: () => set({ tree: null, docId: null, portfolioId: null }),
+  openSharedPortfolio: (tree, portfolioId) => set({ tree, docId: null, portfolioId, body: null }),
+  setBody: (body) => set({ body }),
+  closeShared: () => set({ tree: null, docId: null, portfolioId: null, body: null }),
 }));

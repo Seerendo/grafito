@@ -17,8 +17,10 @@ import { signedFileUrl } from "./file-links";
 import { portfolioLineage } from "./space";
 import { redisPutTree, redisTreeBody, redisTreeChecked, redisTreeState, type SharedTreeMeta } from "./redis";
 import { docContent, vaultIndex, type IndexDoc } from "./vault-index";
-import { packBody, packBodyFrom, packDoc, type PackedTree } from "@/domain/share-pack";
+import { packBody, packBodyFrom, packDoc, unpackTree, type PackedTree } from "@/domain/share-pack";
 import { descendantIds } from "@/domain/vault/portfolios";
+import { visibleWorkspace } from "@/domain/workspace-view";
+import { workspaceByOwner, workspaceFolderLevel, workspaceGrants } from "./workspace";
 import type { ManualLink } from "@/domain/vault/types";
 
 /**
@@ -116,6 +118,16 @@ export type SharedTree = {
     ownerName: string;
     visibility: "shared" | "public";
     access: ShareAccess;
+    /** Espacio de trabajo: los miembros ven el espacio; lo de dentro, según concesión. */
+    workspace?: boolean;
+    /**
+     * En un espacio de trabajo, para quien no lo administra ni lo tiene entero
+     * en edición: acceso de cada portafolio concedido. Sin la clave, esa
+     * carpeta es solo el camino (no se edita).
+     */
+    folderAccess?: Record<string, "read" | "edit">;
+    /** Huella de `folderAccess`. Entra en el ETag para que un cambio de acceso se vea. */
+    view?: string;
     /** Abierto por enlace público: con él se pide el texto de cada documento. */
     token?: string;
   };
@@ -682,7 +694,7 @@ export async function sharedTreeForUser(
 ): Promise<TreeResponse | null> {
   const item = await grantedItem(sql, userId, shareId);
   if (!item) return null;
-  const { share, entry, key } = await packedEntry(
+  const packed = await packedEntry(
     sql,
     item,
     canDownload ? "download" : "view",
@@ -692,7 +704,75 @@ export async function sharedTreeForUser(
     }),
     fresh,
   );
-  return treeResponse(share, entry, key);
+  const limited = await limitWorkspaceTree(sql, userId, item, packed.share, packed.entry, packed.key);
+  return treeResponse(limited.share, limited.entry, limited.key);
+}
+
+/**
+ * En un espacio de trabajo, quien no administra (ni tiene el elemento entero
+ * en edición) solo recibe los portafolios concedidos. El árbol completo sigue
+ * en la caché: esto arma una copia para esta persona y no la guarda ahí.
+ */
+async function limitWorkspaceTree(
+  sql: Sql,
+  userId: string,
+  item: ItemRecord,
+  share: PackedTree["share"],
+  entry: PackedEntry,
+  key: string,
+): Promise<{ share: PackedTree["share"]; entry: PackedEntry; key: string }> {
+  const workspace = await workspaceByOwner(sql, item.owner_id);
+  if (!workspace) return { share, entry, key };
+  const marked = { ...share, workspace: true as const };
+  const access = accessOf(item);
+  if (access === "admin" || access === "edit") return { share: marked, entry, key };
+  const grants = await workspaceGrants(sql, item.owner_id, userId);
+  const tree = unpackTree({ share, body: bodyOf(entry) });
+  const visible = visibleWorkspace(
+    workspace.root_portfolio_id,
+    tree.portfolios,
+    tree.documents,
+    new Set(grants.map(([id]) => id)),
+  );
+  const pairs = [...grants].sort((a, b) => a[0].localeCompare(b[0]));
+  const full = packBody(visible.portfolios, visible.documents);
+  const body = pairs.length > 0 ? `${full.slice(0, -1)},${JSON.stringify(pairs)}]` : full;
+  const view = createHash("sha1").update(pairs.map(([id, level]) => `${id}:${level}`).join(",")).digest("hex").slice(0, 12);
+  return {
+    share: { ...marked, view },
+    entry: { revision: entry.revision, at: entry.at, checkedAt: Date.now(), body },
+    key: `${key}:${view}`,
+  };
+}
+
+/** Si se puede crear o cambiar en ese portafolio de lo compartido. */
+export async function mayWriteInPortfolio(
+  sql: Sql,
+  share: { ownerId: string; access: ShareAccess },
+  userId: string,
+  portfolioId: string | null,
+): Promise<boolean> {
+  if (share.access === "admin") return true;
+  const workspace = await workspaceByOwner(sql, share.ownerId);
+  if (!workspace) return canWrite(share.access);
+  if (share.access === "edit") return true;
+  if (!portfolioId) return false;
+  return (await workspaceFolderLevel(sql, share.ownerId, portfolioId, userId)) === "edit";
+}
+
+/** Si se puede leer un documento de ese portafolio. Fuera de un espacio, el elemento basta. */
+export async function mayReadInPortfolio(
+  sql: Sql,
+  share: { ownerId: string; access: ShareAccess },
+  userId: string,
+  portfolioId: string | null,
+): Promise<boolean> {
+  const workspace = await workspaceByOwner(sql, share.ownerId);
+  if (!workspace) return true;
+  if (share.access === "admin" || share.access === "edit") return true;
+  if (!portfolioId) return false;
+  const level = await workspaceFolderLevel(sql, share.ownerId, portfolioId, userId);
+  return level === "read" || level === "edit";
 }
 
 /** El árbol para `GET /api/public/:token/tree`: lo publicado por enlace, sin sesión. */
@@ -789,7 +869,10 @@ export async function sharedWith(
 /** Dueño de `docId` si `userId` lo puede ver a través del elemento compartido `shareId`. */
 export async function grantedDocOwner(sql: Sql, userId: string, shareId: string, docId: string): Promise<string | null> {
   const item = await grantedItem(sql, userId, shareId);
-  return item && (await covers(sql, item, docId)) ? item.owner_id : null;
+  if (!item || !(await covers(sql, item, docId))) return null;
+  const portfolioId = await docPortfolioId(sql, item.owner_id, docId);
+  if (!(await mayReadInPortfolio(sql, { ownerId: item.owner_id, access: accessOf(item) }, userId, portfolioId))) return null;
+  return item.owner_id;
 }
 
 /** Dueño de `docId` si un enlace público (`token`) lo incluye. */
@@ -810,8 +893,17 @@ export async function editableTarget(
   docId: string,
 ): Promise<{ ownerId: string } | null> {
   const item = await grantedItem(sql, userId, shareId);
-  if (!item || item.owner_id === userId || !canWrite(accessOf(item))) return null;
-  return (await covers(sql, item, docId)) ? { ownerId: item.owner_id } : null;
+  if (!item || item.owner_id === userId || !(await covers(sql, item, docId))) return null;
+  const portfolioId = await docPortfolioId(sql, item.owner_id, docId);
+  if (!(await mayWriteInPortfolio(sql, { ownerId: item.owner_id, access: accessOf(item) }, userId, portfolioId))) return null;
+  return { ownerId: item.owner_id };
+}
+
+async function docPortfolioId(sql: Sql, ownerId: string, docId: string): Promise<string | null> {
+  const rows = await sql<{ portfolio_id: string | null }>`
+    select portfolio_id from vault_doc where user_id = ${ownerId} and id = ${docId} and not deleted limit 1
+  `;
+  return rows[0]?.portfolio_id ?? null;
 }
 
 /** El elemento, si `userId` es su dueño o fue invitado (directamente o por organización). */

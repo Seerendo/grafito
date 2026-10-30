@@ -3,7 +3,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SizeField } from "@/components/ui/SizeField";
 import { UsageMeter } from "@/components/ui/UsageMeter";
 import { formatBytes } from "@/domain/space";
-import { portfolioSpace, setMemberAccess, setMemberSpace, setPortfolioSpace, type SpaceMember } from "@/server/space.functions";
+import { portfolioSpace, setMemberAccess, setMemberSpace, setPortfolioSpace, setWorkspaceAccess, type SpaceMember } from "@/server/space.functions";
 import { t } from "@/app/i18n";
 
 type State = {
@@ -12,11 +12,13 @@ type State = {
   limit: number | null;
   canManage: boolean;
   canSetLimit: boolean;
+  workspace: boolean;
   members: SpaceMember[];
 };
 
 const ACCESS_LABEL: Record<SpaceMember["access"], string> = {
   owner: "Dueño",
+  none: "Sin acceso",
   read: "Solo lectura",
   edit: "Puede editar",
   admin: "Administrador",
@@ -31,6 +33,7 @@ const ACCESS_LABEL: Record<SpaceMember["access"], string> = {
 export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: string; shareId?: string; onClose: () => void }) {
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState("");
+  const [replicate, setReplicate] = useState(false);
   const scope = { portfolioId, ...(shareId ? { shareId } : {}) };
 
   const load = async () => {
@@ -85,10 +88,30 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
             {state.limit ? <UsageMeter percent={(state.used / state.limit) * 100} label={t("Espacio usado")} /> : null}
           </section>
 
+          {state.workspace && !state.canManage ? null : (
           <section>
             <h3 className="mb-2 text-xs font-medium tracking-wide text-muted uppercase">
               {state.canManage ? t("Usuarios") : t("Tu espacio aquí")}
             </h3>
+            {state.workspace && state.canManage ? (
+              <p className="mb-2 text-xs text-muted">{t("Sin acceso, ve el espacio pero no lo que hay en esta carpeta.")}</p>
+            ) : null}
+            {state.workspace && state.canManage ? (
+              <label className="mb-3 flex items-start gap-2 text-sm text-fg">
+                <input
+                  type="checkbox"
+                  checked={replicate}
+                  onChange={(event) => setReplicate(event.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="block">{t("Replicar en subportafolios")}</span>
+                  <span className="block text-xs text-muted">
+                    {t("Al dar o quitar el acceso, aplicarlo también a los portafolios de dentro.")}
+                  </span>
+                </span>
+              </label>
+            ) : null}
             <div className="overflow-x-auto rounded-md border border-line">
               <table className="w-full min-w-[44rem] table-fixed text-sm">
                 <colgroup>
@@ -117,7 +140,27 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
                         ) : null}
                       </td>
                       <td className="px-3 py-2">
-                        {state.canManage && member.accessEditable && member.shareId ? (
+                        {state.workspace && state.canManage && member.accessEditable ? (
+                          <select
+                            value={member.access === "read" || member.access === "edit" ? member.access : "none"}
+                            aria-label={t("Permiso de {0}", { 0: member.name || member.loginName })}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              const access = value === "read" || value === "edit" ? value : null;
+                              void setWorkspaceAccess({
+                                data: { ...scope, userId: member.userId, access, replicate },
+                              }).then((result) => {
+                                const failed = apply(result);
+                                if (failed) setError(failed);
+                              });
+                            }}
+                            className="h-9 w-full rounded-md border border-line bg-inset px-2 text-sm text-fg"
+                          >
+                            <option value="none">{t("Sin acceso")}</option>
+                            <option value="read">{t("Solo lectura")}</option>
+                            <option value="edit">{t("Puede editar")}</option>
+                          </select>
+                        ) : state.canManage && member.accessEditable && member.shareId ? (
                           <select
                             value={member.access}
                             aria-label={t("Permiso de {0}", { 0: member.name || member.loginName })}
@@ -163,6 +206,7 @@ export function SpaceDialog({ portfolioId, shareId, onClose }: { portfolioId: st
               </table>
             </div>
           </section>
+          )}
         </div>
       )}
     </Modal>

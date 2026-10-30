@@ -4,7 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { canWrite, sharedWith, shareForUser } from "@/server/share";
+import { mayWriteInPortfolio, sharedWith, shareForUser } from "@/server/share";
 import { subtree } from "@/server/space";
 import { deleteDoc, getDoc, listTrash, pushChanges, purgeTrash, restoreTrashItem, VaultError } from "@/server/vault";
 import { workspaces } from "@/server/workspace";
@@ -94,10 +94,14 @@ export const deleteSharedDoc = createServerFn({ method: "POST" })
   .handler(async ({ context: auth, data }) => {
     const { sql, profile } = await context(auth.userId);
     const share = await shareForUser(sql, auth.userId, data.shareId);
-    if (!share || share.kind !== "portfolio" || !canWrite(share.access)) return { ok: false as const, error: "No puedes eliminar aquí." };
+    if (!share || share.kind !== "portfolio") return { ok: false as const, error: "No puedes eliminar aquí." };
     const doc = await getDoc(sql, share.ownerId, data.docId);
     if (!doc?.portfolioId || !(await subtree(sql, share.ownerId, share.targetId)).includes(doc.portfolioId)) {
       return { ok: false as const, error: "Ese documento no es parte de lo compartido." };
+    }
+    // En un espacio, hace falta edición en la carpeta del documento (un administrador, en cualquiera).
+    if (!(await mayWriteInPortfolio(sql, share, auth.userId, doc.portfolioId))) {
+      return { ok: false as const, error: "No puedes eliminar aquí." };
     }
     const needed = doc.kind === "file" ? PERMISSION.filesDelete : PERMISSION.notesDelete;
     if (!allows(profile, needed)) return { ok: false as const, error: "Tu rol no puede eliminar esto." };
@@ -115,12 +119,18 @@ export const deleteSharedPortfolio = createServerFn({ method: "POST" })
   .handler(async ({ context: auth, data }) => {
     const { sql, profile } = await context(auth.userId);
     const share = await shareForUser(sql, auth.userId, data.shareId);
-    if (!share || share.kind !== "portfolio" || !canWrite(share.access)) return { ok: false as const, error: "No puedes eliminar aquí." };
+    if (!share || share.kind !== "portfolio") return { ok: false as const, error: "No puedes eliminar aquí." };
     if (data.portfolioId === share.targetId || !(await subtree(sql, share.ownerId, share.targetId)).includes(data.portfolioId)) {
       return { ok: false as const, error: "Ese portafolio no se puede eliminar aquí." };
     }
     if (!allows(profile, PERMISSION.portfoliosManage)) return { ok: false as const, error: "Tu rol no puede eliminar portafolios." };
     const folders = await subtree(sql, share.ownerId, data.portfolioId);
+    // También en cada portafolio de dentro: si no, se borrarían hijos que esta persona no ve.
+    for (const folder of folders) {
+      if (!(await mayWriteInPortfolio(sql, share, auth.userId, folder))) {
+        return { ok: false as const, error: "No puedes eliminar aquí." };
+      }
+    }
     const docs: string[] = [];
     for (const folder of folders) {
       const rows = await sql<{ id: string }>`

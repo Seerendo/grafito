@@ -307,7 +307,7 @@ type VaultState = Persisted & {
   toggleTask: (id: string, line: number) => void;
   createDocument: (portfolioId?: string | null, title?: string, content?: string) => string;
   uploadFile: (portfolioId: string | null, name: string, mime: string, stored: { key: string; size: number }) => string | null;
-  createPortfolio: (parentId: string | null, name: string) => void;
+  createPortfolio: (parentId: string | null, name: string) => string | null;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
   /** Varios documentos y portafolios a la vez (`doc:<id>`, `port:<id>`): a la papelera, con lo que contienen. */
@@ -635,9 +635,9 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   createPortfolio: (parentId, name) => {
-    if (!can(PERMISSION.portfoliosManage)) return;
+    if (!can(PERMISSION.portfoliosManage)) return null;
     const clean = name.trim().replace(/[\\/]/g, "");
-    if (!clean) return;
+    if (!clean) return null;
     const id = uuid();
     set({
       portfolios: [...get().portfolios, { id, name: clean, parentId }],
@@ -645,6 +645,7 @@ export const useVault = create<VaultState>((set, get) => ({
       dialog: null,
       collapsed: { ...get().collapsed, [id]: false, ...(parentId ? { [parentId]: false } : {}) },
     });
+    return id;
   },
 
   deleteDocument: (id) => {

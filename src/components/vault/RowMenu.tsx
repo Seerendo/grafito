@@ -90,11 +90,20 @@ export function useRowMenu(onOpenNote: (id: string) => void, onSelect?: (target:
           onClose={() => setMenu(null)}
           onOpenNote={onOpenNote}
           onSelect={onSelect}
-          onUpload={(portfolioId) => {
+          onUpload={(portfolioId, folder) => {
             uploadTo.current = portfolioId;
             useVault.getState().setSelectedPortfolio(portfolioId);
             setMenu(null);
-            uploadRef.current?.click();
+            const input = uploadRef.current;
+            if (!input) return;
+            if (folder) {
+              input.setAttribute("webkitdirectory", "");
+              input.setAttribute("directory", "");
+            } else {
+              input.removeAttribute("webkitdirectory");
+              input.removeAttribute("directory");
+            }
+            input.click();
           }}
         />
       ) : null}
@@ -114,7 +123,7 @@ function RowContextMenu({
   menu: RowMenu;
   onClose: () => void;
   onOpenNote: (id: string) => void;
-  onUpload: (portfolioId: string | null) => void;
+  onUpload: (portfolioId: string | null, folder: boolean) => void;
   onSelect?: (target: { kind: "document" | "portfolio"; id: string }) => void;
 }) {
   const documents = useVault((state) => state.documents);
@@ -165,7 +174,8 @@ function RowContextMenu({
       label: t("Nueva tabla"),
       onClick: act(() => void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
     });
-    items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId) });
+    items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId, false) });
+    items.push({ label: t("Subir carpeta"), onClick: () => onUpload(portfolioId, true) });
   }
   if (menu.kind === "document" && document) {
     const id = document.id;
