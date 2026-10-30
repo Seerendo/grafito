@@ -138,6 +138,14 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
       setLinkTouched(false);
       setMyShares(result.shares);
       loadTrail();
+      const notes: string[] = [];
+      if (result.notice.mailOff) notes.push(t("El correo no está configurado: se guardó, pero no se envió el aviso."));
+      for (const name of result.notice.missing) notes.push(t("{0} no tiene correo: el aviso no se envió.", { 0: name }));
+      if (result.notice.failed > 0) notes.push(t("No se pudo enviar el correo."));
+      if (notes.length > 0) {
+        setError(notes.join(" "));
+        return;
+      }
       if (visibility !== "public") onClose();
     } catch {
       setError(t("No se pudo guardar."));
@@ -203,7 +211,7 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
 
       {visibility === "shared" ? (
         <div className="mt-4 space-y-2">
-          <div className={`grid gap-2 ${kind === "portfolio" ? "grid-cols-3" : "grid-cols-2"}`} role="radiogroup" aria-label={t("Permiso")}>
+          <div className="space-y-2" role="radiogroup" aria-label={t("Permiso")}>
             <Choice active={access === "read"} onClick={() => setAccess("read")} icon={<Eye className="size-4" />}>
               {t("Solo lectura")}
             </Choice>

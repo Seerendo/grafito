@@ -141,7 +141,11 @@ The `vault/` pieces:
 
 - `VaultApp`: the layout.
 - `Sidebar`: the directory. `SharedSection` inside it adds the **Compartidos
-  conmigo** root, and a **Papelera** entry opens `TrashBoard`.
+  conmigo** root, and a **Papelera** entry opens `TrashBoard`. Opening a note,
+  file or portfolio unfolds its ancestors and scrolls that row into view
+  (`domain/vault/nav.ts`: `expandTo` in the personal tree, `sharedExpandKeys`
+  under **Compartidos conmigo** and **Espacios de trabajo**). Folding a folder
+  by hand stays until the next time you open something else.
 - `HistoryDialog`: a note's versions, a line diff (`domain/diff.ts`) and
   restore. It is used for own notes and for shared notes with edit access.
 - `EditorPane`, `MarkdownView`, `ContextPane`, `GraphView`, `CommandPalette`,
@@ -164,6 +168,7 @@ The `vault/` pieces:
 | `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
 | `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it. |
 | `trash-view.ts` | Whether the trash fills the main area (`useTrashView`), with the same closing rules |
+| `directory-pick.ts` | Directory selection (`useDirectoryPick`), shared by the sidebar and the portfolio pages. **Seleccionar** on right-click starts it without opening the row, so Ctrl/Shift can extend it while another document stays open. |
 | `permissions.ts` | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them. |
 | `actor.ts` | Name of whoever creates or edits notes |
 | `plugins.ts` | Flags of the enabled plugins |
@@ -211,6 +216,7 @@ The `vault/` pieces:
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
 | `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
 | `comments.ts` / `comments.functions.ts` | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`) |
+| `signature.ts` / `signature.functions.ts` | Internal signature trail (`doc_signature`, migration 0030). Not a certificate. See [Signature trail](#signature-trail). |
 | `zip.ts` / `export.ts` / `export.functions.ts` | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it |
 | `git/` / `git.functions.ts` | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions |
 
@@ -377,6 +383,11 @@ fallback for owners without a server vault:
   - **Actividad** lists who had access (from when, until when, and whether it is still open, revoked or expired) and recent openings.
 - **Access:** the server only serves an item to its owner, to its grantees,
   or, if it is public, to whoever has the token.
+- **Share mail:** after a new user or organization grant is stored,
+  `deliverNotice` (`server/notify.ts`) emails them `/compartidos/:id` when
+  SMTP is on. People who already had access, a public link, and a private
+  item are not emailed. A missing address or a mail failure does not undo
+  the share.
 
 Limitations:
 
@@ -560,12 +571,47 @@ re-reads them every 20 seconds while visible.
 
 **Notes on a PDF.** A comment can carry an `anchor` (migration 0020): the
 same `TextAnchor` as a linked phrase (`domain/vault/anchor.ts`), stored as
-JSON. `PdfView` offers **Nota** next to **Vincular selección**, highlights
-anchored comments in yellow and opens them in a bubble; the comments panel
-shows the quoted phrase, and clicking it focuses the PDF there
+JSON. Right-click a selection in `PdfView` and choose **Nota** or **Vincular**.
+The menu is not shown on selection: a long paragraph used to miss the popup,
+and a selection that crosses pages is clipped to the page under the pointer.
+Anchored comments are highlighted in yellow and open in a bubble; the comments
+panel shows the quoted phrase, and clicking it focuses the PDF there
 (`useComments.focusPdf`). The PDF file is never changed. Annotations the
 file already has (`page.getAnnotations()`, anything with text except links,
 form fields and popups) are listed read-only with a marker on the page.
+
+**Find in a PDF.** Ctrl+F or ⌘F (when focus is not in a field outside the
+viewer) opens a bar: the query, “n de total”, previous and next. It scans each
+page with `getTextContent` (case-insensitive) and highlights matches on the
+text layer. If that layer's text does not line up with the scan, the page
+still scrolls. Escape closes the bar unless a note composer or note bubble
+has focus. Enter goes to the next match and Shift+Enter to the previous one.
+
+## Signature trail
+
+Migration 0030 adds `doc_signature`. This is an acknowledgment inside Grafito:
+who confirmed which version, and when. It is not a qualified electronic
+signature, a certificate, or an eIDAS or PKI signature. Public `/p/` and `/f/`
+viewers do not show it (there is no session).
+
+- The material is `kind`, the title, and the note text or the file key
+  (`domain/signature.ts`). The server stores its SHA-256. If a signed row's
+  fingerprint no longer matches, the list says the document changed after the
+  signature.
+- Who can read the document can see the trail. Who can edit it (the owner, or
+  edit/admin through a share) can request signatures. The people who can be
+  asked are the ones who can already read it. Grafito does not share the
+  document in order to ask. Anyone who cannot read it is named so the client
+  can say to share it with them first.
+- Asking again while a request is pending updates that row. A new request
+  after a signature or a refusal inserts another row and keeps the history.
+- Only the person who was asked can sign or decline, and only while the
+  request is pending and they can still read the document.
+- The bar sits on the open document and on a shared document opened with a
+  session. **Firmas…** opens the dialog. Pending requests for the signed-in
+  person are listed on the Carpeta Personal page; one that belongs to someone
+  else opens in the shared viewer.
+- `purgeDoc` deletes the rows with the document.
 
 ## Space and portfolio permissions
 
@@ -745,15 +791,33 @@ portfolio at that moment, and the note's text as the merge base).
   (`cells || jsonb_build_object(…)`), so concurrent edits of different cells
   don't overwrite each other. Deleted rows keep a tombstone so clients learn
   about them; purging the document from the trash deletes its data.
-- **Column types:** text, number, date, select, checkbox, vault link,
-  **relation** (row ids of another table, `options.tableId`) and **file**
-  (vault documents created from an upload in the table's portfolio).
-- **Forms** (migration 0027, `data_form`): one per table. `fields` is the
-  columns it asks for. `public_token` plus `enabled` opens `/f/:token`. Without a session, sending is limited (`server/form-limit.ts`): 5 rows and
-  10 files a minute per address (the last `X-Forwarded-For` entry, the one the
-  gateway adds) and 60 rows a minute per form, in each instance's memory.
-  Public submissions and public attachments (up to 6 MB, stored like any
-  file) do not require a session and never return existing rows.
+- **Column types:** text, **identifier** (unique in the column; empty cells
+  may repeat; comparison trims and ignores case), number, date, **time**
+  (`HH:MM`, 24-hour), select, checkbox, vault link, **relation** (row ids of
+  another table, `options.tableId`), **file** (vault documents created from
+  an upload in the table's portfolio) and formula. A new table has no
+  columns until someone adds one. Columns already named Nombre are left as
+  they are.
+- **Right-click** on the table (grid, board, gallery or calendar) lists the
+  toolbar actions, including the four views. A text field keeps the browser
+  menu.
+- **Forms** (migration 0027, `data_form`, invites in 0031): one per table.
+  `fields` is the columns it asks for. Turning on **Enlace público** and
+  saving creates `public_token` and opens `/f/:token` for as long as the
+  expiry says (or with no expiry). Anyone with that link adds one row and
+  cannot see the table. It does not require an account. Separately, the form
+  can be sent to users or organizations (`data_form_invite`). They get an
+  email, when SMTP is on, with `/formularios/:inviteToken`. That page asks
+  them to sign in and shows only the questions. The invite token is not the
+  public one: forwarding it does not open the form for someone who was not
+  invited. Mail is best-effort; saving the form or the share does not fail
+  when SMTP is off or a person has no address. Without a session, sending is
+  limited (`server/form-limit.ts`): 5 rows and 10 files a minute per address
+  (the last `X-Forwarded-For` entry, the one the gateway adds) and 60 rows a
+  minute per form, in each instance's memory. Public submissions and public
+  attachments (up to 6 MB, stored like any file) do not require a session
+  and never return existing rows. Identifier and time are allowed on the
+  public and invited pages; vault links, relations and formulas are not.
 - **Search:** `indexTable` writes cell text to `data_meta.search_text` and
   `doc_index`, and upserts that one document in Elasticsearch when it is
   configured. The sidebar and the command palette read the same text
@@ -786,7 +850,9 @@ portfolio at that moment, and the note's text as the merge base).
   indexed or returned by the API. A cycle or a bad expression is an error
   on that column only.
 - **Row history:** `data_row_history` keeps the last 40 changes of each row
-  (create, cell update, delete), with the previous and next value. The
+  (create, cell update, delete), with the previous and next value of the
+  cells that changed, not a copy of the table. Older rows are deleted on
+  the next change. It is written when a row changes, not on a timer. The
   clock on a row opens them. Purging the document deletes the history.
 - **REST** (same bearer token as the notes API): `GET/POST /api/v1/tables`,
   `GET /api/v1/tables/:id`, `POST …/rows`, `PATCH/DELETE …/rows/:rowId`,
@@ -858,8 +924,14 @@ portfolio at that moment, and the note's text as the merge base).
   Browsers still receive it as a tombstone.
   - `restoreFromTrash` brings the note back with a new revision, and recovers
     deleted parent portfolios (or moves the note to the root if they are
-    gone).
+    gone). The trash board stays open. A click selects a row; Ctrl/Cmd toggles
+    and Shift selects a range. **Recuperar {n}** restores that selection and
+    stops at the first error.
   - `purgeTrash` clears the content and the versions.
+  - Deleting the document that is open lands on its portfolio, or on Carpeta
+    Personal if it lived at the root (`landingAfterDelete`). Deleting something
+    else leaves the open document where it is. `deleteMany` applies that once
+    for the whole selection.
   - Items older than 30 days are purged when the trash is listed or something
     is deleted.
   - Legacy tombstones (from before migration 0010) have no `deleted_at` and
@@ -872,6 +944,8 @@ portfolio at that moment, and the note's text as the merge base).
 - PDFs are shown with PDF.js (`pdfjs-dist`, loaded only when a PDF opens) in
   `components/vault/PdfView.tsx`.
   - Each page gets a canvas plus PDF.js's text layer, so text can be selected.
+  - **Nota** and **Vincular** are on the right-click menu of that selection.
+  - Ctrl+F searches the text of the PDF. The find bar and the right-click menu are described under [Comments](#comments).
   - Pages are drawn as they come near the view.
   - The text-layer CSS (`.textLayer`) is copied from `web/pdf_viewer.css` into
     `styles.css`.

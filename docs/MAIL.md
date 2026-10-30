@@ -5,12 +5,24 @@ such as Gmail, Microsoft 365, Amazon SES or Mailgun, or one inside your
 network. Email is optional. Without it, everything else keeps working, also
 offline.
 
-It is used for two things:
+It is used for four things:
 
 - **New users' access.** The account is created without a password typed by
   the administrator. Grafito emails a one-time temporary password.
 - **Change notifications.** When a shared document changes, the people with
   access to it get an email.
+- **A share.** When a note, file or portfolio is shared with a user or an
+  organization for the first time, those people get one email with a link
+  to open it. Updating an expiry does not send another. A public link sends
+  none.
+- **A form.** Sending a table's form to users or organizations emails them
+  a link to fill it in (`/formularios/…`). The public form link (`/f/…`)
+  has no recipients, so it sends none.
+
+Share and form mail is best-effort. If SMTP is off, or a person has no
+address, the share or the invitation is still saved and the screen says the
+notice was not sent. These mails do not look at the change-notification
+switch: the person was just invited.
 
 ## Setting it up
 

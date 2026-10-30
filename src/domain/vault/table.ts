@@ -21,11 +21,11 @@ export function emptyTableFile(): string {
   return JSON.stringify({ type: "grafito-table", version: 1 });
 }
 
-export const FIELD_TYPES = ["text", "number", "date", "select", "checkbox", "link", "relation", "file", "formula"] as const;
+export const FIELD_TYPES = ["text", "identifier", "number", "date", "time", "select", "checkbox", "link", "relation", "file", "formula"] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 
-/** Los que un enlace público puede pedir. Vínculo, relación y adjunto necesitan la bóveda. */
-export const PUBLIC_FIELD_TYPES = ["text", "number", "date", "select", "checkbox"] as const;
+/** Los que un enlace público puede pedir. Vínculo, relación y fórmula necesitan la bóveda; el adjunto se admite aparte. */
+export const PUBLIC_FIELD_TYPES = ["text", "identifier", "number", "date", "time", "select", "checkbox"] as const;
 export type PublicFieldType = (typeof PUBLIC_FIELD_TYPES)[number];
 
 export function isPublicField(type: FieldType): type is PublicFieldType {
@@ -74,7 +74,13 @@ export type TableForm = {
   openedAt?: number | null;
   expiresAt?: number | null;
   revokedAt?: number | null;
+  /** Enlace para quien fue invitado (con sesión). No lo abre cualquiera. */
+  inviteToken: string | null;
+  invites: FormInvite[];
 };
+
+/** Una invitación a rellenar el formulario, sin darle la tabla. */
+export type FormInvite = { kind: "user" | "org"; subjectId: string };
 
 /** Lo que ve quien abre un formulario (sin filas). */
 export type FormFieldView = {
@@ -138,6 +144,11 @@ export function cleanCell(type: FieldType, value: unknown): CellValue {
     case "text":
     case "select":
       return typeof value === "string" || typeof value === "number" ? String(value).slice(0, MAX_TEXT) : null;
+    case "identifier": {
+      if (typeof value !== "string" && typeof value !== "number") return null;
+      const text = String(value).trim().slice(0, MAX_TEXT);
+      return text || null;
+    }
     case "number": {
       const number = typeof value === "number" ? value : Number(String(value).trim().replace(",", "."));
       return Number.isFinite(number) ? number : null;
@@ -150,6 +161,8 @@ export function cleanCell(type: FieldType, value: unknown): CellValue {
       const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       return Number.isNaN(Date.parse(`${iso}T00:00:00Z`)) ? null : iso;
     }
+    case "time":
+      return cleanTime(value);
     case "checkbox":
       if (typeof value === "boolean") return value;
       return ["1", "true", "sí", "si", "x", "yes"].includes(String(value).trim().toLowerCase()) ? true : null;
@@ -172,6 +185,38 @@ export function cleanCell(type: FieldType, value: unknown): CellValue {
     case "formula":
       return null;
   }
+}
+
+/** Una hora en 24 h, como `HH:MM`. Acepta `14:30`, `14:30:00` y `2:05`. */
+export function cleanTime(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(value).trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = match[3] === undefined ? 0 : Number(match[3]);
+  if (hour > 23 || minute > 59 || second > 59) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** Clave de un identificador: recortado y sin distinguir mayúsculas. Vacío no cuenta. */
+export function identifierKey(value: unknown): string {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value).trim().toLocaleLowerCase("es");
+}
+
+/** El primer identificador repetido (vacíos no chocan), o `null`. */
+export function duplicateIdentifier(values: unknown[]): string | null {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const cleaned = cleanCell("identifier", value);
+    if (typeof cleaned !== "string") continue;
+    const key = identifierKey(cleaned);
+    if (!key) continue;
+    if (seen.has(key)) return cleaned;
+    seen.add(key);
+  }
+  return null;
 }
 
 /** Para ordenar y filtrar: el valor como texto, o número/fecha comparables. */
@@ -272,6 +317,7 @@ export function guessType(values: string[]): FieldType {
   if (filled.length === 0) return "text";
   if (filled.every((value) => cleanCell("number", value) !== null && /^-?[\d.,\s]+$/.test(value))) return "number";
   if (filled.every((value) => cleanCell("date", value) !== null)) return "date";
+  if (filled.every((value) => cleanCell("time", value) !== null)) return "time";
   if (filled.every((value) => ["sí", "si", "no", "true", "false", "x", "1", "0", "yes"].includes(value.toLowerCase()))) return "checkbox";
   return "text";
 }

@@ -17,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as CompartidosIndexRouteImport } from './routes/compartidos/index'
 import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$shareId'
 import { Route as FTokenRouteImport } from './routes/f/$token'
+import { Route as FormulariosTokenRouteImport } from './routes/formularios/$token'
 import { Route as PTokenRouteImport } from './routes/p/$token'
 import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -81,6 +82,11 @@ const CompartidosShareIdRoute = CompartidosShareIdRouteImport.update({
 const FTokenRoute = FTokenRouteImport.update({
   id: '/f/$token',
   path: '/f/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FormulariosTokenRoute = FormulariosTokenRouteImport.update({
+  id: '/formularios/$token',
+  path: '/formularios/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PTokenRoute = PTokenRouteImport.update({
@@ -218,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/f/$token': typeof FTokenRoute
+  '/formularios/$token': typeof FormulariosTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -253,6 +260,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/f/$token': typeof FTokenRoute
+  '/formularios/$token': typeof FormulariosTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -289,6 +297,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/f/$token': typeof FTokenRoute
+  '/formularios/$token': typeof FormulariosTokenRoute
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/api/ai/chat': typeof ApiAiChatRoute
@@ -326,6 +335,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/compartidos/$shareId'
     | '/f/$token'
+    | '/formularios/$token'
     | '/p/$token'
     | '/compartidos/'
     | '/api/ai/chat'
@@ -361,6 +371,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/compartidos/$shareId'
     | '/f/$token'
+    | '/formularios/$token'
     | '/p/$token'
     | '/compartidos'
     | '/api/ai/chat'
@@ -396,6 +407,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/compartidos/$shareId'
     | '/f/$token'
+    | '/formularios/$token'
     | '/p/$token'
     | '/compartidos/'
     | '/api/ai/chat'
@@ -432,6 +444,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   CompartidosShareIdRoute: typeof CompartidosShareIdRoute
   FTokenRoute: typeof FTokenRoute
+  FormulariosTokenRoute: typeof FormulariosTokenRoute
   PTokenRoute: typeof PTokenRoute
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   ApiAiChatRoute: typeof ApiAiChatRoute
@@ -506,6 +519,13 @@ declare module '@tanstack/react-router' {
       path: '/f/$token'
       fullPath: '/f/$token'
       preLoaderRoute: typeof FTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/formularios/$token': {
+      id: '/formularios/$token'
+      path: '/formularios/$token'
+      fullPath: '/formularios/$token'
+      preLoaderRoute: typeof FormulariosTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/p/$token': {
@@ -795,6 +815,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   CompartidosShareIdRoute: CompartidosShareIdRoute,
   FTokenRoute: FTokenRoute,
+  FormulariosTokenRoute: FormulariosTokenRoute,
   PTokenRoute: PTokenRoute,
   CompartidosIndexRoute: CompartidosIndexRoute,
   ApiAiChatRoute: ApiAiChatRoute,

@@ -5,8 +5,9 @@ import { PERMISSION } from "@/domain/permissions";
 import { FIELD_TYPES, VIEW_MODES } from "@/domain/vault/table";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { editableTarget, grantedDocOwner } from "@/server/share";
-import { addRows, attachFile, attachPublicFile, deleteField, deleteRows, formActivity, publicFormView, readTable, revokeFormLink, rowChoices, rowHistory, rowsSince, saveField, saveForm, saveLayout, submitPublicForm, tableDigests, updateCell } from "@/server/table";
+import { deliverNotice } from "@/server/notify";
+import { editableTarget, grantedDocOwner, shareCandidates, shareOrgCandidates } from "@/server/share";
+import { addRows, attachFile, attachInvitedFile, attachPublicFile, deleteField, deleteRows, formActivity, invitedFormView, publicFormView, readTable, revokeFormLink, rowChoices, rowHistory, rowsSince, saveField, saveForm, saveLayout, submitInvitedForm, submitPublicForm, syncFormInvites, tableDigests, updateCell } from "@/server/table";
 
 /**
  * Funciones de servidor de las tablas de datos (ver `server/table.ts`). Una
@@ -156,13 +157,45 @@ export const tableSaveForm = createServerFn({ method: "POST" })
         publish: z.boolean(),
         expiresAt: z.number().int().nullable().optional(),
         fields: z.array(z.object({ id, required: z.boolean() })).max(100),
+        userIds: z.array(id).max(200).optional(),
+        orgIds: z.array(id).max(200).optional(),
       })
       .parse(input),
   )
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, true);
     if (!ctx) return denied;
-    return saveForm(ctx.sql, ctx.ownerId, data.docId, data, ctx.actor);
+    const saved = await saveForm(ctx.sql, ctx.ownerId, data.docId, data, ctx.actor);
+    if (!saved.ok || (data.userIds === undefined && data.orgIds === undefined)) return saved;
+    const synced = await syncFormInvites(ctx.sql, ctx.ownerId, data.docId, {
+      userIds: data.userIds ?? [],
+      orgIds: data.orgIds ?? [],
+    });
+    if (!synced) return saved;
+    const quiet = { missing: [] as string[], mailed: 0, failed: 0, mailOff: false };
+    const notice =
+      synced.form.inviteToken && (synced.addedUserIds.length > 0 || synced.addedOrgIds.length > 0)
+        ? await deliverNotice(ctx.sql, {
+            actorId: context.userId,
+            actorName: ctx.actor,
+            title: synced.form.title,
+            path: `/formularios/${synced.form.inviteToken}`,
+            userIds: synced.addedUserIds,
+            orgIds: synced.addedOrgIds,
+            kind: "form",
+          })
+        : quiet;
+    return { ok: true as const, form: synced.form, notice };
+  });
+
+/** Personas y organizaciones a las que se puede enviar el formulario. */
+export const tableFormPeople = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => where.parse(input))
+  .handler(async ({ context, data }) => {
+    const ctx = await access(context.userId, data, true);
+    if (!ctx) return { users: [], orgs: [] };
+    return { users: await shareCandidates(ctx.sql, context.userId), orgs: await shareOrgCandidates(ctx.sql) };
   });
 
 export const tableRevokeForm = createServerFn({ method: "POST" })
@@ -269,5 +302,43 @@ export const publicFormFile = createServerFn({ method: "POST" })
     if (!(await allowed("file", data.token))) return { ok: false as const, error: TOO_MANY };
     const { getSql } = await import("@/lib/db");
     return attachPublicFile(await getSql(), data.token, data);
+  });
+
+const inviteToken = z.object({ token: z.string().min(16).max(64) });
+
+export const invitedFormOpen = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => inviteToken.parse(input))
+  .handler(async ({ context, data }) => {
+    const sql = await requireLease(context.userId);
+    return invitedFormView(sql, data.token, context.userId);
+  });
+
+export const invitedFormSubmit = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => inviteToken.extend({ cells: z.record(z.string(), z.unknown()) }).parse(input))
+  .handler(async ({ context, data }) => {
+    if (!(await allowed("submit", data.token))) return { ok: false as const, error: TOO_MANY };
+    const sql = await requireLease(context.userId);
+    const profile = await readUserProfile(sql, context.userId);
+    return submitInvitedForm(sql, data.token, context.userId, profile.displayName || profile.loginName || "Alguien", data.cells);
+  });
+
+export const invitedFormFile = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    inviteToken
+      .extend({
+        name: z.string().min(1).max(200),
+        mime: z.string().max(120),
+        base64: z.string().max(8_000_000),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    if (!(await allowed("file", data.token))) return { ok: false as const, error: TOO_MANY };
+    const sql = await requireLease(context.userId);
+    const profile = await readUserProfile(sql, context.userId);
+    return attachInvitedFile(sql, data.token, context.userId, profile.displayName || profile.loginName || "Alguien", data);
   });
 

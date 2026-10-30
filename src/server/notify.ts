@@ -1,6 +1,6 @@
 import type { Sql } from "@/lib/db";
 import type { Locale } from "@/domain/i18n";
-import { changesMail, mailReady, readMailSettings, sendMail } from "./mail";
+import { changesMail, formMail, mailReady, readMailSettings, sendMail, shareMail } from "./mail";
 import { purgeNotes } from "./secret-note";
 
 /**
@@ -126,6 +126,82 @@ export async function flushNotices(sql: Sql): Promise<number> {
     }
   }
   return sent;
+}
+
+export type MailNoticeResult = { missing: string[]; mailed: number; failed: number; mailOff: boolean };
+
+/** Miembros de una organización y de las que cuelgan de ella. */
+async function orgMembers(sql: Sql, orgId: string): Promise<string[]> {
+  const rows = await sql<{ user_id: string }>`
+    with recursive orgs(id) as (
+      select id from app_org where id = ${orgId}
+      union
+      select o.id from app_org o join orgs g on o.parent_id = g.id
+    )
+    select user_id from app_org_member where org_id in (select id from orgs)
+  `;
+  return rows.map((row) => row.user_id);
+}
+
+/**
+ * Avisa por correo de un compartido o de una invitación a un formulario.
+ * Solo a quien se acaba de añadir. Si el correo no está configurado, no falla:
+ * quien llama dice que se guardó igual.
+ */
+export async function deliverNotice(
+  sql: Sql,
+  input: {
+    actorId: string;
+    actorName: string;
+    title: string;
+    path: string;
+    userIds: string[];
+    orgIds: string[];
+    kind: "share" | "form";
+  },
+): Promise<MailNoticeResult> {
+  const quiet = { missing: [] as string[], mailed: 0, failed: 0, mailOff: false };
+  try {
+    const settings = await readMailSettings(sql);
+    if (!mailReady(settings)) return { ...quiet, mailOff: true };
+    const ids = new Set(input.userIds.filter((id) => id && id !== input.actorId));
+    for (const orgId of input.orgIds) {
+      for (const member of await orgMembers(sql, orgId)) {
+        if (member !== input.actorId) ids.add(member);
+      }
+    }
+    const missing: string[] = [];
+    let mailed = 0;
+    let failed = 0;
+    const url = `${settings.publicUrl.replace(/\/+$/, "")}${input.path}`;
+    for (const userId of ids) {
+      const person = await sql<{ name: string; contact_email: string | null; locale: string | null }>`
+        select u.name, p.contact_email, p.locale
+        from "user" u left join app_profile p on p.user_id = u.id
+        where u.id = ${userId} limit 1
+      `;
+      const row = person[0];
+      if (!row) continue;
+      const name = row.name?.trim() || "Sin nombre";
+      if (!row.contact_email?.trim()) {
+        missing.push(name);
+        continue;
+      }
+      const locale: Locale = row.locale === "en" ? "en" : "es";
+      const mailInput = { to: row.contact_email.trim(), name, actor: input.actorName, title: input.title, url };
+      try {
+        await sendMail(sql, input.kind === "form" ? formMail(locale, mailInput) : shareMail(locale, mailInput));
+        mailed += 1;
+      } catch (error) {
+        failed += 1;
+        console.error("[notify]", error instanceof Error ? error.message : error);
+      }
+    }
+    return { missing, mailed, failed, mailOff: false };
+  } catch (error) {
+    console.error("[notify]", error);
+    return { ...quiet, failed: 1 };
+  }
 }
 
 const globalRef = globalThis as typeof globalThis & { __grafitoNotifier__?: ReturnType<typeof setInterval> };

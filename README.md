@@ -16,6 +16,7 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - [Using the vault](#using-the-vault)
 - [Sharing](#sharing)
 - [History and trash](#history-and-trash)
+- [Signature trail](#signature-trail)
 - [Office documents](#office-documents)
 - [Account](#account)
 - [Administration](#administration)
@@ -241,6 +242,9 @@ After that, the start screen is a normal sign-in.
     sub-portfolios, and its notes and files.
   - **Compartidos conmigo** holds what others shared with you.
   - **Papelera** (trash) holds what you deleted.
+  - Opening a note, file or portfolio unfolds it in this directory — in
+    Carpeta Personal, a workspace or something shared with you — and scrolls
+    that row into view.
   - Collapse the directory with the « arrow to get a wider editor. It opens
     expanded again when you come back to the vault.
 - **Center: the open note.** On the Carpeta Personal page, right-click a recent document
@@ -283,11 +287,15 @@ After that, the start screen is a normal sign-in.
   together, by name.
 - **Moving several at once:** Ctrl+click (⌘ on a Mac) adds or removes a note,
   file or portfolio from the selection, and Shift+click selects everything
-  between two rows. Dragging any selected row moves the whole selection. Esc,
+  between two rows. Right-click a row and choose **Seleccionar** to start that
+  selection without leaving the document you are reading. After that, Ctrl and
+  Shift keep it open. Dragging any selected row moves the whole selection. Esc,
   or a plain click on anything else in the directory (Carpeta Personal, a
   workspace, the trash…), clears it. **Supr** (Delete), or right-click on a
   selected row → **Eliminar N elementos**, sends all of them to the trash
-  after one confirmation. A document isn't moved if the target already has one with the
+  after one confirmation. If one of the deleted items was the document on
+  screen, Grafito opens its portfolio (or Carpeta Personal, if it lived at the
+  root). If you were reading something else, that stays open. A document isn't moved if the target already has one with the
   same name; Grafito says which ones.
   - A Shift range that starts on a note or file only takes notes and files:
     passing over a portfolio doesn't select it (and with it, everything
@@ -318,16 +326,20 @@ After that, the start screen is a normal sign-in.
     note in Grafito.
   - Excalidraw and its fonts are served by Grafito, so drawings work offline.
 - **Linking a phrase in a PDF:** select a word or phrase in a PDF (a document
-  number, for example) and click **Vincular selección**. Then pick the note or
-  file it points to.
+  number, for example), right-click it and choose **Vincular**. Then pick the
+  note or file it points to. A long selection stays on the page under the
+  pointer.
   - The phrase stays highlighted. Clicking it opens its target.
   - The target lists it under **Menciones** with its page («Contrato.pdf ·
     pág. 2 · «EXP-7781»»). Clicking that opens the PDF at the phrase.
   - A PDF can have several linked phrases, even to the same target, besides
     links from the whole file.
   - Scanned PDFs have no text to select.
-- **Notes on a PDF:** select a phrase and click **Nota** to leave a note on
-  it. The PDF file is not changed.
+- **Notes on a PDF:** select a phrase, right-click it and choose **Nota**. The
+  PDF file is not changed.
+- **Search in a PDF:** **Ctrl+F** (⌘F) opens a find bar with the query, how
+  many matches there are, and the previous and next match. Enter goes to the
+  next one and Shift+Enter to the previous. Esc closes the bar.
   - The phrase is highlighted in yellow. Clicking it shows its notes.
   - The notes are comments with a quote of the phrase: they appear under
     **Comentarios**, and clicking the quote opens the PDF at the phrase.
@@ -412,10 +424,18 @@ on right-click in the directory, or inside a workspace. It lives in a
 portfolio, is shared, moved and deleted like any document, and opens in the
 work area.
 
-- **Column types:** text, number, date, select (with its options), checkbox
-  and **vault link**. A link cell points to notes, files and portfolios of the
-  same vault; they appear in the table's links, in the graph and in each
-  target's Mentions.
+- **Column types:** text, **identifier**, number, date, **time**, select
+  (with its options), checkbox and **vault link**. An identifier cannot
+  repeat in that column (a person's email or ID, for example). Empty cells
+  can. `Ana` and `ana` count as the same value. A time is a clock time
+  (`14:30`), separate from a date. A link cell points to notes, files and
+  portfolios of the same vault; they appear in the table's links, in the
+  graph and in each target's Mentions. A new table starts with no columns:
+  use **+** or right-click **Nueva columna**. A column that is already
+  called Nombre stays that way.
+- **Right-click** the table, in any view, for the same actions as the
+  toolbar: the four views, clear filters, import and export CSV, the form,
+  a new row, a new column, and delete the selected rows.
 - **Editing:** click a cell to edit it; Enter moves down, Tab moves right,
   Esc cancels. Each cell is saved on its own, so several people can edit the
   same table; what others change arrives every few seconds.
@@ -432,12 +452,21 @@ work area.
   a column uploads a file into the same portfolio; the file counts toward
   quota and opens like any other file. Both show up in the graph and in
   Mentions (a relation links the tables; an attachment links the file).
-- **Form:** **Formulario** on the table. Choose the columns, which are
-  required, and optionally a **public link**. Anyone with the link can add a
-  row (including attachments up to 6 MB) and cannot see the other rows.
-  Vault links and relations are filled in inside Grafito, not on the public
-  page. To keep it from being flooded, each address can send 5 rows (and 10
-  files) a minute, and each form 60 rows a minute in total.
+- **Form:** **Formulario** on the table. Choose the columns and which are
+  required.
+  - **Enlace público** creates a link (`/f/…`) when you save, for the
+    duration you pick (or with no expiry). Anyone with the link adds one row
+    and cannot see the table. They don't need an account. Copy it from the
+    box at the top of the form. **Revocar enlace** turns it off.
+  - **Enviar a usuarios u organizaciones** emails them the form. They sign
+    in and see only the questions, like a form, not the table editor.
+    Sharing the `.tabla` document is different: that shares the whole table.
+  - Vault links and relations are filled in inside Grafito, not on those
+    pages. Attachments (up to 6 MB), identifiers and times are included.
+  - To keep a public link from being flooded, each address can send 5 rows
+    (and 10 files) a minute, and each form 60 rows a minute in total.
+  - If email isn't set up, or someone has no address, the form is still
+    saved and Grafito says the notice was not sent.
 - The AI can `query_table`, `add_table_row` and `set_table_cell`. Formula
   columns are already calculated when the AI reads a table.
 - **Views:** **Tabla**, **Tablero**, **Galería** and **Calendario** on the
@@ -449,7 +478,8 @@ work area.
   `vacio`, `largo` and `contiene`. The cell is not edited; change the
   expression on the column.
 - **History:** the clock on a row shows who changed it and the previous
-  value. The last 40 changes are kept.
+  value. Only the cells that changed are stored, and only the last 40
+  changes of that row. Older ones are dropped, so the history stays small.
 - **REST API:** list and create tables, read rows, add, patch and delete a
   row, read its history and add a column. See below.
 - Up to 100 columns and 20,000 rows per table. The table itself still can't
@@ -508,6 +538,13 @@ Public links are always read-only.
 - **What recipients see:** shared items appear under **Compartidos conmigo** in
   the recipient's directory. Shared portfolios expand in place, and documents
   open in the main area. Items they can edit carry a pencil.
+- **Email:** when you share a note, file or portfolio with someone new (a
+  user, or the members of an organization), Grafito emails them a link to
+  open it, if email is set up and they have an address. Changing only the
+  expiry of someone who already has access does not send another email. A
+  public link has no recipients, so it sends none. If email isn't set up,
+  the share is still saved and Grafito says the notice was not sent. Change
+  digests are separate: those still respect **Cuenta → Correo**.
 - **Editing a shared note:** **Editar**, then **Guardar** (or Ctrl+S).
 - **Editing at the same time:** the owner, in their vault, and the people it's
   shared with can edit the same note at once.
@@ -537,12 +574,24 @@ Public links are always read-only.
   Consecutive edits by the same person within 10 minutes are grouped into one
   version.
 - **Trash:** deleting a note, file or portfolio moves it to **Papelera**.
-  - From there you can **Recuperar** it. A note returns to its portfolio, which
+  - From there you can **Recuperar** it. You stay on the trash. Click a row to
+    select it; Ctrl/Cmd adds or removes and Shift selects a range. **Recuperar
+    {n}** (or the same action on right-click) brings the selection back and
+    stops if one of them fails. A note returns to its portfolio, which
     is recovered too if it was deleted. A deleted portfolio shows up once,
     with how many documents it holds, and comes back with everything inside.
   - Or you can delete it for good, one by one or all at once with **Vaciar
     papelera** (also on right-click). Both ask in a dialog first.
   - Items are removed automatically after 30 days.
+
+## Signature trail
+
+**Firmas…** on a note or file, and the **Firmas** bar on the open document,
+asks someone who can already read it to confirm that version. Grafito records
+who confirmed it and when. This is not a qualified electronic signature or a
+certificate: if the document changes afterwards, the signature says so. Grafito
+does not share the document in order to ask. Pending requests for you are
+listed on the Carpeta Personal page. A public link does not show the trail.
 
 ## Office documents
 

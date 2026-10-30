@@ -259,3 +259,36 @@ export function changesMail(
   );
   return { to: input.to, subject, text, html };
 }
+
+function noticeMail(
+  locale: Locale,
+  input: { to: string; name: string; actor: string; title: string; url: string; subject: string; line: string; button: string },
+): Mail {
+  const tr = (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars);
+  const hello = tr(input.line, { 0: input.name, 1: input.actor, 2: input.title });
+  const subject = tr(input.subject, { 0: input.title });
+  const ignore = tr("Si no esperabas este correo, puedes ignorarlo.");
+  const text = [subject, "", hello, "", `${tr(input.button)}: ${input.url}`, "", ignore].join("\n");
+  const html = layout(subject, paragraph(hello) + button(input.url, tr(input.button)) + `<p style="margin:16px 0 0;font-size:13px;color:#8a8378">${escape(ignore)}</p>`);
+  return { to: input.to, subject, text, html };
+}
+
+/** Aviso de que le compartieron una nota, un archivo o un portafolio. */
+export function shareMail(locale: Locale, input: { to: string; name: string; actor: string; title: string; url: string }): Mail {
+  return noticeMail(locale, {
+    ...input,
+    subject: "Te compartieron «{0}»",
+    line: "Hola, {0}. {1} te compartió «{2}» en Grafito.",
+    button: "Abrir",
+  });
+}
+
+/** Aviso de que le invitaron a rellenar un formulario. */
+export function formMail(locale: Locale, input: { to: string; name: string; actor: string; title: string; url: string }): Mail {
+  return noticeMail(locale, {
+    ...input,
+    subject: "Te invitaron a rellenar «{0}»",
+    line: "Hola, {0}. {1} te invitó a rellenar el formulario «{2}».",
+    button: "Rellenar formulario",
+  });
+}

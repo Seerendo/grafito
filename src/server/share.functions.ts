@@ -2,7 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
+import { personName } from "@/server/access-trace";
 import { requireLease } from "@/server/lease";
+import { deliverNotice } from "@/server/notify";
 import { allows, readUserProfile } from "@/server/profile";
 import {
   ownerShares,
@@ -95,8 +97,20 @@ export const setShare = createServerFn({ method: "POST" })
     if (data.visibility === "shared" && data.userIds.length === 0 && data.orgIds.length === 0) {
       return { ok: false as const, error: "Elige al menos un usuario u organización." };
     }
-    await writeShare(sql, context.userId, data);
-    return { ok: true as const, shares: await ownerShares(sql, context.userId) };
+    const written = await writeShare(sql, context.userId, data);
+    const notice =
+      written.shareId && (written.addedUserIds.length > 0 || written.addedOrgIds.length > 0)
+        ? await deliverNotice(sql, {
+            actorId: context.userId,
+            actorName: await personName(sql, context.userId),
+            title: data.title,
+            path: `/compartidos/${written.shareId}`,
+            userIds: written.addedUserIds,
+            orgIds: written.addedOrgIds,
+            kind: "share",
+          })
+        : { missing: [] as string[], mailed: 0, failed: 0, mailOff: false };
+    return { ok: true as const, shares: await ownerShares(sql, context.userId), notice };
   });
 
 const target = z.object({ kind: z.enum(["document", "portfolio"]), targetId: id });

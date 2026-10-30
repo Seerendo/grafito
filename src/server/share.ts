@@ -248,7 +248,7 @@ export async function writeShare(
     /** Igual para el enlace público. */
     linkExpiresAt?: number | null;
   },
-): Promise<void> {
+): Promise<{ shareId: string | null; addedUserIds: string[]; addedOrgIds: string[] }> {
   const endedBy = await personName(sql, ownerId);
   const now = Date.now();
   const existing = await sql<ItemRecord>`
@@ -265,7 +265,7 @@ export async function writeShare(
       await sql`delete from share_item where id = ${current.id}`;
     }
     await prunePublished(sql, ownerId);
-    return;
+    return { shareId: null, addedUserIds: [], addedOrgIds: [] };
   }
   const access: ShareAccess = input.visibility === "shared" ? input.access : "read";
   const id = current?.id ?? randomUUID();
@@ -319,7 +319,7 @@ export async function writeShare(
     for (const row of users) await endUserGrant(sql, { ownerId, shareId: id, userId: row.user_id, endedBy });
     const orgs = await sql<{ org_id: string }>`select org_id from share_org_grant where share_id = ${id}`;
     for (const row of orgs) await endOrgGrant(sql, { ownerId, shareId: id, orgId: row.org_id, endedBy });
-    return;
+    return { shareId: id, addedUserIds: [], addedOrgIds: [] };
   }
   const userAccess = new Map(
     (await sql<{ user_id: string; access: string | null }>`select user_id, access from share_grant where share_id = ${id}`).map((row) => [
@@ -343,14 +343,18 @@ export async function writeShare(
   for (const row of currentOrgs) {
     if (!keepOrgs.has(row.org_id)) await endOrgGrant(sql, { ownerId, shareId: id, orgId: row.org_id, endedBy });
   }
+  const addedUserIds: string[] = [];
+  const addedOrgIds: string[] = [];
   for (const orgId of keepOrgs) {
     const known = orgAccess.has(orgId);
     if (!known) {
-      await sql`
+      const inserted = await sql<{ org_id: string }>`
         insert into share_org_grant (share_id, org_id, access, granted_at, expires_at)
         select ${id}, o.id, null, ${now}, ${input.expiresAt ?? null} from app_org o where o.id = ${orgId}
         on conflict do nothing
+        returning org_id
       `;
+      if (inserted[0]) addedOrgIds.push(inserted[0].org_id);
     } else if (input.expiresAt !== undefined) {
       await sql`update share_org_grant set expires_at = ${input.expiresAt} where share_id = ${id} and org_id = ${orgId}`;
     }
@@ -358,15 +362,18 @@ export async function writeShare(
   for (const userId of keepUsers) {
     const known = userAccess.has(userId);
     if (!known) {
-      await sql`
+      const inserted = await sql<{ user_id: string }>`
         insert into share_grant (share_id, user_id, access, granted_at, expires_at)
         select ${id}, id, null, ${now}, ${input.expiresAt ?? null} from "user" where id = ${userId}
         on conflict do nothing
+        returning user_id
       `;
+      if (inserted[0]) addedUserIds.push(inserted[0].user_id);
     } else if (input.expiresAt !== undefined) {
       await sql`update share_grant set expires_at = ${input.expiresAt} where share_id = ${id} and user_id = ${userId}`;
     }
   }
+  return { shareId: id, addedUserIds, addedOrgIds };
 }
 
 /**

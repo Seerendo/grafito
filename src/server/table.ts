@@ -3,7 +3,9 @@ import type { Sql } from "@/lib/db";
 import {
   cleanCell,
   cleanLayout,
+  duplicateIdentifier,
   FIELD_TYPES,
+  identifierKey,
   isPublicField,
   isRowRef,
   isTableName,
@@ -16,6 +18,7 @@ import {
   type CellValue,
   type FieldType,
   type FormFieldView,
+  type FormInvite,
   type RowRef,
   type TableField,
   type TableForm,
@@ -77,19 +80,15 @@ export async function readFields(sql: Sql, ownerId: string, docId: string): Prom
   return rows.map(toField);
 }
 
-/** Columnas y filas. Una tabla nueva empieza con una columna «Nombre». */
+/** Columnas y filas. Una tabla nueva no trae columnas: se añaden a mano. */
 export async function readTable(
   sql: Sql,
   ownerId: string,
   docId: string,
-  canCreate: boolean,
+  _canCreate: boolean,
 ): Promise<{ fields: TableField[]; rows: TableRow[]; labels: Record<string, string>; form: TableForm | null; layout: TableLayout; at: number }> {
   const at = Date.now();
-  let fields = await readFields(sql, ownerId, docId);
-  if (fields.length === 0 && canCreate) {
-    await saveField(sql, ownerId, docId, { id: randomUUID(), name: "Nombre", type: "text", position: 0 });
-    fields = await readFields(sql, ownerId, docId);
-  }
+  const fields = await readFields(sql, ownerId, docId);
   const rows = await sql<DataRow>`
     select id, position, cells, updated_at, updated_by from data_row
     where owner_id = ${ownerId} and doc_id = ${docId} and not deleted
@@ -141,6 +140,11 @@ export async function saveField(
   `;
   const current = existing.find((row) => row.id === field.id);
   if (!current && existing.length >= MAX_FIELDS) return { ok: false, error: `Una tabla tiene como mucho ${MAX_FIELDS} columnas.` };
+  // Pasar a identificador solo si lo que ya hay no se repite.
+  if (current && current.type !== type && type === "identifier") {
+    const repeated = duplicateIdentifier(await columnValues(sql, ownerId, docId, field.id));
+    if (repeated) return { ok: false, error: "Hay valores repetidos: no se puede usar como identificador." };
+  }
   const position =
     field.position ??
     (current ? undefined : (await sql<{ next: unknown }>`
@@ -184,6 +188,37 @@ function safeJson(text: string): unknown {
   }
 }
 
+/** Valores de una columna, para ver si un identificador ya está. */
+async function columnValues(sql: Sql, ownerId: string, docId: string, fieldId: string): Promise<unknown[]> {
+  const rows = await sql<{ value: unknown }>`
+    select cells -> ${fieldId}::text as value from data_row
+    where owner_id = ${ownerId} and doc_id = ${docId} and not deleted and cells ? ${fieldId}::text
+  `;
+  return rows.map((row) => (typeof row.value === "string" ? safeJson(row.value) : row.value));
+}
+
+/** Si otra fila ya tiene ese identificador (los vacíos no cuentan). */
+async function identifierTaken(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  fieldId: string,
+  key: string,
+  exceptRowId?: string,
+): Promise<boolean> {
+  if (!key) return false;
+  const rows = await sql<{ id: string; value: unknown }>`
+    select id, cells -> ${fieldId}::text as value from data_row
+    where owner_id = ${ownerId} and doc_id = ${docId} and not deleted and cells ? ${fieldId}::text
+  `;
+  for (const row of rows) {
+    if (row.id === exceptRowId) continue;
+    const raw = typeof row.value === "string" ? safeJson(row.value) : row.value;
+    if (identifierKey(cleanCell("identifier", raw)) === key) return true;
+  }
+  return false;
+}
+
 export async function deleteField(sql: Sql, ownerId: string, docId: string, fieldId: string): Promise<void> {
   const field = (await readFields(sql, ownerId, docId)).find((item) => item.id === fieldId);
   await sql`delete from data_field where owner_id = ${ownerId} and doc_id = ${docId} and id = ${fieldId}`;
@@ -209,6 +244,21 @@ export async function addRows(
     where owner_id = ${ownerId} and doc_id = ${docId} and not deleted
   `;
   if (Number(stats[0]?.count ?? 0) + input.length > MAX_ROWS) return { ok: false, error: `Una tabla tiene como mucho ${MAX_ROWS} filas.` };
+  for (const field of fields) {
+    if (field.type !== "identifier") continue;
+    const seen = new Set<string>();
+    for (const value of await columnValues(sql, ownerId, docId, field.id)) {
+      const key = identifierKey(cleanCell("identifier", value));
+      if (key) seen.add(key);
+    }
+    for (const row of input) {
+      const cleaned = cleanCell("identifier", row.cells[field.id]);
+      const key = identifierKey(cleaned);
+      if (!key || typeof cleaned !== "string") continue;
+      if (seen.has(key)) return { ok: false, error: `«${cleaned}» ya está en esta columna.` };
+      seen.add(key);
+    }
+  }
   let position = Number(stats[0]?.last ?? 0);
   const now = Date.now();
   const created: TableRow[] = [];
@@ -268,6 +318,9 @@ export async function updateCell(
   if (!field) return { ok: false, error: "Esa columna ya no existe." };
   if (field.type === "formula") return { ok: false, error: "Una fórmula se cambia en la columna, no en la celda." };
   const value = cleanCell(field.type, input.value);
+  if (field.type === "identifier" && typeof value === "string" && (await identifierTaken(sql, ownerId, docId, field.id, identifierKey(value), input.rowId))) {
+    return { ok: false, error: "Ese identificador ya está en la tabla." };
+  }
   const before = await sql<{ cells: unknown }>`
     select cells from data_row where owner_id = ${ownerId} and doc_id = ${docId} and id = ${input.rowId} and not deleted limit 1
   `;
@@ -493,8 +546,9 @@ export async function readForm(sql: Sql, ownerId: string, docId: string): Promis
     opened_at: unknown;
     expires_at: unknown;
     revoked_at: unknown;
+    invite_token: string | null;
   }>`
-    select title, description, fields, public_token, enabled, opened_at, expires_at, revoked_at from data_form
+    select title, description, fields, public_token, enabled, opened_at, expires_at, revoked_at, invite_token from data_form
     where owner_id = ${ownerId} and doc_id = ${docId} limit 1
   `;
   const row = rows[0];
@@ -524,7 +578,81 @@ export async function readForm(sql: Sql, ownerId: string, docId: string): Promis
     openedAt: stamp(row.opened_at),
     expiresAt: stamp(row.expires_at),
     revokedAt: stamp(row.revoked_at),
+    inviteToken: row.invite_token,
+    invites: await readInvites(sql, ownerId, docId),
   };
+}
+
+async function readInvites(sql: Sql, ownerId: string, docId: string): Promise<FormInvite[]> {
+  const rows = await sql<{ kind: string; subject_id: string }>`
+    select kind, subject_id from data_form_invite
+    where owner_id = ${ownerId} and doc_id = ${docId}
+    order by granted_at
+  `;
+  return rows.flatMap((row) =>
+    row.kind === "user" || row.kind === "org" ? [{ kind: row.kind, subjectId: row.subject_id }] : [],
+  );
+}
+
+/**
+ * Deja las invitaciones del formulario como se pidieron. El enlace de
+ * invitación se crea la primera vez y no cambia, para que el correo siga
+ * valiendo. Devuelve quién se añadió ahora (a esos se les escribe).
+ */
+export async function syncFormInvites(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  input: { userIds: string[]; orgIds: string[] },
+): Promise<{ form: TableForm; addedUserIds: string[]; addedOrgIds: string[] } | null> {
+  const current = await readForm(sql, ownerId, docId);
+  if (!current) return null;
+  const userIds = [...new Set(input.userIds.filter((id) => id && id !== ownerId))].slice(0, 200);
+  const orgIds = [...new Set(input.orgIds.filter(Boolean))].slice(0, 200);
+  const hadUser = new Set(current.invites.filter((item) => item.kind === "user").map((item) => item.subjectId));
+  const hadOrg = new Set(current.invites.filter((item) => item.kind === "org").map((item) => item.subjectId));
+  const keepUser = new Set(userIds);
+  const keepOrg = new Set(orgIds);
+  for (const item of current.invites) {
+    const keep = item.kind === "user" ? keepUser : keepOrg;
+    if (keep.has(item.subjectId)) continue;
+    await sql`
+      delete from data_form_invite
+      where owner_id = ${ownerId} and doc_id = ${docId} and kind = ${item.kind} and subject_id = ${item.subjectId}
+    `;
+  }
+  const now = Date.now();
+  const addedUserIds: string[] = [];
+  const addedOrgIds: string[] = [];
+  for (const userId of userIds) {
+    if (hadUser.has(userId)) continue;
+    const inserted = await sql<{ subject_id: string }>`
+      insert into data_form_invite (owner_id, doc_id, kind, subject_id, granted_at)
+      select ${ownerId}, ${docId}, 'user', u.id, ${now} from "user" u where u.id = ${userId}
+      on conflict do nothing
+      returning subject_id
+    `;
+    if (inserted[0]) addedUserIds.push(inserted[0].subject_id);
+  }
+  for (const orgId of orgIds) {
+    if (hadOrg.has(orgId)) continue;
+    const inserted = await sql<{ subject_id: string }>`
+      insert into data_form_invite (owner_id, doc_id, kind, subject_id, granted_at)
+      select ${ownerId}, ${docId}, 'org', o.id, ${now} from app_org o where o.id = ${orgId}
+      on conflict do nothing
+      returning subject_id
+    `;
+    if (inserted[0]) addedOrgIds.push(inserted[0].subject_id);
+  }
+  if ((userIds.length > 0 || orgIds.length > 0) && !current.inviteToken) {
+    const token = randomBytes(16).toString("hex");
+    await sql`
+      update data_form set invite_token = ${token}
+      where owner_id = ${ownerId} and doc_id = ${docId} and invite_token is null
+    `;
+  }
+  const form = await readForm(sql, ownerId, docId);
+  return form ? { form, addedUserIds, addedOrgIds } : null;
 }
 
 export async function saveForm(
@@ -824,6 +952,125 @@ export async function attachPublicFile(
     key,
     size: bytes.byteLength,
     actor: "Formulario público",
+  });
+}
+
+type InviteFormRow = { owner_id: string; doc_id: string; title: string; description: string; fields: string };
+
+async function formByInvite(sql: Sql, token: string): Promise<InviteFormRow | null> {
+  const rows = await sql<InviteFormRow>`
+    select f.owner_id, f.doc_id, f.title, f.description, f.fields
+    from data_form f
+    join vault_doc d on d.user_id = f.owner_id and d.id = f.doc_id and not d.deleted
+    where f.invite_token = ${token}
+    limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+/** Invitado directo, o miembro de una organización invitada o de una hija suya. */
+async function userInvited(sql: Sql, ownerId: string, docId: string, userId: string): Promise<boolean> {
+  const rows = await sql<{ ok: number }>`
+    with recursive mine(id) as (
+      select o.id from app_org o
+      join app_org_member m on m.org_id = o.id and m.user_id = ${userId}
+      union
+      select p.parent_id from app_org p
+      join mine c on p.id = c.id
+      where p.parent_id is not null
+    )
+    select 1 as ok from data_form_invite i
+    where i.owner_id = ${ownerId} and i.doc_id = ${docId}
+      and (
+        (i.kind = 'user' and i.subject_id = ${userId})
+        or (i.kind = 'org' and i.subject_id in (select id from mine))
+      )
+    limit 1
+  `;
+  return Boolean(rows[0]);
+}
+
+/** Lo que ve quien fue invitado: las preguntas, no la tabla. */
+export async function invitedFormView(
+  sql: Sql,
+  token: string,
+  userId: string,
+): Promise<{ ok: true; title: string; description: string; fields: FormFieldView[] } | { ok: false; error: string }> {
+  const form = await formByInvite(sql, token);
+  if (!form) return { ok: false, error: "Este formulario no está disponible." };
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
+  await noteAccess(sql, {
+    ownerId: form.owner_id,
+    formDocId: form.doc_id,
+    channel: "form",
+    actorId: userId,
+    actorName: "",
+  }).catch(() => undefined);
+  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  return { ok: true, title: form.title, description: form.description, fields };
+}
+
+/** Añade una fila desde el formulario que le llegó por correo. */
+export async function submitInvitedForm(
+  sql: Sql,
+  token: string,
+  userId: string,
+  actor: string,
+  cells: Record<string, unknown>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const form = await formByInvite(sql, token);
+  if (!form) return { ok: false, error: "Este formulario no está disponible." };
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
+  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  const clean: Record<string, unknown> = {};
+  for (const field of fields) {
+    const value = cleanCell(field.type, cells[field.id]);
+    if (field.required && (value === null || value === false)) return { ok: false, error: `Falta «${field.name}».` };
+    if (value !== null) clean[field.id] = value;
+  }
+  const created = await addRows(sql, form.owner_id, form.doc_id, [{ cells: clean }], actor);
+  if (created.ok) {
+    await noteAccess(sql, {
+      ownerId: form.owner_id,
+      formDocId: form.doc_id,
+      channel: "form",
+      actorId: userId,
+      actorName: actor,
+    }).catch(() => undefined);
+  }
+  return created.ok ? { ok: true } : created;
+}
+
+/** Adjunto de un formulario invitado: entra en la bóveda del dueño de la tabla. */
+export async function attachInvitedFile(
+  sql: Sql,
+  token: string,
+  userId: string,
+  actor: string,
+  input: { name: string; mime: string; base64: string },
+): Promise<{ ok: true; id: string; title: string } | { ok: false; error: string }> {
+  const form = await formByInvite(sql, token);
+  if (!form) return { ok: false, error: "Este formulario no está disponible." };
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
+  const columns = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false);
+  if (!columns.some((field) => field.type === "file")) return { ok: false, error: "Este formulario no admite archivos." };
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(input.base64, "base64");
+  } catch {
+    return { ok: false, error: "El archivo no se pudo leer." };
+  }
+  if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return { ok: false, error: "El archivo debe pesar entre 1 byte y 6 MB." };
+  const { newFileKey } = await import("./files");
+  const { putBlob } = await import("./blobs");
+  const key = newFileKey(form.owner_id);
+  await putBlob(sql, key, bytes, input.mime || "application/octet-stream");
+  return attachFile(sql, form.owner_id, form.doc_id, {
+    name: input.name,
+    mime: input.mime || "application/octet-stream",
+    key,
+    size: bytes.byteLength,
+    actor,
   });
 }
 

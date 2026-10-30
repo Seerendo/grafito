@@ -5,7 +5,9 @@ import {
   CalendarDays,
   CheckSquare,
   ClipboardList,
+  Clock,
   Columns3,
+  Fingerprint,
   Download,
   File,
   FileText,
@@ -25,7 +27,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { rememberTableText } from "@/app/table-index";
 import { computeFormulas, type FormulaRun } from "@/domain/vault/formula";
 import { fetchSharedTree } from "@/app/shared-open";
@@ -34,6 +36,7 @@ import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { createPortal } from "react-dom";
 import { Modal } from "@/components/ui/Modal";
+import { useContextMenu } from "@/components/ui/use-context-menu";
 import { uploadVaultFile } from "@/app/files";
 import {
   compareKeys,
@@ -85,8 +88,10 @@ const POLL_MS = 10_000;
 
 const TYPE_LABEL: Record<FieldType, string> = {
   text: "Texto",
+  identifier: "Identificador",
   number: "Número",
   date: "Fecha",
+  time: "Hora",
   select: "Selección",
   checkbox: "Casilla",
   link: "Vínculo a la bóveda",
@@ -97,8 +102,10 @@ const TYPE_LABEL: Record<FieldType, string> = {
 
 const TYPE_ICON: Record<FieldType, typeof Type> = {
   text: Type,
+  identifier: Fingerprint,
   number: Hash,
   date: CalendarDays,
+  time: Clock,
   select: List,
   checkbox: CheckSquare,
   link: Link2,
@@ -109,8 +116,10 @@ const TYPE_ICON: Record<FieldType, typeof Type> = {
 
 const WIDTH: Record<FieldType, number> = {
   text: 220,
+  identifier: 200,
   number: 120,
   date: 140,
+  time: 120,
   select: 160,
   checkbox: 90,
   link: 260,
@@ -211,6 +220,7 @@ export function TableView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ top: 0, height: 600 });
   const importRef = useRef<HTMLInputElement>(null);
+  const areaMenu = useContextMenu();
   const { targets, title: refTitle, open: openRef } = useTargets(shareId, docId, onOpenNote);
   const editable = canEdit && mayEdit;
 
@@ -340,6 +350,7 @@ export function TableView({
     setRows((current) => current.map((item) => (item.id === row.id ? { ...item, cells: { ...item.cells, [field.id]: value } } : item)));
     const result = await tableUpdateCell({ data: { ...where, rowId: row.id, fieldId: field.id, value } }).catch(() => null);
     if (!result?.ok) {
+      setRows((current) => current.map((item) => (item.id === row.id ? row : item)));
       report(result?.error ?? "No se pudo guardar.");
       return;
     }
@@ -366,7 +377,15 @@ export function TableView({
     const result = await tableSaveField({
       data: { ...where, field: { id: field.id, name: field.name, type: field.type, choices: field.choices, position: field.position, width: field.width ?? null, relatedTableId: field.relatedTableId ?? null, formula: field.formula ?? null } },
     }).catch(() => null);
-    if (!result?.ok) return report(result?.error ?? "No se pudo guardar la columna.");
+    if (!result?.ok) {
+      const fresh = await tableOpen({ data: where }).catch(() => null);
+      if (fresh?.ok) {
+        setFields(fresh.fields);
+        setRows(fresh.rows);
+        sinceRef.current = fresh.at;
+      }
+      return report(result?.error ?? "No se pudo guardar la columna.");
+    }
     // Al cambiar de tipo, los valores se convierten en el servidor.
     const fresh = await tableOpen({ data: where }).catch(() => null);
     if (fresh?.ok) {
@@ -422,7 +441,7 @@ export function TableView({
       fields.map((field) => {
         const value = cellOf(row, field);
         if (field.type === "checkbox") return value ? "sí" : "no";
-        if (field.type === "number" || field.type === "date") return value === null ? "" : String(value);
+        if (field.type === "number" || field.type === "date" || field.type === "time" || field.type === "identifier") return value === null ? "" : String(value);
         return display(field, value);
       }),
     );
@@ -534,9 +553,37 @@ export function TableView({
     { id: "gallery", label: "Galería", icon: LayoutGrid },
     { id: "calendar", label: "Calendario", icon: Calendar },
   ];
+  // Las vistas van con aria-pressed, así que el menú automático del panel no las recoge.
+  const onTableMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (window.getSelection()?.toString()) return;
+    areaMenu.open(event, [
+      ...modes.map((item) => ({ label: t(item.label), onClick: () => updateLayout({ mode: item.id }) })),
+      ...(Object.values(filters).some((value) => value.trim()) ? [{ label: t("Quitar filtros"), onClick: () => setFilters({}) }] : []),
+      ...(editable && picked.size > 0
+        ? [
+            {
+              label: picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size }),
+              danger: true,
+              onClick: () => setConfirmDelete({ kind: "rows" as const }),
+            },
+          ]
+        : []),
+      ...(editable ? [{ label: t("Importar CSV"), onClick: () => importRef.current?.click() }] : []),
+      { label: t("Exportar CSV"), onClick: exportCsv },
+      { label: t("Formulario"), onClick: () => setFormOpen(true) },
+      ...(editable
+        ? [
+            { label: t("Nueva fila"), onClick: () => void addRow() },
+            { label: t("Nueva columna"), onClick: addField },
+          ]
+        : []),
+    ]);
+  };
 
   return (
-    <div data-ui="table-view" className="flex min-h-0 flex-1 flex-col">
+    <div data-ui="table-view" className="flex min-h-0 flex-1 flex-col" onContextMenu={onTableMenu}>
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 sm:px-4">
         <div className="flex h-9 items-center rounded-md border border-line p-0.5">
           {modes.map((item) => {
@@ -777,7 +824,11 @@ export function TableView({
         </table>
         {rows.length === 0 ? (
           <p className="px-4 py-8 text-sm text-muted">
-            {editable ? t("La tabla está vacía. Añade una fila o importa un CSV.") : t("La tabla está vacía.")}
+            {editable && fields.length === 0
+              ? t("Esta tabla no tiene columnas. Pulsa + para añadir la primera.")
+              : editable
+                ? t("La tabla está vacía. Añade una fila o importa un CSV.")
+                : t("La tabla está vacía.")}
           </p>
         ) : null}
       </div>
@@ -842,6 +893,7 @@ export function TableView({
         />
       ) : null}
       {historyId ? <RowHistoryDialog where={where} rowId={historyId} onClose={() => setHistoryId(null)} /> : null}
+      {areaMenu.element}
     </div>
   );
 }
@@ -1245,7 +1297,7 @@ function CellEditor({
   return (
     <input
       autoFocus
-      type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+      type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "time" ? "time" : "text"}
       step="any"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
