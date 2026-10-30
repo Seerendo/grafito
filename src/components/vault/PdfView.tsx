@@ -1,8 +1,10 @@
-import { Link2, MessageSquare, MessageSquarePlus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, MessageSquare, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageViewport, PDFDocumentProxy } from "pdfjs-dist";
 import { anchorAt, linkKey, locate, type TextAnchor } from "@/domain/vault/anchor";
 import type { ManualLink } from "@/domain/vault/types";
+import { useContextMenu } from "@/components/ui/use-context-menu";
+import type { ContextItem } from "@/components/ui/ContextMenu";
 import {
   commentKey,
   deleteComment,
@@ -15,12 +17,13 @@ import {
 import { intl, t } from "@/app/i18n";
 
 /**
- * Visor de PDF propio (PDF.js), en vez del del navegador: deja seleccionar una
- * palabra o frase y vincularla con una nota u otro archivo (`onLink`) o dejarle
- * una nota (`notes`: un comentario con ancla, sin tocar el archivo). Las frases
- * vinculadas y las notas se ven resaltadas; al pulsarlas se abre su destino o
- * se leen. Las notas que ya traía el PDF (de otro lector) se muestran también.
- * Cada página se dibuja al acercarse a la vista. Ver `domain/vault/anchor.ts`.
+ * Visor de PDF propio (PDF.js), en vez del del navegador. Con clic derecho
+ * sobre una selección se puede vincular esa frase (`onLink`) o dejarle una
+ * nota (`notes`: un comentario con ancla, sin tocar el archivo). Ctrl+F busca
+ * dentro del texto. Las frases vinculadas y las notas se ven resaltadas; al
+ * pulsarlas se abre su destino o se leen. Las notas que ya traía el PDF (de
+ * otro lector) se muestran también. Cada página se dibuja al acercarse a la
+ * vista. Ver `domain/vault/anchor.ts`.
  */
 
 type PdfJs = typeof import("pdfjs-dist");
@@ -41,6 +44,8 @@ function loadPdfJs(): Promise<PdfJs> {
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
+type FindHit = { page: number; start: number; end: number };
+type FindMark = { start: number; end: number; current: boolean };
 /** Una frase resaltada: un vínculo (`targetId`) o las notas sobre ella (`noteIds`). */
 type Mark = { key: string; exact: string; targetId?: string; noteIds?: string[]; rects: Rect[] };
 type Picked = { anchor: TextAnchor; x: number; y: number };
@@ -54,6 +59,49 @@ type EmbeddedNote = PdfNote & { rect: number[] };
 /** Tipos de anotación que no son notas de nadie (enlaces, campos de formulario). */
 const NOT_NOTES = new Set(["Link", "Widget", "Popup"]);
 const NO_COMMENTS: DocComment[] = [];
+
+/** Texto de una página tal como lo devuelve PDF.js, con saltos donde el ítem los marca. */
+function pagePlainText(items: readonly unknown[]): string {
+  let text = "";
+  for (const item of items) {
+    if (!item || typeof item !== "object" || !("str" in item)) continue;
+    const piece = item as { str: string; hasEOL?: boolean };
+    text += piece.str;
+    if (piece.hasEOL) text += "\n";
+  }
+  return text;
+}
+
+/**
+ * La selección recortada a la capa de texto bajo el puntero. Un párrafo que
+ * cruza de página se queda en esa página: el ancla no puede abarcar dos.
+ */
+function anchorInLayer(layer: HTMLElement): TextAnchor | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  try {
+    if (!range.intersectsNode(layer)) return null;
+    const clipped = range.cloneRange();
+    const bounds = document.createRange();
+    bounds.selectNodeContents(layer);
+    if (clipped.compareBoundaryPoints(Range.START_TO_START, bounds) < 0) {
+      clipped.setStart(bounds.startContainer, bounds.startOffset);
+    }
+    if (clipped.compareBoundaryPoints(Range.END_TO_END, bounds) > 0) {
+      clipped.setEnd(bounds.endContainer, bounds.endOffset);
+    }
+    const exact = clipped.toString();
+    if (!exact.trim()) return null;
+    const before = document.createRange();
+    before.selectNodeContents(layer);
+    before.setEnd(clipped.startContainer, clipped.startOffset);
+    const start = before.toString().length;
+    return anchorAt(layer.textContent ?? "", Number(layer.dataset.page), start, start + exact.length);
+  } catch {
+    return null;
+  }
+}
 
 export function PdfView({
   url,
@@ -84,8 +132,14 @@ export function PdfView({
   const [pdf, setPdf] = useState<{ lib: PdfJs; doc: PDFDocumentProxy; ratio: number } | null>(null);
   const [error, setError] = useState(false);
   const [width, setWidth] = useState(0);
-  const [picked, setPicked] = useState<Picked | null>(null);
   const [composing, setComposing] = useState<Picked | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findHits, setFindHits] = useState<FindHit[]>([]);
+  const [findAt, setFindAt] = useState(0);
+  const [findDone, setFindDone] = useState("");
+  const findInput = useRef<HTMLInputElement>(null);
+  const menu = useContextMenu();
   const [bubble, setBubble] = useState<Bubble | null>(null);
   const [embedded, setEmbedded] = useState<EmbeddedNote[]>([]);
   const docId = notes?.docId ?? "";
@@ -176,47 +230,105 @@ export function PdfView({
     };
   }, []);
 
-  // Una frase seleccionada dentro de una página: los botones «Vincular» y «Nota» a su lado.
+  // Ctrl+F abre la búsqueda del PDF, salvo que el foco esté en otro campo
+  // (la paleta, el título, un diálogo).
   useEffect(() => {
-    if (!canPick) return;
-    let timer = 0;
-    const read = () => {
-      const scroller = scrollRef.current;
-      const selection = window.getSelection();
-      if (!scroller || !selection || selection.isCollapsed || selection.rangeCount === 0) {
-        setPicked(null);
-        return;
-      }
-      const range = selection.getRangeAt(0);
-      const layer = (range.startContainer.parentElement ?? null)?.closest<HTMLElement>("[data-text-layer]");
-      const endLayer = (range.endContainer.parentElement ?? null)?.closest<HTMLElement>("[data-text-layer]");
-      if (!layer || layer !== endLayer || !scroller.contains(layer)) {
-        setPicked(null);
-        return;
-      }
-      const before = document.createRange();
-      before.setStart(layer, 0);
-      before.setEnd(range.startContainer, range.startOffset);
-      const start = before.toString().length;
-      const anchor = anchorAt(layer.textContent ?? "", Number(layer.dataset.page), start, start + range.toString().length);
-      const box = range.getBoundingClientRect();
-      const frame = scroller.getBoundingClientRect();
-      setPicked(
-        anchor
-          ? { anchor, x: box.right - frame.left + scroller.scrollLeft, y: box.bottom - frame.top + scroller.scrollTop + 6 }
-          : null,
-      );
+    const onKey = (event: KeyboardEvent) => {
+      if (error) return;
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "f") return;
+      const target = event.target instanceof Element ? event.target : null;
+      const field = target?.closest("input, textarea, [contenteditable='true']");
+      if (field && !scrollRef.current?.contains(field) && field !== findInput.current) return;
+      event.preventDefault();
+      setFindOpen(true);
+      queueMicrotask(() => findInput.current?.focus());
     };
-    const onChange = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(read, 200);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [error]);
+
+  useEffect(() => {
+    if (findOpen) findInput.current?.focus();
+  }, [findOpen]);
+
+  // Esc cierra la búsqueda antes que la vista, salvo que se esté escribiendo una nota.
+  useEffect(() => {
+    if (!findOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("[data-ui='pdf-note'], [data-ui='pdf-bubble']")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setFindOpen(false);
     };
-    document.addEventListener("selectionchange", onChange);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [findOpen]);
+
+  useEffect(() => {
+    const needle = findQuery.trim().toLowerCase();
+    if (!findOpen || !pdf || !needle) {
+      setFindHits([]);
+      setFindAt(0);
+      setFindDone(needle);
+      return;
+    }
+    setFindHits([]);
+    setFindAt(0);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const hits: FindHit[] = [];
+        for (let page = 1; page <= pdf.doc.numPages; page += 1) {
+          if (cancelled) return;
+          const content = await pdf.doc.getPage(page).then((item) => item.getTextContent());
+          const hay = pagePlainText(content.items).toLowerCase();
+          let from = 0;
+          while (from < hay.length) {
+            const at = hay.indexOf(needle, from);
+            if (at < 0) break;
+            hits.push({ page, start: at, end: at + needle.length });
+            from = at + needle.length;
+          }
+        }
+        if (cancelled) return;
+        setFindHits(hits);
+        setFindAt(0);
+        setFindDone(needle);
+      })();
+    }, 150);
     return () => {
-      document.removeEventListener("selectionchange", onChange);
+      cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [canPick]);
+  }, [findOpen, findQuery, pdf]);
+
+  const findByPage = useMemo(() => {
+    const map = new Map<number, { query: string; hits: FindMark[] }>();
+    if (!findOpen) return map;
+    const query = findQuery.trim();
+    const lists = new Map<number, FindMark[]>();
+    findHits.forEach((hit, index) => {
+      const list = lists.get(hit.page) ?? [];
+      list.push({ start: hit.start, end: hit.end, current: index === findAt });
+      lists.set(hit.page, list);
+    });
+    for (const [page, hits] of lists) map.set(page, { query, hits });
+    return map;
+  }, [findOpen, findQuery, findHits, findAt]);
+
+  const stepFind = (delta: number) => {
+    if (findHits.length === 0) return;
+    setFindAt((current) => (current + delta + findHits.length) % findHits.length);
+  };
+
+  useEffect(() => {
+    if (!findOpen) return;
+    const hit = findHits[findAt];
+    if (!hit) return;
+    scrollRef.current?.querySelector(`[data-page="${hit.page}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [findOpen, findHits, findAt]);
 
   /** Un punto de la pantalla, en coordenadas del contenido que se desplaza. */
   const toScroller = useCallback((clientX: number, clientY: number) => {
@@ -239,17 +351,91 @@ export function PdfView({
   const bubbleNotes = bubble?.noteIds ? comments.filter((comment) => bubble.noteIds!.includes(comment.id)) : [];
   const when = (ms: number) =>
     new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  const needle = findQuery.trim().toLowerCase();
+  const findSettled = findDone === needle;
+
+  const onPdfMenu = (event: React.MouseEvent) => {
+    if (!canPick) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const layer = target?.closest<HTMLElement>("[data-text-layer]");
+    if (!layer || !scrollRef.current?.contains(layer)) return;
+    const anchor = anchorInLayer(layer);
+    if (!anchor) return;
+    const at = toScroller(event.clientX, event.clientY);
+    const items: ContextItem[] = [];
+    if (notes) items.push({ label: t("Nota"), onClick: () => setComposing({ anchor, x: at.x, y: at.y }) });
+    if (onLink) {
+      items.push({
+        label: t("Vincular"),
+        onClick: () => {
+          onLink(anchor);
+          window.getSelection()?.removeAllRanges();
+        },
+      });
+    }
+    if (items.length > 0) menu.open(event, items);
+  };
 
   return (
-    <div
-      ref={scrollRef}
-      data-ui="pdf"
-      aria-label={title}
-      className="relative h-full min-h-[60vh] overflow-auto rounded-md border border-line bg-inset p-4"
-      onMouseDown={(event) => {
-        if (bubble && !(event.target as HTMLElement).closest("[data-ui='pdf-bubble']")) setBubble(null);
-      }}
-    >
+    <div data-ui="pdf" aria-label={title} className="flex h-full min-h-[60vh] flex-col overflow-hidden rounded-md border border-line bg-inset">
+      {findOpen ? (
+        <form
+          data-ui="pdf-find"
+          className="flex shrink-0 items-center gap-1.5 border-b border-line bg-surface px-2 py-1.5"
+          onSubmit={(event) => event.preventDefault()}
+        >
+          <input
+            ref={findInput}
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              stepFind(event.shiftKey ? -1 : 1);
+            }}
+            placeholder={t("Buscar en el PDF")}
+            aria-label={t("Buscar en el PDF")}
+            className="h-8 min-w-0 flex-1 bg-transparent px-1 text-sm text-fg outline-none placeholder:text-faint"
+          />
+          <span className="shrink-0 text-xs text-muted">
+            {needle && findSettled ? (findHits.length > 0 ? t("{n} de {total}", { n: findAt + 1, total: findHits.length }) : t("Sin resultados")) : ""}
+          </span>
+          <button
+            type="button"
+            aria-label={t("Anterior")}
+            disabled={findHits.length === 0}
+            onClick={() => stepFind(-1)}
+            className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg disabled:opacity-40"
+          >
+            <ChevronUp className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={t("Siguiente")}
+            disabled={findHits.length === 0}
+            onClick={() => stepFind(1)}
+            className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg disabled:opacity-40"
+          >
+            <ChevronDown className="size-4" />
+          </button>
+          <button
+            type="button"
+            aria-label={t("Cerrar")}
+            onClick={() => setFindOpen(false)}
+            className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg"
+          >
+            <X className="size-4" />
+          </button>
+        </form>
+      ) : null}
+      <div
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 overflow-auto p-4"
+        onMouseDown={(event) => {
+          if (bubble && !(event.target as HTMLElement).closest("[data-ui='pdf-bubble']")) setBubble(null);
+        }}
+        onContextMenu={onPdfMenu}
+      >
       {!pdf || width === 0 ? (
         <p className="text-sm text-faint">{t("Cargando…")}</p>
       ) : (
@@ -270,46 +456,11 @@ export function PdfView({
               onBubble={(next, clientX, clientY) => setBubble({ ...next, ...toScroller(clientX, clientY) })}
               focus={active?.page === index + 1 ? active : null}
               onFocused={focused}
+              find={findByPage.get(index + 1)}
             />
           ))}
         </div>
       )}
-      {picked && !composing ? (
-        <div
-          style={{ left: picked.x, top: picked.y }}
-          className="absolute z-10 flex -translate-x-full gap-1.5"
-          // Antes de que el clic deshaga la selección.
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          {onLink ? (
-            <button
-              type="button"
-              onClick={() => {
-                onLink(picked.anchor);
-                window.getSelection()?.removeAllRanges();
-                setPicked(null);
-              }}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-fg shadow-lg"
-            >
-              <Link2 className="size-3.5" />
-              {t("Vincular selección")}
-            </button>
-          ) : null}
-          {notes ? (
-            <button
-              type="button"
-              onClick={() => {
-                setComposing(picked);
-                setPicked(null);
-              }}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-medium text-fg shadow-lg"
-            >
-              <MessageSquarePlus className="size-3.5" />
-              {t("Nota")}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       {composing && notes ? (
         <NoteComposer
           at={composing}
@@ -376,6 +527,8 @@ export function PdfView({
           )}
         </div>
       ) : null}
+      </div>
+      {menu.element}
     </div>
   );
 }
@@ -492,6 +645,7 @@ function PdfPage({
   onBubble,
   focus,
   onFocused,
+  find,
 }: {
   lib: PdfJs;
   doc: PDFDocumentProxy;
@@ -506,6 +660,8 @@ function PdfPage({
   onBubble: (bubble: Omit<Bubble, "x" | "y">, clientX: number, clientY: number) => void;
   focus: Focus | null;
   onFocused?: () => void;
+  /** Coincidencias de la búsqueda en esta página. */
+  find?: { query: string; hits: FindMark[] };
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -515,6 +671,7 @@ function PdfPage({
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [ready, setReady] = useState(false);
   const [marks, setMarks] = useState<Mark[]>([]);
+  const [found, setFound] = useState<{ current: boolean; rects: Rect[] }[]>([]);
   const [flash, setFlash] = useState<string | null>(null);
   const [hover, setHover] = useState<Mark | null>(null);
 
@@ -615,6 +772,50 @@ function PdfPage({
     if (ready) place();
   }, [ready, place]);
 
+  // Resalta la búsqueda. Si el texto de la capa no coincide con el del
+  // escaneo, se busca la misma frase en la capa. Si tampoco está, la página
+  // igual se desplaza.
+  useEffect(() => {
+    if (!ready || !find?.hits.length || !find.query) {
+      setFound([]);
+      return;
+    }
+    const page = pageRef.current;
+    const layer = textRef.current;
+    if (!page || !layer) return;
+    const frame = page.getBoundingClientRect();
+    const text = layer.textContent ?? "";
+    const hay = text.toLowerCase();
+    const needle = find.query.toLowerCase();
+    const places: { start: number; end: number }[] = [];
+    let from = 0;
+    while (needle && from < hay.length) {
+      const at = hay.indexOf(needle, from);
+      if (at < 0) break;
+      places.push({ start: at, end: at + needle.length });
+      from = at + needle.length;
+    }
+    const next: { current: boolean; rects: Rect[] }[] = [];
+    find.hits.forEach((hit, index) => {
+      const direct = rangeAt(layer, hit.start, hit.end);
+      const slice = text.slice(hit.start, hit.end);
+      const place = places[index];
+      const fallback = place ? rangeAt(layer, place.start, place.end) : null;
+      const range = direct && slice.toLowerCase() === needle ? direct : fallback;
+      if (!range) return;
+      next.push({
+        current: hit.current,
+        rects: [...range.getClientRects()].map((rect) => ({
+          x: rect.left - frame.left,
+          y: rect.top - frame.top,
+          width: rect.width,
+          height: rect.height,
+        })),
+      });
+    });
+    setFound(next);
+  }, [ready, find]);
+
   useEffect(() => {
     if (!ready || !focus) return;
     const mark = focus.exact ? marks.find((item) => item.exact === focus.exact) : undefined;
@@ -687,6 +888,16 @@ function PdfPage({
                       ? "bg-accent/45"
                       : "bg-accent/30"
               }`}
+            />
+          )),
+        )}
+        {found.flatMap((hit, index) =>
+          hit.rects.map((rect, rectIndex) => (
+            <span
+              key={`find-${index}-${rectIndex}`}
+              data-ui={hit.current ? "pdf-find-current" : "pdf-find-hit"}
+              style={{ left: rect.x, top: rect.y, width: Math.max(rect.width, 2), height: rect.height }}
+              className={`pointer-events-none absolute ${hit.current ? "bg-accent/50" : "bg-accent/25"}`}
             />
           )),
         )}

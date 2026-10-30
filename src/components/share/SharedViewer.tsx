@@ -27,6 +27,7 @@ import { asDocuments, childrenOf, docsIn, orderDocuments, rootParent } from "./s
 import { intl, t } from "@/app/i18n";
 import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
+import { SignatureBar } from "@/components/vault/SignatureDialog";
 import { FullscreenButton } from "@/components/vault/FullscreenButton";
 import { Comments } from "@/components/vault/Comments";
 import { GraphView } from "@/components/vault/GraphView";
@@ -424,6 +425,7 @@ export function SharedViewer({
             </span>
           ) : null}
         </div>
+        {active && !tree.share.token ? <SignatureBar docId={active.id} shareId={tree.share.id} /> : null}
         {deleting && active ? (
           <Modal title={t("Eliminar «{0}»", { 0: active.title })} onClose={() => setDeleting(false)}>
             <p className="text-sm text-muted">{t("Irá a la papelera de su dueño (en un espacio de trabajo, la de sus administradores), que puede recuperarlo.")}</p>

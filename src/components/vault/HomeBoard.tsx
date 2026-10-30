@@ -11,9 +11,16 @@ import { createDrawing, createTable } from "./ingest-files";
 import { useMemo } from "react";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
+import { useDirectoryPick } from "@/app/directory-pick";
+import { PendingSignatures } from "./SignatureDialog";
 import { useRowMenu } from "./RowMenu";
 
 const RECENT = 12;
+
+/** Suma la fila a la selección del directorio sin abrirla. */
+function selectInDirectory(target: { kind: "document" | "portfolio"; id: string }) {
+  useDirectoryPick.getState().add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
+}
 
 /**
  * Raíz: sus portafolios y lo último que se tocó en la bóveda, con el mismo
@@ -33,7 +40,7 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
   );
   const countIn = (id: string) =>
     documents.filter((document) => document.portfolioId === id).length + portfolios.filter((item) => item.parentId === id).length;
-  const { openMenu, element: menu } = useRowMenu(onOpenNote);
+  const { openMenu, element: menu } = useRowMenu(onOpenNote, selectInDirectory);
   const recent = useMemo(
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
     [documents],
@@ -66,6 +73,9 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
               </button>
             ) : null}
           </span>
+        </div>
+        <div className="mt-8">
+          <PendingSignatures onOpenNote={onOpenNote} />
         </div>
         {roots.length > 0 ? (
           <section className="mt-6">
@@ -139,7 +149,7 @@ export function PortfolioBoard({
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const setActive = useVault((state) => state.setActive);
-  const { openMenu, element: menu } = useRowMenu(onOpenNote);
+  const { openMenu, element: menu } = useRowMenu(onOpenNote, selectInDirectory);
   const portfolio = portfolios.find((item) => item.id === portfolioId);
   const trail = useMemo(() => {
     const out: { id: string; name: string }[] = [];

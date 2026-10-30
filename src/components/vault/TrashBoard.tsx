@@ -1,7 +1,6 @@
 import { Building2, File, FileText, Folder, House, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/app/permissions";
-import { useTrashView } from "@/app/trash-view";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { TextAction } from "@/components/ui/TextAction";
@@ -40,6 +39,8 @@ export function TrashBoard() {
   const [notice, setNotice] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [anchor, setAnchor] = useState<string | null>(null);
   const menu = useContextMenu();
   // Fuera de un elemento: vaciar, cambiar de pestaña… (lo mismo que los botones).
   const autoMenu = useAutoContextMenu();
@@ -74,34 +75,65 @@ export function TrashBoard() {
   useEffect(() => {
     setConfirming(null);
     setNotice("");
+    setPicked([]);
+    setAnchor(null);
     void load(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const restore = async (id: string) => {
-    setBusy(id);
+  /** Recupera uno o varios y se queda en la papelera. Se detiene en el primer fallo. */
+  const restoreMany = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setBusy(ids[0] ?? "many");
     setNotice("");
+    setError("");
+    let failed = false;
     try {
-      const result = tab ? await workspaceTrashRestore({ data: { shareId: tab, id } }) : await trashRestore({ data: { id } });
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      for (const id of ids) {
+        const result = tab ? await workspaceTrashRestore({ data: { shareId: tab, id } }) : await trashRestore({ data: { id } });
+        if (!result.ok) {
+          setError(result.error);
+          failed = true;
+          break;
+        }
       }
-      if (tab) {
-        setNotice(t("Recuperado en el espacio de trabajo."));
-        await load();
-        return;
+      if (!tab) {
+        const owner = useVault.getState().owner;
+        if (owner) await syncVault(owner);
       }
-      const owner = useVault.getState().owner;
-      if (owner) await syncVault(owner);
-      useTrashView.getState().setOpen(false);
-      if (result.kind === "portfolio") useVault.getState().openPortfolio(result.id);
-      else useVault.getState().setActive(result.id);
+      setPicked([]);
+      setAnchor(null);
+      await load();
+      if (!failed) {
+        setNotice(
+          ids.length > 1 ? t("Recuperados.") : tab ? t("Recuperado en el espacio de trabajo.") : t("Recuperado."),
+        );
+      }
     } catch {
       setError(t("No se pudo recuperar."));
     } finally {
       setBusy(null);
     }
+  };
+
+  const pickRow = (event: React.MouseEvent, id: string) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    const ids = (items ?? []).map((item) => item.id);
+    if (event.shiftKey && anchor && ids.includes(anchor)) {
+      const from = ids.indexOf(anchor);
+      const to = ids.indexOf(id);
+      const [start, end] = from < to ? [from, to] : [to, from];
+      const range = ids.slice(start, end + 1);
+      setPicked(event.ctrlKey || event.metaKey ? [...new Set([...picked, ...range])] : range);
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+      setAnchor(id);
+      return;
+    }
+    setPicked([id]);
+    setAnchor(id);
   };
 
   const purge = async (ids?: string[]) => {
@@ -123,17 +155,31 @@ export function TrashBoard() {
       <div className="w-full">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Papelera")}</h1>
-          {mayPurge && items && items.length > 0 ? (
-            <button
-              type="button"
-              data-menu-label={t("Vaciar papelera")}
-              disabled={busy !== null}
-              onClick={() => setConfirming("all")}
-              className="ml-auto inline-flex h-10 items-center gap-2 rounded-md border border-danger/40 px-4 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
-            >
-              <Trash2 className="size-4" />
-              {t("Vaciar papelera")}
-            </button>
+          {items && items.length > 0 && (picked.length > 0 || mayPurge) ? (
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {mayRestore && picked.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void restoreMany(picked)}
+                  className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
+                >
+                  {t("Recuperar {n}", { n: picked.length })}
+                </button>
+              ) : null}
+              {mayPurge ? (
+                <button
+                  type="button"
+                  data-menu-label={t("Vaciar papelera")}
+                  disabled={busy !== null}
+                  onClick={() => setConfirming("all")}
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-danger/40 px-4 text-sm font-medium text-danger hover:bg-danger/10 disabled:opacity-50"
+                >
+                  <Trash2 className="size-4" />
+                  {t("Vaciar papelera")}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
         {spaces.length > 0 ? (
@@ -168,13 +214,24 @@ export function TrashBoard() {
             {items.map((item) => {
               const Icon = item.kind === "portfolio" ? Folder : item.kind === "file" ? File : FileText;
               const left = Math.max(0, TRASH_DAYS - Math.floor((Date.now() - item.deletedAt) / 86_400_000));
+              const on = picked.includes(item.id);
+              const chosen = on && picked.length > 1 ? picked : [item.id];
               return (
                 <li
                   key={item.id}
-                  className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0"
+                  aria-selected={on}
+                  onClick={(event) => pickRow(event, item.id)}
+                  className={`flex cursor-pointer flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0 ${on ? "bg-accent/15" : "hover:bg-elevated"}`}
                   onContextMenu={(event) =>
                     menu.open(event, [
-                      ...(mayRestore ? [{ label: t("Recuperar"), onClick: () => void restore(item.id) }] : []),
+                      ...(mayRestore
+                        ? [
+                            {
+                              label: chosen.length > 1 ? t("Recuperar {n}", { n: chosen.length }) : t("Recuperar"),
+                              onClick: () => void restoreMany(chosen),
+                            },
+                          ]
+                        : []),
                       ...(mayPurge ? [{ label: t("Eliminar para siempre"), danger: true, onClick: () => setConfirming(item.id) }] : []),
                     ])
                   }
@@ -191,7 +248,7 @@ export function TrashBoard() {
                   </span>
                   <span className="flex items-center gap-4">
                     {mayRestore ? (
-                      <TextAction onClick={() => void restore(item.id)}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
+                      <TextAction onClick={() => void restoreMany([item.id])}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
                     ) : null}
                     {mayPurge ? (
                       <TextAction tone="danger" onClick={() => setConfirming(item.id)}>

@@ -7,6 +7,7 @@ import { migrateLegacyFiles, removeFile, storeIncomingFile } from "./files";
 import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } from "./history";
 import { noteChange } from "./notify";
 import { purgeComments } from "./comments";
+import { purgeSignatures } from "./signature";
 
 /**
  * La bóveda de cada usuario en el servidor (solo servidor). Fuente de verdad
@@ -754,6 +755,7 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
   `;
   await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
   await purgeComments(sql, userId, id);
+  await purgeSignatures(sql, userId, id);
   // Si era una tabla de datos, sus columnas y filas (ver `table.ts`).
   await sql`delete from data_meta where owner_id = ${userId} and doc_id = ${id}`;
   await sql`delete from data_form where owner_id = ${userId} and doc_id = ${id}`;

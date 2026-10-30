@@ -40,7 +40,7 @@ function downloadDocument(document: Document) {
  * el directorio y la raíz del área de trabajo. Devuelve `openMenu` para el
  * `onContextMenu` de cada fila y el elemento a pintar.
  */
-export function useRowMenu(onOpenNote: (id: string) => void) {
+export function useRowMenu(onOpenNote: (id: string) => void, onSelect?: (target: { kind: "document" | "portfolio"; id: string }) => void) {
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadTo = useRef<string | null>(null);
@@ -89,6 +89,7 @@ export function useRowMenu(onOpenNote: (id: string) => void) {
           menu={menu}
           onClose={() => setMenu(null)}
           onOpenNote={onOpenNote}
+          onSelect={onSelect}
           onUpload={(portfolioId) => {
             uploadTo.current = portfolioId;
             useVault.getState().setSelectedPortfolio(portfolioId);
@@ -108,11 +109,13 @@ function RowContextMenu({
   onClose,
   onOpenNote,
   onUpload,
+  onSelect,
 }: {
   menu: RowMenu;
   onClose: () => void;
   onOpenNote: (id: string) => void;
   onUpload: (portfolioId: string | null) => void;
+  onSelect?: (target: { kind: "document" | "portfolio"; id: string }) => void;
 }) {
   const documents = useVault((state) => state.documents);
   const can = usePermissions();
@@ -142,6 +145,10 @@ function RowContextMenu({
   };
   const vault = useVault.getState;
   const items: { label: string; onClick: () => void; danger?: boolean }[] = [];
+  if (onSelect && (menu.kind === "document" || menu.kind === "portfolio")) {
+    const target = menu.kind === "document" ? { kind: "document" as const, id: menu.id } : { kind: "portfolio" as const, id: menu.id };
+    items.push({ label: t("Seleccionar"), onClick: act(() => onSelect(target)) });
+  }
   if (can(PERMISSION.notesCreate)) {
     items.push({ label: t("Nueva nota"), onClick: act(() => onOpenNote(vault().createDocument(portfolioId))) });
   }

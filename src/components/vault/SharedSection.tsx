@@ -7,6 +7,7 @@ import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
 import { childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
+import { sharedExpandKeys } from "@/domain/vault/nav";
 import { sharedWithMe } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
 import type { SharedTree } from "@/server/share";
@@ -170,6 +171,71 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       return next;
     });
 
+  // Al abrir un archivo o un portafolio (desde el visor, la página o una
+  // búsqueda), se despliega su camino aquí y la fila entra en la vista. Solo
+  // cuando cambia el destino: refrescar el árbol o plegar a mano no vuelve a
+  // abrir la sección ni mueve el scroll.
+  const target = `${viewed?.share.id ?? ""}:${activeDoc ?? ""}:${boardPortfolio ?? ""}`;
+  const expandedTo = useRef("");
+  const scrolled = useRef("");
+  useEffect(() => {
+    if (!viewed) {
+      expandedTo.current = "";
+      return;
+    }
+    if (!items || !items.some((item) => item.id === viewed.share.id)) return;
+    if (expandedTo.current === target) return;
+    expandedTo.current = target;
+    const doc = activeDoc ? viewed.documents.find((document) => document.id === activeDoc) : undefined;
+    const portfolioId = doc ? doc.portfolioId : boardPortfolio;
+    const keys = sharedExpandKeys({
+      shareId: viewed.share.id,
+      portfolios: viewed.portfolios,
+      rootId: childrenOf(viewed, rootParent(viewed))[0]?.id ?? null,
+      portfolioId,
+    });
+    setOpen(true);
+    try {
+      localStorage.setItem(openKey, "1");
+    } catch {
+      /* preferencia */
+    }
+    setTrees((current) => (current[viewed.share.id] === viewed ? current : { ...current, [viewed.share.id]: viewed }));
+    setExpanded((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const key of keys) {
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [target, viewed, items, activeDoc, boardPortfolio, openKey]);
+
+  const sharedRootId = viewed ? (childrenOf(viewed, rootParent(viewed))[0]?.id ?? null) : null;
+  const reveal = activeDoc
+    ? `shared-doc:${activeDoc}`
+    : boardShare && (!boardPortfolio || boardPortfolio === sharedRootId)
+      ? `shared-share:${boardShare}`
+      : boardPortfolio
+        ? `shared-port:${boardPortfolio}`
+        : null;
+  const revealReady = Boolean(viewed && trees[viewed.share.id]);
+  useEffect(() => {
+    if (!reveal || !open) {
+      if (!reveal) scrolled.current = "";
+      return;
+    }
+    if (!items?.some((item) => item.id === (viewed?.share.id ?? ""))) return;
+    if (scrolled.current === reveal) return;
+    const row = document.querySelector(`[data-ui="sidebar"] [data-reveal="${CSS.escape(reveal)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    scrolled.current = reveal;
+  }, [reveal, open, expanded, revealReady, items, viewed]);
+
   // Se vuelve a leer al abrir (si no es reciente): otra persona con permiso de edición pudo cambiarlo.
   const openDoc = async (shareId: string, docId: string) => {
     const tree = await loadTree(shareId, true);
@@ -227,6 +293,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                   <div
                     title={t("De {0}", { 0: item.ownerName })}
                     onContextMenu={rootMenu}
+                    data-reveal={`shared-share:${item.id}`}
                     data-row={lit ? "marked" : ""}
                     className={`relative flex h-9 shrink-0 items-center rounded-md ${PAD[0]} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
                   >
@@ -272,6 +339,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                   <button
                     type="button"
                     title={t("De {0}", { 0: item.ownerName })}
+                    data-reveal={single ? `shared-doc:${single.id}` : undefined}
                     onContextMenu={rootMenu}
                     onClick={async () => {
                       const loaded = await loadTree(item.id);
@@ -388,6 +456,7 @@ function SharedBranch({
           <li key={portfolio.id}>
             <div
               onContextMenu={(event) => onMenu(event, { kind: "portfolio", id: portfolio.id })}
+              data-reveal={`shared-port:${portfolio.id}`}
               data-row={lit ? "marked" : ""}
               className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
             >
@@ -440,6 +509,7 @@ function SharedBranch({
               <li key={document.id}>
                 <button
                   type="button"
+                  data-reveal={`shared-doc:${document.id}`}
                   onClick={() => onOpenDoc(document.id)}
                   onContextMenu={(event) => onMenu(event, { kind: "doc", id: document.id })}
                   aria-current={on ? "page" : undefined}

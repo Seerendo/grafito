@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   Bold,
   BookOpen,
   Code,
@@ -39,6 +40,7 @@ import { useFullscreen } from "@/app/fullscreen";
 import { FileView } from "./FileView";
 import { HistoryDialog } from "./HistoryDialog";
 import { HomeBoard, PortfolioBoard } from "./HomeBoard";
+import { SignatureBar } from "./SignatureDialog";
 import { EditingNow } from "./EditingNow";
 import { FullscreenButton } from "./FullscreenButton";
 import { VisibilityMark } from "./visibility";
@@ -432,6 +434,14 @@ export function EditorPane({
                     }}
                   />
                 ) : null}
+                <MenuButton
+                  icon={<BadgeCheck className="size-4" />}
+                  label={t("Firmas…")}
+                  onClick={() => {
+                    setMenu(false);
+                    setDialog({ type: "signatures", docId: document.id });
+                  }}
+                />
                 {can(PERMISSION.linksManage) ? (
                   <MenuButton
                     icon={<Link2 className="size-4" />}
@@ -500,6 +510,7 @@ export function EditorPane({
       </div>
 
       <EditingNow names={editors} />
+      <SignatureBar docId={document.id} />
 
       {/* Otra persona cambió lo mismo de esta nota: se elige cuál queda (ver `sync.ts`). */}
       {conflicts[document.id] ? (

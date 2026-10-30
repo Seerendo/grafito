@@ -6,6 +6,7 @@ import { isTextAnchor, linkKey, type TextAnchor } from "@/domain/vault/anchor";
 import { migrateLegacyVault, nestSamplePortfolios } from "@/domain/vault/migrate";
 import { PERMISSION, deletePermission } from "@/domain/permissions";
 import { descendantIds } from "@/domain/vault/portfolios";
+import { climb, expandTo, landingAfterDelete } from "@/domain/vault/nav";
 import {
   type DialogState,
   type Document,
@@ -478,11 +479,29 @@ export const useVault = create<VaultState>((set, get) => ({
     });
   },
 
-  setActive: (id) => set({ activeId: id, graph: false, palette: false, folderPicked: false }),
-  selectInGraph: (id) => set({ activeId: id, palette: false, folderPicked: false }),
+  setActive: (id) => {
+    const state = get();
+    const portfolioId = state.documents.find((document) => document.id === id)?.portfolioId ?? null;
+    set({ activeId: id, graph: false, palette: false, folderPicked: false, collapsed: expandTo(state.collapsed, state.portfolios, portfolioId) });
+  },
+  selectInGraph: (id) => {
+    const state = get();
+    const portfolioId = state.documents.find((document) => document.id === id)?.portfolioId ?? null;
+    set({ activeId: id, palette: false, folderPicked: false, collapsed: expandTo(state.collapsed, state.portfolios, portfolioId) });
+  },
   closeActive: () => set({ activeId: null, graph: false }),
-  openPortfolio: (id) =>
-    set({ activeId: null, graph: false, palette: false, selectedPortfolioId: id, rootPicked: false, folderPicked: true }),
+  openPortfolio: (id) => {
+    const state = get();
+    set({
+      activeId: null,
+      graph: false,
+      palette: false,
+      selectedPortfolioId: id,
+      rootPicked: false,
+      folderPicked: true,
+      collapsed: expandTo(state.collapsed, state.portfolios, id),
+    });
+  },
   setMode: (mode) => {
     if (mode !== "read" && !can(PERMISSION.notesEdit)) return;
     set({ mode });
@@ -582,6 +601,7 @@ export const useVault = create<VaultState>((set, get) => ({
       graph: false,
       palette: false,
       selectedPortfolioId: target,
+      collapsed: expandTo(get().collapsed, get().portfolios, target),
       ...(blank ? { draft: { id: document.id, title: name } } : {}),
     });
     return document.id;
@@ -609,6 +629,7 @@ export const useVault = create<VaultState>((set, get) => ({
       graph: false,
       palette: false,
       selectedPortfolioId: portfolioId,
+      collapsed: expandTo(get().collapsed, get().portfolios, portfolioId),
     });
     return null;
   },
@@ -627,53 +648,78 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   deleteDocument: (id) => {
-    const target = get().documents.find((document) => document.id === id);
+    const state = get();
+    const target = state.documents.find((document) => document.id === id);
     if (!target || !can(deletePermission(target.kind))) return;
-    const documents = get()
-      .documents.filter((document) => document.id !== id)
+    const removed = new Set([id]);
+    const documents = state.documents
+      .filter((document) => document.id !== id)
       .map((document) => ({
         ...document,
         links: document.links.filter((link) => link.targetId !== id),
       }));
-    set({
-      documents,
-      activeId: get().activeId === id ? (documents[0]?.id ?? null) : get().activeId,
-      dialog: null,
+    const landing = landingAfterDelete({
+      activeId: state.activeId,
+      folderPicked: state.folderPicked,
+      selectedPortfolioId: state.selectedPortfolioId,
+      removedDocs: removed,
+      removedPortfolios: new Set(),
+      activeDocPortfolioId: target.portfolioId,
+      portfolios: state.portfolios,
     });
+    set({ documents, dialog: null, ...(landing ?? {}) });
   },
 
   deleteMany: (keys) => {
-    for (const key of keys) if (key.startsWith("port:")) get().deletePortfolio(key.slice(5));
-    // Los de un portafolio ya borrado ya no están: se saltan solos.
-    for (const key of keys) if (key.startsWith("doc:")) get().deleteDocument(key.slice(4));
-    set({ dialog: null });
+    const state = get();
+    const removedPortfolios = new Set<string>();
+    if (can(PERMISSION.portfoliosManage)) {
+      for (const key of keys) {
+        if (!key.startsWith("port:")) continue;
+        for (const id of descendantIds(state.portfolios, key.slice(5))) removedPortfolios.add(id);
+      }
+    }
+    const removedDocs = new Set<string>();
+    for (const document of state.documents) {
+      if (document.portfolioId && removedPortfolios.has(document.portfolioId)) removedDocs.add(document.id);
+    }
+    for (const key of keys) {
+      if (!key.startsWith("doc:")) continue;
+      const document = state.documents.find((item) => item.id === key.slice(4));
+      if (document && can(deletePermission(document.kind))) removedDocs.add(document.id);
+    }
+    const documents = state.documents
+      .filter((document) => !removedDocs.has(document.id))
+      .map((document) => ({
+        ...document,
+        links: document.links.filter((link) => !removedDocs.has(link.targetId)),
+      }));
+    const portfolios = state.portfolios.filter((portfolio) => !removedPortfolios.has(portfolio.id));
+    const active = state.documents.find((document) => document.id === state.activeId);
+    const landing = landingAfterDelete({
+      activeId: state.activeId,
+      folderPicked: state.folderPicked,
+      selectedPortfolioId: state.selectedPortfolioId,
+      removedDocs,
+      removedPortfolios,
+      activeDocPortfolioId: active?.portfolioId ?? null,
+      portfolios: state.portfolios,
+    });
+    const selected = landing
+      ? landing.selectedPortfolioId
+      : state.selectedPortfolioId && removedPortfolios.has(state.selectedPortfolioId)
+        ? climb(state.selectedPortfolioId, removedPortfolios, state.portfolios)
+        : state.selectedPortfolioId;
+    set({
+      documents,
+      portfolios,
+      dialog: null,
+      ...(landing ?? { selectedPortfolioId: selected }),
+    });
   },
 
   deletePortfolio: (id) => {
-    if (!can(PERMISSION.portfoliosManage)) return;
-    const portfolio = get().portfolios.find((item) => item.id === id);
-    if (!portfolio) return;
-    const drop = descendantIds(get().portfolios, id);
-    const removed = new Set(
-      get()
-        .documents.filter((document) => document.portfolioId && drop.has(document.portfolioId))
-        .map((document) => document.id),
-    );
-    const documents = get()
-      .documents.filter((document) => !removed.has(document.id))
-      .map((document) => ({
-        ...document,
-        links: document.links.filter((link) => !removed.has(link.targetId)),
-      }));
-    const selected = get().selectedPortfolioId;
-    const activeId = get().activeId;
-    set({
-      portfolios: get().portfolios.filter((item) => !drop.has(item.id)),
-      documents,
-      activeId: activeId !== null && removed.has(activeId) ? null : activeId,
-      selectedPortfolioId: selected !== null && drop.has(selected) ? portfolio.parentId : selected,
-      dialog: null,
-    });
+    get().deleteMany([`port:${id}`]);
   },
 
   moveDocument: (id, portfolioId) => {

@@ -1,12 +1,13 @@
 import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Sheet, Trash2, X } from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
-import { createContext, useContext, useEffect, useState, type DragEvent, type MouseEvent } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
 import { useUploads } from "@/app/files";
 import { usePermissions } from "@/app/permissions";
 import { useTableIndex } from "@/app/table-index";
+import { useDirectoryPick } from "@/app/directory-pick";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION } from "@/domain/permissions";
 import { ingestExternalFiles, isExternalFileDrag } from "./ingest-files";
@@ -117,8 +118,11 @@ export function Sidebar({
   const movePortfolio = useVault((state) => state.movePortfolio);
   const moveMany = useVault((state) => state.moveMany);
   const [dropOver, setDropOver] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string[]>([]);
-  const [anchor, setAnchor] = useState<string | null>(null);
+  const picked = useDirectoryPick((state) => state.picked);
+  const setPicked = useDirectoryPick((state) => state.setPicked);
+  const anchor = useDirectoryPick((state) => state.anchor);
+  const setAnchor = useDirectoryPick((state) => state.setAnchor);
+  const scrolled = useRef<string | null>(null);
 
   // Esc quita la selección; Supr (o Retroceso en Mac) pide eliminar lo elegido.
   useEffect(() => {
@@ -185,7 +189,9 @@ export function Sidebar({
     setAnchor(key);
     return true;
   };
-  const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote);
+  const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote, (target) => {
+    useDirectoryPick.getState().add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
+  });
 
   const tableText = useTableIndex((state) => state.text);
   const filtered = documents.filter((document) => {
@@ -202,6 +208,15 @@ export function Sidebar({
     );
   });
   const searching = query.trim().length > 0 || Boolean(tag);
+  // Al abrir un archivo o un portafolio, la fila queda a la vista (sus padres ya se desplegaron).
+  const revealKey = elsewhere ? null : litId ? `doc:${litId}` : folderPicked && selectedId ? `port:${selectedId}` : null;
+  useEffect(() => {
+    if (!revealKey || scrolled.current === revealKey) return;
+    const row = document.querySelector(`[data-ui="sidebar"] [data-pick="${CSS.escape(revealKey)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    scrolled.current = revealKey;
+  }, [revealKey, collapsed]);
   const forest = buildForest(portfolios, documents);
 
   const open = (id: string) => {

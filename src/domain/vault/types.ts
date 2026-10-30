@@ -79,6 +79,8 @@ export type DialogState =
   | { type: "delete-portfolio"; id: string; shareId?: string; name?: string }
   /** Varios elegidos con Ctrl o Mayús (`doc:<id>`, `port:<id>`). */
   | { type: "delete-many"; keys: string[] }
+  /** Seguimiento de firmas de un documento (propio, o compartido con `shareId`). */
+  | { type: "signatures"; docId: string; shareId?: string }
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }

@@ -4,6 +4,7 @@ import { clearMyShares } from "@/app/shares";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { clearHeldAdmin } from "@/app/vault-hold";
+import { useDirectoryPick } from "@/app/directory-pick";
 import { useVault } from "@/app/vault/store";
 import { signOut } from "@/lib/auth/client";
 import { revokeOwnLease } from "@/server/session.functions";
@@ -15,6 +16,7 @@ export async function leaveApp(): Promise<void> {
     /* la sesión ya no estaba */
   }
   useVault.getState().closeVault();
+  useDirectoryPick.getState().clear();
   clearPermissions();
   clearMyShares();
   useSharedView.getState().closeShared();

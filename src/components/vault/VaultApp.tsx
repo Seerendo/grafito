@@ -25,6 +25,7 @@ import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
 import { asDocuments, orderDocuments } from "@/components/share/shared-tree";
+import { SignatureDialog } from "./SignatureDialog";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
@@ -670,6 +671,10 @@ function VaultDialogs() {
   }, [dialog, documents, portfolios, shared, query]);
 
   if (!dialog) return null;
+
+  if (dialog.type === "signatures") {
+    return <SignatureDialog docId={dialog.docId} shareId={dialog.shareId} onClose={() => setDialog(null)} />;
+  }
 
   if (dialog.type === "share") {
     return <ShareDialog kind={dialog.kind} id={dialog.id} onClose={() => setDialog(null)} />;
