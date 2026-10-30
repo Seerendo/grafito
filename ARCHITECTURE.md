@@ -216,7 +216,7 @@ The `vault/` pieces:
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
 | `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
 | `comments.ts` / `comments.functions.ts` | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`) |
-| `signature.ts` / `signature.functions.ts` | Internal signature trail (`doc_signature`, migration 0030). Not a certificate. See [Signature trail](#signature-trail). |
+| `signature.ts` / `signature.functions.ts` / `signature-stamp.ts` / `signature-p12.ts` | PDF signature rectangles (`doc_signature`, migrations 0030 and 0033). An image is stamped with pdf-lib, or a `.p12` writes a detached PKCS#7 signature once the owner types its password. The rectangle shows a QR code and the certificate name. Neither the image, the certificate, nor the password is stored. Not a qualified signature. See [Signature trail](#signature-trail). |
 | `zip.ts` / `export.ts` / `export.functions.ts` | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it |
 | `git/` / `git.functions.ts` | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions |
 
@@ -574,6 +574,13 @@ same `TextAnchor` as a linked phrase (`domain/vault/anchor.ts`), stored as
 JSON. Right-click a selection in `PdfView` and choose **Nota** or **Vincular**.
 The menu is not shown on selection: a long paragraph used to miss the popup,
 and a selection that crosses pages is clipped to the page under the pointer.
+The composer and the note bubble are placed with `placePopup`
+(`domain/vault/popup.ts`) inside the scroller's visible frame: a selection
+near an edge flips the box to the other side and then clamps it, so the
+viewer's border does not cover it. The box is not moved again while the page
+scrolls. Embedded annotation markers (the 20px badge) are clamped onto the
+page.
+
 Anchored comments are highlighted in yellow and open in a bubble; the comments
 panel shows the quoted phrase, and clicking it focuses the PDF there
 (`useComments.focusPdf`). The PDF file is never changed. Annotations the
@@ -589,29 +596,57 @@ has focus. Enter goes to the next match and Shift+Enter to the previous one.
 
 ## Signature trail
 
-Migration 0030 adds `doc_signature`. This is an acknowledgment inside Grafito:
-who confirmed which version, and when. It is not a qualified electronic
-signature, a certificate, or an eIDAS or PKI signature. Public `/p/` and `/f/`
-viewers do not show it (there is no session).
+Signatures exist only on PDFs. Migration 0030 adds `doc_signature`. Migration
+0033 adds the rectangle (`page`, `box_x`, `box_y`, `box_w`, `box_h`) and
+`doc_signature_file` (the file key after the latest stamp). A PNG or JPEG is
+a visual mark. A `.p12` or `.pfx` is the signer's own certificate: Grafito
+asks for its password, checks it, and writes a detached PKCS#7 signature
+(`adbe.pkcs7.detached`) into that rectangle. The rectangle shows a QR code
+on the left and, beside it, "Firmado electrónicamente por", the certificate
+name and the time. The QR repeats the name, the time and the certificate
+fingerprint. It is not a link to a trust service. Download serves the file
+bytes unchanged, so a PDF reader can check the signature. It is not a
+qualified electronic signature, and not an eIDAS or trust-service seal. The
+image, the `.p12` and the password are used once and are not stored. Public
+`/p/` and `/f/` viewers stay a plain `PdfView` (there is no session).
 
-- The material is `kind`, the title, and the note text or the file key
-  (`domain/signature.ts`). The server stores its SHA-256. If a signed row's
-  fingerprint no longer matches, the list says the document changed after the
-  signature.
-- Who can read the document can see the trail. Who can edit it (the owner, or
-  edit/admin through a share) can request signatures. The people who can be
-  asked are the ones who can already read it. Grafito does not share the
-  document in order to ask. Anyone who cannot read it is named so the client
-  can say to share it with them first.
-- Asking again while a request is pending updates that row. A new request
-  after a signature or a refusal inserts another row and keeps the history.
-- Only the person who was asked can sign or decline, and only while the
-  request is pending and they can still read the document.
-- The bar sits on the open document and on a shared document opened with a
-  session. **Firmas…** opens the dialog. Pending requests for the signed-in
-  person are listed on the Carpeta Personal page; one that belongs to someone
-  else opens in the shared viewer.
-- `purgeDoc` deletes the rows with the document.
+- The owner, or someone who can edit the PDF, draws one rectangle per person
+  (`placeSignatureBox`). The picker is `signatureAudience`
+  (`domain/signature-people.ts` keeps the owner and the caller, and drops
+  workspace accounts). It is not every user in the system. In a personal
+  folder it is the people who can already open that document — a direct share
+  of the file, or a portfolio share that covers it, including members of an
+  invited organization — plus the owner, who can be given a rectangle and
+  sign it. In a workspace it is the organization members with
+  `workspace_access` on that document's portfolio, plus administrators and
+  whole-share editors (`share_grant` `admin` or `edit`). It is not the whole
+  organization: a grant on the workspace root would otherwise list everyone.
+  The person placing the rectangle is included, so they can sign their own
+  box. `placeSignatureBox` rejects a signer outside that list. Grafito does
+  not share the document in order to ask. A pending rectangle for the same
+  person can be moved. A signed one cannot be drawn again. **Quitar** deletes
+  only a pending rectangle.
+- The person signs once (`signPdfBox`), with a PNG or JPEG or with a `.p12`.
+  An image is drawn by `signature-stamp.ts` (pdf-lib) in the crop box
+  (`domain/signature-box.ts` maps the on-screen rectangle for rotations 0,
+  90, 180 and 270) and the image bytes are discarded. A certificate is opened
+  by `signature-p12.ts` with the password the person just typed. A wrong
+  password is refused and nothing is written. The appearance is a QR code
+  and the name, then the private key signs the PDF. The password and the key
+  are dropped. A later certificate signature is appended, so a reader can
+  still check the earlier ones. An image is refused once a certificate
+  signature is present, because rewriting the file would make a reader
+  report it as altered. `doc_signature_file` remembers the latest key, so a
+  later person's stamp does not mark earlier rows as stale. Replacing the
+  file any other way does. The earlier file version stays in the history.
+- Who can read the PDF sees the rectangles and the list (**Firmas**). A
+  signed rectangle leaves the image visible and shows the name. The bar
+  re-reads every 20 seconds, and a new stamp reloads the PDF for whoever has
+  it open. Pending requests are listed on the Carpeta Personal page.
+- Notes and other files have no signature bar and no **Firmas…** menu.
+  `requestSignatures` (a confirmation without a rectangle) remains on the
+  server, but the list only returns rows that have a page.
+- `purgeDoc` deletes the rows and `doc_signature_file` with the document.
 
 ## Space and portfolio permissions
 
@@ -679,7 +714,13 @@ and on every descendant, so a hidden child is not removed. Inside the vault
 existing context pane; the viewer's own aside stays only on the standalone
 shared and public screens. A folder from the computer, with its subfolders,
 uploads to the Carpeta Personal or to a writable workspace portfolio
-(`folderPlan` in `domain/vault/folders.ts`).
+(`folderPlan` in `domain/vault/folders.ts`). A drop on a workspace or on a
+portfolio under **Compartidos conmigo** is taken by that row
+(`SharedSection`) when the user can edit it, and does not fall through to
+the Carpeta Personal. A document share, or a portfolio they cannot edit, is
+refused. Uploads (`uploadFile`, `uploadToShared`, `uploadFolderToShared`)
+are stored and listed without opening the new document. Creating a note,
+a drawing or a table still opens it.
 
 ### Right-click from a page's own buttons
 
@@ -702,8 +743,11 @@ portfolio itself), to its owner's trash. In a workspace that requires `edit`
 on the document's portfolio, and on every portfolio inside a deleted one. In any trash, `listTrash` (`server/vault.ts`) shows a deleted
 portfolio once, top-most, with its documents counted and hidden;
 `restoreTrashItem` brings it back with what was inside (and its deleted
-parents), and `purgeTrash` purges its documents. For a
-workspace that trash is the internal account's, so `myWorkspaceTrashes`,
+parents), and `purgeTrash` purges every id it is given (or the whole trash).
+`TrashBoard` selects several rows. A plain click on the only selected row,
+or on empty space, clears the selection. **Eliminar** sends every selected
+id and then drops them from the selection, so **Recuperar {n}** counts what
+is left. For a workspace that trash is the internal account's, so `myWorkspaceTrashes`,
 `workspaceTrashList`, `…Restore` and `…Purge` let its administrators (and
 `space.manage`) use it; `TrashBoard` shows one tab per workspace. Right-click
 menus use `components/ui/ContextMenu.tsx` and `use-context-menu.tsx`; the
@@ -727,6 +771,16 @@ longer in the share. A network error never prunes. In the graph
 (`graphExtras` in `GraphView`), portfolios with or behind a link are
 diamonds and shared targets have a dashed border; `[[wiki]]` links still
 only resolve to the owner's own notes.
+
+An editable document or note inside a workspace or another shared portfolio
+can be linked the same way, when the role has `links.manage` and the person
+can edit that portfolio (`setSharedLink`, `server/shared-link.ts`). The
+destination is another document, note or portfolio in the same share. The
+link is written on the owner's `vault_doc.links_json` and does not carry the
+viewer's `shareId`. `linkKept` keeps a portfolio target in the published tree
+(a portfolio id is not a document id). A public `/p/` viewer has no
+**Vincular**. The shared graph draws document-to-document edges; portfolio
+targets show in the context pane.
 
 ## Editor colors
 

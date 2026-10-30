@@ -81,7 +81,7 @@ export function useRowMenu(onOpenNote: (id: string) => void, onSelect?: (target:
         onChange={(event) => {
           const files = [...(event.target.files ?? [])];
           event.target.value = "";
-          void ingestExternalFiles(files, uploadTo.current).then(() => onOpenNote(useVault.getState().activeId ?? ""));
+          void ingestExternalFiles(files, uploadTo.current);
         }}
       />
       {menu ? (

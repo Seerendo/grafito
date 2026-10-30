@@ -37,7 +37,7 @@ export function TrashBoard() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<"all" | string[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -132,6 +132,12 @@ export function TrashBoard() {
       setAnchor(id);
       return;
     }
+    // Un segundo clic en el único elegido lo suelta.
+    if (picked.length === 1 && picked[0] === id) {
+      setPicked([]);
+      setAnchor(null);
+      return;
+    }
     setPicked([id]);
     setAnchor(id);
   };
@@ -142,6 +148,11 @@ export function TrashBoard() {
     try {
       const result = tab ? await workspaceTrashPurge({ data: { shareId: tab, ids } }) : await trashPurge({ data: { ids } });
       if (!result.ok) setError(result.error);
+      else {
+        const gone = new Set(ids ?? []);
+        setPicked((current) => (ids ? current.filter((item) => !gone.has(item)) : []));
+        setAnchor(null);
+      }
       await load();
     } catch {
       setError(t("No se pudo borrar."));
@@ -151,7 +162,16 @@ export function TrashBoard() {
   };
 
   return (
-    <div data-ui="trash" className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8" onContextMenu={autoMenu.onContextMenu}>
+    <div
+      data-ui="trash"
+      className="h-full overflow-y-auto bg-bg px-4 py-8 sm:px-8"
+      onContextMenu={autoMenu.onContextMenu}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("[data-trash-row], button")) return;
+        setPicked([]);
+        setAnchor(null);
+      }}
+    >
       <div className="w-full">
         <div className="flex flex-wrap items-end gap-3">
           <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Papelera")}</h1>
@@ -219,6 +239,7 @@ export function TrashBoard() {
               return (
                 <li
                   key={item.id}
+                  data-trash-row
                   aria-selected={on}
                   onClick={(event) => pickRow(event, item.id)}
                   className={`flex cursor-pointer flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0 ${on ? "bg-accent/15" : "hover:bg-elevated"}`}
@@ -232,7 +253,15 @@ export function TrashBoard() {
                             },
                           ]
                         : []),
-                      ...(mayPurge ? [{ label: t("Eliminar para siempre"), danger: true, onClick: () => setConfirming(item.id) }] : []),
+                      ...(mayPurge
+                        ? [
+                            {
+                              label: chosen.length > 1 ? t("Eliminar {n}", { n: chosen.length }) : t("Eliminar para siempre"),
+                              danger: true,
+                              onClick: () => setConfirming(chosen),
+                            },
+                          ]
+                        : []),
                     ])
                   }
                 >
@@ -251,8 +280,8 @@ export function TrashBoard() {
                       <TextAction onClick={() => void restoreMany([item.id])}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
                     ) : null}
                     {mayPurge ? (
-                      <TextAction tone="danger" onClick={() => setConfirming(item.id)}>
-                        {t("Eliminar")}
+                      <TextAction tone="danger" onClick={() => setConfirming(chosen)}>
+                        {chosen.length > 1 ? t("Eliminar {n}", { n: chosen.length }) : t("Eliminar")}
                       </TextAction>
                     ) : null}
                   </span>
@@ -271,9 +300,11 @@ export function TrashBoard() {
             <p className="text-sm text-muted">
               {confirming === "all"
                 ? t("Se borrará para siempre todo lo que hay en esta papelera ({n}). No se puede deshacer.", { n: items?.length ?? 0 })
-                : t("«{0}» se borrará para siempre. No se puede deshacer.", {
-                    0: items?.find((item) => item.id === confirming)?.title ?? "",
-                  })}
+                : confirming.length > 1
+                  ? t("Se borrarán para siempre {n} elementos. No se puede deshacer.", { n: confirming.length })
+                  : t("«{0}» se borrará para siempre. No se puede deshacer.", {
+                      0: items?.find((item) => item.id === confirming[0])?.title ?? "",
+                    })}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setConfirming(null)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
@@ -282,7 +313,7 @@ export function TrashBoard() {
               <button
                 type="button"
                 autoFocus
-                onClick={() => void purge(confirming === "all" ? undefined : [confirming])}
+                onClick={() => void purge(confirming === "all" ? undefined : confirming)}
                 className="h-11 rounded-md bg-danger px-4 text-sm font-medium text-accent-fg"
               >
                 {confirming === "all" ? t("Vaciar") : t("Eliminar para siempre")}

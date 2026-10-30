@@ -7,6 +7,7 @@ import { syncVault } from "@/app/vault/sync";
 import type { VaultFile } from "@/domain/vault/types";
 import { OfficeEditor } from "./OfficeEditor";
 import { PdfView } from "./PdfView";
+import { PdfSignatures } from "./PdfSignatures";
 import { DrawingView } from "./DrawingView";
 import { isDrawingName } from "@/domain/vault/drawing";
 import { isTableName } from "@/domain/vault/table";
@@ -50,6 +51,7 @@ export function FileView({
   shareId,
   onOpenNote,
   canEdit = false,
+  manual,
 }: {
   title: string;
   file: VaultFile;
@@ -59,6 +61,8 @@ export function FileView({
   onOpenNote?: (id: string) => void;
   /** En lo compartido: si se puede editar (dibujos). */
   canEdit?: boolean;
+  /** Frases de un PDF compartido: vínculos que ya tiene y, si se puede, crear uno. */
+  manual?: Omit<PdfLinking, "focus" | "onFocused">;
 }) {
   const can = usePermissions();
   // Una tabla de datos: sus filas viven en el servidor, no en el archivo.
@@ -78,13 +82,17 @@ export function FileView({
     );
   }
   return links ? (
-    <FileBody
-      title={title}
-      file={file}
-      links={links}
-      office={shareId ? { docId, shareId } : null}
-      drawing={{ docId, shareId, canEdit: canEdit && Boolean(shareId) }}
-    />
+    manual ? (
+      <ManualFile title={title} file={file} docId={docId} fileLinks={links} shareId={shareId} canEdit={canEdit} manual={manual} />
+    ) : (
+      <FileBody
+        title={title}
+        file={file}
+        links={links}
+        office={shareId ? { docId, shareId } : null}
+        drawing={{ docId, shareId, canEdit: canEdit && Boolean(shareId) }}
+      />
+    )
   ) : (
     <OwnFile title={title} file={file} docId={docId} onOpenNote={onOpenNote} />
   );
@@ -135,6 +143,39 @@ function OwnFile({
       office={{ docId }}
       pdf={pdf}
       drawing={{ docId, canEdit: can(PERMISSION.notesEdit), onOpenNote }}
+    />
+  );
+}
+
+/** PDF de un espacio o de lo compartido: las frases vinculadas se abren y, con permiso, se crean. */
+function ManualFile({
+  title,
+  file,
+  docId,
+  fileLinks,
+  shareId,
+  canEdit,
+  manual,
+}: {
+  title: string;
+  file: VaultFile;
+  docId: string;
+  fileLinks: FileLinks;
+  shareId?: string;
+  canEdit: boolean;
+  manual: Omit<PdfLinking, "focus" | "onFocused">;
+}) {
+  const focus = useVault((state) => (state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null));
+  const setFocusAnchor = useVault((state) => state.setFocusAnchor);
+  const onFocused = useCallback(() => setFocusAnchor(null), [setFocusAnchor]);
+  return (
+    <FileBody
+      title={title}
+      file={file}
+      links={fileLinks}
+      office={shareId ? { docId, shareId } : null}
+      pdf={{ ...manual, focus, onFocused }}
+      drawing={{ docId, shareId, canEdit: canEdit && Boolean(shareId) }}
     />
   );
 }
@@ -239,14 +280,22 @@ function FileBody({
             onOpenNote={drawing.onOpenNote}
           />
         ) : kind === "pdf" ? (
-          <PdfView
-            key={links.url}
-            url={links.url}
-            title={title}
-            {...pdf}
-            // Notas sobre frases: en lo propio y en lo compartido con sesión, no en un enlace público.
-            notes={office ? { docId: office.docId, shareId: office.shareId } : undefined}
-          />
+          office ? (
+            <PdfSignatures
+              key={links.url}
+              url={links.url}
+              title={title}
+              {...pdf}
+              notes={{ docId: office.docId, shareId: office.shareId }}
+            />
+          ) : (
+            <PdfView
+              key={links.url}
+              url={links.url}
+              title={title}
+              {...pdf}
+            />
+          )
         ) : kind === "video" ? (
           <video key={links.url} src={links.url} controls onError={broken} className="mx-auto max-h-[70vh] max-w-full rounded-md" />
         ) : kind === "audio" ? (

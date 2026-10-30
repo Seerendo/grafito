@@ -15,14 +15,14 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
-import { resolveLink, useSharedTrees } from "@/app/shared-links";
+import { commitSharedLink, resolveLink, useSharedTrees } from "@/app/shared-links";
 import { useSharedView } from "@/app/shared-view";
 import { useActiveDocument, useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
-import { linkKey } from "@/domain/vault/anchor";
-import { asDocuments } from "@/components/share/shared-tree";
+import { linkKey, type TextAnchor } from "@/domain/vault/anchor";
+import { asDocuments, canEditSharedPortfolio } from "@/components/share/shared-tree";
 import { SharedContext } from "@/components/share/SharedContext";
 import { Comments } from "./Comments";
 
@@ -108,16 +108,33 @@ export function ContextPane({
     );
     const opened = sharedDocuments.find((item) => item.id === sharedDoc.id);
     if (opened) {
+      const canLinkShared = canLink && canEditSharedPortfolio(sharedTree, opened.portfolioId);
+      const openSharedTarget = (id: string, anchor?: TextAnchor) => {
+        if (anchor) setFocusAnchor({ docId: id, anchor });
+        const tree = useSharedView.getState().tree;
+        if (!tree) return;
+        if (tree.portfolios.some((portfolio) => portfolio.id === id) && !tree.documents.some((item) => item.id === id)) {
+          useSharedView.getState().openSharedPortfolio(tree, id);
+          return;
+        }
+        useSharedView.getState().openShared(tree, id);
+      };
       return (
         <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
           <CollapseButton onCollapse={onCollapse} />
           <SharedContext
             document={opened}
             documents={sharedDocuments}
-            onOpen={(id) => {
-              const tree = useSharedView.getState().tree;
-              if (tree) useSharedView.getState().openShared(tree, id);
-            }}
+            portfolios={sharedTree.portfolios}
+            onOpen={openSharedTarget}
+            onLink={canLinkShared ? () => setDialog({ type: "link", sourceId: opened.id, shareId: sharedTree.share.id }) : undefined}
+            onUnlink={
+              canLinkShared
+                ? (link) => {
+                    void commitSharedLink(sharedTree.share.id, opened.id, { remove: link });
+                  }
+                : undefined
+            }
           />
           <section className="border-b border-line py-3">
             <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">

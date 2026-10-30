@@ -37,10 +37,10 @@ import { downloadFile } from "@/app/files";
 import { keepMine, keepTheirs, syncVault } from "@/app/vault/sync";
 import { useNotePresence } from "@/app/presence";
 import { useFullscreen } from "@/app/fullscreen";
+import { isPdfFile } from "@/domain/signature-box";
 import { FileView } from "./FileView";
 import { HistoryDialog } from "./HistoryDialog";
 import { HomeBoard, PortfolioBoard } from "./HomeBoard";
-import { SignatureBar } from "./SignatureDialog";
 import { EditingNow } from "./EditingNow";
 import { FullscreenButton } from "./FullscreenButton";
 import { VisibilityMark } from "./visibility";
@@ -434,14 +434,16 @@ export function EditorPane({
                     }}
                   />
                 ) : null}
-                <MenuButton
-                  icon={<BadgeCheck className="size-4" />}
-                  label={t("Firmas…")}
-                  onClick={() => {
-                    setMenu(false);
-                    setDialog({ type: "signatures", docId: document.id });
-                  }}
-                />
+                {document.file && isPdfFile(document.file.name, document.file.mime) ? (
+                  <MenuButton
+                    icon={<BadgeCheck className="size-4" />}
+                    label={t("Firmas…")}
+                    onClick={() => {
+                      setMenu(false);
+                      setDialog({ type: "signatures", docId: document.id });
+                    }}
+                  />
+                ) : null}
                 {can(PERMISSION.linksManage) ? (
                   <MenuButton
                     icon={<Link2 className="size-4" />}
@@ -510,7 +512,6 @@ export function EditorPane({
       </div>
 
       <EditingNow names={editors} />
-      <SignatureBar docId={document.id} />
 
       {/* Otra persona cambió lo mismo de esta nota: se elige cuál queda (ver `sync.ts`). */}
       {conflicts[document.id] ? (

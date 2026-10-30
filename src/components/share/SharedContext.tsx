@@ -1,23 +1,31 @@
-import { ArrowDownLeft, FileText, Link2, ListTree } from "lucide-react";
+import { ArrowDownLeft, FileText, Link2, ListTree, Plus, X } from "lucide-react";
 import type { ReactNode } from "react";
+import type { TextAnchor } from "@/domain/vault/anchor";
 import { backlinkLine, extractHeadings, extractWikiLinks, findByTitle } from "@/domain/vault/links";
-import type { Document, ManualKind } from "@/domain/vault/types";
+import type { Document, ManualKind, ManualLink } from "@/domain/vault/types";
 import { t } from "@/app/i18n";
 
 const KIND_LABEL: Record<ManualKind, string> = { referencia: "Referencia", llama: "Invoca" };
 
 /**
  * Esquema, vínculos y menciones de un documento compartido, para moverse
- * rápido entre lo publicado. Solo lectura: no se crean ni quitan vínculos.
+ * rápido entre lo publicado. Con `onLink`, quien puede editar también vincula
+ * notas y archivos de ese espacio (se guardan en la bóveda del dueño).
  */
 export function SharedContext({
   document,
   documents,
+  portfolios = [],
   onOpen,
+  onLink,
+  onUnlink,
 }: {
   document: Document;
   documents: Document[];
-  onOpen: (id: string) => void;
+  portfolios?: { id: string; name: string }[];
+  onOpen: (id: string, anchor?: TextAnchor) => void;
+  onLink?: () => void;
+  onUnlink?: (link: ManualLink) => void;
 }) {
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const outgoing = [
@@ -28,14 +36,17 @@ export function SharedContext({
         })
       : []),
     ...document.links.flatMap((link) => {
-      const target = documents.find((item) => item.id === link.targetId);
-      return target
+      const portfolio = link.target === "portfolio" ? portfolios.find((item) => item.id === link.targetId) : undefined;
+      const target = portfolio ? undefined : documents.find((item) => item.id === link.targetId);
+      const title = portfolio?.name ?? target?.title;
+      return title
         ? [
             {
-              id: target.id,
-              title: target.title,
+              id: portfolio?.id ?? target!.id,
+              title,
               label: KIND_LABEL[link.kind],
               detail: link.anchor ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»` : "",
+              link,
             },
           ]
         : [];
@@ -54,6 +65,7 @@ export function SharedContext({
           id: item.id,
           title: item.title,
           detail: wiki ? backlinkLine(item.content, document.title) : manual ? t(KIND_LABEL[manual.kind]) : "",
+          anchor: manual?.anchor,
         },
       ];
     });
@@ -86,18 +98,40 @@ export function SharedContext({
         </Block>
       ) : null}
       <Block title={t("Vínculos")} icon={<Link2 className="size-3.5" />} count={outgoing.length}>
+        {onLink ? (
+          <button
+            type="button"
+            onClick={onLink}
+            className="mb-1 inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-accent hover:bg-elevated"
+          >
+            <Plus className="size-3.5" />
+            {t("Vincular")}
+          </button>
+        ) : null}
         {outgoing.length === 0 ? (
           <Empty>{t("Sin vínculos.")}</Empty>
         ) : (
           <ul>
             {outgoing.map((item, index) => (
-              <li key={`${item.id}-${index}`}>
-                <Row
-                  onClick={() => onOpen(item.id)}
-                  title={item.title}
-                  badge={t(item.label)}
-                  detail={item.detail}
-                />
+              <li key={`${item.id}-${index}`} className="flex items-center gap-1">
+                <div className="min-w-0 flex-1">
+                  <Row
+                    onClick={() => onOpen(item.id)}
+                    title={item.title}
+                    badge={t(item.label)}
+                    detail={item.detail}
+                  />
+                </div>
+                {onUnlink && "link" in item && item.link ? (
+                  <button
+                    type="button"
+                    aria-label={t("Quitar vínculo")}
+                    onClick={() => onUnlink(item.link)}
+                    className="grid size-8 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -110,7 +144,7 @@ export function SharedContext({
           <ul>
             {incoming.map((item) => (
               <li key={item.id}>
-                <Row onClick={() => onOpen(item.id)} title={item.title} detail={item.detail} />
+                <Row onClick={() => onOpen(item.id, item.anchor)} title={item.title} detail={item.detail} />
               </li>
             ))}
           </ul>

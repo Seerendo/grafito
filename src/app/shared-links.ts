@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { create } from "zustand";
-import { sharedWithMe } from "@/server/share.functions";
+import { setSharedLink, sharedWithMe } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
 import type { SharedTree } from "@/server/share";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
@@ -91,6 +91,38 @@ export function sharedTarget(
   }
   const document = tree.documents.find((item) => item.id === link.targetId);
   return document ? { title: document.title, kind: document.kind, tree, ownerName: tree.share.ownerName } : null;
+}
+
+/**
+ * Guarda un vínculo en un documento de un espacio o de lo compartido y deja
+ * el árbol abierto al día. Devuelve el error, o `null` si se guardó.
+ */
+export async function commitSharedLink(
+  shareId: string,
+  docId: string,
+  change: { add?: ManualLink; remove?: { targetId: string; anchor?: ManualLink["anchor"] } },
+): Promise<string | null> {
+  const result = await setSharedLink({ data: { shareId, docId, ...change } }).catch(() => null);
+  if (!result?.ok) return result?.error ?? "No se pudo guardar.";
+  const view = useSharedView.getState();
+  if (view.tree?.share.id === shareId) {
+    const next = {
+      ...view.tree,
+      documents: view.tree.documents.map((document) => (document.id === docId ? { ...document, links: result.links } : document)),
+    };
+    if (view.docId) view.openShared(next, view.docId);
+    else view.openSharedPortfolio(next, view.portfolioId);
+  }
+  void fetchSharedTree(shareId, true)
+    .then((fresh) => {
+      if (!fresh) return;
+      const current = useSharedView.getState();
+      if (current.tree?.share.id !== shareId) return;
+      if (current.docId) current.openShared(fresh, current.docId);
+      else current.openSharedPortfolio(fresh, current.portfolioId);
+    })
+    .catch(() => undefined);
+  return null;
 }
 
 /** Todo lo que se puede elegir como destino compartido (para el diálogo de vincular). */

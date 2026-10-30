@@ -248,7 +248,7 @@ export function Sidebar({
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
     const internal = isVaultDrag(event.dataTransfer) && canManagePortfolios;
     if (!external && (searching || !internal)) return;
-    if (key === "root" && (event.target as HTMLElement).closest("[data-drop-portfolio]")) return;
+    if (key === "root" && (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = external ? "copy" : "move";
@@ -258,7 +258,7 @@ export function Sidebar({
   const takeExternal = (data: DataTransfer, portfolioId: string | null) => {
     void readDroppedEntries(data).then((files) => {
       if (files.length === 0) return;
-      void ingestExternalFiles(files, portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""));
+      void ingestExternalFiles(files, portfolioId);
     });
   };
 
@@ -266,7 +266,7 @@ export function Sidebar({
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
     const internal = isVaultDrag(event.dataTransfer) && canManagePortfolios;
     if (!external && (searching || !internal)) return;
-    if (portfolioId === null && (event.target as HTMLElement).closest("[data-drop-portfolio]")) return;
+    if (portfolioId === null && (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")) return;
     event.preventDefault();
     event.stopPropagation();
     setDropOver(null);
@@ -340,13 +340,13 @@ export function Sidebar({
       }}
       onDragOver={(event) => {
         if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
-        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-root]")) return;
+        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share], [data-drop-root]")) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
       }}
       onDrop={(event) => {
         if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
-        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-root]")) return;
+        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share], [data-drop-root]")) return;
         event.preventDefault();
         event.stopPropagation();
         setDropOver(null);

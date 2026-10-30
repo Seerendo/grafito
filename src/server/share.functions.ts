@@ -6,6 +6,9 @@ import { personName } from "@/server/access-trace";
 import { requireLease } from "@/server/lease";
 import { deliverNotice } from "@/server/notify";
 import { allows, readUserProfile } from "@/server/profile";
+import { isTextAnchor } from "@/domain/vault/anchor";
+import type { ManualLink } from "@/domain/vault/types";
+import { changeSharedLink } from "@/server/shared-link";
 import {
   ownerShares,
   revokeShareLink,
@@ -182,6 +185,56 @@ export const sharedDocContent = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     return sharedDocText(sql, { userId: context.userId, shareId: data.shareId }, data.docId);
+  });
+
+const sharedAnchor = z.object({
+  page: z.number().int().min(1).max(10000),
+  exact: z.string().min(1).max(300),
+  prefix: z.string().max(80),
+  suffix: z.string().max(80),
+});
+
+const sharedLink = z.object({
+  targetId: id,
+  kind: z.enum(["referencia", "llama"]),
+  target: z.literal("portfolio").optional(),
+  anchor: sharedAnchor.optional(),
+});
+
+/** Vincula (o desvincula) un documento de un espacio o de un portafolio compartido. */
+export const setSharedLink = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({
+        shareId: id,
+        docId: id,
+        add: sharedLink.optional(),
+        remove: z.object({ targetId: id, anchor: sharedAnchor.optional() }).optional(),
+      })
+      .refine((value) => Boolean(value.add) !== Boolean(value.remove))
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const sql = await requireLease(context.userId);
+    const profile = await readUserProfile(sql, context.userId);
+    const add: ManualLink | undefined = data.add
+      ? {
+          targetId: data.add.targetId,
+          kind: data.add.kind,
+          ...(data.add.target ? { target: data.add.target } : {}),
+          ...(data.add.anchor && isTextAnchor(data.add.anchor) ? { anchor: data.add.anchor } : {}),
+        }
+      : undefined;
+    return changeSharedLink(sql, {
+      userId: context.userId,
+      actor: profile.displayName || profile.loginName || "Alguien",
+      canLink: allows(profile, PERMISSION.linksManage),
+      shareId: data.shareId,
+      docId: data.docId,
+      add,
+      remove: data.remove,
+    });
   });
 
 /** Lo mismo por enlace público. No requiere sesión. */

@@ -308,13 +308,24 @@ After that, the start screen is a normal sign-in.
   diamonds and links to shared items with a dashed border; opening them goes
   to the portfolio's page or to the shared viewer. If you lose access, or the
   item stops being shared, the link is removed by itself.
-- Drop files from your computer onto a portfolio:
+  - In a workspace, or in a shared portfolio you can edit, **Vincular** (the
+    toolbar, the context pane, a document's right-click menu, or a phrase in
+    a PDF) offers the notes, files and portfolios of that same share. The
+    link is saved on the owner's document. A public link does not offer it.
+- Drop files from your computer onto a portfolio, onto a workspace, or onto
+  a portfolio under **Compartidos conmigo** that you can edit:
   - A `.md` file becomes a note.
   - Anything else is uploaded to the server in parts, with progress at the
     bottom of the directory. The limit is 100 MB per file by default
     (`GRAFITO_MAX_UPLOAD_MB`).
-  - Images, PDFs, video and audio are previewed. Everything else can be
-    downloaded.
+  - The file is stored and shows up in that folder. It does not open.
+    **Nueva nota**, **Nuevo dibujo** and **Nueva tabla** still open, because
+    those are there to edit.
+  - If you cannot add anything there (a read-only portfolio, or a single
+    shared document), Grafito says so and does not put the file in the
+    Carpeta Personal.
+  - Images, PDFs, video and audio are previewed when you open them.
+    Everything else can be downloaded.
 - **Drawings:** **Nuevo dibujo** (on a portfolio's page or in the right-click
   menu) creates an Excalidraw drawing.
   - It is a `.excalidraw` file, so it can be linked, shared and restored from
@@ -327,8 +338,9 @@ After that, the start screen is a normal sign-in.
   - Excalidraw and its fonts are served by Grafito, so drawings work offline.
 - **Linking a phrase in a PDF:** select a word or phrase in a PDF (a document
   number, for example), right-click it and choose **Vincular**. Then pick the
-  note or file it points to. A long selection stays on the page under the
-  pointer.
+  note or file it points to. The same menu works on a PDF in a workspace or
+  a shared portfolio you can edit; the target has to be in that share. A long
+  selection stays on the page under the pointer.
   - The phrase stays highlighted. Clicking it opens its target.
   - The target lists it under **Menciones** with its page («Contrato.pdf ·
     pág. 2 · «EXP-7781»»). Clicking that opens the PDF at the phrase.
@@ -336,7 +348,9 @@ After that, the start screen is a normal sign-in.
     links from the whole file.
   - Scanned PDFs have no text to select.
 - **Notes on a PDF:** select a phrase, right-click it and choose **Nota**. The
-  PDF file is not changed.
+  PDF file is not changed. If the phrase sits against the edge of the viewer,
+  the note box and its bubble move inside the frame so the border does not
+  cover them. A marker the PDF already had stays on the page.
 - **Search in a PDF:** **Ctrl+F** (⌘F) opens a find bar with the query, how
   many matches there are, and the previous and next match. Enter goes to the
   next one and Shift+Enter to the previous. Esc closes the bar.
@@ -400,6 +414,9 @@ After that, the start screen is a normal sign-in.
     portfolios) folds or unfolds it, and clicking its name opens its page:
     its portfolios, its documents and the recent ones, with a path back up. Only what is open stays highlighted in the
     directory: the Carpeta Personal is no longer marked.
+  - Dragging a file onto a workspace, or onto one of its portfolios, uploads
+    it there when you can edit that portfolio. The same is true under
+    **Compartidos conmigo**. The new file is not opened.
   - Right-click a workspace, one of its portfolios or a document, in the
     directory or on its page (also on an empty spot of the page, as in the
     Carpeta Personal): new note, new portfolio, upload a file, upload a
@@ -584,23 +601,61 @@ Public links are always read-only.
   version.
 - **Trash:** deleting a note, file or portfolio moves it to **Papelera**.
   - From there you can **Recuperar** it. You stay on the trash. Click a row to
-    select it; Ctrl/Cmd adds or removes and Shift selects a range. **Recuperar
-    {n}** (or the same action on right-click) brings the selection back and
-    stops if one of them fails. A note returns to its portfolio, which
-    is recovered too if it was deleted. A deleted portfolio shows up once,
-    with how many documents it holds, and comes back with everything inside.
-  - Or you can delete it for good, one by one or all at once with **Vaciar
-    papelera** (also on right-click). Both ask in a dialog first.
+    select it; Ctrl/Cmd adds or removes and Shift selects a range. Click that
+    row again when it is the only one selected, or click an empty part of the
+    trash, to clear the selection. **Recuperar {n}** (or the same action on
+    right-click) brings the selection back and stops if one of them fails. A
+    note returns to its portfolio, which is recovered too if it was deleted.
+    A deleted portfolio shows up once, with how many documents it holds, and
+    comes back with everything inside.
+  - Or you can delete it for good. **Eliminar** on a selected row (or the same
+    action on right-click) deletes the whole selection, not just that row,
+    after one confirmation. **Recuperar {n}** then counts what is left.
+    **Vaciar papelera** (also on right-click) deletes everything in that
+    trash. Both ask in a dialog first.
   - Items are removed automatically after 30 days.
 
-## Signature trail
+## Signatures on a PDF
 
-**Firmas…** on a note or file, and the **Firmas** bar on the open document,
-asks someone who can already read it to confirm that version. Grafito records
-who confirmed it and when. This is not a qualified electronic signature or a
-certificate: if the document changes afterwards, the signature says so. Grafito
-does not share the document in order to ask. Pending requests for you are
-listed on the Carpeta Personal page. A public link does not show the trail.
+**Firmas** is only for a PDF. Other notes and files do not have it.
+
+The owner, or someone who can edit the PDF, draws one rectangle on a page
+and chooses the person it belongs to. The list is only people who can
+already open that PDF, not every account. In Carpeta Personal that is the
+people the document was shared with (the file itself, or a folder that
+contains it) and the owner. In a workspace it is the organization members
+who were given access to that document's folder, plus the administrators.
+The owner can assign a rectangle to themselves and sign it. Grafito does
+not share the document in order to ask.
+
+Each person signs **once**, from their rectangle. They can upload a PNG or
+JPEG, which Grafito stamps into the PDF and does not keep. Or they can
+choose a `.p12` or `.pfx` certificate. Grafito asks for that file's
+password, uses it only to unlock the certificate, and signs the PDF with
+it. The certificate and the password are not kept, and the next document
+needs a new upload. A wrong password does not change the PDF.
+
+The certificate signature is a detached PKCS#7 signature. The rectangle
+shows a QR code and, next to it, "Firmado electrónicamente por", the name
+on the certificate and the time. The QR repeats that name, the time and the
+certificate fingerprint. **Descargar** saves that same PDF. Open it in a
+reader that can check signatures: it checks that the file was signed by
+that certificate and has not changed since. This is the signer's own
+certificate. It is not a qualified electronic signature and not an eIDAS
+or trust-service seal. A reader may still say the certificate is not
+trusted when it does not know the issuer.
+
+A later certificate signature is added at the end of the file, so the
+earlier ones still check out. An image is refused once a certificate
+signature is there, because replacing the whole file would make a reader
+report that signature as altered. The earlier file version stays in the
+file history.
+
+Whoever can open the PDF sees each signature in its rectangle, and **Firmas**
+lists who has signed, who is still pending and who declined. If the PDF is
+replaced by something other than a later signature, the list says the
+document changed afterwards. A pending request for you is also listed on the
+Carpeta Personal page. A public link does not show any of this.
 
 ## Office documents
 

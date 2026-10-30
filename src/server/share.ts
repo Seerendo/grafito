@@ -12,7 +12,7 @@ import {
   type AccessHit,
   type GrantPeriod,
 } from "@/server/access-trace";
-import { coveredBy, coveredByAll, type ShareKind, type ShareTarget } from "@/domain/share";
+import { coveredBy, coveredByAll, linkKept, type ShareKind, type ShareTarget } from "@/domain/share";
 import { signedFileUrl } from "./file-links";
 import { portfolioLineage } from "./space";
 import { redisPutTree, redisTreeBody, redisTreeChecked, redisTreeState, type SharedTreeMeta } from "./redis";
@@ -91,7 +91,7 @@ export type PublishedDoc = {
   file: { name: string; mime: string; url: string; downloadUrl: string | null } | null;
   updatedBy: string;
   updatedAt: string;
-  /** Vínculos manuales a otros documentos de lo compartido (para el grafo y los vínculos). */
+  /** Vínculos manuales a documentos o portafolios de lo compartido (grafo y panel). */
   links?: ManualLink[];
   /**
    * Sin el texto (`content` vacío): se pide al abrirlo (`sharedDocContent`,
@@ -630,7 +630,7 @@ async function packedEntry(
       // Lo común (una nota sin archivo y con todos sus vínculos dentro de lo
       // compartido) se empaqueta una vez y se reutiliza hasta que cambie: así,
       // tras cada guardado, rehacer el árbol de miles de notas es casi gratis.
-      const plain = !document.file && document.links.every((link) => covered.documentIds.has(link.targetId));
+      const plain = !document.file && document.links.every((link) => linkKept(link, covered));
       if (plain) {
         let packed = packedDocs.get(document);
         if (!packed) {
@@ -644,7 +644,7 @@ async function packedEntry(
       docs.push(
         packDoc({
           ...shown,
-          links: shown.links?.filter((link) => covered.documentIds.has(link.targetId)),
+          links: shown.links?.filter((link) => linkKept(link, covered)),
           file: shown.file ? { ...shown.file, ...links(document.id) } : null,
         }),
       );
@@ -659,7 +659,7 @@ async function packedEntry(
       portfolios.filter((portfolio) => covered.portfolioIds.has(portfolio.id)),
       documents
         .filter((document) => covered.documentIds.has(document.id))
-        .map((document) => ({ ...document, links: document.links?.filter((link) => covered.documentIds.has(link.targetId)) })),
+        .map((document) => ({ ...document, links: document.links?.filter((link) => linkKept(link, covered)) })),
     );
   }
   const entry: PackedEntry = { body, at: now, checkedAt: now, revision: index?.revision ?? null };

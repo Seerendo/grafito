@@ -4,13 +4,16 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { PERMISSION } from "@/domain/permissions";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { shareCandidates } from "@/server/share";
 import {
   canRequestSignatures,
   decideSignature,
   listSignatures,
   pendingSignatures,
+  placeSignatureBox,
+  removeSignatureBox,
   requestSignatures,
+  signPdfBox,
+  signatureAudience,
   signatureOwner,
 } from "@/server/signature";
 
@@ -45,14 +48,14 @@ export const signatureState = createServerFn({ method: "GET" })
     };
   });
 
-/** Personas a las que se les puede pedir la firma (las mismas que al compartir). */
+/** Quien ya puede abrir este documento, y su dueño. No todos los usuarios. */
 export const signaturePeople = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.parse(input))
   .handler(async ({ context: auth, data }) => {
-    const { sql, canRequest } = await context(auth.userId, data.docId, data.shareId);
-    if (!canRequest) return [];
-    return shareCandidates(sql, auth.userId);
+    const { sql, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
+    if (!ownerId || !canRequest) return [];
+    return signatureAudience(sql, ownerId, data.docId, auth.userId);
   });
 
 export const askSignatures = createServerFn({ method: "POST" })
@@ -85,6 +88,73 @@ export const answerSignature = createServerFn({ method: "POST" })
   .handler(async ({ context: auth, data }) => {
     const sql = await requireLease(auth.userId);
     return decideSignature(sql, { userId: auth.userId, id: data.id, status: data.status, note: data.note ?? "" });
+  });
+
+const box = z.object({
+  page: z.number().int().min(1).max(500),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  w: z.number().min(0).max(1),
+  h: z.number().min(0).max(1),
+});
+
+/** El dueño o quien edita el PDF marca el recuadro de una persona. */
+export const placeSignature = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.extend({ userId: id, box }).parse(input))
+  .handler(async ({ context: auth, data }) => {
+    const { sql, profile, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
+    if (!ownerId || !canRequest) return { ok: false as const, error: "No puedes pedir firmas en este documento." };
+    return placeSignatureBox(sql, {
+      ownerId,
+      docId: data.docId,
+      requesterId: auth.userId,
+      requesterName: profile.displayName || profile.loginName || "Alguien",
+      signerId: data.userId,
+      box: data.box,
+    });
+  });
+
+/** Quita un recuadro pendiente. La imagen, si ya se firmó, está en el PDF y no se borra. */
+export const removeSignature = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => target.extend({ signatureId: id }).parse(input))
+  .handler(async ({ context: auth, data }) => {
+    const { sql, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
+    if (!ownerId || !canRequest) return { ok: false as const, error: "No puedes pedir firmas en este documento." };
+    return removeSignatureBox(sql, { ownerId, id: data.signatureId });
+  });
+
+/**
+ * La persona del recuadro firma una vez. Una imagen se estampa; un .p12 firma
+ * el PDF con esa clave. Ni la imagen, ni el certificado, ni la contraseña se
+ * guardan.
+ */
+export const signPdf = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({
+        id,
+        image: z.string().min(32).max(700_000).optional(),
+        p12: z.string().min(32).max(4_000_000).optional(),
+        password: z.string().max(500).optional(),
+      })
+      .refine((value) => Boolean(value.image) !== Boolean(value.p12))
+      .parse(input),
+  )
+  .handler(async ({ context: auth, data }) => {
+    const sql = await requireLease(auth.userId);
+    const profile = await readUserProfile(sql, auth.userId);
+    if (!allows(profile, PERMISSION.notesRead)) return { ok: false as const, error: "Ya no tienes acceso a este documento." };
+    return signPdfBox(sql, {
+      userId: auth.userId,
+      userName: profile.displayName || profile.loginName || "Alguien",
+      id: data.id,
+      image: data.image,
+      p12: data.p12,
+      password: data.password,
+    });
   });
 
 export const myPendingSignatures = createServerFn({ method: "GET" })

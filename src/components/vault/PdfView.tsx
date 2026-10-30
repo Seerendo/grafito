@@ -1,7 +1,8 @@
 import { ChevronDown, ChevronUp, MessageSquare, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PageViewport, PDFDocumentProxy } from "pdfjs-dist";
 import { anchorAt, linkKey, locate, type TextAnchor } from "@/domain/vault/anchor";
+import { placePopup } from "@/domain/vault/popup";
 import type { ManualLink } from "@/domain/vault/types";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
@@ -27,6 +28,45 @@ import { intl, t } from "@/app/i18n";
  */
 
 type PdfJs = typeof import("pdfjs-dist");
+
+/** Recuadro de firma sobre la página que se está viendo. */
+export type PdfSignBox = {
+  id: string;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  signerName: string;
+  status: string;
+  mine: boolean;
+  stale: boolean;
+};
+
+export type PdfSignLayer = {
+  placing: boolean;
+  canPlace: boolean;
+  boxes: PdfSignBox[];
+  onDrawn: (box: { page: number; x: number; y: number; w: number; h: number }) => void;
+  onSign: (id: string) => void;
+  onDecline: (id: string) => void;
+  onRemove: (id: string) => void;
+};
+
+export type PdfViewProps = {
+  url: string;
+  title: string;
+  links?: ManualLink[];
+  targetTitle?: (id: string) => string | undefined;
+  onLink?: (anchor: TextAnchor) => void;
+  onOpen?: (targetId: string) => void;
+  focus?: TextAnchor | null;
+  onFocused?: () => void;
+  notes?: { docId: string; shareId?: string };
+  /** Cambia tras estampar, para no reutilizar el PDF que el navegador tenía en caché. */
+  reloadKey?: number;
+  signatures?: PdfSignLayer;
+};
 
 let loader: Promise<PdfJs> | null = null;
 
@@ -113,21 +153,9 @@ export function PdfView({
   focus,
   onFocused,
   notes,
-}: {
-  url: string;
-  title: string;
-  /** Vínculos del archivo; solo los que tienen `anchor` se resaltan. */
-  links?: ManualLink[];
-  targetTitle?: (id: string) => string | undefined;
-  /** Sin él, no se ofrece vincular (lo compartido, un rol sin permiso). */
-  onLink?: (anchor: TextAnchor) => void;
-  onOpen?: (targetId: string) => void;
-  /** Frase a la que ir al abrir (desde Menciones). */
-  focus?: TextAnchor | null;
-  onFocused?: () => void;
-  /** El documento cuyos comentarios son las notas (en lo compartido, con `shareId`). */
-  notes?: { docId: string; shareId?: string };
-}) {
+  reloadKey = 0,
+  signatures,
+}: PdfViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<{ lib: PdfJs; doc: PDFDocumentProxy; ratio: number } | null>(null);
   const [error, setError] = useState(false);
@@ -165,7 +193,8 @@ export function PdfView({
     void (async () => {
       try {
         const lib = await loadPdfJs();
-        doc = await lib.getDocument({ url, useSystemFonts: true }).promise;
+        const source = reloadKey ? `${url}${url.includes("?") ? "&" : "?"}v=${reloadKey}` : url;
+        doc = await lib.getDocument({ url: source, useSystemFonts: true }).promise;
         const first = await doc.getPage(1);
         const base = first.getViewport({ scale: 1 });
         if (cancelled) return;
@@ -205,7 +234,7 @@ export function PdfView({
       cancelled = true;
       void doc?.destroy();
     };
-  }, [url]);
+  }, [url, reloadKey]);
 
   // El panel de Comentarios las lista (sin el rectángulo).
   useEffect(() => {
@@ -457,13 +486,16 @@ export function PdfView({
               focus={active?.page === index + 1 ? active : null}
               onFocused={focused}
               find={findByPage.get(index + 1)}
+              signatures={signatures}
             />
           ))}
         </div>
       )}
       {composing && notes ? (
         <NoteComposer
+          key={`${composing.x}:${composing.y}:${composing.anchor.page}:${composing.anchor.exact}`}
           at={composing}
+          scroller={scrollRef.current}
           onCancel={() => setComposing(null)}
           onSave={async (body) => {
             const failed = await sendComment(notes.docId, notes.shareId, body, composing.anchor);
@@ -476,10 +508,11 @@ export function PdfView({
         />
       ) : null}
       {bubble ? (
-        <div
+        <Bubble
+          at={bubble}
+          scroller={scrollRef.current}
           data-ui="pdf-bubble"
-          style={{ left: bubble.x, top: bubble.y }}
-          className="absolute z-20 w-72 max-w-[calc(100%-2rem)] -translate-x-1/2 space-y-2 rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
+          className="absolute z-20 w-72 max-w-[calc(100%-1rem)] space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               event.stopPropagation();
@@ -525,7 +558,7 @@ export function PdfView({
               </div>
             ))
           )}
-        </div>
+        </Bubble>
       ) : null}
       </div>
       {menu.element}
@@ -533,12 +566,78 @@ export function PdfView({
   );
 }
 
+/**
+ * Coloca el recuadro dentro del marco visible. Si el punto está junto a un
+ * borde, el recuadro cambia de lado en vez de quedar debajo del borde.
+ */
+function useAnchoredStyle<T extends HTMLElement>(
+  at: { x: number; y: number },
+  prefer: "left" | "center",
+  scroller: HTMLDivElement | null,
+) {
+  const ref = useRef<T>(null);
+  const place = useCallback(
+    (width: number, height: number) => {
+      if (!scroller) return { left: at.x, top: at.y, maxHeight: undefined as number | undefined, maxWidth: undefined as number | undefined };
+      const maxHeight = Math.max(96, scroller.clientHeight - 16);
+      const maxWidth = Math.max(96, scroller.clientWidth - 16);
+      const box = placePopup({
+        x: at.x,
+        y: at.y,
+        width: Math.min(width, maxWidth),
+        height: Math.min(height, maxHeight),
+        viewLeft: scroller.scrollLeft,
+        viewTop: scroller.scrollTop,
+        viewWidth: scroller.clientWidth,
+        viewHeight: scroller.clientHeight,
+        prefer,
+      });
+      return { left: box.left, top: box.top, maxHeight, maxWidth };
+    },
+    [at.x, at.y, prefer, scroller],
+  );
+  const [style, setStyle] = useState(() => place(288, prefer === "left" ? 220 : 140));
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const next = place(node.offsetWidth, node.offsetHeight);
+    setStyle((current) =>
+      current.left === next.left && current.top === next.top && current.maxHeight === next.maxHeight && current.maxWidth === next.maxWidth
+        ? current
+        : next,
+    );
+  }, [place]);
+  return { ref, style };
+}
+
+function Bubble({
+  at,
+  scroller,
+  className,
+  children,
+  ...rest
+}: {
+  at: { x: number; y: number };
+  scroller: HTMLDivElement | null;
+  className: string;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  const { ref, style } = useAnchoredStyle<HTMLDivElement>(at, "center", scroller);
+  return (
+    <div ref={ref} style={style} className={className} {...rest}>
+      {children}
+    </div>
+  );
+}
+
 function NoteComposer({
   at,
+  scroller,
   onCancel,
   onSave,
 }: {
   at: Picked;
+  scroller: HTMLDivElement | null;
   onCancel: () => void;
   onSave: (body: string) => Promise<string | null>;
 }) {
@@ -556,11 +655,13 @@ function NoteComposer({
       setSaving(false);
     }
   };
+  const { ref, style } = useAnchoredStyle<HTMLFormElement>(at, "left", scroller);
   return (
     <form
+      ref={ref}
       data-ui="pdf-note"
-      style={{ left: at.x, top: at.y }}
-      className="absolute z-20 w-72 max-w-[calc(100%-2rem)] -translate-x-full space-y-2 rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
+      style={style}
+      className="absolute z-20 w-72 max-w-[calc(100%-1rem)] space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
@@ -646,6 +747,7 @@ function PdfPage({
   focus,
   onFocused,
   find,
+  signatures,
 }: {
   lib: PdfJs;
   doc: PDFDocumentProxy;
@@ -662,8 +764,11 @@ function PdfPage({
   onFocused?: () => void;
   /** Coincidencias de la búsqueda en esta página. */
   find?: { query: string; hits: FindMark[] };
+  signatures?: PdfSignLayer;
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -848,24 +953,80 @@ function PdfPage({
       })
     : [];
 
+  const placing = Boolean(signatures?.placing);
+  const fraction = (event: React.PointerEvent) => {
+    const frame = pageRef.current?.getBoundingClientRect();
+    if (!frame || frame.width === 0 || frame.height === 0) return null;
+    return {
+      x: Math.min(1, Math.max(0, (event.clientX - frame.left) / frame.width)),
+      y: Math.min(1, Math.max(0, (event.clientY - frame.top) / frame.height)),
+    };
+  };
+  const pageBoxes = signatures?.boxes.filter((box) => box.page === number) ?? [];
+
   return (
     <div
       ref={pageRef}
       data-page={number}
       style={{ width: size.width, height: size.height }}
       title={hover ? (hover.targetId ? (targetTitle?.(hover.targetId) ?? "") : t("Ver nota")) : undefined}
-      className={`relative shrink-0 bg-white shadow-md ${hover ? "pdf-link-hover" : ""}`}
+      className={`relative shrink-0 bg-white shadow-md ${hover ? "pdf-link-hover" : ""} ${placing ? "cursor-crosshair select-none" : ""}`}
       onMouseMove={(event) => {
+        if (placing) return;
         const next = hit(event);
         if (next?.key !== hover?.key) setHover(next);
       }}
       onMouseLeave={() => setHover(null)}
       onClick={(event) => {
-        if (!window.getSelection()?.isCollapsed) return;
+        if (placing || !window.getSelection()?.isCollapsed) return;
         const mark = hit(event);
         if (mark?.noteIds) onBubble({ noteIds: mark.noteIds }, event.clientX, event.clientY);
         else if (mark?.targetId && onOpen) onOpen(mark.targetId);
       }}
+      onPointerDown={
+        placing
+          ? (event) => {
+              if ((event.target as HTMLElement).closest("button")) return;
+              const point = fraction(event);
+              if (!point) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              drag.current = point;
+              setDraft({ x: point.x, y: point.y, w: 0, h: 0 });
+            }
+          : undefined
+      }
+      onPointerMove={
+        placing
+          ? (event) => {
+              const start = drag.current;
+              const point = fraction(event);
+              if (!start || !point) return;
+              setDraft({
+                x: Math.min(start.x, point.x),
+                y: Math.min(start.y, point.y),
+                w: Math.abs(point.x - start.x),
+                h: Math.abs(point.y - start.y),
+              });
+            }
+          : undefined
+      }
+      onPointerUp={
+        placing
+          ? (event) => {
+              const start = drag.current;
+              drag.current = null;
+              setDraft(null);
+              const point = fraction(event);
+              if (!start || !point || !signatures) return;
+              const x = Math.min(start.x, point.x);
+              const y = Math.min(start.y, point.y);
+              const w = Math.abs(point.x - start.x);
+              const h = Math.abs(point.y - start.y);
+              if (w >= 0.04 && h >= 0.03) signatures.onDrawn({ page: number, x, y, w, h });
+            }
+          : undefined
+      }
     >
       <canvas ref={canvasRef} className="absolute inset-0 size-full" />
       <div aria-hidden className="absolute inset-0">
@@ -913,11 +1074,53 @@ function PdfPage({
             event.stopPropagation();
             onBubble({ pdfNote: note }, event.clientX, event.clientY);
           }}
-          style={{ left: Math.max(0, left - 10), top: Math.max(0, top - 10) }}
+          style={{
+            left: Math.min(Math.max(0, left - 10), Math.max(0, size.width - 20)),
+            top: Math.min(Math.max(0, top - 10), Math.max(0, size.height - 20)),
+          }}
           className="absolute z-10 grid size-5 place-items-center rounded-full bg-yellow-300 text-yellow-950 shadow ring-1 ring-yellow-600/40"
         >
           <MessageSquare className="size-3" />
         </button>
+      ))}
+      {draft ? (
+        <span
+          className="pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10"
+          style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, width: `${draft.w * 100}%`, height: `${draft.h * 100}%` }}
+        />
+      ) : null}
+      {pageBoxes.map((box) => (
+        <div
+          key={box.id}
+          data-ui="pdf-sign"
+          className={`absolute ${box.status === "signed" && !box.stale ? "pointer-events-none" : "border-2 border-dashed border-accent bg-accent/5"}`}
+          style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
+        >
+          <span
+            className={`absolute bottom-full left-0 mb-0.5 max-w-full truncate rounded px-1 text-[10px] leading-4 ${box.stale ? "bg-danger/15 text-danger" : "bg-surface/95 text-fg"}`}
+          >
+            {box.stale ? t("Firmada · el documento cambió después") : box.status === "signed" ? box.signerName : `${box.signerName} · ${t("Pendiente")}`}
+          </span>
+          {box.status === "pending" ? (
+            <span className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-0.5">
+              {box.mine ? (
+                <>
+                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures?.onSign(box.id)} className="pointer-events-auto h-6 rounded bg-accent px-1.5 text-[10px] font-medium text-accent-fg">
+                    {t("Firmar")}
+                  </button>
+                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures?.onDecline(box.id)} className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted">
+                    {t("Rechazar")}
+                  </button>
+                </>
+              ) : null}
+              {signatures?.canPlace ? (
+                <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures.onRemove(box.id)} className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted">
+                  {t("Quitar")}
+                </button>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
       ))}
     </div>
   );

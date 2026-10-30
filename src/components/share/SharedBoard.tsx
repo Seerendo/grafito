@@ -6,6 +6,8 @@ import type { ContextItem } from "@/components/ui/ContextMenu";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
+import { useCan } from "@/app/permissions";
+import { PERMISSION } from "@/domain/permissions";
 import { descendantIds } from "@/domain/vault/portfolios";
 import { canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn } from "./shared-tree";
 import { intl, t } from "@/app/i18n";
@@ -17,7 +19,7 @@ const RECENT = 12;
  * bóveda, como la de la Carpeta Personal: sus portafolios, sus documentos y
  * lo último que se cambió dentro. Encima, la ruta hasta el compartido. Con
  * permiso de edición, el clic derecho añade aquí (o en un portafolio) como en
- * la Carpeta Personal, y en un documento lo elimina.
+ * la Carpeta Personal, y en un documento lo vincula o lo elimina.
  */
 export function SharedBoard({
   tree,
@@ -34,6 +36,7 @@ export function SharedBoard({
 }) {
   const menu = useContextMenu();
   const shareId = tree.share.id;
+  const canLink = useCan(PERMISSION.linksManage);
   const manage = canManageSharedSpace(tree);
   const addHere = (id: string): ContextItem[] => [
     ...(canEditSharedPortfolio(tree, id)
@@ -116,6 +119,14 @@ export function SharedBoard({
           onContextMenu={(event) => {
             if (!canEditSharedPortfolio(tree, document.portfolioId)) return;
             menu.open(event, [
+              ...(canLink
+                ? [
+                    {
+                      label: t("Vincular"),
+                      onClick: () => useVault.getState().setDialog({ type: "link", sourceId: document.id, shareId }),
+                    },
+                  ]
+                : []),
               { label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(shareId, document.id).then(report) },
             ]);
           }}

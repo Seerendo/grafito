@@ -30,7 +30,7 @@ import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
-import { sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
+import { commitSharedLink, sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
 import { deletePortfolioFromShared, newSharedPortfolio, report, uploadFolderToShared } from "@/app/shared-actions";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
@@ -400,7 +400,7 @@ function VaultWorkspace() {
         {fullscreen ? (
           // Pantalla completa: solo la nota o el archivo abierto (ver `app/fullscreen.ts`).
           <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
-            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+            <FileDrop enabled={canAddFiles}>
               {sharedPane ?? <EditorPane mobile={mobile} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />}
             </FileDrop>
           </div>
@@ -416,17 +416,17 @@ function VaultWorkspace() {
               holdGraph={holdGraph}
             />
           ) : pane === "graph" ? (
-            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+            <FileDrop enabled={canAddFiles}>
               {graphView}
             </FileDrop>
           ) : pane === "links" ? (
             <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
           ) : sharedPane ? (
-            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+            <FileDrop enabled={canAddFiles}>
               {sharedPane}
             </FileDrop>
           ) : (
-            <FileDrop enabled={canAddFiles} onAdded={openNote}>
+            <FileDrop enabled={canAddFiles}>
               <EditorPane mobile onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
             </FileDrop>
           )
@@ -447,7 +447,7 @@ function VaultWorkspace() {
               <SidebarRail onExpand={toggleTree} />
             )}
             <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
-              <FileDrop enabled={canAddFiles} onAdded={openNote}>
+              <FileDrop enabled={canAddFiles}>
                 {graph ? (
                   graphView
                 ) : sharedPane ? (
@@ -515,17 +515,18 @@ function VaultWorkspace() {
 
 function FileDrop({
   enabled,
-  onAdded,
   children,
 }: {
   enabled: boolean;
-  onAdded: (id: string) => void;
   children: ReactNode;
 }) {
   const [over, setOver] = useState(false);
   const place = () => {
     const view = useSharedView.getState();
     const tree = view.tree;
+    if (tree && tree.share.kind !== "portfolio") {
+      return { kind: "shared" as const, shareId: tree.share.id, portfolioId: null, name: tree.share.title, ok: false };
+    }
     if (tree?.share.kind === "portfolio") {
       const root = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
       const fromDoc = view.docId ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null) : null;
@@ -580,9 +581,7 @@ function FileDrop({
             void uploadFolderToShared(target.shareId, target.portfolioId, files).then(report);
             return;
           }
-          void ingestExternalFiles(files, target.portfolioId).then(() => {
-            onAdded(useVault.getState().activeId ?? "");
-          });
+          void ingestExternalFiles(files, target.portfolioId);
         });
       }}
     >
@@ -638,7 +637,10 @@ function VaultDialogs() {
   const [renameError, setRenameError] = useState("");
   const [kind, setKind] = useState<ManualKind>("referencia");
   const [query, setQuery] = useState("");
+  const [linkError, setLinkError] = useState("");
+  const [linking, setLinking] = useState(false);
   const [shared, setShared] = useState<Awaited<ReturnType<typeof sharedCandidates>>>([]);
+  const openTree = useSharedView((state) => state.tree);
 
   useEffect(() => {
     if (dialog?.type === "portfolio") setName("");
@@ -657,9 +659,11 @@ function VaultDialogs() {
     if (dialog?.type === "link") {
       setKind("referencia");
       setQuery("");
-      // Lo compartido conmigo también puede ser destino.
+      setLinkError("");
+      setLinking(false);
+      // En un espacio el destino es de ese espacio. En la carpeta personal, también lo compartido conmigo.
       setShared([]);
-      void sharedCandidates().then(setShared);
+      if (!dialog.shareId) void sharedCandidates().then(setShared);
     }
   }, [dialog]);
 
@@ -667,6 +671,28 @@ function VaultDialogs() {
   const candidates = useMemo(() => {
     if (dialog?.type !== "link") return [];
     const needle = query.trim().toLowerCase();
+    if (dialog.shareId) {
+      const tree = openTree?.share.id === dialog.shareId ? openTree : null;
+      const here: LinkCandidate[] = [
+        ...(tree?.documents ?? []).map((document) => ({
+          key: document.id,
+          targetId: document.id,
+          title: document.title,
+          detail: document.kind === "file" ? t("archivo") : t("nota"),
+        })),
+        ...(tree?.portfolios ?? []).map((portfolio) => ({
+          key: `p:${portfolio.id}`,
+          targetId: portfolio.id,
+          target: "portfolio" as const,
+          title: portfolio.name,
+          detail: t("portafolio"),
+        })),
+      ];
+      return here
+        .filter((item) => item.targetId !== dialog.sourceId)
+        .filter((item) => !needle || item.title.toLowerCase().includes(needle))
+        .slice(0, 40);
+    }
     const all: LinkCandidate[] = [
       ...documents.map((document) => ({
         key: document.id,
@@ -694,7 +720,7 @@ function VaultDialogs() {
       .filter((item) => item.targetId !== dialog.sourceId)
       .filter((item) => !needle || item.title.toLowerCase().includes(needle))
       .slice(0, 12);
-  }, [dialog, documents, portfolios, shared, query]);
+  }, [dialog, documents, portfolios, shared, query, openTree]);
 
   if (!dialog) return null;
 
@@ -921,13 +947,34 @@ function VaultDialogs() {
             <li key={item.key}>
               <button
                 type="button"
-                onClick={() =>
-                  addManualLink(dialog.sourceId, item.targetId, kind, dialog.anchor, {
-                    target: item.target,
-                    shareId: item.shareId,
-                  })
-                }
-                className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-elevated"
+                disabled={linking}
+                onClick={() => {
+                  if (!dialog.shareId) {
+                    addManualLink(dialog.sourceId, item.targetId, kind, dialog.anchor, {
+                      target: item.target,
+                      shareId: item.shareId,
+                    });
+                    return;
+                  }
+                  setLinking(true);
+                  setLinkError("");
+                  void commitSharedLink(dialog.shareId, dialog.sourceId, {
+                    add: {
+                      targetId: item.targetId,
+                      kind,
+                      ...(item.target ? { target: item.target } : {}),
+                      ...(dialog.anchor ? { anchor: dialog.anchor } : {}),
+                    },
+                  }).then((error) => {
+                    if (error) {
+                      setLinkError(error);
+                      setLinking(false);
+                      return;
+                    }
+                    setDialog(null);
+                  });
+                }}
+                className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-elevated disabled:opacity-50"
               >
                 <span className="truncate">{item.title}</span>
                 <span className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-faint">{item.detail}</span>
@@ -936,6 +983,7 @@ function VaultDialogs() {
           ))}
           {candidates.length === 0 ? <li className="px-2 py-3 text-sm text-faint">{t("No hay destinos.")}</li> : null}
         </ul>
+        {linkError ? <p className="mt-2 text-sm text-danger">{t(linkError)}</p> : null}
       </Modal>
     );
   }

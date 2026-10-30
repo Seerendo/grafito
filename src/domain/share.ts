@@ -1,5 +1,5 @@
-import { descendantIds } from "./vault/portfolios";
-import type { Portfolio } from "./vault/types";
+import { descendantIds } from "./vault/portfolios.ts";
+import type { Portfolio } from "./vault/types.ts";
 
 /**
  * Compartir en solo lectura. Lo privado no se guarda (es el valor por defecto);
@@ -37,6 +37,19 @@ export function coveredBy(
       .map((document) => document.id),
   );
   return { documentIds, portfolioIds };
+}
+
+/**
+ * Si un vínculo manual apunta a algo que ese elemento compartido incluye.
+ * Un portafolio no es un documento: si no se mira `target`, se pierde al
+ * publicar el árbol.
+ */
+export function linkKept(
+  link: { targetId: string; target?: string },
+  covered: { documentIds: ReadonlySet<string>; portfolioIds: ReadonlySet<string> },
+): boolean {
+  if (link.target === "portfolio") return covered.portfolioIds.has(link.targetId);
+  return covered.documentIds.has(link.targetId);
 }
 
 /** Unión de lo que cubren varios elementos compartidos. */

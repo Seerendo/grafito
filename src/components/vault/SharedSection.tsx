@@ -2,7 +2,8 @@ import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Sh
 import { isTableName } from "@/domain/vault/table";
 import { useEffect, useRef, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
-import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
+import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report, uploadFolderToShared } from "@/app/shared-actions";
+import { isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
@@ -163,6 +164,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
 
   // Cuándo se leyó cada uno: al abrir algo se vuelve a leer solo si pasó
   // `FRESH_MS` (el texto de cada nota se pide siempre al abrirla).
+  const [dropKey, setDropKey] = useState<string | null>(null);
   const readAt = useRef(new Map<string, number>());
   const loadTree = async (shareId: string, fresh = false): Promise<SharedTree | null> => {
     const recent = Date.now() - (readAt.current.get(shareId) ?? 0) < FRESH_MS;
@@ -254,11 +256,64 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     onOpen();
   };
 
+  const acceptShared = (event: React.DragEvent) => {
+    if (!isExternalFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-drop-share]");
+    const next = row?.dataset.dropShare ? `${row.dataset.dropShare}:${row.dataset.dropPortfolio ?? ""}` : null;
+    if (dropKey !== next) setDropKey(next);
+  };
+
+  // Soltar aquí no puede caer en la Carpeta Personal: o entra en este portafolio, o no entra.
+  const dropShared = (event: React.DragEvent) => {
+    if (!isExternalFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDropKey(null);
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-drop-share]");
+    const shareId = row?.dataset.dropShare;
+    const which = row?.dataset.dropPortfolio;
+    if (!shareId) return;
+    void (async () => {
+      const files = await readDroppedEntries(event.dataTransfer);
+      if (files.length === 0) return;
+      const tree = await fetchSharedTree(shareId, true).catch(() => null);
+      const portfolioId = tree && which === "root" ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : which || null;
+      if (!tree || tree.share.kind !== "portfolio" || !portfolioId || !canEditSharedPortfolio(tree, portfolioId)) {
+        report(t("No puedes añadir nada a ese portafolio."));
+        return;
+      }
+      const error = await uploadFolderToShared(shareId, portfolioId, files);
+      const fresh = await fetchSharedTree(shareId, true).catch(() => null);
+      if (fresh) {
+        readAt.current.set(shareId, Date.now());
+        setTrees((current) => ({ ...current, [shareId]: fresh }));
+        setExpanded((current) => {
+          const next = new Set(current);
+          next.add(shareId);
+          next.add(`${shareId}:${portfolioId}`);
+          return next;
+        });
+      }
+      report(error);
+    })();
+  };
+
   // Hasta saber si hay alguno (o si no hay), la sección de espacios no sale.
   if (workspaces && (!items || items.length === 0)) return null;
 
   return (
-    <div className="mt-1" onDragOver={(event) => event.stopPropagation()} onDrop={(event) => event.stopPropagation()}>
+    <div
+      className="mt-1"
+      onDragOver={acceptShared}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setDropKey(null);
+      }}
+      onDrop={dropShared}
+    >
       <button
         type="button"
         onClick={toggleOpen}
@@ -307,8 +362,12 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                     title={t("De {0}", { 0: item.ownerName })}
                     onContextMenu={rootMenu}
                     data-reveal={`shared-share:${item.id}`}
+                    data-drop-share={item.id}
+                    data-drop-portfolio="root"
                     data-row={lit ? "marked" : ""}
-                    className={`relative flex h-9 shrink-0 items-center rounded-md ${PAD[0]} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
+                    className={`relative flex h-9 shrink-0 items-center rounded-md ${PAD[0]} ${
+                      dropKey === `${item.id}:root` ? "bg-accent/15" : lit ? "bg-inset" : "hover:bg-elevated"
+                    }`}
                   >
                     {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
                     <button
@@ -353,6 +412,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                     type="button"
                     title={t("De {0}", { 0: item.ownerName })}
                     data-reveal={single ? `shared-doc:${single.id}` : undefined}
+                    data-drop-share={item.id}
                     onContextMenu={rootMenu}
                     onClick={async () => {
                       const loaded = await loadTree(item.id);
@@ -393,6 +453,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                         showPortfolio(tree, id);
                         onOpen();
                       }}
+                      dropKey={dropKey}
                       onMenu={(event, target) => {
                         const items = menuFor(item, tree, target);
                         if (items.length > 0) menu.open(event, items);
@@ -425,6 +486,7 @@ function SharedBranch({
   onToggle,
   onOpenDoc,
   onOpenPortfolio,
+  dropKey,
   onMenu,
 }: {
   tree: SharedTree;
@@ -437,6 +499,7 @@ function SharedBranch({
   onToggle: (key: string) => void;
   onOpenDoc: (docId: string) => void;
   onOpenPortfolio: (id: string) => void;
+  dropKey: string | null;
   onMenu: (event: React.MouseEvent, target: { kind: "portfolio" | "doc"; id: string }) => void;
 }) {
   const pad = PAD[Math.min(depth, PAD.length - 1)];
@@ -456,6 +519,7 @@ function SharedBranch({
             onToggle={onToggle}
             onOpenDoc={onOpenDoc}
             onOpenPortfolio={onOpenPortfolio}
+            dropKey={dropKey}
             onMenu={onMenu}
           />
         ))}
@@ -473,8 +537,12 @@ function SharedBranch({
             <div
               onContextMenu={(event) => onMenu(event, { kind: "portfolio", id: portfolio.id })}
               data-reveal={`shared-port:${portfolio.id}`}
+              data-drop-share={tree.share.id}
+              data-drop-portfolio={portfolio.id}
               data-row={lit ? "marked" : ""}
-              className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${lit ? "bg-inset" : "hover:bg-elevated"}`}
+              className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${
+                dropKey === `${tree.share.id}:${portfolio.id}` ? "bg-accent/15" : lit ? "bg-inset" : "hover:bg-elevated"
+              }`}
             >
               {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
               <button
@@ -514,6 +582,7 @@ function SharedBranch({
                 onToggle={onToggle}
                 onOpenDoc={onOpenDoc}
                 onOpenPortfolio={onOpenPortfolio}
+                dropKey={dropKey}
                 onMenu={onMenu}
               />
             ) : null}
@@ -529,6 +598,8 @@ function SharedBranch({
                 <button
                   type="button"
                   data-reveal={`shared-doc:${document.id}`}
+                  data-drop-share={tree.share.id}
+                  data-drop-portfolio={parentId ?? ""}
                   onClick={() => onOpenDoc(document.id)}
                   onContextMenu={(event) => onMenu(event, { kind: "doc", id: document.id })}
                   aria-current={on ? "page" : undefined}

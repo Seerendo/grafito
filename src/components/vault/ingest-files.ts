@@ -95,7 +95,11 @@ export async function readDroppedEntries(data: DataTransfer): Promise<IncomingFi
  * documento de tipo archivo. Al final se sincroniza para que el servidor
  * conozca la nota que apunta al archivo subido.
  */
-export async function ingestExternalFiles(files: FileList | Array<File | IncomingFile>, portfolioId: string | null) {
+export async function ingestExternalFiles(
+  files: FileList | Array<File | IncomingFile>,
+  portfolioId: string | null,
+  options?: { open?: boolean },
+) {
   const list = [...files].map((item) => asIncoming(item)).filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
   if (list.length === 0) return;
   const vault = useVault.getState();
@@ -127,6 +131,7 @@ export async function ingestExternalFiles(files: FileList | Array<File | Incomin
     }
     ids.set(folder, created);
   }
+  const open = options?.open === true;
   let uploaded = false;
   for (const planned of plan.files) {
     if (planned.folder !== "" && !ids.has(planned.folder)) continue;
@@ -136,12 +141,12 @@ export async function ingestExternalFiles(files: FileList | Array<File | Incomin
     const file = item.file;
     if (isMarkdownFile(file)) {
       const text = await file.text();
-      useVault.getState().importNote(file.name, text, dest);
+      useVault.getState().importNote(file.name, text, dest, open);
       continue;
     }
     try {
       const stored = await uploadVaultFile(file, { portfolioId: dest });
-      const result = useVault.getState().uploadFile(dest, file.name, file.type || "application/octet-stream", stored);
+      const result = useVault.getState().uploadFile(dest, file.name, file.type || "application/octet-stream", stored, open);
       if (result) error = result;
       else uploaded = true;
     } catch (failure) {
@@ -157,11 +162,11 @@ export async function ingestExternalFiles(files: FileList | Array<File | Incomin
 /** «Nuevo dibujo»: un dibujo de Excalidraw vacío en `portfolioId`, que queda abierto. */
 export async function createDrawing(portfolioId: string | null): Promise<void> {
   const file = new File([emptyDrawing()], `${t("Dibujo")}.excalidraw`, { type: DRAWING_MIME });
-  await ingestExternalFiles([file], portfolioId);
+  await ingestExternalFiles([file], portfolioId, { open: true });
 }
 
 /** «Nueva tabla»: una tabla de datos vacía en `portfolioId`, que queda abierta (ver `domain/vault/table.ts`). */
 export async function createTable(portfolioId: string | null): Promise<void> {
   const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
-  await ingestExternalFiles([file], portfolioId);
+  await ingestExternalFiles([file], portfolioId, { open: true });
 }

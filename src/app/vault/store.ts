@@ -305,8 +305,9 @@ type VaultState = Persisted & {
   rename: (id: string, title: string) => boolean;
   togglePin: (id: string) => void;
   toggleTask: (id: string, line: number) => void;
-  createDocument: (portfolioId?: string | null, title?: string, content?: string) => string;
-  uploadFile: (portfolioId: string | null, name: string, mime: string, stored: { key: string; size: number }) => string | null;
+  createDocument: (portfolioId?: string | null, title?: string, content?: string, options?: { open?: boolean }) => string;
+  /** `open` abre el archivo recién subido. Una carga normal lo deja cerrado. */
+  uploadFile: (portfolioId: string | null, name: string, mime: string, stored: { key: string; size: number }, open?: boolean) => string | null;
   createPortfolio: (parentId: string | null, name: string) => string | null;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
@@ -345,7 +346,7 @@ type VaultState = Persisted & {
   setFocusAnchor: (focus: { docId: string; anchor: TextAnchor } | null) => void;
   openTitle: (title: string) => void;
   duplicate: (id: string) => void;
-  importNote: (title: string, content: string, portfolioId?: string | null) => void;
+  importNote: (title: string, content: string, portfolioId?: string | null, open?: boolean) => void;
   closeActive: () => void;
   /** Abre un portafolio en el centro: sus subportafolios, notas y archivos. */
   openPortfolio: (id: string) => void;
@@ -577,12 +578,13 @@ export const useVault = create<VaultState>((set, get) => ({
     }));
   },
 
-  createDocument: (portfolioId, title, content) => {
+  createDocument: (portfolioId, title, content, options) => {
     if (!can(PERMISSION.notesCreate)) return "";
     const target = portfolioId === undefined ? get().selectedPortfolioId : portfolioId;
     const name = uniqueTitle(get().documents, title?.trim() || t("Sin título"), target, "markdown");
     // Sin contenido dado, la nota nace en blanco y es un borrador (`Draft`).
     const blank = content === undefined;
+    const open = options?.open !== false;
     const document: Document = {
       id: uuid(),
       title: name,
@@ -596,18 +598,22 @@ export const useVault = create<VaultState>((set, get) => ({
     };
     set({
       documents: [document, ...get().documents],
-      activeId: document.id,
-      folderPicked: false,
-      graph: false,
-      palette: false,
+      ...(open
+        ? {
+            activeId: document.id,
+            folderPicked: false,
+            graph: false,
+            palette: false,
+            ...(blank ? { draft: { id: document.id, title: name } } : {}),
+          }
+        : {}),
       selectedPortfolioId: target,
       collapsed: expandTo(get().collapsed, get().portfolios, target),
-      ...(blank ? { draft: { id: document.id, title: name } } : {}),
     });
     return document.id;
   },
 
-  uploadFile: (portfolioId, name, mime, stored) => {
+  uploadFile: (portfolioId, name, mime, stored, open = false) => {
     if (!can(PERMISSION.filesUpload)) return t("Tu rol no permite subir archivos.");
     const base = name.replace(/\.[^.]+$/, "") || name;
     const title = uniqueTitle(get().documents, base, portfolioId, "file");
@@ -624,10 +630,7 @@ export const useVault = create<VaultState>((set, get) => ({
     };
     set({
       documents: [document, ...get().documents],
-      activeId: document.id,
-      folderPicked: false,
-      graph: false,
-      palette: false,
+      ...(open ? { activeId: document.id, folderPicked: false, graph: false, palette: false } : {}),
       selectedPortfolioId: portfolioId,
       collapsed: expandTo(get().collapsed, get().portfolios, portfolioId),
     });
@@ -962,11 +965,11 @@ export const useVault = create<VaultState>((set, get) => ({
     get().createDocument(source.portfolioId, title, content);
   },
 
-  importNote: (title, content, portfolioId) => {
+  importNote: (title, content, portfolioId, open = true) => {
     if (!can(PERMISSION.notesCreate)) return;
     if (portfolioId !== undefined) {
       const name = title.replace(/\.(md|markdown)$/i, "").trim() || t("Sin título");
-      get().createDocument(portfolioId, name, content);
+      get().createDocument(portfolioId, name, content, { open });
       return;
     }
     const existing = get().portfolios.find((portfolio) => portfolio.name === "Importadas" && !portfolio.parentId);
@@ -974,7 +977,7 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!existing) {
       set({ portfolios: [...get().portfolios, { id: importedId, name: t("Importadas"), parentId: null }] });
     }
-    get().createDocument(importedId, title.replace(/\.md$/i, ""), content);
+    get().createDocument(importedId, title.replace(/\.md$/i, ""), content, { open });
   },
 
   reset: () => {

@@ -16,11 +16,19 @@ import type { IncomingFile } from "@/components/vault/ingest-files";
  * compartido y se muestra en el visor. Devuelven el error, o `null`.
  */
 
-async function refresh(shareId: string, docId: string | null): Promise<void> {
+async function refresh(shareId: string, docId: string | null, reveal = true): Promise<void> {
   const tree = await fetchSharedTree(shareId, true).catch(() => null);
   if (!tree) return;
   const view = useSharedView.getState();
   const same = view.tree?.share.id === shareId;
+  // Una carga no abre el archivo ni cambia de pantalla si ese compartido no está abierto.
+  if (!reveal) {
+    if (!same) return;
+    const keep = view.docId;
+    if (keep && tree.documents.some((doc) => doc.id === keep)) view.openShared(tree, keep);
+    else view.openSharedPortfolio(tree, view.portfolioId);
+    return;
+  }
   const keep = docId ?? (same ? view.docId : null);
   if (keep && tree.documents.some((doc) => doc.id === keep)) view.openShared(tree, keep);
   // Sin documento: la página que estaba abierta (o la del compartido).
@@ -41,7 +49,12 @@ export async function newSharedPortfolio(shareId: string, parentId: string | nul
   return null;
 }
 
-export async function uploadToShared(shareId: string, portfolioId: string | null, files: FileList | File[]): Promise<string | null> {
+export async function uploadToShared(
+  shareId: string,
+  portfolioId: string | null,
+  files: FileList | File[],
+  open = false,
+): Promise<string | null> {
   let last: string | null = null;
   for (const file of [...files]) {
     try {
@@ -53,7 +66,7 @@ export async function uploadToShared(shareId: string, portfolioId: string | null
       return error instanceof Error ? error.message : t("No se pudo subir.");
     }
   }
-  if (last) await refresh(shareId, last);
+  if (last) await refresh(shareId, open ? last : null, open);
   return null;
 }
 
@@ -75,7 +88,7 @@ export async function deletePortfolioFromShared(shareId: string, portfolioId: st
 /** «Nueva tabla» en un portafolio de lo compartido (un espacio de trabajo). */
 export async function newSharedTable(shareId: string, portfolioId: string | null): Promise<string | null> {
   const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
-  return uploadToShared(shareId, portfolioId, [file]);
+  return uploadToShared(shareId, portfolioId, [file], true);
 }
 
 /**
@@ -147,7 +160,7 @@ export async function uploadFolderToShared(
       break;
     }
   }
-  if (plan.folders.length > 0 || last) await refresh(shareId, last);
+  if (plan.folders.length > 0 || last) await refresh(shareId, null, false);
   return error;
 }
 

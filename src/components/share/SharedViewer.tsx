@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Globe,
   History,
+  Link2,
   ListTree,
   MessageSquare,
   PenLine,
@@ -28,7 +29,6 @@ import { asDocuments, canEditSharedPortfolio, canManageSharedSpace, childrenOf, 
 import { intl, t } from "@/app/i18n";
 import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
-import { SignatureBar } from "@/components/vault/SignatureDialog";
 import { FullscreenButton } from "@/components/vault/FullscreenButton";
 import { Comments } from "@/components/vault/Comments";
 import { GraphView } from "@/components/vault/GraphView";
@@ -36,12 +36,15 @@ import { SharedBoard } from "./SharedBoard";
 import { SharedContext } from "./SharedContext";
 import { publicDocContent, sharedDocContent } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
+import { commitSharedLink } from "@/app/shared-links";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { Modal } from "@/components/ui/Modal";
 import { deleteFromShared, uploadFolderToShared } from "@/app/shared-actions";
 import { uploadVaultFile } from "@/app/files";
 import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
+import { useCan } from "@/app/permissions";
+import { PERMISSION } from "@/domain/permissions";
 
 /**
  * Visor de una nota o un portafolio compartido: índice a la izquierda (o
@@ -50,7 +53,8 @@ import { useVault } from "@/app/vault/store";
  * `docId`/`onOpenDoc`. Con acceso de edición y `onChange`, las notas se pueden
  * editar y ver su historial; al guardar se avisa con el árbol actualizado.
  * Para moverse rápido, también en un enlace público: el grafo de lo publicado
- * y un panel con el esquema, los vínculos y las menciones (solo lectura).
+ * y un panel con el esquema, los vínculos y las menciones. Quien puede editar
+ * y tiene permiso de vincular también crea y quita vínculos de ese espacio.
  * En la bóveda, con `onOpenPortfolio` y sin documento abierto, se ve la página
  * del portafolio `portfolioId` (o del compartido): sus portafolios y recientes.
  */
@@ -73,6 +77,7 @@ export function SharedViewer({
   index?: boolean;
 }) {
   const ordered = useMemo(() => orderDocuments(tree), [tree]);
+  const canLink = useCan(PERMISSION.linksManage);
   const [ownId, setOwnId] = useState<string | null>(ordered[0]?.id ?? null);
   const activeId = docId ?? ownId;
   const setActiveId = onOpenDoc ?? setOwnId;
@@ -149,6 +154,7 @@ export function SharedViewer({
   const writable = canEditSharedPortfolio(tree, here);
   const canEdit = writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
   const canAdd = writable && Boolean(onChange) && tree.share.kind === "portfolio";
+  const linkAllowed = writable && Boolean(onChange) && canLink && Boolean(active);
   const showSpace = Boolean(onChange) && canManageSharedSpace(tree) && tree.share.kind === "portfolio" && Boolean(here);
   const [adding, setAdding] = useState(false);
   const [naming, setNaming] = useState<string | null>(null);
@@ -372,6 +378,17 @@ export function SharedViewer({
               </label>
             </>
           ) : null}
+          {linkAllowed && active ? (
+            <button
+              type="button"
+              aria-label={t("Vincular")}
+              title={t("Vincular")}
+              onClick={() => useVault.getState().setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })}
+              className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
+            >
+              <Link2 className="size-4" />
+            </button>
+          ) : null}
           {canAdd && active ? (
             <button
               type="button"
@@ -469,7 +486,6 @@ export function SharedViewer({
             </span>
           ) : null}
         </div>
-        {active && !tree.share.token ? <SignatureBar docId={active.id} shareId={tree.share.id} /> : null}
         {deleting && active ? (
           <Modal title={t("Eliminar «{0}»", { 0: active.title })} onClose={() => setDeleting(false)}>
             <p className="text-sm text-muted">{t("Irá a la papelera de su dueño (en un espacio de trabajo, la de sus administradores), que puede recuperarlo.")}</p>
@@ -593,6 +609,17 @@ export function SharedViewer({
             links={active.file}
             shareId={onChange ? tree.share.id : undefined}
             canEdit={writable && Boolean(onChange)}
+            manual={{
+              links: active.links ?? [],
+              targetTitle: (id) => ordered.find((item) => item.id === id)?.title ?? tree.portfolios.find((item) => item.id === id)?.name,
+              onOpen: (id) => {
+                if (ordered.some((item) => item.id === id)) openDoc(id);
+                else onOpenPortfolio?.(id);
+              },
+              onLink: linkAllowed
+                ? (anchor) => useVault.getState().setDialog({ type: "link", sourceId: active.id, anchor, shareId: tree.share.id })
+                : undefined,
+            }}
           />
         ) : missing ? (
           <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("Este documento ya no está.")}</p>
@@ -636,7 +663,20 @@ export function SharedViewer({
             <SharedContext
               document={{ ...(documents.find((item) => item.id === active.id) ?? documents[0]!), content: active.content }}
               documents={documents}
-              onOpen={openDoc}
+              portfolios={tree.portfolios}
+              onOpen={(id, anchor) => {
+                if (anchor) useVault.getState().setFocusAnchor({ docId: id, anchor });
+                if (ordered.some((item) => item.id === id)) openDoc(id);
+                else onOpenPortfolio?.(id);
+              }}
+              onLink={
+                linkAllowed
+                  ? () => useVault.getState().setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })
+                  : undefined
+              }
+              onUnlink={
+                linkAllowed ? (link) => void commitSharedLink(tree.share.id, active.id, { remove: link }) : undefined
+              }
             />
           ) : null}
           {canComment && commentsOpen ? (

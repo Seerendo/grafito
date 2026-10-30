@@ -84,7 +84,8 @@ export type DialogState =
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }
-  | { type: "link"; sourceId: string; anchor?: TextAnchor }
+  /** Con `shareId`, el origen es un documento de un espacio o de lo compartido: el vínculo se guarda en la bóveda del dueño. */
+  | { type: "link"; sourceId: string; anchor?: TextAnchor; shareId?: string }
   | { type: "share"; kind: "document" | "portfolio"; id: string }
   /** `portfolioId` = "all": toda la bóveda. */
   | { type: "git"; portfolioId: string }
