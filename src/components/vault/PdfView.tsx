@@ -1085,7 +1085,7 @@ function PdfPage({
       ))}
       {draft ? (
         <span
-          className="pointer-events-none absolute border-2 border-dashed border-accent bg-accent/10"
+          className="pointer-events-none absolute bg-accent/10"
           style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, width: `${draft.w * 100}%`, height: `${draft.h * 100}%` }}
         />
       ) : null}
@@ -1093,7 +1093,7 @@ function PdfPage({
         <div
           key={box.id}
           data-ui="pdf-sign"
-          className={`absolute ${box.status === "signed" && !box.stale ? "pointer-events-none" : "border-2 border-dashed border-accent bg-accent/5"}`}
+          className={`absolute ${box.status === "signed" && !box.stale ? "pointer-events-none" : "bg-accent/5"}`}
           style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
         >
           <span

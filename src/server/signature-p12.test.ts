@@ -100,6 +100,7 @@ test("un .p12 con la contraseña correcta firma el PDF y no guarda la clave", as
   assert.match(text, /\/Type\s*\/Sig/);
   assert.match(text, /\/SubFilter\s*\/adbe\.pkcs7\.detached/);
   assert.match(text, /Ana Prueba/);
+  assert.equal(text.includes(" re S"), false);
   assert.ok((text.match(/ re f/g) ?? []).length > 40);
   assert.equal(text.includes(PASSWORD), false);
   assert.equal(hasCertificateSignature(signed), true);

@@ -409,10 +409,6 @@ export function Sidebar({
         onDragLeave={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropOver(null);
         }}
-        onClick={(event) => {
-          if ((event.target as HTMLElement).closest("button")) return;
-          setSelectedPortfolio(null);
-        }}
         onContextMenu={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
           openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" });

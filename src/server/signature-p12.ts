@@ -184,11 +184,6 @@ function signatureAppearance(
     "1 1 1 rg",
     `0 0 ${round(width)} ${round(height)} re f`,
     "Q",
-    "q",
-    "0.15 0.2 0.28 RG",
-    "0.6 w",
-    `0.4 0.4 ${round(Math.max(1, width - 0.8))} ${round(Math.max(1, height - 0.8))} re S`,
-    "Q",
     qrMarks(payload, pad, Math.max(pad, (height - qrSize) / 2), qrSize),
     "BT",
     `/F1 ${round(labelSize)} Tf`,
@@ -268,6 +263,9 @@ function addSignatureField(
     T: PDFString.of(fieldName),
     F: 4,
     P: page.ref,
+    // Sin esto el lector dibuja el borde por defecto (1 pt) alrededor de la firma.
+    Border: [0, 0, 0],
+    BS: { W: 0, S: PDFName.of("S") },
     AP: { N: appearance },
   });
   const widgetRef = pdf.context.register(widget);
