@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleAlert,
   History,
+  Search,
   Loader2,
   MessageCircle,
   Minus,
@@ -16,7 +17,7 @@ import {
   Trash2,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useAiChat, type AiProfile, type ChatTurn } from "@/app/ai-chat";
 import { useVault } from "@/app/vault/store";
@@ -403,43 +404,81 @@ function HistoryList({ onPick }: { onPick: () => void }) {
   );
 }
 
+type ModelEntry = { list: string[]; error: string };
+
 /**
- * Selector de modelo compacto, bajo la caja de texto: muestra el modelo en uso
- * y abre hacia arriba la lista de modelos de cada proveedor conectado.
+ * Bajo la caja de texto: primero el proveedor conectado en la cuenta y, al
+ * elegirlo, sus modelos con un buscador. No se listan a la vez los de todos.
+ * Una conexión se guardó porque respondió. Al abrir el selector se vuelve a
+ * comprobar; si alguna dejó de responder, se avisa ahí.
  */
 function ModelPicker({ providers }: { providers: Provider[] }) {
   const model = useAiChat((state) => state.model);
   const setModel = useAiChat((state) => state.setModel);
-  const [open, setOpen] = useState(false);
-  const [models, setModels] = useState<Partial<Record<AiProviderId, { list: string[]; error: string } | null>>>({});
+  const [picked, setPicked] = useState<AiProviderId | null>(null);
+  const [providerOpen, setProviderOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [models, setModels] = useState<Partial<Record<AiProviderId, ModelEntry | null>>>({});
+  const started = useRef(new Set<AiProviderId>());
   const rootRef = useRef<HTMLDivElement>(null);
-  const ready = Boolean(model && providers.some((provider) => provider.id === model.provider));
-  const providerLabel = providers.find((provider) => provider.id === model?.provider)?.label;
+
+  const savedId = model && providers.some((provider) => provider.id === model.provider) ? model.provider : null;
+  const activeId = picked && providers.some((provider) => provider.id === picked) ? picked : savedId;
+  const active = providers.find((provider) => provider.id === activeId) ?? null;
+  const entry = activeId ? models[activeId] : undefined;
+  const activeError = entry?.error ?? "";
+  const modelReady = Boolean(model && model.provider === activeId);
+
+  // Una lista ya pedida no se repite. Si falló, retry la vuelve a pedir.
+  const load = useCallback((id: AiProviderId) => {
+    if (started.current.has(id)) return;
+    started.current.add(id);
+    setModels((state) => ({ ...state, [id]: null }));
+    void aiModels({ data: { provider: id } })
+      .then((result) =>
+        setModels((state) => ({
+          ...state,
+          [id]: { list: result.models, error: result.ok ? "" : result.error },
+        })),
+      )
+      .catch(() =>
+        setModels((state) => ({
+          ...state,
+          [id]: { list: [], error: "No se pudieron leer los modelos." },
+        })),
+      );
+  }, []);
+
+  const retry = (id: AiProviderId) => {
+    started.current.delete(id);
+    load(id);
+  };
 
   useEffect(() => {
-    if (!open) return;
-    for (const provider of providers) {
-      if (models[provider.id] !== undefined) continue;
-      setModels((state) => ({ ...state, [provider.id]: null }));
-      void aiModels({ data: { provider: provider.id } })
-        .then((result) =>
-          setModels((state) => ({ ...state, [provider.id]: { list: result.models, error: result.ok ? "" : result.error } })),
-        )
-        .catch(() =>
-          setModels((state) => ({ ...state, [provider.id]: { list: [], error: "No se pudieron leer los modelos." } })),
-        );
-    }
-  }, [open, providers, models]);
+    if (activeId) load(activeId);
+  }, [activeId, load]);
+
+  // Al abrir el menú se comprueba cada conexión, para avisar si dejó de responder.
+  // Los modelos de esa respuesta no se pintan: la lista es solo la del proveedor elegido.
+  useEffect(() => {
+    if (!providerOpen) return;
+    for (const provider of providers) load(provider.id);
+  }, [providerOpen, providers, load]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!providerOpen && !modelOpen) return;
     const onPointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setProviderOpen(false);
+        setModelOpen(false);
+      }
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
-      setOpen(false);
+      setProviderOpen(false);
+      setModelOpen(false);
     };
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey, true);
@@ -447,70 +486,169 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey, true);
     };
-  }, [open]);
+  }, [providerOpen, modelOpen]);
+
+  const chooseProvider = (id: AiProviderId) => {
+    setPicked(id);
+    if (model?.provider !== id) setModel(null);
+    if (models[id]?.error) retry(id);
+    setQuery("");
+    setProviderOpen(false);
+    setModelOpen(true);
+  };
+
+  const needle = query.trim().toLowerCase();
+  const visible = !entry || entry.error ? [] : entry.list.filter((name) => name.toLowerCase().includes(needle));
 
   return (
-    <div ref={rootRef} className="relative min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={t("Modelo")}
-        title={ready && model ? `${providerLabel} · ${model.model}` : t("Elegir modelo")}
-        className={`flex h-7 max-w-56 min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
-          ready ? "text-muted hover:text-fg" : "text-accent"
-        }`}
-      >
-        <span className="truncate">{ready && model ? model.model : t("Elegir modelo")}</span>
-        <ChevronDown className="size-3 shrink-0" />
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          data-ui="popover"
-          className="absolute bottom-full left-0 z-10 mb-1 max-h-72 w-64 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
-        >
-          {providers.map((provider) => {
-            const entry = models[provider.id];
-            return (
-              <div key={provider.id} className="py-0.5">
-                <p className="px-2 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-faint uppercase">{provider.label}</p>
-                {entry === null || entry === undefined ? (
-                  <p className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted">
-                    <Loader2 className="size-3 animate-spin" />
-                    {t("Cargando…")}
-                  </p>
-                ) : entry.error ? (
-                  <p className="px-2 py-1.5 text-xs text-danger">{t(entry.error)}</p>
-                ) : entry.list.length === 0 ? (
-                  <p className="px-2 py-1.5 text-xs text-muted">{t("Sin modelos")}</p>
-                ) : (
-                  entry.list.map((name) => {
-                    const on = model?.provider === provider.id && model.model === name;
-                    return (
-                      <button
-                        key={name}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={on}
-                        onClick={() => {
-                          setModel({ provider: provider.id, model: name });
-                          setOpen(false);
-                        }}
-                        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg hover:bg-elevated"
-                      >
-                        <span className="min-w-0 flex-1 truncate">{name}</span>
-                        {on ? <Check className="size-3.5 shrink-0 text-accent" /> : null}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            );
-          })}
-        </div>
+    <div className="flex min-w-0 flex-1 flex-col">
+      {active && activeError ? (
+        <p className="line-clamp-2 px-1 pb-0.5 text-[11px] leading-snug text-danger">
+          {active.label}: {t(activeError)}
+        </p>
       ) : null}
+      <div ref={rootRef} className="flex min-w-0 items-center">
+        <div className="relative min-w-0">
+          <button
+            type="button"
+            onClick={() => {
+              setModelOpen(false);
+              setProviderOpen((value) => !value);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={providerOpen}
+            aria-label={t("Proveedor")}
+            title={activeError ? `${active?.label ?? ""}: ${activeError}` : (active?.label ?? t("Elegir proveedor"))}
+            className={`flex h-7 max-w-32 min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
+              activeError ? "text-danger" : active ? "text-muted hover:text-fg" : "text-accent"
+            }`}
+          >
+            {activeError ? <CircleAlert className="size-3 shrink-0" /> : null}
+            <span className="truncate">{active ? active.label : t("Elegir proveedor")}</span>
+            <ChevronDown className="size-3 shrink-0" />
+          </button>
+          {providerOpen ? (
+            <div
+              role="menu"
+              data-ui="popover"
+              className="absolute bottom-full left-0 z-10 mb-1 max-h-72 w-60 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+            >
+              {providers.map((provider) => {
+                const row = models[provider.id];
+                const on = provider.id === activeId;
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={on}
+                    onClick={() => chooseProvider(provider.id)}
+                    className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs text-fg hover:bg-elevated"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{provider.label}</span>
+                      {row === null || row === undefined ? (
+                        <span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
+                          <Loader2 className="size-3 animate-spin" />
+                          {t("Cargando…")}
+                        </span>
+                      ) : row.error ? (
+                        <span className="mt-0.5 block text-[11px] leading-snug text-danger">{t(row.error)}</span>
+                      ) : null}
+                    </span>
+                    {on ? <Check className="mt-0.5 size-3.5 shrink-0 text-accent" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => {
+              setProviderOpen(false);
+              setModelOpen((value) => !value);
+              setQuery("");
+            }}
+            aria-haspopup="menu"
+            aria-expanded={modelOpen}
+            aria-label={t("Modelo")}
+            title={modelReady && model ? model.model : t("Elegir modelo")}
+            className={`flex h-7 w-full min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
+              modelReady ? "text-muted hover:text-fg" : "text-accent"
+            }`}
+          >
+            <span className="truncate">{modelReady && model ? model.model : t("Elegir modelo")}</span>
+            <ChevronDown className="size-3 shrink-0" />
+          </button>
+          {modelOpen ? (
+            <div
+              role="menu"
+              data-ui="popover"
+              className="absolute bottom-full right-0 z-10 mb-1 flex max-h-80 w-72 max-w-[min(18rem,calc(100vw-3rem))] flex-col overflow-hidden rounded-lg border border-line bg-surface p-1 shadow-2xl"
+            >
+              {!active ? (
+                <p className="px-2 py-1.5 text-xs text-muted">{t("Elige un proveedor primero.")}</p>
+              ) : (
+                <>
+                  <label className="flex h-8 shrink-0 items-center gap-2.5 rounded-md border border-line bg-inset px-2.5">
+                    <Search className="size-3.5 shrink-0 text-faint" aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "Enter") event.preventDefault();
+                      }}
+                      placeholder={t("Buscar modelo")}
+                      aria-label={t("Buscar modelo")}
+                      autoComplete="off"
+                      className="min-w-0 flex-1 appearance-none bg-transparent pl-1.5 text-xs text-fg outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden [&::-webkit-search-results-button]:hidden"
+                    />
+                  </label>
+                  <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
+                    {entry === null || entry === undefined ? (
+                      <p className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted">
+                        <Loader2 className="size-3 animate-spin" />
+                        {t("Cargando…")}
+                      </p>
+                    ) : entry.error ? (
+                      <p className="px-2 py-1.5 text-xs text-danger">{t(entry.error)}</p>
+                    ) : entry.list.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-muted">{t("Sin modelos")}</p>
+                    ) : visible.length === 0 ? (
+                      <p className="px-2 py-1.5 text-xs text-muted">{t("Ningún modelo coincide")}</p>
+                    ) : (
+                      visible.map((name) => {
+                        const on = model?.provider === active.id && model.model === name;
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={on}
+                            onClick={() => {
+                              setModel({ provider: active.id, model: name });
+                              setPicked(active.id);
+                              setModelOpen(false);
+                            }}
+                            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-fg hover:bg-elevated"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{name}</span>
+                            {on ? <Check className="size-3.5 shrink-0 text-accent" /> : null}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

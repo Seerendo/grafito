@@ -175,7 +175,15 @@ export const sharedWithMe = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
-    return sharedWith(sql, context.userId);
+    // El id del dueño se usa en el servidor (el asistente). Al navegador no le hace falta.
+    return (await sharedWith(sql, context.userId)).map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      ownerName: item.ownerName,
+      access: item.access,
+      workspace: item.workspace,
+    }));
   });
 
 /** El texto de un documento de algo compartido conmigo, al abrirlo (el árbol no lo trae). */

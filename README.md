@@ -721,8 +721,8 @@ Right-click anywhere in an administration page gives the actions of its buttons:
 ## AI assistant
 
 1. In **Administración → Inteligencia artificial**, an administrator allows
-   providers: ChatGPT, Claude, Grok, Gemini, DeepSeek, Kimi, Ollama and LM
-   Studio.
+   providers: ChatGPT, Claude, Grok, Gemini, DeepSeek, Kimi, OpenRouter, Ollama
+   and LM Studio.
 2. Each user connects their own provider in **Cuenta → Conexiones de IA**:
    - Cloud providers use the user's own API key. Keys are tested before saving,
      stored encrypted (AES-256-GCM) and never sent back to the browser.
@@ -736,11 +736,18 @@ Right-click anywhere in an administration page gives the actions of its buttons:
        `http://192.168.1.20:11434`.
      - For safety, Grafito's own services (`postgres`, `app`…) are rejected.
 3. Open the chat with the floating button or **Ctrl+B**.
-   - Pick the model with the small selector under the message box, then ask.
+   - Under the message box, pick a connected provider and then a model. The
+     model list has a search box, because a provider can offer hundreds.
+     If a connection that used to work stops responding, the provider selector
+     says so.
    - **New conversation** (pen icon) starts a fresh chat at any time.
    - **History** (clock icon) lists your past conversations. Open one to
      continue it, or delete it. Each conversation keeps its own context.
      Conversations are saved on the server, so they're there in any browser.
+     A long one is compressed before it reaches the model: the latest turns
+     stay as they are, and everything older is folded into a short memory, so
+     that history is not sent again on every message. The transcript in the
+     chat stays complete.
    - **Profiles** (the person icon beside the model) change how the assistant
      works, for example «Documentación» or «Análisis». Each person creates
      their own in **Gestionar perfiles**, inside the chat:
@@ -754,11 +761,15 @@ Right-click anywhere in an administration page gives the actions of its buttons:
    - Clicking outside the chat minimizes it to its button. What you were
      typing is still there when you open it again.
 
-The assistant can list portfolios, search, read, create and edit notes, within
-the permissions of your role. It finds notes and portfolios by name as well as
-by id, and it reads the text of uploaded files: plain text, Word, Excel,
-PowerPoint, OpenDocument and PDFs with text (not scanned ones). The chat lists each tool it used, and you can
-click one to open the note.
+The assistant can list portfolios, search, read, create and edit notes, and
+read or edit tables, within the permissions of your role. It only sees what
+you can open: your own vault, items shared with you, and workspace folders
+granted to you. Something you can view but not edit (a read-only share, or a
+workspace folder granted as read) can be read and cannot be changed. It does
+not open another person's private vault. It finds notes and portfolios by name
+as well as by id, and it reads the text of uploaded files: plain text, Word,
+Excel, PowerPoint, OpenDocument and PDFs with text (not scanned ones). The
+chat lists each tool it used, and you can click one to open the note.
 
 To try it with a local open model, install Ollama (or LM Studio and start its
 server), download a model, allow the provider in administration, and connect

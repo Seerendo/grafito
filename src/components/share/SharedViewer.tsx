@@ -405,7 +405,10 @@ export function SharedViewer({
               type="button"
               aria-label={t("Espacio y permisos")}
               title={t("Espacio y permisos")}
-              onClick={() => useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: tree.share.id })}
+              onClick={() => {
+                if (!here) return;
+                useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: tree.share.id });
+              }}
               className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
             >
               <HardDrive className="size-4" />

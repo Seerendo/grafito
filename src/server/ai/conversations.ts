@@ -3,8 +3,8 @@ import type { Sql } from "@/lib/db";
 /**
  * Historial del chat de IA (solo servidor). Ver
  * `migrations/0015_ai_conversations.sql`. Cada conversación guarda sus turnos
- * tal como los muestra el chat; el contexto que se manda al modelo lo recorta
- * el propio chat.
+ * tal como los muestra el chat. La memoria comprimida (`memory`,
+ * `memory_until`, migración 0034) es lo que el modelo recuerda de lo viejo.
  */
 
 /** Conversaciones que se conservan por usuario (las más antiguas se descartan). */
@@ -19,31 +19,45 @@ export async function listConversations(sql: Sql, userId: string): Promise<Conve
   return rows.map((row) => ({ id: row.id, title: row.title, updatedAt: Number(row.updated_at) }));
 }
 
-export async function readConversation(sql: Sql, userId: string, id: string): Promise<{ title: string; turns: unknown[] } | null> {
-  const rows = await sql<{ title: string; turns: string }>`
-    select title, turns from ai_conversation where user_id = ${userId} and id = ${id} limit 1
+export type StoredMemory = { text: string; untilId: string };
+
+export async function readConversation(
+  sql: Sql,
+  userId: string,
+  id: string,
+): Promise<{ title: string; turns: unknown[]; memory: StoredMemory | null } | null> {
+  const rows = await sql<{ title: string; turns: string; memory: string; memory_until: string }>`
+    select title, turns, memory, memory_until from ai_conversation where user_id = ${userId} and id = ${id} limit 1
   `;
   const row = rows[0];
   if (!row) return null;
+  const memory = row.memory.trim() ? { text: row.memory, untilId: row.memory_until } : null;
   try {
     const turns = JSON.parse(row.turns) as unknown;
-    return { title: row.title, turns: Array.isArray(turns) ? turns : [] };
+    return { title: row.title, turns: Array.isArray(turns) ? turns : [], memory };
   } catch {
-    return { title: row.title, turns: [] };
+    return { title: row.title, turns: [], memory };
   }
 }
 
 export async function writeConversation(
   sql: Sql,
   userId: string,
-  input: { id: string; title: string; turns: unknown[] },
+  input: { id: string; title: string; turns: unknown[]; memory: StoredMemory | null },
 ): Promise<number> {
   const now = Date.now();
   const turns = JSON.stringify(input.turns);
+  const memory = input.memory?.text.trim() ?? "";
+  const memoryUntil = memory ? input.memory?.untilId ?? "" : "";
   await sql`
-    insert into ai_conversation (id, user_id, title, turns, created_at, updated_at)
-    values (${input.id}, ${userId}, ${input.title}, ${turns}, ${now}, ${now})
-    on conflict (id) do update set title = excluded.title, turns = excluded.turns, updated_at = excluded.updated_at
+    insert into ai_conversation (id, user_id, title, turns, memory, memory_until, created_at, updated_at)
+    values (${input.id}, ${userId}, ${input.title}, ${turns}, ${memory}, ${memoryUntil}, ${now}, ${now})
+    on conflict (id) do update set
+      title = excluded.title,
+      turns = excluded.turns,
+      memory = excluded.memory,
+      memory_until = excluded.memory_until,
+      updated_at = excluded.updated_at
     where ai_conversation.user_id = ${userId}
   `;
   const old = await sql<{ id: string }>`

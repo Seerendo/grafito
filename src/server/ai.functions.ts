@@ -192,13 +192,25 @@ export const aiConversation = createServerFn({ method: "GET" })
     const conversation = await readConversation(sql, context.userId, data.id);
     if (!conversation) return { ok: false as const, error: "Esa conversación ya no existe." };
     const turns = z.array(turn).safeParse(conversation.turns);
-    return { ok: true as const, title: conversation.title, turns: turns.success ? turns.data : [] };
+    return {
+      ok: true as const,
+      title: conversation.title,
+      turns: turns.success ? turns.data : [],
+      memory: conversation.memory,
+    };
   });
 
 export const saveAiConversation = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ id: conversationId, title: z.string().max(200), turns: z.array(turn).max(500) }).parse(input),
+    z
+      .object({
+        id: conversationId,
+        title: z.string().max(200),
+        turns: z.array(turn).max(500),
+        memory: z.object({ text: z.string().min(1).max(2_000), untilId: z.string().min(1).max(64) }).nullable(),
+      })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const { sql, profile } = await caller(context.userId);

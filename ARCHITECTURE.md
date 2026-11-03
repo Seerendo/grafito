@@ -265,6 +265,7 @@ The `vault/` pieces:
 | `0013_user_preferences.sql` | `app_profile.locale` (interface language) |
 | `0014_last_seen_autosave.sql` | `app_profile.first_login_at` and `last_seen_at` (Users list), and `vault_doc_version.autosave` (only Office autosaves are grouped) |
 | `0015_ai_conversations.sql` | `ai_conversation`: saved AI chat conversations per user |
+| `0034_ai_memory.sql` | `ai_conversation.memory` and `memory_until`: compressed memory of a chat |
 | `0016_mail.sql` | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
 | `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
@@ -1276,8 +1277,12 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
     editor, Ctrl+B stays bold, and Esc closes the chat.
   - With no provider connected, it says so and links to Account.
   - With a provider but no model, it asks you to pick one.
-  - **Model picker:** a compact button under the message box. It opens upward
-    with the models of each connected provider.
+  - **Model picker:** under the message box, a provider selector and then a
+    model selector. Only providers connected in Account are listed (a
+    connection is saved only after it answers). Models are loaded for the
+    chosen provider, with a search box, instead of every model of every
+    provider at once. If that provider later stops answering, the selector
+    shows the error.
   - **Conversations** (`server/ai/conversations.ts`, table `ai_conversation`,
     migration 0015):
     - Each one is saved after every answer, with a title taken from its first
@@ -1285,10 +1290,15 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
     - The tab remembers which conversation is open.
     - **History** lists them, opens one or deletes it. **New conversation**
       starts another.
-  - **Context:** each conversation sends only its own turns to the model: the
-    last 30, up to about 24,000 characters (`app/ai-chat.ts`). Each earlier
-    answer carries what it really did, from its tool chips
-    (`[Acciones: Creó «X» · …]`), not only what it said.
+  - **Context:** the chat keeps the full transcript. The model receives the
+    recent turns (the last 8, about 6,000 characters) and, once the rest no
+    longer fits, a short memory of what already happened
+    (`domain/ai-context.ts`). That memory is one line per older turn until it
+    reaches about 1,500 characters; then the same model rewrites it into a
+    dense summary. The summary is saved on the conversation (`memory` and
+    `memory_until`, migration 0034) and reused, so the old transcript is not
+    sent again. Each recent answer still carries what it really did, from its
+    tool chips (`[Acciones: Creó «X» · …]`).
   - **Minimize:** a click outside the panel (on desktop) shrinks it toward its
     button in 200 ms. Opening animates the other way. The draft lives in the
     chat store, so it survives.
@@ -1300,7 +1310,8 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
       `runAgent` loads it for that user and adds its instructions after the
       assistant's own, so they shape tone, format and focus.
     - A read-only profile drops the tools marked `writes` (`create_note`,
-      `update_note`, `create_portfolio`) on top of what the role allows.
+      `update_note`, `create_portfolio`, `add_table_row`, `set_table_cell`)
+      on top of what the role allows.
     - A deleted profile is ignored, and the chat falls back to **General**.
 
 | Provider | Protocol | Address | Key |
@@ -1311,6 +1322,7 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
 | Gemini (Google) | `generateContent` (`functionCall` / `functionResponse`) | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key` |
 | DeepSeek | Chat Completions | `https://api.deepseek.com` | Bearer |
 | Kimi (Moonshot) | Chat Completions | `https://api.moonshot.ai/v1` | Bearer |
+| OpenRouter | Chat Completions | `https://openrouter.ai/api/v1` | Bearer, plus `X-Title: Grafito` |
 | Ollama | Native `/api/chat` | Each user's instance | Optional |
 | LM Studio | Chat Completions | Each user's instance (`…/v1`) | Optional |
 
@@ -1318,11 +1330,25 @@ The agent (`server/ai/agent.ts`) alternates model calls and tool calls, for up
 to 8 steps.
 
 - **Tools:** only those the role allows, out of `list_portfolios`,
-  `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note` and
-  `create_portfolio`. The read and edit tools accept an id, an exact title
-  or a part of a title that matches only one document. Portfolios are found
-  by id, name or path («Proyectos › Atlas»). On a miss, the tool returns the
-  close matches or the list of portfolios, so the model can retry.
+  `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
+  `create_portfolio`, `query_table`, `add_table_row` and `set_table_cell`.
+  The read and edit tools accept an id, an exact title or a part of a title
+  that matches only one document. Portfolios are found by id, name or path
+  («Proyectos › Atlas»). On a miss, the tool returns the close matches or the
+  list of portfolios, so the model can retry. Two documents with the same
+  title are not collapsed to the first one: the tool asks for an id.
+- **What it can open** (`server/ai/access.ts`, `server/ai/corpus.ts`): the
+  person's own vault, items shared with them, and workspace folders granted
+  to them. A document outside that set is reported as not found; the tools
+  never read another person's private vault, and being an administrator does
+  not bypass that. Each result is marked read or edit. A read-only share, or
+  a workspace folder granted as read, can be read and the write tools refuse
+  it. Writes go through the same checks as the app (`editableTarget`,
+  `uploadTarget`, `mayWriteInPortfolio`), into the owner's vault. Creating a
+  folder in a workspace the person does not see entirely grants them that new
+  folder, as when they create it from the app. The pure rules are tested in
+  `access.test.ts`. `scripts/ai-access-lmstudio.ts` runs the same gate against
+  a local LM Studio (not part of `npm test`).
 - **Files:** `read_note` returns the text of uploaded files
   (`server/files.ts` → `fileText`): plain text, Office and OpenDocument
   (`server/office-text.ts`, a small ZIP reader without dependencies) and PDF

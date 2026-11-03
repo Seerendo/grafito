@@ -18,7 +18,6 @@ test("vincular sustituye el mismo destino y respeta el tope", () => {
   const again: ManualLink = { targetId: "nota", kind: "llama" };
   const links = withManualLink([first], again);
   assert.ok(links !== "full");
-  if (links === "full") return;
   assert.equal(links.length, 1);
   assert.equal(links[0]?.kind, "llama");
   const many = Array.from({ length: MAX_MANUAL_LINKS }, (_, index) => ({ targetId: `d${index}`, kind: "referencia" as const }));

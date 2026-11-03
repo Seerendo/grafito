@@ -11,7 +11,7 @@ import {
 
 /**
  * Protocolo Chat Completions de OpenAI. Lo usan ChatGPT, Grok (xAI), DeepSeek,
- * Kimi (Moonshot) y LM Studio: `POST {base}/chat/completions` con
+ * Kimi (Moonshot), OpenRouter y LM Studio: `POST {base}/chat/completions` con
  * `Authorization: Bearer`, herramientas como `tools[].function` y llamadas en
  * `message.tool_calls[].function.arguments` (texto JSON).
  */
@@ -83,6 +83,7 @@ export function fromResponse(body: unknown): Completion {
 function headers(endpoint: Endpoint): Record<string, string> {
   return {
     "content-type": "application/json",
+    ...endpoint.headers,
     ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}),
   };
 }

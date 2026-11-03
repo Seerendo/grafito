@@ -70,7 +70,9 @@ function assertSignatureValid(pdf: Uint8Array, index: number): void {
   const p7 = forge.pkcs7.messageFromAsn1(forge.asn1.fromDer(extracted.signature));
   const signature = signerSignature(root);
   assert.ok(signature, "el PKCS#7 no trae la firma");
-  const verified = p7.certificates.some((cert) => cert.publicKey.verify(md.digest().bytes(), signature));
+  const verified = p7.certificates.some((cert: { publicKey: { verify(digest: string, signature: string): boolean } }) =>
+    cert.publicKey.verify(md.digest().bytes(), signature),
+  );
   assert.equal(verified, true);
 }
 
@@ -107,7 +109,9 @@ test("un .p12 con la contraseña correcta firma el PDF y no guarda la clave", as
   assertSignatureValid(signed, 1);
   const again = await PDFDocument.load(signed);
   assert.equal(again.getPageCount(), 1);
-  assert.equal(decodeCertificate(Buffer.from(p12).toString("base64"))?.byteLength, p12.byteLength);
+  const decoded = decodeCertificate(Buffer.from(p12).toString("base64"));
+  assert.ok(decoded instanceof Uint8Array);
+  assert.equal(decoded.byteLength, p12.byteLength);
 });
 
 test("una segunda firma no invalida la primera", async () => {

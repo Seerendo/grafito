@@ -25,7 +25,12 @@ export type ToolSpec = {
 
 export type Completion = { text: string; toolCalls: ToolCall[] };
 
-export type Endpoint = { baseUrl: string; apiKey: string };
+export type Endpoint = {
+  baseUrl: string;
+  apiKey: string;
+  /** Cabeceras extra del proveedor. No pisan `Authorization`. */
+  headers?: Record<string, string>;
+};
 
 export type CompleteInput = {
   endpoint: Endpoint;

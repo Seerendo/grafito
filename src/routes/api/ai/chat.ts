@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { AI_PROVIDER_IDS } from "@/domain/ai";
+import { withMemory } from "@/domain/ai-context";
 import { apiCaller, apiError, failure, readJson, requirePermission } from "@/server/api";
 import { runAgent, type AgentEvent } from "@/server/ai/agent";
-import { AiUnavailable } from "@/server/ai/config";
+import { compressConversation } from "@/server/ai/compact";
+import { AiUnavailable, endpointFor } from "@/server/ai/config";
 import { readProfile } from "@/server/ai/profiles";
 import { ProviderError } from "@/server/ai/types";
 
@@ -14,13 +16,24 @@ const body = z.object({
   messages: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(40_000) }))
     .min(1)
-    .max(60),
+    .max(16),
+  /** Memoria ya comprimida, si los turnos recientes no son toda la conversación. */
+  memory: z.string().max(2_000).optional(),
+  /** Turnos viejos que hay que resumir antes de responder. */
+  fold: z
+    .object({
+      prior: z.string().max(2_000),
+      digest: z.string().min(1).max(8_000),
+      untilId: z.string().min(1).max(64),
+    })
+    .optional(),
 });
 
 /**
- * `POST /api/ai/chat` con `{ provider, model, messages, profileId? }`. Responde con NDJSON
- * (un evento JSON por línea): `tool` por cada herramienta usada, `text` con la
- * respuesta, `error` o `done` (con `changed` si la bóveda cambió).
+ * `POST /api/ai/chat` con `{ provider, model, messages, profileId?, memory?, fold? }`.
+ * Responde con NDJSON (un evento JSON por línea): `memory` si se comprimió el
+ * historial, `tool` por cada herramienta usada, `text` con la respuesta,
+ * `error` o `done` (con `changed` si la bóveda cambió).
  */
 export const Route = createFileRoute("/api/ai/chat")({
   server: {
@@ -36,8 +49,23 @@ export const Route = createFileRoute("/api/ai/chat")({
           const encoder = new TextEncoder();
           const stream = new ReadableStream<Uint8Array>({
             async start(controller) {
-              const emit = (event: AgentEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+              const emit = (event: AgentEvent | { type: "memory"; text: string; untilId: string }) =>
+                controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
               try {
+                let memory = parsed.data.memory?.trim() ?? "";
+                const fold = parsed.data.fold;
+                if (fold) {
+                  const { policy, endpoint } = await endpointFor(caller.sql, caller.userId, parsed.data.provider);
+                  memory = await compressConversation({
+                    protocol: policy.protocol,
+                    endpoint,
+                    model: parsed.data.model,
+                    prior: fold.prior,
+                    digest: fold.digest,
+                    signal: request.signal,
+                  });
+                  emit({ type: "memory", text: memory, untilId: fold.untilId });
+                }
                 await runAgent({
                   sql: caller.sql,
                   userId: caller.userId,
@@ -45,7 +73,7 @@ export const Route = createFileRoute("/api/ai/chat")({
                   provider: parsed.data.provider,
                   model: parsed.data.model,
                   persona,
-                  history: parsed.data.messages,
+                  history: withMemory(memory, parsed.data.messages),
                   signal: request.signal,
                   emit,
                 });

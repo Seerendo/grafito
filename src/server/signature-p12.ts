@@ -63,7 +63,9 @@ type ForgeCert = { subject: { getField: (name: string) => { value?: unknown } | 
 
 /** Abre el .p12 para comprobar la contraseña y leer el nombre. No devuelve la clave. */
 function openCertificate(bytes: Uint8Array, password: string): OpenedCertificate {
-  let p12: ReturnType<typeof forge.pkcs12.pkcs12FromAsn1>;
+  let p12: {
+    getBags(query: { bagType: string }): Record<string, Array<{ key?: unknown; cert?: unknown }> | undefined>;
+  };
   try {
     const asn1 = forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(bytes).toString("binary")));
     p12 = forge.pkcs12.pkcs12FromAsn1(asn1, false, password);
@@ -354,6 +356,7 @@ function appendRevision(original: Buffer, pdf: PDFDocument, refs: PDFRef[]): Buf
   const entries: { number: number; offset: number }[] = [];
   for (const ref of refs) {
     const object = pdf.context.lookup(ref);
+    if (!object) throw new Error("No se pudo estampar la firma en el PDF.");
     const header = Buffer.from(`${ref.objectNumber} ${ref.generationNumber} obj\n`);
     const body = serializeObject(object);
     entries.push({ number: ref.objectNumber, offset: out.length });

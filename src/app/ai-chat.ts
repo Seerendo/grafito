@@ -1,6 +1,7 @@
 import { uuid } from "@/lib/uuid";
 import { create } from "zustand";
 import type { AiProviderId } from "@/domain/ai";
+import { clipSummary, planContext, type ContextMemory } from "@/domain/ai-context";
 import { bearerHeader } from "@/lib/auth/bearer";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
@@ -45,6 +46,8 @@ type ChatState = {
   /** Conversación abierta (no se guarda mientras no tenga turnos). */
   conversationId: string;
   turns: ChatTurn[];
+  /** Resumen de lo ya hablado. El modelo lo recibe en vez del historial viejo. */
+  memory: ContextMemory | null;
   /** Historial de conversaciones; `null` mientras no se ha leído. */
   conversations: ConversationSummary[] | null;
   model: ModelRef | null;
@@ -77,39 +80,10 @@ const MODEL_KEY = "grafito.ai.model:";
 const CURRENT_KEY = "grafito.ai.current:";
 const PROFILE_KEY = "grafito.ai.profile:";
 
-/**
- * Contexto que se manda al modelo: los últimos turnos de la conversación
- * abierta, hasta `CONTEXT_TURNS` y unos `CONTEXT_CHARS` caracteres (lo más
- * antiguo se deja fuera). Cada conversación tiene el suyo.
- */
-const CONTEXT_TURNS = 30;
-const CONTEXT_CHARS = 24_000;
-
 /** Título de una conversación: el comienzo de la primera pregunta. */
 function titleOf(turns: ChatTurn[]): string {
   const first = turns.find((turn) => turn.role === "user")?.content.replace(/\s+/g, " ").trim() ?? "";
   return first.length > 80 ? `${first.slice(0, 79)}…` : first;
-}
-
-function contextOf(turns: ChatTurn[]): { role: "user" | "assistant"; content: string }[] {
-  const usable = turns.filter((turn) => !turn.error && turn.content).slice(-CONTEXT_TURNS);
-  const picked: { role: "user" | "assistant"; content: string }[] = [];
-  let size = 0;
-  for (let index = usable.length - 1; index >= 0; index -= 1) {
-    const turn = usable[index]!;
-    // Lo que de verdad hizo en esa respuesta (no solo lo que dijo): sin esto,
-    // el modelo veía «creé la nota» sin rastro de la herramienta y a veces lo
-    // imitaba después sin llamarla.
-    const actions =
-      turn.role === "assistant" && turn.tools?.length ? `\n\n[Acciones: ${turn.tools.map((tool) => tool.label).join(" · ")}]` : "";
-    const content = `${turn.content}${actions}`;
-    size += content.length;
-    if (picked.length > 0 && size > CONTEXT_CHARS) break;
-    picked.unshift({ role: turn.role, content });
-  }
-  // La conversación que recibe el modelo empieza por la persona.
-  while (picked[0]?.role === "assistant") picked.shift();
-  return picked;
 }
 
 function stored(turns: ChatTurn[]): ChatTurn[] {
@@ -139,11 +113,11 @@ const session = () => window.sessionStorage;
 
 export const useAiChat = create<ChatState>((set, get) => {
   /** Guarda la conversación en el servidor y la pone primera en el historial. */
-  const persist = async (id: string, turns: ChatTurn[]) => {
+  const persist = async (id: string, turns: ChatTurn[], memory: ContextMemory | null) => {
     if (turns.length === 0) return;
     const title = titleOf(turns);
     try {
-      const result = await saveAiConversation({ data: { id, title, turns: stored(turns) } });
+      const result = await saveAiConversation({ data: { id, title, turns: stored(turns), memory } });
       if (!result.ok) return;
       const list = get().conversations;
       if (list) set({ conversations: [{ id, title, updatedAt: result.updatedAt }, ...list.filter((item) => item.id !== id)] });
@@ -155,7 +129,7 @@ export const useAiChat = create<ChatState>((set, get) => {
   const select = (id: string, turns: ChatTurn[]) => {
     const userId = get().userId;
     if (userId) save(session, CURRENT_KEY + userId, id);
-    set({ conversationId: id, turns });
+    set({ conversationId: id, turns, memory: null });
   };
 
   return {
@@ -163,6 +137,7 @@ export const useAiChat = create<ChatState>((set, get) => {
     open: false,
     conversationId: "",
     turns: [],
+    memory: null,
     conversations: null,
     model: null,
     busy: false,
@@ -217,6 +192,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         userId,
         conversationId: current ?? uuid(),
         turns: [],
+        memory: null,
         conversations: null,
         model: load<ModelRef | null>(local, MODEL_KEY + userId, null),
         draft: "",
@@ -248,7 +224,7 @@ export const useAiChat = create<ChatState>((set, get) => {
       try {
         const result = await aiConversation({ data: { id } });
         if (get().conversationId !== id) return;
-        if (result.ok) set({ turns: result.turns });
+        if (result.ok) set({ turns: result.turns, memory: result.memory });
         else select(uuid(), []);
       } catch {
         /* se queda vacía */
@@ -280,11 +256,12 @@ export const useAiChat = create<ChatState>((set, get) => {
       if (!model || !userId || busy || !content) return;
       const userTurn: ChatTurn = { id: uuid(), role: "user", content };
       const answer: ChatTurn = { id: uuid(), role: "assistant", content: "", tools: [], pending: true };
-      const history = contextOf([...get().turns, userTurn]);
+      const plan = planContext([...get().turns, userTurn], get().memory);
       const controller = new AbortController();
       // Los turnos de esta conversación, aunque la persona abra otra mientras responde.
       let turns = [...get().turns, userTurn, answer];
-      set({ turns, busy: true, controller });
+      let savedMemory: ContextMemory | null = plan.fold ? get().memory : plan.next;
+      set({ turns, busy: true, controller, ...(!plan.fold ? { memory: plan.next } : {}) });
 
       const patch = (change: Partial<ChatTurn> | ((turn: ChatTurn) => Partial<ChatTurn>)) => {
         turns = turns.map((turn) =>
@@ -302,7 +279,8 @@ export const useAiChat = create<ChatState>((set, get) => {
           body: JSON.stringify({
             provider: model.provider,
             model: model.model,
-            messages: history,
+            messages: plan.recent,
+            ...(plan.fold ? { fold: plan.fold } : plan.next ? { memory: plan.next.text } : {}),
             ...(profileId ? { profileId } : {}),
           }),
           signal: controller.signal,
@@ -325,11 +303,15 @@ export const useAiChat = create<ChatState>((set, get) => {
             index = buffer.indexOf("\n");
             if (!line) continue;
             const event = JSON.parse(line) as
+              | { type: "memory"; text: string; untilId: string }
               | { type: "tool"; event: ToolChip & { changed?: boolean } }
               | { type: "text"; text: string }
               | { type: "error"; message: string }
               | { type: "done"; changed: boolean };
-            if (event.type === "tool") {
+            if (event.type === "memory" && event.text && event.untilId) {
+              savedMemory = { text: clipSummary(event.text), untilId: event.untilId };
+              if (get().conversationId === conversationId) set({ memory: savedMemory });
+            } else if (event.type === "tool") {
               if (event.event.changed) changed = true;
               patch((turn) => ({
                 tools: [...(turn.tools ?? []), { label: event.event.label, ok: event.event.ok, docId: event.event.docId }],
@@ -345,7 +327,7 @@ export const useAiChat = create<ChatState>((set, get) => {
       } finally {
         patch({ pending: false });
         if (get().controller === controller) set({ busy: false, controller: null });
-        void persist(conversationId, turns);
+        void persist(conversationId, turns, savedMemory);
         // La IA cambió la bóveda en el servidor: traer los cambios ya.
         if (changed) void syncVault(userId);
       }

@@ -7,6 +7,12 @@ import { t } from "@/app/i18n";
 
 const KIND_LABEL: Record<ManualKind, string> = { referencia: "Referencia", llama: "Invoca" };
 
+function isManualLink(value: unknown): value is ManualLink {
+  if (!value || typeof value !== "object") return false;
+  const link = value as ManualLink;
+  return typeof link.targetId === "string" && (link.kind === "referencia" || link.kind === "llama");
+}
+
 /**
  * Esquema, vínculos y menciones de un documento compartido, para moverse
  * rápido entre lo publicado. Con `onLink`, quien puede editar también vincula
@@ -112,28 +118,31 @@ export function SharedContext({
           <Empty>{t("Sin vínculos.")}</Empty>
         ) : (
           <ul>
-            {outgoing.map((item, index) => (
-              <li key={`${item.id}-${index}`} className="flex items-center gap-1">
-                <div className="min-w-0 flex-1">
-                  <Row
-                    onClick={() => onOpen(item.id)}
-                    title={item.title}
-                    badge={t(item.label)}
-                    detail={item.detail}
-                  />
-                </div>
-                {onUnlink && "link" in item && item.link ? (
-                  <button
-                    type="button"
-                    aria-label={t("Quitar vínculo")}
-                    onClick={() => onUnlink(item.link)}
-                    className="grid size-8 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                ) : null}
-              </li>
-            ))}
+            {outgoing.map((item, index) => {
+              const manual = "link" in item && isManualLink(item.link) ? item.link : undefined;
+              return (
+                <li key={`${item.id}-${index}`} className="flex items-center gap-1">
+                  <div className="min-w-0 flex-1">
+                    <Row
+                      onClick={() => onOpen(item.id)}
+                      title={item.title}
+                      badge={t(item.label)}
+                      detail={item.detail}
+                    />
+                  </div>
+                  {onUnlink && manual ? (
+                    <button
+                      type="button"
+                      aria-label={t("Quitar vínculo")}
+                      onClick={() => onUnlink(manual)}
+                      className="grid size-8 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Block>

@@ -826,15 +826,15 @@ export async function sharedDocText(
 export async function sharedWith(
   sql: Sql,
   userId: string,
-): Promise<{ id: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess; workspace: boolean }[]> {
+): Promise<{ id: string; ownerId: string; kind: ShareKind; title: string; ownerName: string; access: ShareAccess; workspace: boolean }[]> {
   await retireExpired(sql);
-  const rows = await sql<{ id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown; workspace: unknown }>`
+  const rows = await sql<{ id: string; owner_id: string; kind: ShareKind; title: string; owner_name: string; rank: unknown; workspace: unknown }>`
     with recursive mine(id) as (
       select org_id from app_org_member where user_id = ${userId}
       union
       select o.parent_id from app_org o join mine m on o.id = m.id where o.parent_id is not null
     )
-    select s.id, s.kind, s.title, u.name as owner_name,
+    select s.id, s.owner_id, s.kind, s.title, u.name as owner_name,
       exists (select 1 from workspace w where w.owner_id = s.owner_id) as workspace,
       coalesce(
         (
@@ -858,6 +858,7 @@ export async function sharedWith(
   `;
   return rows.map((row) => ({
     id: row.id,
+    ownerId: row.owner_id,
     kind: row.kind,
     title: row.title,
     ownerName: row.owner_name?.trim() || "Alguien",

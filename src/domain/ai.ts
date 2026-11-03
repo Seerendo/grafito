@@ -2,8 +2,8 @@
  * Catálogo de proveedores de IA. Cada uno habla uno de cuatro protocolos:
  *
  *  - `openai`: Chat Completions (`POST /chat/completions`, `GET /models`,
- *    `Authorization: Bearer`). ChatGPT, Grok (xAI), DeepSeek, Kimi (Moonshot)
- *    y LM Studio lo implementan.
+ *    `Authorization: Bearer`). ChatGPT, Grok (xAI), DeepSeek, Kimi (Moonshot),
+ *    OpenRouter y LM Studio lo implementan.
  *  - `anthropic`: Messages API de Claude (`POST /v1/messages`, `x-api-key`,
  *    `anthropic-version`, bloques `tool_use` / `tool_result`).
  *  - `gemini`: Generative Language API (`:generateContent`, `x-goog-api-key`,
@@ -14,7 +14,16 @@
  * fija el administrador; los de la nube usan siempre su URL oficial.
  */
 
-export type AiProviderId = "openai" | "anthropic" | "xai" | "gemini" | "deepseek" | "kimi" | "ollama" | "lmstudio";
+export type AiProviderId =
+  | "openai"
+  | "anthropic"
+  | "xai"
+  | "gemini"
+  | "deepseek"
+  | "kimi"
+  | "openrouter"
+  | "ollama"
+  | "lmstudio";
 export type AiProtocol = "openai" | "anthropic" | "gemini" | "ollama";
 
 export type AiProviderInfo = {
@@ -91,6 +100,16 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
     local: false,
     keyUrl: "https://platform.moonshot.ai/console/api-keys",
     keyPlaceholder: "sk-…",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    vendor: "OpenRouter",
+    protocol: "openai",
+    baseUrl: "https://openrouter.ai/api/v1",
+    local: false,
+    keyUrl: "https://openrouter.ai/keys",
+    keyPlaceholder: "sk-or-…",
   },
   {
     id: "ollama",

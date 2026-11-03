@@ -66,6 +66,21 @@ test("openai: URL y Authorization", async () => {
   assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, "Bearer k");
 });
 
+test("openai: cabeceras extra, sin pisar la clave", async () => {
+  const { fetcher, calls } = fakeFetch({ choices: [{ message: { content: "hola" } }] });
+  await openai.complete({
+    endpoint: { baseUrl: "https://openrouter.ai/api/v1", apiKey: "sk-or-test", headers: { "X-Title": "Grafito", authorization: "no" } },
+    model: "openrouter/auto",
+    messages: [{ role: "user", content: "hi" }],
+    tools: [],
+    fetcher,
+  });
+  const headers = calls[0]!.init.headers as Record<string, string>;
+  assert.equal(calls[0]!.url, "https://openrouter.ai/api/v1/chat/completions");
+  assert.equal(headers["X-Title"], "Grafito");
+  assert.equal(headers.authorization, "Bearer sk-or-test");
+});
+
 test("anthropic: sistema aparte y resultados agrupados en un solo turno user", () => {
   const body = anthropic.toRequest("claude-x", history, tools);
   assert.equal(body.system, "Eres el asistente.");

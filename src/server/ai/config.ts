@@ -9,7 +9,8 @@ import type { Endpoint } from "./types.ts";
  * administrador y la conexión de cada usuario. En los de la nube, su clave
  * (cifrada con `server/crypto.ts`) contra la URL oficial; en Ollama y LM
  * Studio, la dirección de su propia instancia (validada con `local-url.ts`) y
- * una clave opcional.
+ * una clave opcional. OpenRouter habla el protocolo de OpenAI y, además,
+ * identifica la app con `X-Title`.
  */
 
 export type ProviderPolicy = AiProviderInfo & { enabled: boolean };
@@ -94,7 +95,9 @@ export async function endpointFor(sql: Sql, userId: string, provider: AiProvider
   }
   if (!policy.local) {
     if (!apiKey) throw new AiUnavailable(`Falta tu clave de ${policy.label}.`);
-    return { policy, endpoint: { baseUrl: policy.baseUrl, apiKey } };
+    // OpenRouter atribuye la app en su ranking. El resto de proveedores no las pide.
+    const headers = provider === "openrouter" ? { "X-Title": "Grafito" } : undefined;
+    return { policy, endpoint: { baseUrl: policy.baseUrl, apiKey, ...(headers ? { headers } : {}) } };
   }
   // Se vuelve a validar al usarla: la lista de direcciones prohibidas puede haber crecido.
   const checked = checkLocalUrl(rows[0].base_url, localhostAlias());
