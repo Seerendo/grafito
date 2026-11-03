@@ -42,6 +42,25 @@ How Grafito defends itself, and what was checked by attacking a running copy
 - **Headers:** a Content Security Policy on every page
   (`lib/security-headers.ts`), `X-Frame-Options: DENY`, `nosniff` and a strict
   referrer policy.
+- **WebDAV** (`/dav`, `server/dav/`): HTTP Basic with the local password, or
+  a personal API token (`gft_…`). A wrong password is a generic 401: the
+  answer does not say whether that account uses LDAP or has no local
+  password. Twenty failures from one address in ten minutes get 429. A
+  session cookie from another site is still 403. The tree is the caller's
+  vault plus what was shared with them. An administrator's role does not
+  open another person's private documents, and a read-only share stays
+  read-only. `Depth: infinity` is refused. Locks are per process.
+- **Antivirus:** Compose always starts ClamAV. Scanning is on by default at
+  `clamav` port `3310`. Administración → Seguridad (permission
+  `security.manage`) can change the server, the port and the timeout, or
+  turn scanning off. A finished upload is sent to clamd when scanning is on.
+  A detection deletes the object and returns 422. If clamd does not answer,
+  the upload is refused (503) and the object is deleted. With scanning off,
+  nothing is scanned. Note text is not sent to the scanner.
+- **Audit:** successful sign-ins, administration changes, uploads, WebDAV
+  changes and rejected files are stored in `audit_event`. Passwords and file
+  bodies are not. Reading and exporting it needs `monitor.view`. Rows older
+  than the retention setting are deleted.
 
 ## Known limits
 
@@ -51,3 +70,7 @@ How Grafito defends itself, and what was checked by attacking a running copy
   secrets in `.env` (see docs/OPERATIONS.md).
 - Collabora's admin console is blocked at the gateway, and its port only
   listens on the server. Still change `COLLABORA_ADMIN_PASSWORD`.
+- WebDAV locks live in one process. Several app instances do not share them,
+  and a restart drops them.
+- Failed browser sign-ins are rate-limited by Better Auth and are not written
+  to `audit_event`. A failed WebDAV password is.

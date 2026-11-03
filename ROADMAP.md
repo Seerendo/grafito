@@ -77,23 +77,32 @@ Goal: edit Word, Excel, PowerPoint and OpenDocument files (`.docx`, `.xlsx`,
 ## 4. Files in object storage (mostly done)
 
 Done: storage in MinIO / S3 (or Postgres), chunked uploads with a configurable
-limit, signed links, migration of older files, and a bucket backup.
+limit, signed links, migration of older files, a bucket backup, and an
+ClamAV, started by `docker compose up`. Scanning is on by default against
+`clamav:3310`. Administración → Seguridad can change that. A scanner that is
+down refuses the upload.
 
 Still open:
 
 - Resumable uploads across page reloads.
 - A sweep for orphan uploads (started but never attached to a document).
-- Antivirus scanning on upload (ClamAV), as an optional profile.
 - Previews for Office files, generated as PDF through Collabora's convert API.
 
 ## 5. Search and API
+
+Done: WebDAV at `/dav` for the caller's own vault and for items shared with
+them, with the same role permissions and the same share and workspace grants.
 
 - API search endpoint, webhooks for note events, and tokens with an expiry and
   scopes.
 
 ## 6. Governance and audit
 
-- Exportable audit log (CSV and JSON) with a retention setting.
+Done: an exportable audit log (CSV and JSON) with a retention setting
+(Administración → Monitorización y logs → Auditoría, 7 to 3650 days).
+
+Still open:
+
 - Expiry dates on public links, and bulk revocation from administration.
 - Retention settings for logs, trash and versions.
 - Bulk export per user or organization (Markdown plus files, as a ZIP) for

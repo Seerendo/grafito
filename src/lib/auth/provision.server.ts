@@ -1,4 +1,5 @@
 import type { Sql } from "../db";
+import { logActivity } from "@/server/audit";
 
 /**
  * Alta de cuentas que llegan por LDAP, OAuth o SSO (solo servidor): les da el
@@ -43,10 +44,12 @@ export async function provisionExternalUser(
     values (${input.userId}, ${roleId}, ${login}, ${input.source})
     on conflict (user_id) do nothing
   `;
-  await sql`
-    insert into app_log (id, actor, area, message)
-    values (${crypto.randomUUID()}, ${input.source}, 'Usuarios', ${`Alta automática de ${login} (${input.source})`})
-  `;
+  await logActivity(sql, {
+    actorId: input.userId,
+    actorName: input.source,
+    area: "Usuarios",
+    message: `Alta automática de ${login} (${input.source})`,
+  });
 }
 
 /** Direcciones que Grafito se inventa (usuario local, LDAP sin correo): no son de nadie. */

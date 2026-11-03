@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { AI_PROVIDER_IDS, aiProvider, type AiProviderId } from "@/domain/ai";
+import { logActivity } from "@/server/audit";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { encryptionReady, EncryptionUnavailable } from "@/server/crypto";
@@ -57,11 +58,12 @@ export const saveAiPolicy = createServerFn({ method: "POST" })
     if (!allows(profile, "ai.manage")) return { ok: false as const, error: "Sin permiso." };
     const info = aiProvider(data.id)!;
     await writePolicy(sql, data.id, data.enabled);
-    await sql`
-      insert into app_log (id, actor, area, message)
-      values (${crypto.randomUUID()}, ${profile.loginName || profile.displayName}, 'IA',
-        ${`${data.enabled ? "Permite" : "Retira"} ${info.label}`})
-    `;
+    await logActivity(sql, {
+      actorId: context.userId,
+      actorName: profile.loginName || profile.displayName,
+      area: "IA",
+      message: `${data.enabled ? "Permite" : "Retira"} ${info.label}`,
+    });
     return { ok: true as const };
   });
 

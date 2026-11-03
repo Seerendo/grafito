@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { logActivity } from "@/server/audit";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { encryptionReady } from "@/server/crypto";
@@ -67,10 +68,12 @@ export const saveMailSettings = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Falta GRAFITO_ENCRYPTION_KEY en el servidor: no se puede guardar la contraseña." };
     }
     await writeMailSettings(sql, data);
-    await sql`
-      insert into app_log (id, actor, area, message)
-      values (${crypto.randomUUID()}, ${profile.loginName || profile.displayName}, 'Correo', 'Actualiza la configuración de correo')
-    `;
+    await logActivity(sql, {
+      actorId: context.userId,
+      actorName: profile.loginName || profile.displayName,
+      area: "Correo",
+      message: "Actualiza la configuración de correo",
+    });
     return { ok: true as const };
   });
 

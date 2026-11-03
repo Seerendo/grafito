@@ -16,6 +16,7 @@ import {
   type SsoConfig,
 } from "@/lib/auth/providers.server";
 import { invalidateAuth } from "@/lib/auth/server";
+import { logActivity } from "@/server/audit";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 
@@ -93,11 +94,12 @@ export const saveAuthProvider = createServerFn({ method: "POST" })
     await writeProvider(sql, data.id, data);
     invalidateAuth();
     const saved = await readProvider(sql, data.id);
-    await sql`
-      insert into app_log (id, actor, area, message)
-      values (${crypto.randomUUID()}, ${actor.loginName || actor.displayName}, 'Autenticación',
-        ${`${data.enabled ? "Activa" : "Desactiva"} ${LABELS[data.id]}`})
-    `;
+    await logActivity(sql, {
+      actorId: context.userId,
+      actorName: actor.loginName || actor.displayName,
+      area: "Autenticación",
+      message: `${data.enabled ? "Activa" : "Desactiva"} ${LABELS[data.id]}`,
+    });
     return {
       ok: true as const,
       provider: maskProvider(saved),

@@ -1,4 +1,4 @@
-import { Activity, Building2, ChevronRight, FileSearch, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, ChevronRight, FileClock, FileSearch, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, Shield, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -18,6 +18,7 @@ import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/server/admin.functions";
 import { setSessionTtl, storageReport } from "@/server/session.functions";
+import { AuditBoard } from "./AuditBoard";
 import { IndexBoard, LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
 import { QuotaBoard } from "./QuotaBoard";
@@ -26,11 +27,12 @@ import { AssignedSpaceBoard } from "./AssignedSpaceBoard";
 import { DesignPanel } from "./DesignPanel";
 import { AiBoard } from "./AiBoard";
 import { MailBoard } from "./MailBoard";
+import { SecurityBoard } from "./SecurityBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
-type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "indexacion" | "espacio" | "fuentes" | "temas" | "diseno";
+type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "seguridad" | "plugins" | "apariencia" | "sesion" | "monitor";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "auditoria" | "indexacion" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -60,6 +62,7 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     need: ["ai.manage"],
   },
   { id: "correo", label: "Correo electrónico", icon: Mail, need: ["mail.manage"] },
+  { id: "seguridad", label: "Seguridad", icon: Shield, need: ["security.manage"] },
   { id: "plugins", label: "Plugins", icon: Puzzle, need: ["plugins.manage"] },
   { id: "apariencia", label: "Apariencia", icon: Palette },
   { id: "sesion", label: "Sesión", icon: Clock, need: ["session.manage"] },
@@ -121,6 +124,7 @@ function leavesOf(view: AdminView, section: Section): { id: Leaf; label: string;
         ? [
             { id: "monitor" as const, label: "Monitor de sistema", icon: Activity },
             { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
+            { id: "auditoria" as const, label: "Auditoría", icon: FileClock },
             { id: "indexacion" as const, label: "Indexación", icon: FileSearch },
           ]
         : []),
@@ -156,7 +160,7 @@ export function AdminScreen() {
   const autoMenu = useAutoContextMenu();
   useSaveOnReload(NAV_KEY, { section, leaf, roleId });
   const [error, setError] = useState("");
-  const [probe, setProbe] = useState<{ elastic: string; bucket: string } | null>(null);
+  const [probe, setProbe] = useState<{ elastic: string; bucket: string; antivirus: string } | null>(null);
 
   const load = () => {
     void adminState()
@@ -366,6 +370,7 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "monitor" && leaf === "monitor" ? <MonitorBoard /> : null}
                 {current?.id === "monitor" && leaf === "logs" ? <LogsBoard /> : null}
+                {current?.id === "monitor" && leaf === "auditoria" ? <AuditBoard /> : null}
                 {current?.id === "monitor" && leaf === "indexacion" ? <IndexBoard /> : null}
                 {current?.id === "monitor" && leaf === "espacio" ? <SpacePanel /> : null}
                 {current?.id === "monitor" && leaf === "asignado" ? <AssignedSpaceBoard /> : null}
@@ -379,6 +384,12 @@ export function AdminScreen() {
                         setProbe({
                           elastic: result.elastic?.detail ?? "",
                           bucket: result.bucket?.detail ?? "",
+                          antivirus:
+                            result.antivirus === "up"
+                              ? t("ClamAV responde.")
+                              : result.antivirus === "down"
+                                ? t("ClamAV no responde.")
+                                : t("Antivirus apagado."),
                         }),
                       );
                     }}
@@ -391,6 +402,7 @@ export function AdminScreen() {
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
                 {current?.id === "ia" ? <AiBoard /> : null}
                 {current?.id === "correo" ? <MailBoard /> : null}
+                {current?.id === "seguridad" ? <SecurityBoard /> : null}
                 {current?.id === "plugins" ? <Plugins view={view} reload={load} /> : null}
                 {current?.id === "sesion" ? <SessionPanel seconds={view.sessionTtl} /> : null}
               </div>
@@ -421,6 +433,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
   if (section === "apariencia") return t("Apariencia");
   if (section === "monitor" && leaf === "monitor") return t("Monitor de sistema");
   if (section === "monitor" && leaf === "logs") return t("Logs de sistema");
+  if (section === "monitor" && leaf === "auditoria") return t("Auditoría");
   if (section === "monitor" && leaf === "indexacion") return t("Indexación");
   if (section === "monitor" && leaf === "espacio") return t("Espacio");
   if (section === "monitor" && leaf === "asignado") return t("Espacio asignado");
@@ -436,7 +449,7 @@ function Sources({
   onProbe,
 }: {
   view: Extract<State, { isAdmin: true }>;
-  probe: { elastic: string; bucket: string } | null;
+  probe: { elastic: string; bucket: string; antivirus: string } | null;
   reload: () => void;
   onProbe: () => void;
 }) {
@@ -468,6 +481,7 @@ function Sources({
           <div className="min-w-0 text-xs text-muted">
             <p className="truncate">{probe.elastic}</p>
             <p className="truncate">{probe.bucket}</p>
+            <p className="truncate">{probe.antivirus}</p>
           </div>
         ) : null}
       </div>

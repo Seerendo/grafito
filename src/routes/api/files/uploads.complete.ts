@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { PERMISSION } from "@/domain/permissions";
 import { apiCaller, apiError, failure, json, readJson, requirePermission } from "@/server/api";
+import { recordAudit, requestIp } from "@/server/audit";
 import { abortUpload, deleteBlob, finishUpload, maxUploadBytes } from "@/server/blobs";
+import { blockUnsafeBlob } from "@/server/clamav";
 import { checkSpace } from "@/server/space";
 import { mayUpload, uploadTarget } from "@/server/upload-target";
 
@@ -46,6 +48,31 @@ async function completeUpload(request: Request): Promise<Response> {
       await deleteBlob(sql, body.data.key);
       return apiError(413, full);
     }
+    const blocked = await blockUnsafeBlob(sql, body.data.key);
+    const actorName = profile.loginName || profile.displayName;
+    if (blocked) {
+      await recordAudit(sql, {
+        actorId: userId,
+        actorName,
+        action: "virus",
+        outcome: "denied",
+        area: "Archivos",
+        target: body.data.key,
+        detail: blocked.detail || blocked.message,
+        ip: requestIp(request),
+      }).catch((error) => console.error("No se pudo anotar el rechazo del antivirus.", error));
+      return apiError(blocked.status, blocked.message);
+    }
+    await recordAudit(sql, {
+      actorId: userId,
+      actorName,
+      action: "upload",
+      outcome: "ok",
+      area: "Archivos",
+      target: body.data.key,
+      detail: "Sube un archivo",
+      ip: requestIp(request),
+    }).catch((error) => console.error("No se pudo anotar la subida.", error));
     return json({ key: body.data.key, size });
   } catch (error) {
     return failure(error);

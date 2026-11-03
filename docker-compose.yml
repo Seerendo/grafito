@@ -255,6 +255,17 @@ services:
     ports:
       - "127.0.0.1:9980:9980"
 
+  # Antivirus. `docker compose up` starts it. clamav/clamav:1.5 listens on
+  # 3310 inside the compose network (the port is not published). About 1 GB
+  # of RAM; the first start is slow while signatures load. Scanning is on by
+  # default at clamav:3310. Change that in Administración → Seguridad, not
+  # in .env. The app does not wait for clamd to become healthy.
+  clamav:
+    image: clamav/clamav:1.5
+    restart: unless-stopped
+    volumes:
+      - grafito_clamav:/var/lib/clamav
+
   # The front door: Grafito and the Office editor on one port (docker/gateway.conf).
   # Point your reverse proxy, or the browser, at this port.
   gateway:
@@ -274,3 +285,4 @@ volumes:
   grafito_es:
   grafito_s3:
   grafito_redis:
+  grafito_clamav:

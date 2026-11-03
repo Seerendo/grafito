@@ -107,7 +107,8 @@ routes ─▶ components ─▶ app ─▶ domain
 | `api/v1/*.ts` | `/api/v1/…` | Vault REST API (see [REST API](#rest-api)) |
 | `api/ai/chat.ts` | `/api/ai/chat` | AI chat (NDJSON response) |
 | `api/files/$id.ts` | `/api/files/<id>` | A document's file: signed link, public `token`, or API token / session |
-| `api/files/uploads*.ts` | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort) |
+| `api/files/uploads*.ts` | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort). Finish scans with ClamAV when scanning is on (the default). |
+| `dav/index.ts`, `dav/$.ts` | `/dav`, `/dav/…` | WebDAV (`PROPFIND`, `GET`, `PUT`, `DELETE`, `MKCOL`, `MOVE`, `LOCK`, `UNLOCK`). No page. |
 
 ### `src/components/`
 
@@ -118,7 +119,7 @@ routes ─▶ components ─▶ app ─▶ domain
 | `brand/` | Brand mark (`Mark`) |
 | `access/` | `AccessGate`: first run, sign-in and the forced password change |
 | `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password), `AiSettings` (AI connections, `ai.use`) and `ApiTokens` (API, `api.use`). The last two are hidden without the permission. |
-| `admin/` | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO) |
+| `admin/` | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AuditBoard` (exportable audit), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO) |
 | `session/` | `SessionWatch`: watches the session deadline and signs out when it expires |
 | `ai/` | `AiChat`: floating button and chat panel (Ctrl+B) |
 | `share/` | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`, and with no document open shows `SharedBoard`, the page of a shared portfolio or workspace: its portfolios, documents and recent ones), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
@@ -189,6 +190,9 @@ The `vault/` pieces:
 | `orgs.ts` | Organizations: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle` |
 | `share.ts` | Sharing: `Visibility`, and `coveredBy` / `coveredByAll` (what a note, or a portfolio with its sub-portfolios, covers) |
 | `permissions.ts` | Vault permission keys (`PERMISSION`), and which one applies to deleting or exporting by document kind |
+| `dav.ts` | WebDAV paths, names and whether a role or a share may do an operation |
+| `audit-export.ts` | Audit rows as CSV (with a BOM) or JSON, and the retention bounds (7–3650 days) |
+| `clamav.ts` | How a clamd reply becomes allow or reject |
 | `diff.ts` | Line diff for the version history (common prefix and suffix, then LCS; very large changes fall back to "all removed, all added") |
 
 ### `src/server/` (server only)
@@ -214,6 +218,9 @@ The `vault/` pieces:
 | `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `revokeShareGrant`, `revokePublicShare`, `shareTrail`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree` |
 | `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
 | `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
+| `audit.ts` / `audit.functions.ts` | Structured audit (`audit_event`): who did what, the retention sweep, and Administración → Auditoría. Administration changes also keep the short `app_log` line. |
+| `clamav.ts` / `clamav.functions.ts` | ClamAV `INSTREAM` scan, on by default at `clamav:3310`. Administración → Seguridad stores the server, port and timeout (`clamav_*` in `app_setting`, permission `security.manage`). Until that screen is saved, the built-in address applies. A hit or a silence deletes the object. |
+| `dav/` | WebDAV at `/dav`: Basic password or API token (or the same-site session), in-memory locks, and the caller's vault plus shares. An administrator does not see another person's private documents. |
 | `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
 | `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
 | `comments.ts` / `comments.functions.ts` | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`) |
@@ -268,6 +275,8 @@ The `vault/` pieces:
 | `0015_ai_conversations.sql` | `ai_conversation`: saved AI chat conversations per user |
 | `0034_ai_memory.sql` | `ai_conversation.memory` and `memory_until`: compressed memory of a chat |
 | `0035_content_index.sql` | `content_index` (which revision of each document is indexed) and `index_run` (what the background pass is doing) |
+| `0036_audit.sql` | `audit_event` (who, what, outcome, target) and `audit_retention_days` (365). Existing `app_log` rows are copied in once. |
+| `0037_clamav.sql` | Permission `security.manage` for Administración → Seguridad |
 | `0016_mail.sql` | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
 | `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |

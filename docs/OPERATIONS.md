@@ -171,6 +171,62 @@ docker compose up -d --scale app=4
   few seconds); none serves anything older than its short limit, so no sticky
   sessions are needed.
 
+## WebDAV
+
+Open `https://notes.example.com/dav` (or `http://<the server>:8080/dav`) in a
+WebDAV client.
+
+- The username and password are the Grafito ones.
+- An LDAP, OAuth or SSO account has no Grafito password. Create a personal
+  API token in **Cuenta → API** and put that `gft_…` value in the username
+  or the password.
+- `Depth: infinity` is answered 403. Leave `Depth` empty, or set it to `0`
+  or `1`.
+- Locks are kept in the memory of each app process. With several instances
+  (`docker compose up -d --scale app=4`), a lock taken on one instance is
+  not seen by the others. Restarting an instance drops the locks it held.
+  A lock lasts at most one hour.
+
+## Audit
+
+**Administración → Monitorización y logs → Auditoría** lists sign-ins,
+administration changes, uploads, WebDAV changes and files the antivirus
+rejected. Filter it, then export CSV or JSON (up to 5000 rows).
+
+Retention is 365 days unless you set another value there (7 to 3650). Rows
+older than that are deleted about every ten minutes, the next time something
+is recorded. The short list under **Logs de sistema** is separate and is not
+pruned by this setting.
+
+A failed browser sign-in is still only slowed down by Better Auth. It is not
+a row in this log. A successful sign-in is.
+
+## Antivirus
+
+`docker compose up -d --build` starts `clamav/clamav:1.5` with the other
+services. There is no profile to turn on. Port 3310 stays on the compose
+network and is not published. The first start loads the signature database:
+plan for about 1 GB of RAM and several minutes. The app does not wait for
+that load to finish.
+
+Scanning is on by default. The address is the service name `clamav` and port
+`3310`.
+
+**Administración → Seguridad** is the only place to change the server, the
+port and the timeout (5 to 120 seconds, 60 by default), or to turn scanning
+off. That needs the `security.manage` permission. Until someone saves that
+screen, the built-in address applies. After a save, the screen wins,
+including turning scanning off. **Fuentes → Comprobar** also says whether
+ClamAV answers.
+
+If scanning is on and ClamAV is down, a new file upload is refused (422 when
+a signature matches, 503 when the scanner cannot be reached) and the object
+is deleted. Note text is not scanned. The first start can take several
+minutes before **Seguridad → Comprobar** says ClamAV answers.
+
+The test stack starts the same service with
+`docker compose -f docker-compose.test.yml up -d`.
+
 ## When something is down
 
 | Symptom | Check | Fix |
@@ -179,6 +235,7 @@ docker compose up -d --scale app=4
 | Sign-in fails for everyone | `docker compose logs app \| grep -i auth` | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident. |
 | Search returns nothing | Administración → Monitorización y logs → Fuentes → Comprobar | Start Elasticsearch. Search falls back to Postgres meanwhile. |
 | A word inside a file is missing from search | Administración → Monitorización y logs → Indexación | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read. |
+| Every upload fails as soon as it finishes | Scanning is on by default (Administración → Seguridad) | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen. |
 | Everyone is signed out | Redis was restarted or flushed | Nothing to fix: session deadlines are recreated on the next sign-in. |
 | AI chat says the key can't be read | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect. |
 | Disk full | `docker system df`, `du -sh backups` | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`. |

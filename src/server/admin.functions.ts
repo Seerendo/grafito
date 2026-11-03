@@ -7,6 +7,8 @@ import { ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD, STRONG_PASSWORD, documentEngine, e
 import { allows, forgetRoleGrants, readUserProfile } from "@/server/profile";
 import { probeElastic } from "@/server/search";
 import { canSearchOwner, queryContent } from "@/server/index/query";
+import { logActivity } from "@/server/audit";
+import { probeClamd } from "@/server/clamav";
 import { probeBucket } from "@/server/storage";
 
 type Sql = Awaited<ReturnType<typeof import("@/lib/db").getSql>>;
@@ -49,11 +51,8 @@ async function ensureAdminGrants(sql: Sql): Promise<void> {
   `;
 }
 
-async function writeLog(sql: Sql, actor: string, area: string, message: string): Promise<void> {
-  await sql`
-    insert into app_log (id, actor, area, message)
-    values (${crypto.randomUUID()}, ${actor}, ${area}, ${message})
-  `;
+async function writeLog(sql: Sql, actor: string, area: string, message: string, actorId: string): Promise<void> {
+  await logActivity(sql, { actorId, actorName: actor, area, message });
 }
 
 function roleSlug(name: string): string {
@@ -337,6 +336,7 @@ export const setRolePermission = createServerFn({ method: "POST" })
       actor.loginName || actor.displayName,
       "Roles",
       `${data.granted ? "Activa" : "Quita"} ${data.key} en ${data.roleId}`,
+      context.userId,
     );
     return { ok: true as const };
   });
@@ -378,9 +378,9 @@ export const probeSources = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    if (!allows(profile, "sources.manage")) return { elastic: null, bucket: null };
-    const [elastic, bucket] = await Promise.all([probeElastic(), probeBucket()]);
-    return { elastic, bucket };
+    if (!allows(profile, "sources.manage")) return { elastic: null, bucket: null, antivirus: null };
+    const [elastic, bucket, antivirus] = await Promise.all([probeElastic(), probeBucket(), probeClamd(sql)]);
+    return { elastic, bucket, antivirus };
   });
 
 export const syncDocuments = createServerFn({ method: "POST" })
@@ -512,7 +512,7 @@ export const createVaultUser = createServerFn({ method: "POST" })
       insert into app_profile (user_id, contact_email) values (${id}, ${data.email})
       on conflict (user_id) do update set contact_email = excluded.contact_email
     `;
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Crea a ${login}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Crea a ${login}`, context.userId);
     const access = await issueAccess(sql, id, { resent: false });
     return { ok: true as const, access: outcome(access) };
   });
@@ -540,7 +540,7 @@ export const resendVaultAccess = createServerFn({ method: "POST" })
     }
     const { issueAccess } = await import("@/server/temp-access");
     const access = await issueAccess(sql, data.userId, { resent: true });
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Reenvía el acceso a ${row.login_name ?? data.userId}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Reenvía el acceso a ${row.login_name ?? data.userId}`, context.userId);
     return { ok: true as const, access: outcome(access) };
   });
 
@@ -592,7 +592,7 @@ export const updateVaultUser = createServerFn({ method: "POST" })
         on conflict (user_id) do update set contact_email = excluded.contact_email
       `;
     }
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Actualiza a ${data.name.trim()}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Actualiza a ${data.name.trim()}`, context.userId);
     return { ok: true as const };
   });
 
@@ -622,7 +622,7 @@ export const deleteVaultUser = createServerFn({ method: "POST" })
     }
     await removeUserFiles(sql, data.userId);
     await sql`delete from "user" where id = ${data.userId}`;
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Elimina a ${row.name}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Elimina a ${row.name}`, context.userId);
     return { ok: true as const };
   });
 
@@ -643,7 +643,7 @@ export const createRole = createServerFn({ method: "POST" })
       values (${id}, 'notes.read')
       on conflict do nothing
     `;
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Crea el rol ${name}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Crea el rol ${name}`, context.userId);
     return { ok: true as const, id };
   });
 
@@ -665,7 +665,7 @@ export const renameRole = createServerFn({ method: "POST" })
     `;
     if (clash[0]) return { ok: false as const, error: "Ya hay un rol con ese nombre." };
     await sql`update app_role set name = ${name} where id = ${data.id}`;
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Renombra un rol a ${name}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Renombra un rol a ${name}`, context.userId);
     return { ok: true as const };
   });
 
@@ -685,7 +685,7 @@ export const deleteRole = createServerFn({ method: "POST" })
     }
     await sql`delete from app_role where id = ${data.id}`;
     forgetRoleGrants();
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Elimina el rol ${role[0].name}`);
+    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Elimina el rol ${role[0].name}`, context.userId);
     return { ok: true as const };
   });
 

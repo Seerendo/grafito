@@ -166,8 +166,33 @@ function buildAuth(providers: ProviderRow[]) {
             if (state === "used") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_USED" });
           },
           // LDAP, OAuth o SSO: el correo de la cuenta es el de su proveedor.
+          // El ingreso correcto queda en la auditoría. Si la tabla aún no
+          // existe, o la nota falla, la sesión se abre igual.
           after: async (session) => {
-            await syncExternalEmail(await getSql(), session.userId).catch(() => undefined);
+            const sql = await getSql();
+            await syncExternalEmail(sql, session.userId).catch(() => undefined);
+            try {
+              const { recordAudit } = await import("@/server/audit");
+              const rows = await sql<{ name: string; login_name: string | null }>`
+                select u.name, m.login_name
+                from "user" u
+                left join app_user_role m on m.user_id = u.id
+                where u.id = ${session.userId}
+                limit 1
+              `;
+              const address = "ipAddress" in session && typeof session.ipAddress === "string" ? session.ipAddress : "";
+              await recordAudit(sql, {
+                actorId: session.userId,
+                actorName: rows[0]?.login_name || rows[0]?.name || "",
+                action: "sign_in",
+                outcome: "ok",
+                area: "Sesión",
+                detail: "Ingresa",
+                ip: address,
+              });
+            } catch (error) {
+              console.error("No se pudo anotar el ingreso.", error);
+            }
           },
         },
       },

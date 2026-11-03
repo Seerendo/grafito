@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
+import { logActivity } from "@/server/audit";
 import { requireLease } from "@/server/lease";
 import { createOrg, deleteOrg, listOrgs, moveOrg, renameOrg, setOrgMembers } from "@/server/orgs";
 import { allows, readUserProfile } from "@/server/profile";
@@ -15,11 +16,8 @@ async function manager(userId: string) {
   return { sql, actor, ok: allows(actor, "orgs.manage") };
 }
 
-async function log(sql: Awaited<ReturnType<typeof requireLease>>, actor: string, message: string) {
-  await sql`
-    insert into app_log (id, actor, area, message)
-    values (${crypto.randomUUID()}, ${actor}, 'Organizaciones', ${message})
-  `;
+async function log(sql: Awaited<ReturnType<typeof requireLease>>, actor: string, message: string, actorId: string) {
+  await logActivity(sql, { actorId, actorName: actor, area: "Organizaciones", message });
 }
 
 const DENIED = { ok: false as const, error: "Sin permiso para administrar organizaciones." };
@@ -39,7 +37,7 @@ export const createOrgFn = createServerFn({ method: "POST" })
     const { sql, actor, ok } = await manager(context.userId);
     if (!ok) return DENIED;
     const result = await createOrg(sql, data.name, data.parentId);
-    if (result.ok) await log(sql, actor.loginName || actor.displayName, `Crea ${data.name.trim()}`);
+    if (result.ok) await log(sql, actor.loginName || actor.displayName, `Crea ${data.name.trim()}`, context.userId);
     return result;
   });
 
@@ -68,7 +66,7 @@ export const deleteOrgFn = createServerFn({ method: "POST" })
     const { sql, actor, ok } = await manager(context.userId);
     if (!ok) return DENIED;
     await deleteOrg(sql, data.id);
-    await log(sql, actor.loginName || actor.displayName, "Borra una organización");
+    await log(sql, actor.loginName || actor.displayName, "Borra una organización", context.userId);
     return { ok: true as const };
   });
 

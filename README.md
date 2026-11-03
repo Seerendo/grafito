@@ -18,6 +18,7 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - [History and trash](#history-and-trash)
 - [Signature trail](#signature-trail)
 - [Office documents](#office-documents)
+- [WebDAV](#webdav)
 - [Account](#account)
 - [Administration](#administration)
 - [AI assistant](#ai-assistant)
@@ -33,7 +34,8 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - **Software:** Docker with Docker Compose v2 (Docker Desktop on Windows and
   macOS, or Docker Engine on Linux). Git, to download the code.
 - **Memory:** about 1.7 GB when idle; plan for 4 GB or more. Each document
-  open in the Office editor adds some.
+  open in the Office editor adds some. The antivirus service starts with the
+  rest and needs about 1 GB more. Its first start is slow while it loads signatures.
 - **Disk:** about 5 GB for the images, plus your data and backups.
 - **Ports:** `8080` (Grafito and the Office editor) and, on the machine itself, `9980` must be free.
 - **Internet:** needed only for the first download. After that, everything
@@ -61,6 +63,7 @@ This starts:
 | `redis` | Session deadlines | this machine only |
 | `minio` | Uploaded files | this machine only |
 | `collabora` | Office editor (Collabora Online) | through `gateway` |
+| `clamav` | Antivirus. Scans uploaded files (on by default at `clamav:3310`) | this machine only; port 3310 is not published |
 | `backup`, `backup-files` | Daily copies of the database and the files in `./backups` | — |
 
 Migrations run automatically when the app starts. This setup works as is on
@@ -317,7 +320,8 @@ After that, the start screen is a normal sign-in.
   - A `.md` file becomes a note.
   - Anything else is uploaded to the server in parts, with progress at the
     bottom of the directory. The limit is 100 MB per file by default
-    (`GRAFITO_MAX_UPLOAD_MB`).
+    (`GRAFITO_MAX_UPLOAD_MB`). When ClamAV is on, a file the scanner rejects
+    is not kept.
   - The file is stored and shows up in that folder. It does not open.
     **Nueva nota**, **Nuevo dibujo** and **Nueva tabla** still open, because
     those are there to edit.
@@ -688,6 +692,33 @@ off, set `COLLABORA_URL=` in `.env` and run
 Setup, offline use and licensing notes for commercial use are in
 [docs/OFFICE.md](docs/OFFICE.md).
 
+## WebDAV
+
+The same vault is a WebDAV folder at `/dav` (for example
+`http://192.168.1.20:8080/dav`).
+
+- **`/dav/Personal`** is your own vault. Portfolios are folders. A note is
+  `title.md`. A file keeps its name. Your role still applies: without
+  `notes.read` the notes are hidden, and without `files.upload` a put is
+  refused.
+- **`/dav/Compartidos`** is what other people shared with you. A document
+  share is one file. A portfolio or workspace share is a folder, and you only
+  see the folders that share grants you. Writing needs both the share (edit
+  or administrator) and your role. An administrator does not open someone
+  else's private documents from here.
+- Sign in with HTTP Basic: your Grafito username and password. An account
+  that signs in with LDAP, OAuth or SSO has no Grafito password; put a
+  personal API token (`gft_…`, from **Cuenta → API**) in the username or the
+  password. A password that still has to be changed is refused until you
+  change it in the browser.
+- Twenty failed attempts from the same address in ten minutes are paused.
+- `Depth: infinity` is refused. A missing `Depth` counts as `1`.
+- Locks are exclusive and live in the memory of one app process, which is
+  enough for the Windows WebClient on a single instance. They are not shared
+  across several app instances, and they disappear when that process
+  restarts. A lock lasts at most one hour.
+- File bytes are scanned when ClamAV is on. The text of a note is not.
+
 ## Account
 
 Open the avatar menu → **Cuenta**. Settings are split into sections:
@@ -718,12 +749,13 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Autenticación** | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains. |
 | **Inteligencia artificial** | Which AI providers users may connect |
 | **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
+| **Seguridad** | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission. |
 | **Plugins** | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default) |
 | **Organizaciones** | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization. |
 | **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user. |
 | **Apariencia** | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs. |
 | **Sesión** | Session length. Changing it signs everyone out. |
-| **Monitorización y logs** | System monitor, audit log, storage usage and backend health checks |
+| **Monitorización y logs** | System monitor, the short log, **Auditoría** (who did what, with CSV and JSON export and a retention of 7 to 3650 days), indexing, storage usage and backend health checks. **Fuentes → Comprobar** also says whether ClamAV is off, answering, or down. |
 
 Role changes take effect within a few seconds, without signing in again. The
 initial administrator always keeps every permission.
@@ -830,6 +862,8 @@ To upload a file through the API, use the same three steps as the app:
 2. Send each part with `PUT /api/files/uploads/part?key=…&uploadId=…&part=1…`
    (raw bytes, up to `partSize`). Each call returns an `etag`.
 3. `POST /api/files/uploads/complete` with `{ key, uploadId, parts }`.
+   When ClamAV is on, this step scans the file: 422 if it is infected, 503
+   if the scanner does not answer. The object is deleted either way.
 
 The returned `key` can then be referenced by a file document.
 
