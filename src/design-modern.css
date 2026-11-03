@@ -1,17 +1,4 @@
-/*
- * Diseño «Cristal» (por defecto; antes «Moderno»). Se activa con
- * <html data-design="modern">;
- * el diseño «Clásico» es la interfaz sin esta capa.
- *
- * Solo cambia formas, profundidad, espaciado y disposición: los colores y las
- * tipografías salen siempre del tema (`--color-*`, `--font-*`), así que los
- * diez temas se ven en los dos diseños. Las zonas se marcan con `data-ui`
- * en los componentes (shell, topbar, panes, sidebar, rail, workspace,
- * context, dialog, popover, overlay, auth, chat, fab, tabbar, toast).
- *
- * Estas reglas no van en ninguna @layer: así pesan más que las utilidades de
- * Tailwind sin tener que usar !important.
- */
+/* Crystal design, formerly Modern, enabled by html data-design=modern. Classic uses the base UI. This layer changes geometry, depth, spacing and layout while taking colors/fonts from theme variables. Components expose data-ui regions. Rules remain outside @layer to override Tailwind utilities without important declarations. */
 
 html[data-design="modern"][data-theme],
 html[data-design="modern"] {
@@ -33,12 +20,19 @@ html[data-design="modern"] {
   --m-accent-2: color-mix(in srgb, var(--color-accent) 72%, var(--color-fg));
 }
 
-/* Fondo: una luz suave del color de acento. Los temas con fondo propio
-   (Cine, Manuscrito, Plano, Invernadero, Folleto) conservan el suyo. */
+/* Soft accent background glow; themes with custom backgrounds retain them. */
 html[data-design="modern"] body {
   background-image:
-    radial-gradient(1100px 620px at 8% -12%, color-mix(in srgb, var(--color-accent) 15%, transparent), transparent 62%),
-    radial-gradient(900px 520px at 108% 4%, color-mix(in srgb, var(--color-fg) 6%, transparent), transparent 60%);
+    radial-gradient(
+      1100px 620px at 8% -12%,
+      color-mix(in srgb, var(--color-accent) 15%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      900px 520px at 108% 4%,
+      color-mix(in srgb, var(--color-fg) 6%, transparent),
+      transparent 60%
+    );
   background-attachment: fixed;
 }
 
@@ -51,7 +45,7 @@ html[data-design="modern"] .border-line {
   border-color: var(--m-border);
 }
 
-/* --- Estructura -------------------------------------------------------- */
+/* Structure. */
 
 html[data-design="modern"] [data-ui="shell"],
 html[data-design="modern"] [data-ui="auth"] {
@@ -66,13 +60,15 @@ html[data-design="modern"] [data-ui="topbar"] {
   background: transparent;
 }
 
-/* Buscador de la barra superior: una píldora. */
+/* Pill-shaped topbar search. */
 html[data-design="modern"] [data-ui="topbar"] > button.bg-inset {
   border: 1px solid var(--m-border);
   border-radius: 999px;
   background: var(--m-panel);
   backdrop-filter: blur(16px);
-  transition: border-color 160ms ease, background-color 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 
 html[data-design="modern"] [data-ui="topbar"] > button.bg-inset:hover {
@@ -84,7 +80,7 @@ html[data-design="modern"] [data-ui="panes"] {
   padding: 0 var(--m-gap) var(--m-gap);
 }
 
-/* Paneles flotantes: directorio, área de trabajo, detalles y navegación. */
+/* Floating directory, workspace, details and navigation panels. */
 html[data-design="modern"] [data-ui="panes"] > [data-ui="sidebar"],
 html[data-design="modern"] [data-ui="panes"] > [data-ui="rail"],
 html[data-design="modern"] [data-ui="panes"] > [data-ui="workspace"],
@@ -101,8 +97,7 @@ html[data-design="modern"] [data-ui="panes"] > div:not([data-ui]) {
   backdrop-filter: blur(20px) saturate(1.15);
 }
 
-/* El panel de detalles se desplaza él mismo (esquema, vínculos, comentarios…):
-   el `overflow: hidden` de arriba solo debía recortar las esquinas. */
+/* The details panel scrolls its own outline, links and comments; outer overflow clipping only rounds corners. */
 html[data-design="modern"] [data-ui="panes"] > [data-ui="context"],
 html[data-design="modern"] [data-ui="context-slot"] > [data-ui="context"] {
   overflow-x: hidden;
@@ -118,7 +113,7 @@ html[data-design="modern"] [data-ui="rail"] {
   padding-top: 0.5rem;
 }
 
-/* Lo que dentro de un panel pinta su propio fondo pasa a ser transparente. */
+/* Make nested panel backgrounds transparent. */
 html[data-design="modern"] [data-ui="workspace"] .bg-bg,
 html[data-design="modern"] [data-ui="workspace"] [data-home],
 html[data-design="modern"] [data-ui="sidebar"].bg-surface,
@@ -126,7 +121,7 @@ html[data-design="modern"] [data-ui="context"].bg-surface {
   background: transparent;
 }
 
-/* --- Directorio y navegación ------------------------------------------ */
+/* Directory and navigation. */
 
 html[data-design="modern"] [data-ui="sidebar"] button,
 html[data-design="modern"] [data-ui="rail"] button {
@@ -139,7 +134,7 @@ html[data-design="modern"] [data-ui="rail"] button:hover {
   background-color: var(--m-hover);
 }
 
-/* Elemento activo: una píldora del color de acento en vez de la raya lateral. */
+/* Active item uses an accent pill instead of a side stripe. */
 html[data-design="modern"] [data-ui="sidebar"] button.bg-inset,
 html[data-design="modern"] [data-ui="sidebar"] button[aria-current],
 html[data-design="modern"] [data-ui="rail"] button[aria-current] {
@@ -152,10 +147,7 @@ html[data-design="modern"] [data-ui="sidebar"] div.bg-inset {
   background-color: var(--m-active);
 }
 
-/*
- * Fila de portafolio (flecha y nombre, botones aparte): se resalta entera al
- * pasar por encima, y no si ya está seleccionada o marcada con Shift/Ctrl.
- */
+/* Hover the whole portfolio row, including separate arrow/name buttons, unless already selected or Ctrl/Shift-marked. */
 html[data-design="modern"] [data-ui="sidebar"] [data-row] button,
 html[data-design="modern"] [data-ui="sidebar"] [data-row] button:hover {
   background-color: transparent;
@@ -180,7 +172,7 @@ html[data-design="modern"] [data-ui="sidebar"] input {
 
 /* --- Editor ------------------------------------------------------------- */
 
-/* Editar / Dividir / Leer: control segmentado. */
+/* Segmented edit/split/read control. */
 html[data-design="modern"] [data-ui="modebar"] {
   gap: 0.25rem;
   padding: 0.5rem 0.9rem;
@@ -203,7 +195,7 @@ html[data-design="modern"] [data-ui="editor"] header input {
   letter-spacing: -0.03em;
 }
 
-/* --- Superficies flotantes -------------------------------------------- */
+/* Floating surfaces. */
 
 html[data-design="modern"] [data-ui="overlay"] {
   background: color-mix(in srgb, var(--color-bg) 55%, transparent);
@@ -275,7 +267,7 @@ html[data-design="modern"] [data-ui="tabbar"] {
   backdrop-filter: blur(20px);
 }
 
-/* --- Ingreso ----------------------------------------------------------- */
+/* Sign-in. */
 
 html[data-design="modern"] [data-ui="auth-card"] {
   max-width: 25rem;
@@ -292,15 +284,18 @@ html[data-design="modern"] [data-ui="auth-card"] h1 {
   letter-spacing: -0.03em;
 }
 
-/* --- Controles ---------------------------------------------------------- */
+/* Controls. */
 
-/* Acción principal: gradiente del acento, forma de píldora y un brillo. */
+/* Primary action with accent gradient, pill shape and highlight. */
 html[data-design="modern"] button.bg-accent,
 html[data-design="modern"] a.bg-accent {
   border-radius: 999px;
   background-image: linear-gradient(135deg, var(--color-accent), var(--m-accent-2));
   box-shadow: var(--m-glow);
-  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
 }
 
 html[data-design="modern"] button.bg-accent:not(:disabled):hover,
@@ -313,12 +308,12 @@ html[data-design="modern"] button.bg-accent:not(:disabled):active {
   transform: translateY(0);
 }
 
-/* Botón «+» de la barra superior: círculo. */
+/* Circular topbar add button. */
 html[data-design="modern"] [data-ui="topbar"] > button.bg-accent {
   border-radius: 999px;
 }
 
-/* Campos con borde: esquinas suaves. Sin resaltado al escribir (ver styles.css). */
+/* Rounded bordered fields without typing highlights; see styles.css. */
 html[data-design="modern"] input.border,
 html[data-design="modern"] textarea.border,
 html[data-design="modern"] select.border,
@@ -333,7 +328,7 @@ html[data-design="modern"] :focus-visible {
   border-radius: 10px;
 }
 
-/* Interruptor: pista algo más ancha y bolita con sombra. */
+/* Wider toggle track with a shadowed knob. */
 html[data-design="modern"] [role="switch"] > span:first-child {
   box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
 }
@@ -342,7 +337,7 @@ html[data-design="modern"] [role="switch"] > span:first-child > span {
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
 }
 
-/* Listas y tarjetas dentro de los paneles. */
+/* Lists and cards within panels. */
 html[data-design="modern"] [data-ui="workspace"] ul.rounded-lg,
 html[data-design="modern"] [data-ui="workspace"] section.rounded-lg,
 html[data-design="modern"] [data-ui="workspace"] .theme-card {
@@ -350,7 +345,7 @@ html[data-design="modern"] [data-ui="workspace"] .theme-card {
   background: color-mix(in srgb, var(--color-surface) 70%, transparent);
 }
 
-/* --- Tipografía -------------------------------------------------------- */
+/* Typography. */
 
 html[data-design="modern"] h1.font-serif {
   letter-spacing: -0.035em;

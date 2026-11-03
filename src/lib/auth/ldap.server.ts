@@ -2,16 +2,18 @@ import { Client, type Entry } from "ldapts";
 import type { LdapConfig } from "./providers.server";
 
 /**
- * Verificación contra un directorio LDAP / Active Directory (solo servidor):
- * con la cuenta de servicio busca a la persona por el filtro configurado y
- * luego intenta entrar con su propio DN y la contraseña que escribió.
+ * Server-side LDAP/Active Directory verification: use the service account to locate the user,
+ * then bind with their DN and supplied password.
  */
 
 export type LdapPerson = { dn: string; uid: string; name: string; email: string | null };
 
-/** Escapa un valor para un filtro LDAP (RFC 4515). */
+/** Escape LDAP filter values according to RFC 4515. */
 export function escapeFilter(value: string): string {
-  return value.replace(/[\\*()\0]/g, (char) => `\\${char.charCodeAt(0).toString(16).padStart(2, "0")}`);
+  return value.replace(
+    /[\\*()\0]/g,
+    (char) => `\\${char.charCodeAt(0).toString(16).padStart(2, "0")}`,
+  );
 }
 
 function client(config: LdapConfig): Client {
@@ -25,7 +27,8 @@ function client(config: LdapConfig): Client {
 
 async function open(config: LdapConfig): Promise<Client> {
   const connection = client(config);
-  if (config.startTls) await connection.startTLS(config.allowInsecureTls ? { rejectUnauthorized: false } : {});
+  if (config.startTls)
+    await connection.startTLS(config.allowInsecureTls ? { rejectUnauthorized: false } : {});
   return connection;
 }
 
@@ -36,7 +39,7 @@ function first(entry: Entry, attribute: string): string {
   return Buffer.isBuffer(item) ? item.toString("utf8") : String(item);
 }
 
-/** Busca a una persona por su nombre de usuario con la cuenta de servicio. */
+/** Find a directory user by username using the service account. */
 export async function findPerson(config: LdapConfig, username: string): Promise<LdapPerson | null> {
   const connection = await open(config);
   try {
@@ -62,8 +65,12 @@ export async function findPerson(config: LdapConfig, username: string): Promise<
   }
 }
 
-/** Comprueba usuario y contraseña. Devuelve la persona o `null` si no entra. */
-export async function authenticate(config: LdapConfig, username: string, password: string): Promise<LdapPerson | null> {
+/** Verify credentials and return the user, or null on failure. */
+export async function authenticate(
+  config: LdapConfig,
+  username: string,
+  password: string,
+): Promise<LdapPerson | null> {
   if (!username.trim() || !password) return null;
   const person = await findPerson(config, username.trim());
   if (!person) return null;
@@ -78,7 +85,7 @@ export async function authenticate(config: LdapConfig, username: string, passwor
   }
 }
 
-/** Prueba de conexión para el panel: enlaza con la cuenta de servicio y, si se pide, busca a alguien. */
+/** Administration connection test: bind the service account and optionally search for a user. */
 export async function testConnection(config: LdapConfig, probeUser: string): Promise<string> {
   const connection = await open(config);
   try {
@@ -88,6 +95,7 @@ export async function testConnection(config: LdapConfig, probeUser: string): Pro
   }
   if (!probeUser.trim()) return "Conexión correcta con la cuenta de servicio.";
   const person = await findPerson(config, probeUser.trim());
-  if (!person) return `Conexión correcta, pero «${probeUser.trim()}» no aparece con ese filtro (o aparece más de una vez).`;
+  if (!person)
+    return `Conexión correcta, pero «${probeUser.trim()}» no aparece con ese filtro (o aparece más de una vez).`;
   return `Conexión correcta. Encontrado: ${person.name} (${person.email ?? "sin correo"}) · ${person.dn}`;
 }

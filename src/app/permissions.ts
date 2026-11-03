@@ -2,11 +2,9 @@ import { useSyncExternalStore } from "react";
 import type { PermissionKey } from "@/domain/permissions";
 
 /**
- * Permisos del usuario con sesión, en el cliente. Los carga `AccessGate` al
- * entrar y los refresca `SessionWatch` con cada pulso, así que un cambio de rol
- * se aplica sin volver a entrar. Sin cargar, todo está denegado.
- *
- * Es la capa de interfaz: el servidor sigue comprobando sus propias funciones.
+ * Client permissions loaded by AccessGate and refreshed by SessionWatch on each pulse. Role
+ * changes apply without signing in again; permissions default to denied while loading. Server
+ * functions enforce authorization independently.
  */
 type Grants = { all: boolean; keys: ReadonlySet<string> };
 
@@ -24,7 +22,9 @@ function emit(): void {
 export function setPermissions(next: { isAdmin: boolean; permissions: readonly string[] }): void {
   const keys = new Set(next.permissions);
   const same =
-    grants.all === next.isAdmin && grants.keys.size === keys.size && [...keys].every((key) => grants.keys.has(key));
+    grants.all === next.isAdmin &&
+    grants.keys.size === keys.size &&
+    [...keys].every((key) => grants.keys.has(key));
   if (same) return;
   grants = { all: next.isAdmin, keys };
   emit();
@@ -36,7 +36,7 @@ export function clearPermissions(): void {
   emit();
 }
 
-/** Lectura puntual, para código fuera de React (p. ej. el store). */
+/** One-time permission lookup outside React, such as stores. */
 export function can(key: PermissionKey): boolean {
   return grants.all || grants.keys.has(key);
 }
@@ -46,7 +46,7 @@ export function subscribePermissions(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** `can` para componentes que comprueban varias claves; re-renderiza al cambiar el rol. */
+/** Permission checker for components using several keys; rerenders on role changes. */
 export function usePermissions(): (key: PermissionKey) => boolean {
   useSyncExternalStore(
     subscribePermissions,
@@ -56,7 +56,7 @@ export function usePermissions(): (key: PermissionKey) => boolean {
   return can;
 }
 
-/** `true` si el usuario actual tiene `key`; se actualiza al cambiar su rol. */
+/** Whether the current user has this permission, updated when their role changes. */
 export function useCan(key: PermissionKey): boolean {
   return useSyncExternalStore(
     subscribePermissions,

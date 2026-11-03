@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Acción secundaria presentada como texto (p. ej. "Eliminar"), no como botón con caja. */
+/** Secondary action displayed as text instead of a boxed button. */
 export function TextAction({
   children,
   onClick,
@@ -12,7 +12,7 @@ export function TextAction({
   onClick: () => void;
   tone?: "muted" | "danger";
   className?: string;
-  /** Su nombre en el menú de clic derecho del panel, si el texto no basta (ver `useAutoContextMenu`). */
+  /** Optional context-menu label when visible text is insufficient; see useAutoContextMenu. */
   menuLabel?: string;
 }) {
   const color = tone === "danger" ? "text-danger" : "text-muted hover:text-fg";
@@ -20,8 +20,7 @@ export function TextAction({
     <button
       type="button"
       onClick={onClick}
-      // Con el ratón (también el clic derecho) no se queda con el foco: si no,
-      // una tecla después le dibuja el anillo. Con Tab sí se llega a él.
+      // Pointer clicks, including right-clicks, do not retain focus; Tab navigation remains available.
       onMouseDown={(event) => event.preventDefault()}
       data-menu-label={menuLabel}
       className={`shrink-0 text-sm underline-offset-4 hover:underline ${color} ${className}`}

@@ -5,16 +5,15 @@ import { t } from "@/app/i18n";
 
 type Session = Extract<Awaited<ReturnType<typeof officeSession>>, { ok: true }>;
 
-/** Reintentos si el servidor aún no conoce el documento (recién subido). */
+/** Retry while a newly uploaded document becomes known to the server. */
 const SESSION_RETRIES = 6;
 
-/** Cuánto se espera a que el editor guarde y cierre antes de restaurar una versión. */
+/** Timeout for the editor to save and close before restoring a version. */
 const RESTORE_WAIT_MS = 8000;
 
 /**
- * Documento de Office abierto en el editor (Collabora) dentro de un iframe.
- * El editor se abre con un formulario POST que lleva la ficha firmada, como
- * pide WOPI; así la ficha no queda en la URL ni en el historial.
+ * Collabora Office document in an iframe. A WOPI POST form carries the signed token, keeping it
+ * out of URLs and history.
  */
 export function OfficeEditor({
   docId,
@@ -40,14 +39,14 @@ export function OfficeEditor({
     let timer = 0;
     setSession(null);
     setError("");
-    // Un documento recién subido tarda un instante en llegar al servidor: se
-    // reintenta unas veces antes de mostrar el error.
+    // Retry briefly before reporting a newly uploaded document as unavailable.
     const attempt = (left: number) => {
       void officeSession({ data: { docId, shareId, origin: window.location.origin, lang } })
         .then((result) => {
           if (cancelled) return;
           if (result.ok) setSession(result);
-          else if (left > 0 && !("setup" in result)) timer = window.setTimeout(() => attempt(left - 1), 1500);
+          else if (left > 0 && !("setup" in result))
+            timer = window.setTimeout(() => attempt(left - 1), 1500);
           else setError(result.error);
         })
         .catch(() => {
@@ -72,17 +71,29 @@ export function OfficeEditor({
     const editorOrigin = new URL(session.url).origin;
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== editorOrigin) return;
-      let message: { MessageId?: string; Values?: { Status?: string; IsModifiedStatus?: boolean } } = {};
+      let message: {
+        MessageId?: string;
+        Values?: { Status?: string; IsModifiedStatus?: boolean };
+      } = {};
       try {
         message = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
       } catch {
         return;
       }
-      if (message.MessageId === "App_LoadingStatus" && message.Values?.Status === "Document_Loaded") {
-        frameRef.current?.contentWindow?.postMessage(JSON.stringify({ MessageId: "Host_PostmessageReady" }), editorOrigin);
+      if (
+        message.MessageId === "App_LoadingStatus" &&
+        message.Values?.Status === "Document_Loaded"
+      ) {
+        frameRef.current?.contentWindow?.postMessage(
+          JSON.stringify({ MessageId: "Host_PostmessageReady" }),
+          editorOrigin,
+        );
       } else if (message.MessageId === "UI_Close") {
         onClose();
-      } else if (message.MessageId === "Doc_ModifiedStatus" && message.Values?.IsModifiedStatus === false) {
+      } else if (
+        message.MessageId === "Doc_ModifiedStatus" &&
+        message.Values?.IsModifiedStatus === false
+      ) {
         onSaved?.();
       }
     };
@@ -110,7 +121,11 @@ export function OfficeEditor({
             } catch {
               return;
             }
-            if (message.MessageId === "App_VersionRestore" && message.Values?.Status === "Pre_Restore_Ack") done();
+            if (
+              message.MessageId === "App_VersionRestore" &&
+              message.Values?.Status === "Pre_Restore_Ack"
+            )
+              done();
           };
           const timer = window.setTimeout(done, RESTORE_WAIT_MS);
           window.addEventListener("message", onAck);
@@ -135,8 +150,7 @@ export function OfficeEditor({
         name={frameName}
         title={t("Editor de Office")}
         allow="clipboard-read; clipboard-write; fullscreen"
-        // El editor va siempre en claro (se pide así en `server/office.ts`);
-        // el marco también, para que no asome el fondo del tema al cargar.
+        // The Office editor requests light mode; keep its frame light during loading too.
         style={{ colorScheme: "light" }}
         className="min-h-0 w-full flex-1 border-0 bg-white"
       />

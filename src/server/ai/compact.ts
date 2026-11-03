@@ -3,9 +3,8 @@ import { complete, type Protocol } from "./providers.ts";
 import type { Endpoint } from "./types.ts";
 
 /**
- * Reescribe la memoria de la conversación con el mismo modelo del chat, sin
- * herramientas. Si no responde, se guarda el recorte local para no reintentar
- * el resumen en cada mensaje.
+ * Summarize memory with the chat model and no tools. On failure, persist a local clipped
+ * fallback to avoid repeating failed summaries on every message.
  */
 
 const SUMMARY_SYSTEM =
@@ -33,7 +32,8 @@ export async function compressConversation(input: {
     });
     return clipSummary(completion.text) || fallback;
   } catch (error) {
-    if (input.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+    if (input.signal?.aborted || (error instanceof Error && error.name === "AbortError"))
+      throw error;
     console.error("[ai] memoria", error);
     return fallback;
   }

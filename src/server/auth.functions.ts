@@ -20,7 +20,7 @@ import { logActivity } from "@/server/audit";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 
-/** Funciones de servidor de Administración → Autenticación, y lo que el ingreso necesita saber. */
+/** Authentication administration functions and public sign-in metadata. */
 
 const providerId = z.enum(PROVIDER_IDS as [ProviderId, ...ProviderId[]]);
 const DENIED = { ok: false as const, error: "Sin permiso para configurar la autenticación." };
@@ -39,7 +39,7 @@ async function manager(userId: string) {
   return { sql, actor, ok: allows(actor, "auth.manage") };
 }
 
-/** URL pública de la app, para mostrar las direcciones de retorno que hay que registrar. */
+/** Public app URL used to display provider callback addresses. */
 async function publicOrigin(): Promise<string> {
   const explicit = process.env.BETTER_AUTH_URL?.trim();
   if (explicit) return explicit.replace(/\/+$/, "");
@@ -48,7 +48,7 @@ async function publicOrigin(): Promise<string> {
     const request = getRequest();
     if (request) return new URL(request.url).origin;
   } catch {
-    /* fuera de una petición */
+    /* Outside a request context. */
   }
   return "http://127.0.0.1:8080";
 }
@@ -59,7 +59,10 @@ export const authState = createServerFn({ method: "GET" })
     const { sql, ok } = await manager(context.userId);
     if (!ok) return { ok: false as const };
     const origin = await publicOrigin();
-    const roles = await sql<{ id: string; name: string }>`select id, name from app_role order by name`;
+    const roles = await sql<{
+      id: string;
+      name: string;
+    }>`select id, name from app_role order by name`;
     return {
       ok: true as const,
       providers: (await readProviders(sql)).map(maskProvider),
@@ -89,7 +92,9 @@ export const saveAuthProvider = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { sql, actor, ok } = await manager(context.userId);
     if (!ok) return DENIED;
-    const role = await sql<{ id: string }>`select id from app_role where id = ${data.defaultRole} limit 1`;
+    const role = await sql<{
+      id: string;
+    }>`select id from app_role where id = ${data.defaultRole} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     await writeProvider(sql, data.id, data);
     invalidateAuth();
@@ -103,11 +108,14 @@ export const saveAuthProvider = createServerFn({ method: "POST" })
     return {
       ok: true as const,
       provider: maskProvider(saved),
-      warning: data.enabled && !providerReady(saved) ? "Activado, pero faltan datos: no aparecerá en el ingreso." : "",
+      warning:
+        data.enabled && !providerReady(saved)
+          ? "Activado, pero faltan datos: no aparecerá en el ingreso."
+          : "",
     };
   });
 
-/** Prueba LDAP con lo que hay en el formulario (sin guardar). */
+/** Test unsaved LDAP form settings. */
 export const testLdap = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -129,11 +137,14 @@ export const testLdap = createServerFn({ method: "POST" })
     try {
       return { ok: true as const, message: await testConnection(config, data.probeUser) };
     } catch (error) {
-      return { ok: false as const, error: `No se pudo conectar: ${error instanceof Error ? error.message : String(error)}` };
+      return {
+        ok: false as const,
+        error: `No se pudo conectar: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   });
 
-/** Prueba el emisor OIDC leyendo su documento de descubrimiento. */
+/** Test an OIDC issuer through its discovery document. */
 export const testSso = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ issuer: z.string().url().max(500) }).parse(input))
@@ -143,18 +154,22 @@ export const testSso = createServerFn({ method: "POST" })
     const url = `${data.issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) return { ok: false as const, error: `El emisor respondió ${response.status}.` };
+      if (!response.ok)
+        return { ok: false as const, error: `El emisor respondió ${response.status}.` };
       const doc = (await response.json()) as { issuer?: string; authorization_endpoint?: string };
       return {
         ok: true as const,
         message: `Emisor correcto: ${doc.issuer ?? "?"} · inicio de sesión en ${doc.authorization_endpoint ?? "?"}`,
       };
     } catch (error) {
-      return { ok: false as const, error: `No se pudo leer ${url}: ${error instanceof Error ? error.message : String(error)}` };
+      return {
+        ok: false as const,
+        error: `No se pudo leer ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   });
 
-/** Qué formas de entrar ofrece el ingreso. Público: no requiere sesión ni revela configuración. */
+/** Public available sign-in methods without session requirements or configuration disclosure. */
 export const authMethods = createServerFn({ method: "GET" }).handler(async () => {
   try {
     const { getSql } = await import("@/lib/db");
@@ -163,11 +178,17 @@ export const authMethods = createServerFn({ method: "GET" }).handler(async () =>
     return {
       ldap: rows.some((row) => row.id === "ldap"),
       oauth: rows
-        .filter((row): row is typeof row & { id: (typeof OAUTH_IDS)[number] } => (OAUTH_IDS as readonly string[]).includes(row.id))
+        .filter((row): row is typeof row & { id: (typeof OAUTH_IDS)[number] } =>
+          (OAUTH_IDS as readonly string[]).includes(row.id),
+        )
         .map((row) => ({ id: row.id, label: LABELS[row.id] })),
       sso: sso ? { label: (sso.config as SsoConfig).label || LABELS.sso } : null,
     };
   } catch {
-    return { ldap: false, oauth: [] as { id: "google" | "github" | "microsoft"; label: string }[], sso: null };
+    return {
+      ldap: false,
+      oauth: [] as { id: "google" | "github" | "microsoft"; label: string }[],
+      sso: null,
+    };
   }
 });

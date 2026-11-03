@@ -16,11 +16,9 @@ import {
 } from "@/server/ai.functions";
 
 /**
- * Estado del chat de IA (cliente): abierto o cerrado, modelo elegido, la
- * conversación abierta y el historial. Las conversaciones se guardan en el
- * servidor (`ai_conversation`); la pestaña recuerda cuál estaba abierta y el
- * navegador, el modelo y el perfil elegidos por usuario. Los perfiles
- * («Documentación», «Análisis»…) los crea cada persona (`ai_profile`).
+ * Client AI chat state: visibility, selected model, active conversation and history.
+ * ai_conversation persists chats on the server. Tabs remember the active conversation; browsers
+ * remember each user's model and persona. Users create their own ai_profile personas.
  */
 
 export type ToolChip = { label: string; ok: boolean; docId?: string };
@@ -43,22 +41,22 @@ export type AiProfile = { id: string; name: string; instructions: string; readOn
 type ChatState = {
   userId: string | null;
   open: boolean;
-  /** Conversación abierta (no se guarda mientras no tenga turnos). */
+  /** Active conversation; persisted only after it has turns. */
   conversationId: string;
   turns: ChatTurn[];
-  /** Resumen de lo ya hablado. El modelo lo recibe en vez del historial viejo. */
+  /** Summary sent to the model instead of older conversation history. */
   memory: ContextMemory | null;
-  /** Historial de conversaciones; `null` mientras no se ha leído. */
+  /** Conversation history; null until loaded. */
   conversations: ConversationSummary[] | null;
   model: ModelRef | null;
   busy: boolean;
   controller: AbortController | null;
-  /** Lo escrito y aún no enviado: sigue ahí al minimizar y volver a abrir. */
+  /** Unsent draft, preserved when minimizing and reopening. */
   draft: string;
   setDraft: (draft: string) => void;
-  /** Perfiles de la persona; `null` mientras no se han leído. */
+  /** User personas; null until loaded. */
   profiles: AiProfile[] | null;
-  /** Perfil elegido; `null` es el asistente general. */
+  /** Selected persona; null selects the general assistant. */
   profileId: string | null;
   setProfile: (id: string | null) => void;
   loadProfiles: () => Promise<void>;
@@ -80,9 +78,13 @@ const MODEL_KEY = "grafito.ai.model:";
 const CURRENT_KEY = "grafito.ai.current:";
 const PROFILE_KEY = "grafito.ai.profile:";
 
-/** Título de una conversación: el comienzo de la primera pregunta. */
+/** Conversation title derived from the first question. */
 function titleOf(turns: ChatTurn[]): string {
-  const first = turns.find((turn) => turn.role === "user")?.content.replace(/\s+/g, " ").trim() ?? "";
+  const first =
+    turns
+      .find((turn) => turn.role === "user")
+      ?.content.replace(/\s+/g, " ")
+      .trim() ?? "";
   return first.length > 80 ? `${first.slice(0, 79)}…` : first;
 }
 
@@ -112,17 +114,25 @@ const local = () => window.localStorage;
 const session = () => window.sessionStorage;
 
 export const useAiChat = create<ChatState>((set, get) => {
-  /** Guarda la conversación en el servidor y la pone primera en el historial. */
+  /** Save the conversation on the server and move it to the top of history. */
   const persist = async (id: string, turns: ChatTurn[], memory: ContextMemory | null) => {
     if (turns.length === 0) return;
     const title = titleOf(turns);
     try {
-      const result = await saveAiConversation({ data: { id, title, turns: stored(turns), memory } });
+      const result = await saveAiConversation({
+        data: { id, title, turns: stored(turns), memory },
+      });
       if (!result.ok) return;
       const list = get().conversations;
-      if (list) set({ conversations: [{ id, title, updatedAt: result.updatedAt }, ...list.filter((item) => item.id !== id)] });
+      if (list)
+        set({
+          conversations: [
+            { id, title, updatedAt: result.updatedAt },
+            ...list.filter((item) => item.id !== id),
+          ],
+        });
     } catch {
-      /* sin conexión: queda en la pestaña */
+      /* Offline: retain the conversation in this tab. */
     }
   };
 
@@ -159,7 +169,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         const result = await aiProfiles();
         const profiles = result.profiles;
         set({ profiles });
-        // El elegido se borró (en otra pestaña o equipo): vuelve el general.
+        // The selected persona was deleted elsewhere; return to the general assistant.
         const current = get().profileId;
         if (current && !profiles.some((profile) => profile.id === current)) get().setProfile(null);
       } catch {
@@ -181,7 +191,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         const result = await removeAiProfile({ data: { id } });
         set({ profiles: result.profiles });
       } catch {
-        /* reaparece al volver a leer los perfiles */
+        /* Reappears when personas are reloaded. */
       }
     },
 
@@ -227,7 +237,7 @@ export const useAiChat = create<ChatState>((set, get) => {
         if (result.ok) set({ turns: result.turns, memory: result.memory });
         else select(uuid(), []);
       } catch {
-        /* se queda vacía */
+        /* Leave it empty. */
       }
     },
 
@@ -237,7 +247,7 @@ export const useAiChat = create<ChatState>((set, get) => {
       try {
         await removeAiConversation({ data: { id } });
       } catch {
-        /* reaparece al volver a leer el historial */
+        /* Reappears when history is reloaded. */
       }
     },
 
@@ -255,17 +265,25 @@ export const useAiChat = create<ChatState>((set, get) => {
       const content = text.trim();
       if (!model || !userId || busy || !content) return;
       const userTurn: ChatTurn = { id: uuid(), role: "user", content };
-      const answer: ChatTurn = { id: uuid(), role: "assistant", content: "", tools: [], pending: true };
+      const answer: ChatTurn = {
+        id: uuid(),
+        role: "assistant",
+        content: "",
+        tools: [],
+        pending: true,
+      };
       const plan = planContext([...get().turns, userTurn], get().memory);
       const controller = new AbortController();
-      // Los turnos de esta conversación, aunque la persona abra otra mientras responde.
+      // Keep this conversation's turns even if another conversation is opened during the response.
       let turns = [...get().turns, userTurn, answer];
       let savedMemory: ContextMemory | null = plan.fold ? get().memory : plan.next;
       set({ turns, busy: true, controller, ...(!plan.fold ? { memory: plan.next } : {}) });
 
       const patch = (change: Partial<ChatTurn> | ((turn: ChatTurn) => Partial<ChatTurn>)) => {
         turns = turns.map((turn) =>
-          turn.id === answer.id ? { ...turn, ...(typeof change === "function" ? change(turn) : change) } : turn,
+          turn.id === answer.id
+            ? { ...turn, ...(typeof change === "function" ? change(turn) : change) }
+            : turn,
         );
         if (get().conversationId === conversationId) set({ turns });
       };
@@ -314,21 +332,31 @@ export const useAiChat = create<ChatState>((set, get) => {
             } else if (event.type === "tool") {
               if (event.event.changed) changed = true;
               patch((turn) => ({
-                tools: [...(turn.tools ?? []), { label: event.event.label, ok: event.event.ok, docId: event.event.docId }],
+                tools: [
+                  ...(turn.tools ?? []),
+                  { label: event.event.label, ok: event.event.ok, docId: event.event.docId },
+                ],
               }));
-            } else if (event.type === "text") patch((turn) => ({ content: turn.content + event.text }));
+            } else if (event.type === "text")
+              patch((turn) => ({ content: turn.content + event.text }));
             else if (event.type === "error") patch({ error: event.message });
             else if (event.type === "done") changed = changed || event.changed;
           }
         }
       } catch (error) {
         const aborted = error instanceof DOMException && error.name === "AbortError";
-        patch({ error: aborted ? t("Detenido.") : error instanceof Error ? error.message : t("No se pudo enviar.") });
+        patch({
+          error: aborted
+            ? t("Detenido.")
+            : error instanceof Error
+              ? error.message
+              : t("No se pudo enviar."),
+        });
       } finally {
         patch({ pending: false });
         if (get().controller === controller) set({ busy: false, controller: null });
         void persist(conversationId, turns, savedMemory);
-        // La IA cambió la bóveda en el servidor: traer los cambios ya.
+        // AI changed the server vault; fetch the changes immediately.
         if (changed) void syncVault(userId);
       }
     },

@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/Switch";
 import { authState, saveAuthProvider, testLdap, testSso } from "@/server/auth.functions";
 import { t } from "@/app/i18n";
 
-/** Administración → Autenticación: LDAP, OAuth (Google, GitHub, Microsoft) y SSO (OIDC). */
+/** Authentication administration: LDAP, OAuth providers and OIDC SSO. */
 
 type State = Extract<Awaited<ReturnType<typeof authState>>, { ok: true }>;
 type Provider = State["providers"][number];
@@ -29,7 +29,11 @@ function useAuthState() {
 }
 
 function Loading({ error }: { error: string }) {
-  return error ? <p className="text-sm text-danger">{t(error)}</p> : <p className="text-sm text-muted">{t("Cargando…")}</p>;
+  return error ? (
+    <p className="text-sm text-danger">{t(error)}</p>
+  ) : (
+    <p className="text-sm text-muted">{t("Cargando…")}</p>
+  );
 }
 
 export function LdapPanel() {
@@ -41,8 +45,16 @@ export function LdapPanel() {
       provider={provider}
       roles={state.roles}
       fields={[
-        { key: "url", label: "Servidor", placeholder: "ldap://ldap.empresa.com:389 o ldaps://…:636" },
-        { key: "bindDn", label: "DN de la cuenta de servicio", placeholder: "cn=lector,dc=empresa,dc=com (vacío: anónimo)" },
+        {
+          key: "url",
+          label: "Servidor",
+          placeholder: "ldap://ldap.empresa.com:389 o ldaps://…:636",
+        },
+        {
+          key: "bindDn",
+          label: "DN de la cuenta de servicio",
+          placeholder: "cn=lector,dc=empresa,dc=com (vacío: anónimo)",
+        },
         { key: "bindPassword", label: "Contraseña de la cuenta de servicio", secret: true },
         { key: "baseDn", label: "Base de búsqueda", placeholder: "ou=people,dc=empresa,dc=com" },
         {
@@ -53,7 +65,11 @@ export function LdapPanel() {
         { key: "nameAttr", label: "Atributo del nombre", placeholder: "cn o displayName" },
         { key: "emailAttr", label: "Atributo del correo", placeholder: "mail" },
         { key: "startTls", label: "Usar StartTLS", toggle: true },
-        { key: "allowInsecureTls", label: "Aceptar certificados no verificados (solo pruebas)", toggle: true },
+        {
+          key: "allowInsecureTls",
+          label: "Aceptar certificados no verificados (solo pruebas)",
+          toggle: true,
+        },
       ]}
       test={(config) => <LdapTest config={config} />}
     />
@@ -81,7 +97,11 @@ function LdapTest({ config }: { config: Config }) {
             setBusy(true);
             setResult(null);
             void testLdap({ data: { config, probeUser: probe } })
-              .then((next) => setResult(next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error }))
+              .then((next) =>
+                setResult(
+                  next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error },
+                ),
+              )
               .catch(() => setResult({ ok: false, text: t("No se pudo probar.") }))
               .finally(() => setBusy(false));
           }}
@@ -90,7 +110,9 @@ function LdapTest({ config }: { config: Config }) {
           {busy ? t("Probando…") : t("Probar conexión")}
         </button>
       </div>
-      {result ? <p className={`text-sm ${result.ok ? "text-muted" : "text-danger"}`}>{result.text}</p> : null}
+      {result ? (
+        <p className={`text-sm ${result.ok ? "text-muted" : "text-danger"}`}>{result.text}</p>
+      ) : null}
     </div>
   );
 }
@@ -116,7 +138,13 @@ export function OAuthPanel() {
               { key: "clientId", label: "Client ID" },
               { key: "clientSecret", label: "Client secret", secret: true },
               ...(item.id === "microsoft"
-                ? [{ key: "tenantId", label: "Tenant", placeholder: "common, organizations o el ID de tu inquilino" }]
+                ? [
+                    {
+                      key: "tenantId",
+                      label: "Tenant",
+                      placeholder: "common, organizations o el ID de tu inquilino",
+                    },
+                  ]
                 : []),
             ]}
           />
@@ -162,7 +190,11 @@ function SsoTest({ issuer }: { issuer: string }) {
           setBusy(true);
           setResult(null);
           void testSso({ data: { issuer } })
-            .then((next) => setResult(next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error }))
+            .then((next) =>
+              setResult(
+                next.ok ? { ok: true, text: next.message } : { ok: false, text: next.error },
+              ),
+            )
             .catch(() => setResult({ ok: false, text: t("Escribe una URL válida.") }))
             .finally(() => setBusy(false));
         }}
@@ -170,7 +202,11 @@ function SsoTest({ issuer }: { issuer: string }) {
       >
         {busy ? t("Probando…") : t("Probar emisor")}
       </button>
-      {result ? <p className={`text-sm break-all ${result.ok ? "text-muted" : "text-danger"}`}>{result.text}</p> : null}
+      {result ? (
+        <p className={`text-sm break-all ${result.ok ? "text-muted" : "text-danger"}`}>
+          {result.text}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -217,7 +253,10 @@ function ProviderForm({
       }
       setConfig(result.provider.config as Config);
       setHasSecret(result.provider.hasSecret);
-      setStatus({ ok: !result.warning, text: result.warning || t("Guardado. Ya se aplica en el ingreso.") });
+      setStatus({
+        ok: !result.warning,
+        text: result.warning || t("Guardado. Ya se aplica en el ingreso."),
+      });
     } catch {
       setStatus({ ok: false, text: t("No se pudo guardar.") });
     } finally {
@@ -252,7 +291,11 @@ function ProviderForm({
                 type={field.secret ? "password" : "text"}
                 value={String(config[field.key] ?? "")}
                 onChange={(event) => setConfig({ ...config, [field.key]: event.target.value })}
-                placeholder={field.secret && hasSecret ? t("•••••••• (guardado; vacío lo conserva)") : field.placeholder && t(field.placeholder)}
+                placeholder={
+                  field.secret && hasSecret
+                    ? t("•••••••• (guardado; vacío lo conserva)")
+                    : field.placeholder && t(field.placeholder)
+                }
                 autoComplete={field.secret ? "new-password" : "off"}
                 spellCheck={false}
                 className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 text-fg"
@@ -283,10 +326,16 @@ function ProviderForm({
       </div>
       {test ? test(config) : null}
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-        <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={busy}
+          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
+        >
           {busy ? t("Guardando…") : t("Guardar")}
         </button>
-        {status ? <p className={`text-sm ${status.ok ? "text-muted" : "text-danger"}`}>{status.text}</p> : null}
+        {status ? (
+          <p className={`text-sm ${status.ok ? "text-muted" : "text-danger"}`}>{status.text}</p>
+        ) : null}
       </div>
     </form>
   );

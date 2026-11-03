@@ -3,7 +3,7 @@ import { startVaultSync } from "@/app/vault/sync";
 import { useVault } from "@/app/vault/store";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 
-/** Mantiene la bóveda abierta sincronizada con el servidor (ver `app/vault/sync.ts`). */
+/** Keep the open vault synchronized; see app/vault/sync.ts. */
 export function VaultSync() {
   const userId = useCurrentUser()?.id;
   const owner = useVault((state) => state.owner);

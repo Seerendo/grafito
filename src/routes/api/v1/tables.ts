@@ -10,8 +10,8 @@ const createBody = z.object({
 });
 
 /**
- * `GET /api/v1/tables`: las tablas de la bóveda (archivos `.tabla`).
- * `POST /api/v1/tables` con `{ title, portfolioId? }`: crea una vacía.
+ * GET /api/v1/tables lists .tabla documents. POST accepts title and optional portfolioId to
+ * create an empty table.
  */
 export const Route = createFileRoute("/api/v1/tables")({
   server: {

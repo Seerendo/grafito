@@ -5,12 +5,9 @@ import { checkLocalUrl, localhostAlias } from "./local-url.ts";
 import type { Endpoint } from "./types.ts";
 
 /**
- * Configuración de la IA (solo servidor): qué proveedores permite el
- * administrador y la conexión de cada usuario. En los de la nube, su clave
- * (cifrada con `server/crypto.ts`) contra la URL oficial; en Ollama y LM
- * Studio, la dirección de su propia instancia (validada con `local-url.ts`) y
- * una clave opcional. OpenRouter habla el protocolo de OpenAI y, además,
- * identifica la app con `X-Title`.
+ * Server AI policy and per-user connections. Cloud credentials are encrypted and use official
+ * URLs; local URLs are validated with optional keys. OpenRouter uses the OpenAI protocol and
+ * X-Title attribution.
  */
 
 export type ProviderPolicy = AiProviderInfo & { enabled: boolean };
@@ -34,10 +31,20 @@ export async function writePolicy(sql: Sql, id: AiProviderId, enabled: boolean):
   `;
 }
 
-export type CredentialView = { provider: AiProviderId; hint: string; baseUrl: string; updatedAt: string };
+export type CredentialView = {
+  provider: AiProviderId;
+  hint: string;
+  baseUrl: string;
+  updatedAt: string;
+};
 
 export async function readCredentials(sql: Sql, userId: string): Promise<CredentialView[]> {
-  const rows = await sql<{ provider: string; key_hint: string; base_url: string; updated_at: unknown }>`
+  const rows = await sql<{
+    provider: string;
+    key_hint: string;
+    base_url: string;
+    updated_at: unknown;
+  }>`
     select provider, key_hint, base_url, updated_at from ai_credential where user_id = ${userId}
   `;
   return rows
@@ -50,7 +57,7 @@ export async function readCredentials(sql: Sql, userId: string): Promise<Credent
     }));
 }
 
-/** Guarda la conexión: clave cifrada (si la hay) y, en los locales, la dirección. */
+/** Persist encrypted credentials and local-instance addresses. */
 export async function writeCredential(
   sql: Sql,
   userId: string,
@@ -67,19 +74,25 @@ export async function writeCredential(
   `;
 }
 
-export async function deleteCredential(sql: Sql, userId: string, provider: AiProviderId): Promise<void> {
+export async function deleteCredential(
+  sql: Sql,
+  userId: string,
+  provider: AiProviderId,
+): Promise<void> {
   await sql`delete from ai_credential where user_id = ${userId} and provider = ${provider}`;
 }
 
 export class AiUnavailable extends Error {}
 
-/**
- * Dirección y clave para llamar a `provider` en nombre de `userId`. Falla si
- * el administrador no lo permite o el usuario no lo ha conectado.
- */
-export async function endpointFor(sql: Sql, userId: string, provider: AiProviderId): Promise<{ policy: ProviderPolicy; endpoint: Endpoint }> {
+/** Resolve provider endpoint and credentials for userId; reject disabled or unconnected providers. */
+export async function endpointFor(
+  sql: Sql,
+  userId: string,
+  provider: AiProviderId,
+): Promise<{ policy: ProviderPolicy; endpoint: Endpoint }> {
   const policy = (await readPolicies(sql)).find((item) => item.id === provider);
-  if (!policy?.enabled) throw new AiUnavailable("El administrador no tiene activado ese proveedor.");
+  if (!policy?.enabled)
+    throw new AiUnavailable("El administrador no tiene activado ese proveedor.");
   const rows = await sql<{ api_key: string; base_url: string }>`
     select api_key, base_url from ai_credential where user_id = ${userId} and provider = ${provider} limit 1
   `;
@@ -88,18 +101,21 @@ export async function endpointFor(sql: Sql, userId: string, provider: AiProvider
   if (rows[0].api_key) {
     const opened = open(rows[0].api_key);
     apiKey = opened.value;
-    // Rotación de GRAFITO_ENCRYPTION_KEY: se vuelve a cifrar con la clave nueva.
+    // Re-encrypt credentials with the current key during key rotation.
     if (opened.stale) {
       await sql`update ai_credential set api_key = ${encrypt(apiKey)} where user_id = ${userId} and provider = ${provider}`;
     }
   }
   if (!policy.local) {
     if (!apiKey) throw new AiUnavailable(`Falta tu clave de ${policy.label}.`);
-    // OpenRouter atribuye la app en su ranking. El resto de proveedores no las pide.
+    // OpenRouter uses application attribution headers; other providers do not need them.
     const headers = provider === "openrouter" ? { "X-Title": "Grafito" } : undefined;
-    return { policy, endpoint: { baseUrl: policy.baseUrl, apiKey, ...(headers ? { headers } : {}) } };
+    return {
+      policy,
+      endpoint: { baseUrl: policy.baseUrl, apiKey, ...(headers ? { headers } : {}) },
+    };
   }
-  // Se vuelve a validar al usarla: la lista de direcciones prohibidas puede haber crecido.
+  // Revalidate on use because the blocked-address list may have changed.
   const checked = checkLocalUrl(rows[0].base_url, localhostAlias());
   if (!checked.ok) throw new AiUnavailable(`${checked.error} Revísala en Cuenta → IA.`);
   return { policy, endpoint: { baseUrl: checked.target, apiKey } };

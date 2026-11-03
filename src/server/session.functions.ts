@@ -52,7 +52,7 @@ export const accountState = createServerFn({ method: "GET" })
     return profile;
   });
 
-/** Cuenta → Preferencias: idioma de la interfaz. */
+/** Account interface-language preference. */
 export const savePreferences = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ locale: z.enum(["es", "en"]) }).parse(input))
@@ -71,7 +71,7 @@ export const updateAccount = createServerFn({ method: "POST" })
     z
       .object({
         name: z.string().trim().min(1).max(80),
-        /** Sin él, el correo no cambia (se edita en Cuenta → Correo). */
+        /** Omitting email leaves it unchanged; account email settings manage it. */
         contactEmail: z.string().trim().max(120).optional(),
       })
       .parse(input),
@@ -83,7 +83,7 @@ export const updateAccount = createServerFn({ method: "POST" })
     const sql = await requireLease(context.userId);
     await sql`update "user" set name = ${data.name}, "updatedAt" = now() where id = ${context.userId}`;
     const { externalEmail } = await import("@/lib/auth/provision.server");
-    // Con LDAP, OAuth o SSO el correo lo fija el proveedor (`syncExternalEmail`).
+    // External providers control email through syncExternalEmail.
     if (data.contactEmail !== undefined && !(await externalEmail(sql, context.userId))) {
       const email = data.contactEmail || null;
       await sql`
@@ -92,8 +92,14 @@ export const updateAccount = createServerFn({ method: "POST" })
         on conflict (user_id) do update set contact_email = ${email}
       `;
     }
-    const rows = await sql<{ contact_email: string | null }>`select contact_email from app_profile where user_id = ${context.userId}`;
-    return { ok: true as const, displayName: data.name, contactEmail: rows[0]?.contact_email ?? "" };
+    const rows = await sql<{
+      contact_email: string | null;
+    }>`select contact_email from app_profile where user_id = ${context.userId}`;
+    return {
+      ok: true as const,
+      displayName: data.name,
+      contactEmail: rows[0]?.contact_email ?? "",
+    };
   });
 
 export const storageReport = createServerFn({ method: "GET" })
@@ -110,7 +116,9 @@ export const storageReport = createServerFn({ method: "GET" })
       used: number | null;
     }[] = [];
     try {
-      const rows = await sql<{ bytes: number }>`select pg_database_size(current_database())::bigint as bytes`;
+      const rows = await sql<{
+        bytes: number;
+      }>`select pg_database_size(current_database())::bigint as bytes`;
       const used = Number(rows[0]?.bytes);
       const disk = relationalEngine() === "pglite" ? await localVolume() : null;
       stores.push({
@@ -143,4 +151,3 @@ async function localVolume(): Promise<{ total: number; available: number } | nul
     return null;
   }
 }
-

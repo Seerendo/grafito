@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 import { findPassages, type Passage } from "@/domain/search-text";
 
-/** Un documento donde la frase aparece de verdad, con cada alrededor. */
+/** Document containing the exact phrase, with an excerpt for each occurrence. */
 export type ContentHit = {
   id: string;
   title: string;
@@ -13,7 +13,10 @@ export type ContentHit = {
 };
 
 function likeTerm(value: string): string {
-  const collapsed = value.trim().replace(/\s+/g, " ").replace(/[\\%_]/g, "");
+  const collapsed = value
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[\\%_]/g, "");
   return `%${collapsed}%`;
 }
 
@@ -36,12 +39,12 @@ function plain(items: Passage[]): string {
     .join("\n");
 }
 
-/**
- * Busca la frase entera. Una nota cuenta solo si el texto que se abre la
- * contiene; un archivo, si el texto extraído la contiene. Una palabra suelta
- * de la frase no alcanza.
- */
-export async function queryContent(sql: Sql, ownerId: string, query: string): Promise<ContentHit[]> {
+/** Search the entire phrase in actual note or extracted file text; individual words alone do not match. */
+export async function queryContent(
+  sql: Sql,
+  ownerId: string,
+  query: string,
+): Promise<ContentHit[]> {
   const q = query.trim();
   const term = likeTerm(q);
   if (term.length < 4) return [];
@@ -82,8 +85,12 @@ export async function queryContent(sql: Sql, ownerId: string, query: string): Pr
   return hits;
 }
 
-/** Si esta persona puede buscar en la bóveda de `ownerId`. */
-export async function canSearchOwner(sql: Sql, viewerId: string, ownerId: string): Promise<boolean> {
+/** Whether the caller may search ownerId's vault. */
+export async function canSearchOwner(
+  sql: Sql,
+  viewerId: string,
+  ownerId: string,
+): Promise<boolean> {
   if (viewerId === ownerId) return true;
   const workspace = await sql<{ ok: number }>`
     select 1 as ok from workspace_access where owner_id = ${ownerId} and user_id = ${viewerId} limit 1

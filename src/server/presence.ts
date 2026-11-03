@@ -1,27 +1,22 @@
 /**
- * Quién está editando una nota ahora mismo (solo servidor, en memoria). Cada
- * editor abierto avisa cada pocos segundos (`notePresence`); quien deja de
- * avisar desaparece a los `TTL_MS`. Esto es lo de un solo proceso: con Redis
- * se usa `redisTouchPresence`, que comparten todas las instancias. Sin `@/` en los imports:
- * se prueba con `node --test`.
+ * Process-local editing presence expires after TTL_MS without heartbeats. Redis presence is
+ * shared across replicas. Relative imports enable direct tests.
  */
 
 export const TTL_MS = 30_000;
 
 type Entry = { name: string; at: number };
 
-const globalRef = globalThis as typeof globalThis & { __grafitoPresence__?: Map<string, Map<string, Entry>> };
+const globalRef = globalThis as typeof globalThis & {
+  __grafitoPresence__?: Map<string, Map<string, Entry>>;
+};
 
 function notes(): Map<string, Map<string, Entry>> {
   globalRef.__grafitoPresence__ ??= new Map();
   return globalRef.__grafitoPresence__;
 }
 
-/**
- * Registra (o retira, con `editing: false`) a `userId` en la nota
- * `ownerId`/`docId` y devuelve los nombres de las demás personas que la
- * están editando.
- */
+/** Register or remove userId's presence for ownerId/docId and return other editors' names. */
 export function touchPresence(
   input: { ownerId: string; docId: string; userId: string; name: string; editing: boolean },
   now = Date.now(),

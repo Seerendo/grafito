@@ -1,7 +1,6 @@
 /**
- * Quién puede recibir un recuadro de firma: quien ya puede abrir el documento
- * (`grantedIds`), el dueño y quien lo está pidiendo. Las cuentas internas de
- * un espacio de trabajo no firman (no entra nadie con ellas).
+ * Signature recipients must already have document access, own it or request the signature.
+ * Internal workspace accounts cannot sign because nobody signs in as them.
  */
 export function keepSigners(input: {
   ownerId: string;

@@ -14,9 +14,8 @@ function isManualLink(value: unknown): value is ManualLink {
 }
 
 /**
- * Esquema, vínculos y menciones de un documento compartido, para moverse
- * rápido entre lo publicado. Con `onLink`, quien puede editar también vincula
- * notas y archivos de ese espacio (se guardan en la bóveda del dueño).
+ * Shared document outline, links and mentions. onLink enables authorized editors to create
+ * links stored in the owner's vault.
  */
 export function SharedContext({
   document,
@@ -42,7 +41,10 @@ export function SharedContext({
         })
       : []),
     ...document.links.flatMap((link) => {
-      const portfolio = link.target === "portfolio" ? portfolios.find((item) => item.id === link.targetId) : undefined;
+      const portfolio =
+        link.target === "portfolio"
+          ? portfolios.find((item) => item.id === link.targetId)
+          : undefined;
       const target = portfolio ? undefined : documents.find((item) => item.id === link.targetId);
       const title = portfolio?.name ?? target?.title;
       return title
@@ -51,7 +53,9 @@ export function SharedContext({
               id: portfolio?.id ?? target!.id,
               title,
               label: KIND_LABEL[link.kind],
-              detail: link.anchor ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»` : "",
+              detail: link.anchor
+                ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»`
+                : "",
               link,
             },
           ]
@@ -63,14 +67,20 @@ export function SharedContext({
     .flatMap((item) => {
       const wiki =
         item.kind === "markdown" &&
-        extractWikiLinks(item.content).some((title) => title.toLowerCase() === document.title.toLowerCase());
+        extractWikiLinks(item.content).some(
+          (title) => title.toLowerCase() === document.title.toLowerCase(),
+        );
       const manual = item.links.find((link) => link.targetId === document.id);
       if (!wiki && !manual) return [];
       return [
         {
           id: item.id,
           title: item.title,
-          detail: wiki ? backlinkLine(item.content, document.title) : manual ? t(KIND_LABEL[manual.kind]) : "",
+          detail: wiki
+            ? backlinkLine(item.content, document.title)
+            : manual
+              ? t(KIND_LABEL[manual.kind])
+              : "",
           anchor: manual?.anchor,
         },
       ];
@@ -82,7 +92,11 @@ export function SharedContext({
   return (
     <div data-ui="shared-context" className="space-y-4">
       {document.kind === "markdown" ? (
-        <Block title={t("Esquema")} icon={<ListTree className="size-3.5" />} count={headings.length}>
+        <Block
+          title={t("Esquema")}
+          icon={<ListTree className="size-3.5" />}
+          count={headings.length}
+        >
           {headings.length === 0 ? (
             <Empty>{t("Esta nota no tiene encabezados.")}</Empty>
           ) : (
@@ -146,14 +160,22 @@ export function SharedContext({
           </ul>
         )}
       </Block>
-      <Block title={t("Menciones")} icon={<ArrowDownLeft className="size-3.5" />} count={incoming.length}>
+      <Block
+        title={t("Menciones")}
+        icon={<ArrowDownLeft className="size-3.5" />}
+        count={incoming.length}
+      >
         {incoming.length === 0 ? (
           <Empty>{t("Nadie apunta a este documento.")}</Empty>
         ) : (
           <ul>
             {incoming.map((item) => (
               <li key={item.id}>
-                <Row onClick={() => onOpen(item.id, item.anchor)} title={item.title} detail={item.detail} />
+                <Row
+                  onClick={() => onOpen(item.id, item.anchor)}
+                  title={item.title}
+                  detail={item.detail}
+                />
               </li>
             ))}
           </ul>
@@ -163,7 +185,17 @@ export function SharedContext({
   );
 }
 
-function Block({ title, icon, count, children }: { title: string; icon: ReactNode; count: number; children: ReactNode }) {
+function Block({
+  title,
+  icon,
+  count,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  count: number;
+  children: ReactNode;
+}) {
   return (
     <section>
       <h3 className="mb-1 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase">
@@ -192,15 +224,23 @@ function Row({
   detail?: string;
 }) {
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated"
+    >
       {badge ? (
-        <span className="mt-0.5 shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-accent">{badge}</span>
+        <span className="mt-0.5 shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-accent">
+          {badge}
+        </span>
       ) : (
         <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
       )}
       <span className="min-w-0">
         <span className="block truncate text-sm text-fg">{title}</span>
-        {detail ? <span className="mt-0.5 line-clamp-2 block text-xs text-faint">{detail}</span> : null}
+        {detail ? (
+          <span className="mt-0.5 line-clamp-2 block text-xs text-faint">{detail}</span>
+        ) : null}
       </span>
     </button>
   );

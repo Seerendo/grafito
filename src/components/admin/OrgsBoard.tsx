@@ -17,11 +17,9 @@ import { t } from "@/app/i18n";
 type OrgRow = Extract<Awaited<ReturnType<typeof orgsState>>, { ok: true }>["orgs"][number];
 
 /**
- * Organizaciones: árbol a la izquierda y la elegida a la derecha, con sus
- * sub-organizaciones y miembros. Compartir con una organización llega también
- * a los miembros de sus sub-organizaciones. Clic derecho en una organización:
- * sub-organización, renombrar, eliminar; en el espacio libre del árbol: una
- * organización nueva.
+ * Organization tree with selected organization's children and members. Shares include
+ * descendant members. Context menus create children, rename or delete organizations; empty tree
+ * space creates a root organization.
  */
 export function OrgsBoard({ view }: { view: AdminView }) {
   const [orgs, setOrgs] = useState<OrgRow[] | null>(null);
@@ -29,7 +27,7 @@ export function OrgsBoard({ view }: { view: AdminView }) {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState<{ parentId: string | null } | null>(null);
   const [name, setName] = useState("");
-  // Lo pedido desde el clic derecho a la organización elegida (renombrar, eliminar).
+  // Context-menu action requested for the selected organization.
   const [request, setRequest] = useState<{ kind: "rename" | "delete"; at: number } | null>(null);
   const menu = useContextMenu();
   const startCreate = (parentId: string | null) => {
@@ -73,10 +71,14 @@ export function OrgsBoard({ view }: { view: AdminView }) {
       <div
         data-ui="orgs-tree"
         className="max-h-[calc(100dvh-9rem)] self-start overflow-y-auto rounded-lg border border-line bg-surface p-2"
-        onContextMenu={(event) => menu.open(event, [{ label: t("Nueva organización"), onClick: () => startCreate(null) }])}
+        onContextMenu={(event) =>
+          menu.open(event, [{ label: t("Nueva organización"), onClick: () => startCreate(null) }])
+        }
       >
         <div className="flex items-center justify-between px-2 pb-2">
-          <span className="text-xs font-semibold tracking-wider text-muted uppercase">{t("Organizaciones")}</span>
+          <span className="text-xs font-semibold tracking-wider text-muted uppercase">
+            {t("Organizaciones")}
+          </span>
           <button
             type="button"
             onClick={() => {
@@ -90,7 +92,9 @@ export function OrgsBoard({ view }: { view: AdminView }) {
             {t("Nueva")}
           </button>
         </div>
-        {orgs.length === 0 ? <p className="px-2 py-3 text-sm text-muted">{t("Todavía no hay organizaciones.")}</p> : null}
+        {orgs.length === 0 ? (
+          <p className="px-2 py-3 text-sm text-muted">{t("Todavía no hay organizaciones.")}</p>
+        ) : null}
         <OrgTree
           orgs={orgs}
           parentId={null}
@@ -131,7 +135,9 @@ export function OrgsBoard({ view }: { view: AdminView }) {
             }}
           >
             <p className="w-full text-xs text-muted">
-              {creating.parentId ? t("Nueva sub-organización de {0}", { 0: orgPath(orgs, creating.parentId) }) : t("Nueva organización raíz")}
+              {creating.parentId
+                ? t("Nueva sub-organización de {0}", { 0: orgPath(orgs, creating.parentId) })
+                : t("Nueva organización raíz")}
             </p>
             <input
               value={name}
@@ -142,10 +148,17 @@ export function OrgsBoard({ view }: { view: AdminView }) {
               required
               className="h-11 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
             />
-            <button type="submit" className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
+            <button
+              type="submit"
+              className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+            >
               {t("Crear")}
             </button>
-            <button type="button" onClick={() => setCreating(null)} className="h-11 rounded-md px-4 text-sm text-muted hover:text-fg">
+            <button
+              type="button"
+              onClick={() => setCreating(null)}
+              className="h-11 rounded-md px-4 text-sm text-muted hover:text-fg"
+            >
               {t("Cancelar")}
             </button>
           </form>
@@ -169,9 +182,7 @@ export function OrgsBoard({ view }: { view: AdminView }) {
               void load();
             }}
           />
-        ) : (
-null
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -194,7 +205,7 @@ function OrgTree({
 }) {
   const children = childOrgs(orgs, parentId);
   if (children.length === 0) return null;
-  // Separadas: el resaltado al pasar el ratón no se pega a la fila elegida.
+  // Keep hover highlighting separate from the selected row.
   return (
     <ul className={`flex flex-col gap-1 ${depth > 0 ? "mt-1" : ""}`}>
       {children.map((org) => {
@@ -215,12 +226,25 @@ function OrgTree({
               }`}
               style={{ paddingLeft: 8 + depth * 14 }}
             >
-              {subs > 0 ? <ChevronRight className="size-3.5 shrink-0 rotate-90 text-faint" /> : <span className="w-3.5 shrink-0" />}
+              {subs > 0 ? (
+                <ChevronRight className="size-3.5 shrink-0 rotate-90 text-faint" />
+              ) : (
+                <span className="w-3.5 shrink-0" />
+              )}
               <Building2 className={`size-3.5 shrink-0 ${on ? "text-accent" : "text-faint"}`} />
               <span className="min-w-0 flex-1 truncate">{org.name}</span>
-              <span className="shrink-0 text-[11px] text-faint tabular-nums">{org.memberIds.length}</span>
+              <span className="shrink-0 text-[11px] text-faint tabular-nums">
+                {org.memberIds.length}
+              </span>
             </button>
-            <OrgTree orgs={orgs} parentId={org.id} depth={depth + 1} selected={selected} onSelect={onSelect} onMenu={onMenu} />
+            <OrgTree
+              orgs={orgs}
+              parentId={org.id}
+              depth={depth + 1}
+              selected={selected}
+              onSelect={onSelect}
+              onMenu={onMenu}
+            />
           </li>
         );
       })}
@@ -257,13 +281,16 @@ function OrgDetail({
       setDraft(org.name);
       setRenaming(true);
     } else setConfirming(true);
-    // Solo cuando llega una petición nueva.
+    // Run only when a new action request arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.at]);
   const members = new Set(org.memberIds);
   const subtree = orgSubtree(orgs, org.id);
-  const reach = new Set(orgs.filter((item) => subtree.has(item.id)).flatMap((item) => item.memberIds));
-  const name = (userId: string) => view.users.find((person) => person.id === userId)?.name ?? t("Usuario borrado");
+  const reach = new Set(
+    orgs.filter((item) => subtree.has(item.id)).flatMap((item) => item.memberIds),
+  );
+  const name = (userId: string) =>
+    view.users.find((person) => person.id === userId)?.name ?? t("Usuario borrado");
 
   const candidates = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -271,9 +298,11 @@ function OrgDetail({
       .filter((person) => !members.has(person.id))
       .filter(
         (person) =>
-          !needle || person.name.toLowerCase().includes(needle) || (person.loginName ?? "").toLowerCase().includes(needle),
-      )
-    // `members` se deriva de `org.memberIds`.
+          !needle ||
+          person.name.toLowerCase().includes(needle) ||
+          (person.loginName ?? "").toLowerCase().includes(needle),
+      );
+    // members is derived from org.memberIds.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, view.users, org.memberIds]);
 
@@ -308,10 +337,17 @@ function OrgDetail({
               autoFocus
               className="h-11 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
             />
-            <button type="submit" className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
+            <button
+              type="submit"
+              className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+            >
               {t("Guardar")}
             </button>
-            <button type="button" onClick={() => setRenaming(false)} className="h-11 rounded-md px-4 text-sm text-muted hover:text-fg">
+            <button
+              type="button"
+              onClick={() => setRenaming(false)}
+              className="h-11 rounded-md px-4 text-sm text-muted hover:text-fg"
+            >
               {t("Cancelar")}
             </button>
           </form>
@@ -319,11 +355,21 @@ function OrgDetail({
           <h2 className="mt-1 font-serif text-2xl">{org.name}</h2>
         )}
         <p className="mt-2 text-sm text-muted">
-          {org.memberIds.length}{" "}{t("miembros directos ·")}{" "}{reach.size}{" "}{t("con sus sub-organizaciones")}
+          {org.memberIds.length} {t("miembros directos ·")} {reach.size}{" "}
+          {t("con sus sub-organizaciones")}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-4">
           <TextAction onClick={onCreateChild}>{t("Nueva sub-organización")}</TextAction>
-          {!renaming ? <TextAction onClick={() => { setDraft(org.name); setRenaming(true); }}>{t("Renombrar")}</TextAction> : null}
+          {!renaming ? (
+            <TextAction
+              onClick={() => {
+                setDraft(org.name);
+                setRenaming(true);
+              }}
+            >
+              {t("Renombrar")}
+            </TextAction>
+          ) : null}
           {confirming ? (
             <span className="flex items-center gap-3 text-sm">
               <span className="text-muted">{t("¿Borrar con sus sub-organizaciones?")}</span>
@@ -351,27 +397,48 @@ function OrgDetail({
       <div className="rounded-lg border border-line bg-surface">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3">
           <Users className="size-4 text-faint" />
-          <span className="text-xs font-semibold tracking-wider text-muted uppercase">{t("Miembros")}</span>
-          <span className="rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">{org.memberIds.length}</span>
+          <span className="text-xs font-semibold tracking-wider text-muted uppercase">
+            {t("Miembros")}
+          </span>
+          <span className="rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">
+            {org.memberIds.length}
+          </span>
         </div>
-        {org.memberIds.length === 0 ? <p className="px-4 py-3 text-sm text-muted">{t("Sin miembros todavía.")}</p> : null}
+        {org.memberIds.length === 0 ? (
+          <p className="px-4 py-3 text-sm text-muted">{t("Sin miembros todavía.")}</p>
+        ) : null}
         <ul>
           {org.memberIds
             .map((userId) => ({ userId, name: name(userId) }))
             .sort((a, b) => a.name.localeCompare(b.name, "es"))
             .map((member) => (
-              <li key={member.userId} className="flex items-center gap-3 border-b border-line px-4 py-2.5 text-sm last:border-b-0">
+              <li
+                key={member.userId}
+                className="flex items-center gap-3 border-b border-line px-4 py-2.5 text-sm last:border-b-0"
+              >
                 <span className="min-w-0 flex-1 truncate">{member.name}</span>
-                <TextAction onClick={() => void saveMembers(org.memberIds.filter((item) => item !== member.userId))}>{t("Quitar")}</TextAction>
+                <TextAction
+                  onClick={() =>
+                    void saveMembers(org.memberIds.filter((item) => item !== member.userId))
+                  }
+                >
+                  {t("Quitar")}
+                </TextAction>
               </li>
             ))}
         </ul>
         <div className="border-t border-line p-3">
-          <SearchField value={query} onChange={setQuery} placeholder={t("Añadir miembros: buscar usuario")} />
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={t("Añadir miembros: buscar usuario")}
+          />
           <ul className="mt-2 max-h-60 overflow-y-auto">
             {candidates.length === 0 ? (
               <li className="px-1 py-2 text-sm text-muted">
-                {query.trim() ? t("Ningún usuario coincide.") : t("Todos los usuarios ya son miembros.")}
+                {query.trim()
+                  ? t("Ningún usuario coincide.")
+                  : t("Todos los usuarios ya son miembros.")}
               </li>
             ) : null}
             {candidates.map((person) => (
@@ -384,7 +451,9 @@ function OrgDetail({
                     onChange={() => void saveMembers([...new Set([...org.memberIds, person.id])])}
                   />
                   <span className="min-w-0 flex-1 truncate">{person.name}</span>
-                  {person.loginName ? <span className="text-xs text-faint">{person.loginName}</span> : null}
+                  {person.loginName ? (
+                    <span className="text-xs text-faint">{person.loginName}</span>
+                  ) : null}
                 </label>
               </li>
             ))}

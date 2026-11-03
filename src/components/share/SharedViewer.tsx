@@ -25,7 +25,16 @@ import { HistoryDialog } from "@/components/vault/HistoryDialog";
 import { MarkdownView } from "@/components/vault/MarkdownView";
 import { editSharedDoc } from "@/server/history.functions";
 import type { PublishedDoc, SharedTree } from "@/server/share";
-import { asDocuments, canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn, orderDocuments, rootParent, sharedPortfolioLevel } from "./shared-tree";
+import {
+  asDocuments,
+  canEditSharedPortfolio,
+  canManageSharedSpace,
+  childrenOf,
+  docsIn,
+  orderDocuments,
+  rootParent,
+  sharedPortfolioLevel,
+} from "./shared-tree";
 import { intl, t } from "@/app/i18n";
 import { useNotePresence } from "@/app/presence";
 import { EditingNow } from "@/components/vault/EditingNow";
@@ -47,16 +56,11 @@ import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 
 /**
- * Visor de una nota o un portafolio compartido: índice a la izquierda (o
- * arriba en móvil) y el documento elegido. Dentro de la bóveda el índice lo
- * pone el directorio (`index={false}`) y el documento abierto llega por
- * `docId`/`onOpenDoc`. Con acceso de edición y `onChange`, las notas se pueden
- * editar y ver su historial; al guardar se avisa con el árbol actualizado.
- * Para moverse rápido, también en un enlace público: el grafo de lo publicado
- * y un panel con el esquema, los vínculos y las menciones. Quien puede editar
- * y tiene permiso de vincular también crea y quita vínculos de ese espacio.
- * En la bóveda, con `onOpenPortfolio` y sin documento abierto, se ve la página
- * del portafolio `portfolioId` (o del compartido): sus portafolios y recientes.
+ * Shared viewer with an index and selected document. Embedded mode uses the vault directory via
+ * index=false and docId/onOpenDoc. Edit access plus onChange enables editing and history,
+ * returning the updated tree after saving. Graph and context navigation also work on public
+ * links. With onOpenPortfolio and no document, show the selected portfolio's children and
+ * recent items.
  */
 export function SharedViewer({
   tree,
@@ -72,7 +76,7 @@ export function SharedViewer({
   portfolioId?: string | null;
   onOpenDoc?: (id: string) => void;
   onOpenPortfolio?: (id: string | null) => void;
-  /** Con `docId`, además abre ese documento (uno recién creado). */
+  /** An optional docId also opens that document after creation. */
   onChange?: (tree: SharedTree, docId?: string) => void;
   index?: boolean;
 }) {
@@ -82,14 +86,22 @@ export function SharedViewer({
   const activeId = docId ?? ownId;
   const setActiveId = onOpenDoc ?? setOwnId;
   const board = Boolean(onOpenPortfolio) && !docId && tree.share.kind === "portfolio";
-  const shown = board ? null : (ordered.find((document) => document.id === activeId) ?? ordered[0] ?? null);
-  // El árbol llega sin el texto de las notas (`lazy`): se pide al abrir cada una.
-  const [texts, setTexts] = useState<Record<string, { content: string; updatedAt: string; updatedBy: string }>>({});
-  // Los que ya no están (borrados hace un momento, aunque el árbol aún los muestre).
+  const shown = board
+    ? null
+    : (ordered.find((document) => document.id === activeId) ?? ordered[0] ?? null);
+  // Lazy trees omit note content; fetch it when opening each note.
+  const [texts, setTexts] = useState<
+    Record<string, { content: string; updatedAt: string; updatedBy: string }>
+  >({});
+  // Recently deleted documents may still appear in a stale tree.
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const text = shown ? texts[shown.id] : undefined;
   const missing = Boolean(shown && gone.has(shown.id));
-  const loading = !missing && Boolean(shown?.lazy) && shown?.kind === "markdown" && (!text || text.updatedAt < shown.updatedAt);
+  const loading =
+    !missing &&
+    Boolean(shown?.lazy) &&
+    shown?.kind === "markdown" &&
+    (!text || text.updatedAt < shown.updatedAt);
   const active =
     shown?.lazy && text
       ? {
@@ -104,9 +116,10 @@ export function SharedViewer({
     let alive = true;
     const id = shown.id;
     const token = tree.share.token;
-    void (token
-      ? publicDocContent({ data: { token, docId: id } })
-      : sharedDocContent({ data: { shareId: tree.share.id, docId: id } })
+    void (
+      token
+        ? publicDocContent({ data: { token, docId: id } })
+        : sharedDocContent({ data: { shareId: tree.share.id, docId: id } })
     )
       .then((result) => {
         if (!alive) return;
@@ -118,21 +131,30 @@ export function SharedViewer({
       alive = false;
     };
   }, [loading, shown, tree.share.id, tree.share.token]);
-  const byTitle = (name: string) => ordered.find((document) => document.title.toLowerCase() === name.toLowerCase());
+  const byTitle = (name: string) =>
+    ordered.find((document) => document.title.toLowerCase() === name.toLowerCase());
   const single = tree.share.kind === "document" || !index;
   const Badge = tree.share.visibility === "public" ? Globe : Users;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [conflict, setConflict] = useState<{ content: string; updatedAt: number; updatedBy: string } | null>(null);
+  const [conflict, setConflict] = useState<{
+    content: string;
+    updatedAt: number;
+    updatedBy: string;
+  } | null>(null);
   const [history, setHistory] = useState(false);
   const dirty = editing && active !== null && draft !== active.content;
-  // Comentarios: dentro de la bóveda (con sesión), también en solo lectura.
+  // Signed-in vault users can comment even with read-only access.
   const [commentsOpen, setCommentsOpen] = useState(true);
   const [commentCount, setCommentCount] = useState(0);
   const canComment = Boolean(onChange) && active !== null;
-  const editors = useNotePresence(active && !active.file ? active.id : null, editing, tree.share.id);
+  const editors = useNotePresence(
+    active && !active.file ? active.id : null,
+    editing,
+    tree.share.id,
+  );
   const documents = useMemo(() => asDocuments(ordered), [ordered]);
   const [view, setView] = useState<"doc" | "graph">("doc");
   const [contextOpen, setContextOpen] = useState(true);
@@ -142,27 +164,39 @@ export function SharedViewer({
     setActiveId(id);
     setView("doc");
   };
-  // Añadir en el portafolio abierto: en un espacio, solo donde esta persona puede editar.
-  const sharedRoot = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
+  // Create only in the current portfolio when the caller can edit it.
+  const sharedRoot =
+    tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
   const here = board
     ? portfolioId && tree.portfolios.some((portfolio) => portfolio.id === portfolioId)
       ? portfolioId
       : sharedRoot
-    : active?.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === active.portfolioId) ? active.portfolioId : sharedRoot;
-  const hereName = tree.portfolios.find((portfolio) => portfolio.id === here)?.name ?? tree.share.title;
+    : active?.portfolioId &&
+        tree.portfolios.some((portfolio) => portfolio.id === active.portfolioId)
+      ? active.portfolioId
+      : sharedRoot;
+  const hereName =
+    tree.portfolios.find((portfolio) => portfolio.id === here)?.name ?? tree.share.title;
   const level = sharedPortfolioLevel(tree, here);
   const writable = canEditSharedPortfolio(tree, here);
-  const canEdit = writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
+  const canEdit =
+    writable && Boolean(onChange) && active?.kind === "markdown" && !loading && !missing;
   const canAdd = writable && Boolean(onChange) && tree.share.kind === "portfolio";
   const linkAllowed = writable && Boolean(onChange) && canLink && Boolean(active);
-  const showSpace = Boolean(onChange) && canManageSharedSpace(tree) && tree.share.kind === "portfolio" && Boolean(here);
+  const showSpace =
+    Boolean(onChange) &&
+    canManageSharedSpace(tree) &&
+    tree.share.kind === "portfolio" &&
+    Boolean(here);
   const [adding, setAdding] = useState(false);
   const [naming, setNaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const addPortfolio = async (name: string) => {
     setAdding(true);
     setMessage("");
-    const result = await createSharedPortfolio({ data: { shareId: tree.share.id, parentId: here, name } }).catch(() => null);
+    const result = await createSharedPortfolio({
+      data: { shareId: tree.share.id, parentId: here, name },
+    }).catch(() => null);
     setAdding(false);
     if (!result?.ok) setMessage(result?.error ?? t("No se pudo crear el portafolio."));
     else {
@@ -177,7 +211,9 @@ export function SharedViewer({
   const addNote = async () => {
     setAdding(true);
     setMessage("");
-    const result = await createSharedNote({ data: { shareId: tree.share.id, portfolioId: here, title: "" } }).catch(() => null);
+    const result = await createSharedNote({
+      data: { shareId: tree.share.id, portfolioId: here, title: "" },
+    }).catch(() => null);
     setAdding(false);
     if (!result?.ok) setMessage(result?.error ?? t("No se pudo crear la nota."));
     else {
@@ -193,7 +229,13 @@ export function SharedViewer({
       try {
         const stored = await uploadVaultFile(file, { shareId: tree.share.id, portfolioId: here });
         const result = await addSharedFile({
-          data: { shareId: tree.share.id, portfolioId: here, key: stored.key, name: file.name, mime: file.type },
+          data: {
+            shareId: tree.share.id,
+            portfolioId: here,
+            key: stored.key,
+            name: file.name,
+            mime: file.type,
+          },
         });
         if (!result.ok) {
           setMessage(result.error);
@@ -226,7 +268,7 @@ export function SharedViewer({
     setMessage("");
   }, [active?.id]);
 
-  // El panel de la bóveda (no este visor) dibuja el esquema cuando está embebido.
+  // The surrounding vault panel renders the outline in embedded mode.
   useEffect(() => {
     if (index) return;
     if (!active) {
@@ -239,11 +281,16 @@ export function SharedViewer({
   const patchDoc = (id: string, patch: Partial<PublishedDoc>) => {
     const { content, updatedAt, updatedBy } = patch;
     if (content !== undefined && updatedAt) {
-      setTexts((current) => ({ ...current, [id]: { content, updatedAt, updatedBy: updatedBy ?? current[id]?.updatedBy ?? "" } }));
+      setTexts((current) => ({
+        ...current,
+        [id]: { content, updatedAt, updatedBy: updatedBy ?? current[id]?.updatedBy ?? "" },
+      }));
     }
     onChange?.({
       ...tree,
-      documents: tree.documents.map((document) => (document.id === id ? { ...document, ...patch } : document)),
+      documents: tree.documents.map((document) =>
+        document.id === id ? { ...document, ...patch } : document,
+      ),
     });
   };
 
@@ -258,7 +305,7 @@ export function SharedViewer({
           docId: active.id,
           content: draft,
           baseUpdatedAt: base ?? Date.parse(active.updatedAt),
-          // Lo que había al empezar: con ello el servidor junta los cambios de otra persona.
+          // Keep the initial version as the server's concurrent-merge base.
           ...(base === undefined ? { baseContent: active.content } : {}),
         },
       });
@@ -270,9 +317,11 @@ export function SharedViewer({
           updatedAt: new Date(result.updatedAt).toISOString(),
           updatedBy: result.updatedBy,
         });
-        // Se juntó con lo que otra persona guardó entre medias: seguir desde ahí.
+        // Continue from the version merged with another person's intervening save.
         if (result.merged) setDraft(result.content);
-        setMessage(result.merged ? t("Guardado junto con los cambios de otra persona") : t("Guardado"));
+        setMessage(
+          result.merged ? t("Guardado junto con los cambios de otra persona") : t("Guardado"),
+        );
       } else if ("conflict" in result && result.conflict) {
         setConflict(result.current);
       } else {
@@ -292,8 +341,18 @@ export function SharedViewer({
           aria-label={t("Contenido compartido")}
           className="max-h-56 shrink-0 overflow-y-auto border-b border-line bg-surface p-2 md:max-h-none md:w-72 md:border-r md:border-b-0"
         >
-          <Branch tree={tree} parentId={rootParent(tree)} depth={0} activeId={active?.id ?? null} onOpen={setActiveId} />
-          {ordered.length === 0 ? <p className="px-3 py-2 text-sm text-muted">{t("Todavía no hay documentos publicados.")}</p> : null}
+          <Branch
+            tree={tree}
+            parentId={rootParent(tree)}
+            depth={0}
+            activeId={active?.id ?? null}
+            onOpen={setActiveId}
+          />
+          {ordered.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-muted">
+              {t("Todavía no hay documentos publicados.")}
+            </p>
+          ) : null}
         </nav>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -301,10 +360,21 @@ export function SharedViewer({
           <Badge className="size-3.5 shrink-0 text-faint" />
           <span className="min-w-0 flex-1 truncate">
             {active ? <span className="font-medium text-fg">{active.title} · </span> : null}
-            {t("Compartido por")}{" "}{tree.share.ownerName} · {level === "admin" ? t("Administrador") : level === "edit" ? t("Puedes editar") : t("Solo lectura")}
-            {active ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}` : ""}
+            {t("Compartido por")} {tree.share.ownerName} ·{" "}
+            {level === "admin"
+              ? t("Administrador")
+              : level === "edit"
+                ? t("Puedes editar")
+                : t("Solo lectura")}
+            {active
+              ? ` · ${active.updatedBy || tree.share.ownerName} · ${formatDate(active.updatedAt)}`
+              : ""}
           </span>
-          {message ? <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>{t(message)}</span> : null}
+          {message ? (
+            <span className={message.startsWith(t("Guardado")) ? "text-muted" : "text-danger"}>
+              {t(message)}
+            </span>
+          ) : null}
           {index && canComment ? (
             <button
               type="button"
@@ -383,7 +453,11 @@ export function SharedViewer({
               type="button"
               aria-label={t("Vincular")}
               title={t("Vincular")}
-              onClick={() => useVault.getState().setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })}
+              onClick={() =>
+                useVault
+                  .getState()
+                  .setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })
+              }
               className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
             >
               <Link2 className="size-4" />
@@ -407,7 +481,9 @@ export function SharedViewer({
               title={t("Espacio y permisos")}
               onClick={() => {
                 if (!here) return;
-                useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: tree.share.id });
+                useVault
+                  .getState()
+                  .setDialog({ type: "space", portfolioId: here, shareId: tree.share.id });
               }}
               className="grid size-9 place-items-center rounded-md text-muted hover:text-fg"
             >
@@ -490,10 +566,21 @@ export function SharedViewer({
           ) : null}
         </div>
         {deleting && active ? (
-          <Modal title={t("Eliminar «{0}»", { 0: active.title })} onClose={() => setDeleting(false)}>
-            <p className="text-sm text-muted">{t("Irá a la papelera de su dueño (en un espacio de trabajo, la de sus administradores), que puede recuperarlo.")}</p>
+          <Modal
+            title={t("Eliminar «{0}»", { 0: active.title })}
+            onClose={() => setDeleting(false)}
+          >
+            <p className="text-sm text-muted">
+              {t(
+                "Irá a la papelera de su dueño (en un espacio de trabajo, la de sus administradores), que puede recuperarlo.",
+              )}
+            </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleting(false)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
+              <button
+                type="button"
+                onClick={() => setDeleting(false)}
+                className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated"
+              >
                 {t("Cancelar")}
               </button>
               <button
@@ -512,7 +599,10 @@ export function SharedViewer({
           </Modal>
         ) : null}
         {naming !== null ? (
-          <Modal title={t("Nuevo portafolio en {0}", { 0: hereName })} onClose={() => setNaming(null)}>
+          <Modal
+            title={t("Nuevo portafolio en {0}", { 0: hereName })}
+            onClose={() => setNaming(null)}
+          >
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -528,7 +618,11 @@ export function SharedViewer({
                 className="h-11 w-full rounded-md border border-line bg-inset px-3 text-sm text-fg"
               />
               <div className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => setNaming(null)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
+                <button
+                  type="button"
+                  onClick={() => setNaming(null)}
+                  className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated"
+                >
                   {t("Cancelar")}
                 </button>
                 <button
@@ -546,7 +640,8 @@ export function SharedViewer({
         {conflict && active ? (
           <div className="flex flex-wrap items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm sm:px-5">
             <span className="min-w-0 flex-1">
-              {conflict.updatedBy || tree.share.ownerName}{" "}{t("cambió la nota mientras la editabas.")}
+              {conflict.updatedBy || tree.share.ownerName}{" "}
+              {t("cambió la nota mientras la editabas.")}
             </span>
             <button
               type="button"
@@ -593,11 +688,22 @@ export function SharedViewer({
           <div data-ui="shared-graph" className="min-h-0 flex-1">
             <GraphView
               onOpenNote={openDoc}
-              source={{ documents, portfolios: tree.portfolios, activeId: active?.id ?? null, onSelect: setActiveId }}
+              source={{
+                documents,
+                portfolios: tree.portfolios,
+                activeId: active?.id ?? null,
+                onSelect: setActiveId,
+              }}
             />
           </div>
         ) : board && here && onOpenPortfolio ? (
-          <SharedBoard tree={tree} portfolioId={here} rootId={sharedRoot} onOpenPortfolio={onOpenPortfolio} onOpenDoc={openDoc} />
+          <SharedBoard
+            tree={tree}
+            portfolioId={here}
+            rootId={sharedRoot}
+            onOpenPortfolio={onOpenPortfolio}
+            onOpenDoc={openDoc}
+          />
         ) : !active ? (
           <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
             {tree.share.kind === "portfolio"
@@ -614,18 +720,28 @@ export function SharedViewer({
             canEdit={writable && Boolean(onChange)}
             manual={{
               links: active.links ?? [],
-              targetTitle: (id) => ordered.find((item) => item.id === id)?.title ?? tree.portfolios.find((item) => item.id === id)?.name,
+              targetTitle: (id) =>
+                ordered.find((item) => item.id === id)?.title ??
+                tree.portfolios.find((item) => item.id === id)?.name,
               onOpen: (id) => {
                 if (ordered.some((item) => item.id === id)) openDoc(id);
                 else onOpenPortfolio?.(id);
               },
               onLink: linkAllowed
-                ? (anchor) => useVault.getState().setDialog({ type: "link", sourceId: active.id, anchor, shareId: tree.share.id })
+                ? (anchor) =>
+                    useVault.getState().setDialog({
+                      type: "link",
+                      sourceId: active.id,
+                      anchor,
+                      shareId: tree.share.id,
+                    })
                 : undefined,
             }}
           />
         ) : missing ? (
-          <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("Este documento ya no está.")}</p>
+          <p className="grid flex-1 place-items-center px-6 text-sm text-muted">
+            {t("Este documento ya no está.")}
+          </p>
         ) : loading ? (
           <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("Cargando…")}</p>
         ) : editing ? (
@@ -664,7 +780,10 @@ export function SharedViewer({
         >
           {contextOpen ? (
             <SharedContext
-              document={{ ...(documents.find((item) => item.id === active.id) ?? documents[0]!), content: active.content }}
+              document={{
+                ...(documents.find((item) => item.id === active.id) ?? documents[0]!),
+                content: active.content,
+              }}
               documents={documents}
               portfolios={tree.portfolios}
               onOpen={(id, anchor) => {
@@ -674,11 +793,16 @@ export function SharedViewer({
               }}
               onLink={
                 linkAllowed
-                  ? () => useVault.getState().setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })
+                  ? () =>
+                      useVault
+                        .getState()
+                        .setDialog({ type: "link", sourceId: active.id, shareId: tree.share.id })
                   : undefined
               }
               onUnlink={
-                linkAllowed ? (link) => void commitSharedLink(tree.share.id, active.id, { remove: link }) : undefined
+                linkAllowed
+                  ? (link) => void commitSharedLink(tree.share.id, active.id, { remove: link })
+                  : undefined
               }
             />
           ) : null}
@@ -714,7 +838,10 @@ function Branch({
     <ul>
       {childrenOf(tree, parentId).map((portfolio) => (
         <li key={portfolio.id}>
-          <p className="flex h-9 items-center gap-1.5 text-sm font-medium text-fg" style={{ paddingLeft: depth * 12 }}>
+          <p
+            className="flex h-9 items-center gap-1.5 text-sm font-medium text-fg"
+            style={{ paddingLeft: depth * 12 }}
+          >
             <ChevronRight className="size-3.5 rotate-90 text-faint" />
             <FolderOpen className="size-3.5 text-faint" />
             <span className="truncate">{portfolio.name}</span>
@@ -741,7 +868,13 @@ function Branch({
               );
             })}
           </ul>
-          <Branch tree={tree} parentId={portfolio.id} depth={depth + 1} activeId={activeId} onOpen={onOpen} />
+          <Branch
+            tree={tree}
+            parentId={portfolio.id}
+            depth={depth + 1}
+            activeId={activeId}
+            onOpen={onOpen}
+          />
         </li>
       ))}
     </ul>
@@ -751,5 +884,10 @@ function Branch({
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat(intl(), {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }

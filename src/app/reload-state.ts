@@ -1,16 +1,14 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Dónde estaba una pantalla, solo para recargar la página: se guarda al
- * descargarse (`pagehide`) o justo antes de que la aplicación se vuelva a
- * montar (al cambiar de idioma, `keepForRemount`), y se lee una sola vez al
- * volver. Salir de la pantalla de otra forma (el logo, un enlace) no guarda
- * nada, así que al entrar de nuevo empieza desde el principio.
+ * Restore screen position only after reload or language remount. Save on pagehide or
+ * keepForRemount and read once. Normal navigation does not save state, so reopening starts
+ * fresh.
  */
 
 const REMOUNT = "grafito:before-remount";
 
-/** Lo guardado para `key` (sin borrarlo aún: lo borra `useSaveOnReload` al montarse). */
+/** Read saved state without deleting it; useSaveOnReload clears it on mount. */
 export function readReloadState<T>(key: string): T | null {
   try {
     const raw = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
@@ -20,22 +18,22 @@ export function readReloadState<T>(key: string): T | null {
   }
 }
 
-/** Guarda `value` en `key` solo si la página se recarga o la aplicación se vuelve a montar. */
+/** Save value under key only on reload or app remount. */
 export function useSaveOnReload(key: string, value: unknown): void {
   const latest = useRef(value);
   latest.current = value;
   useEffect(() => {
-    // Ya leído al montarse: entrar otra vez después empieza de cero.
+    // State has been consumed on mount; later navigation starts fresh.
     try {
       window.sessionStorage.removeItem(key);
     } catch {
-      /* sin almacenamiento */
+      /* Storage unavailable. */
     }
     const save = () => {
       try {
         window.sessionStorage.setItem(key, JSON.stringify(latest.current));
       } catch {
-        /* solo es una comodidad */
+        /* Optional convenience; failure is harmless. */
       }
     };
     window.addEventListener("pagehide", save);
@@ -47,7 +45,7 @@ export function useSaveOnReload(key: string, value: unknown): void {
   }, [key]);
 }
 
-/** Avisa de que la aplicación se va a volver a montar (cambio de idioma): las pantallas guardan dónde estaban. */
+/** Notify screens before a language remount so they save their positions. */
 export function keepForRemount(): void {
   window.dispatchEvent(new Event(REMOUNT));
 }

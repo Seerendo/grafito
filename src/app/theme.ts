@@ -95,8 +95,8 @@ const THEME_STORAGE_KEY = "grafito.theme";
 const KNOWN = new Set<string>(THEMES.map((theme) => theme.id));
 
 /**
- * Script inline para `<head>`: aplica el tema guardado antes del primer pintado
- * (sin destello). Se genera desde `THEMES` para no duplicar la tabla a mano.
+ * Inline head script applies the saved theme before first paint. Generated from THEMES to avoid
+ * duplicating the catalog.
  */
 export function themeBootScript(): string {
   const ink = Object.fromEntries(THEMES.map((theme) => [theme.id, theme.ink]));

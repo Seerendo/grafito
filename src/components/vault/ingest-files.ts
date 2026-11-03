@@ -21,12 +21,16 @@ function isMarkdownFile(file: File) {
   return /\.(md|markdown)$/i.test(file.name) || file.type === "text/markdown";
 }
 
-/** Un archivo del equipo, con la ruta dentro de la carpeta elegida (vacía: va suelto). */
+/** Local file with its relative folder path; empty means a loose file. */
 export type IncomingFile = { file: File; relativePath: string };
 
 export function asIncoming(input: File | IncomingFile): IncomingFile {
-  if (input instanceof File) return { file: input, relativePath: input.webkitRelativePath || input.name };
-  return { file: input.file, relativePath: input.relativePath || input.file.webkitRelativePath || input.file.name };
+  if (input instanceof File)
+    return { file: input, relativePath: input.webkitRelativePath || input.name };
+  return {
+    file: input.file,
+    relativePath: input.relativePath || input.file.webkitRelativePath || input.file.name,
+  };
 }
 
 type DroppedEntry = {
@@ -34,7 +38,12 @@ type DroppedEntry = {
   isDirectory: boolean;
   name: string;
   file?: (ok: (file: File) => void, err?: (error: DOMException) => void) => void;
-  createReader?: () => { readEntries: (ok: (entries: DroppedEntry[]) => void, err?: (error: DOMException) => void) => void };
+  createReader?: () => {
+    readEntries: (
+      ok: (entries: DroppedEntry[]) => void,
+      err?: (error: DOMException) => void,
+    ) => void;
+  };
 };
 
 function readDirectory(entry: DroppedEntry): Promise<DroppedEntry[]> {
@@ -73,13 +82,14 @@ async function walkEntry(entry: DroppedEntry, prefix: string, out: IncomingFile[
 }
 
 /**
- * Archivos soltados, incluidas carpetas. `dataTransfer.files` pierde la ruta;
- * las entradas del sistema la conservan. Si no hay entradas, valen los archivos.
+ * Dropped files and folders. Filesystem entries preserve paths lost by dataTransfer.files; fall
+ * back to files when entries are unavailable.
  */
 export async function readDroppedEntries(data: DataTransfer): Promise<IncomingFile[]> {
   const entries = [...data.items]
     .map((item) => {
-      const read = (item as DataTransferItem & { webkitGetAsEntry?: () => DroppedEntry | null }).webkitGetAsEntry;
+      const read = (item as DataTransferItem & { webkitGetAsEntry?: () => DroppedEntry | null })
+        .webkitGetAsEntry;
       return item.kind === "file" && read ? read.call(item) : null;
     })
     .filter((entry): entry is DroppedEntry => Boolean(entry));
@@ -90,17 +100,17 @@ export async function readDroppedEntries(data: DataTransfer): Promise<IncomingFi
 }
 
 /**
- * Archivos que llegan desde el equipo (arrastrar o «Subir archivo»): un `.md`
- * entra como nota; el resto se sube al servidor por partes y queda como
- * documento de tipo archivo. Al final se sincroniza para que el servidor
- * conozca la nota que apunta al archivo subido.
+ * Import Markdown as notes; upload other files in chunks as file documents. Synchronize
+ * afterward so the server knows the document referencing the uploaded object.
  */
 export async function ingestExternalFiles(
   files: FileList | Array<File | IncomingFile>,
   portfolioId: string | null,
   options?: { open?: boolean },
 ) {
-  const list = [...files].map((item) => asIncoming(item)).filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
+  const list = [...files]
+    .map((item) => asIncoming(item))
+    .filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
   if (list.length === 0) return;
   const vault = useVault.getState();
   if (portfolioId && vault.collapsed[portfolioId]) vault.toggleCollapsed(portfolioId);
@@ -119,7 +129,9 @@ export async function ingestExternalFiles(
     if (!ids.has(parentKey)) continue;
     const parentId = ids.get(parentKey) ?? null;
     const name = slash === -1 ? folder : folder.slice(slash + 1);
-    const existing = useVault.getState().portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name);
+    const existing = useVault
+      .getState()
+      .portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name);
     if (existing) {
       ids.set(folder, existing.id);
       continue;
@@ -146,11 +158,14 @@ export async function ingestExternalFiles(
     }
     try {
       const stored = await uploadVaultFile(file, { portfolioId: dest });
-      const result = useVault.getState().uploadFile(dest, file.name, file.type || "application/octet-stream", stored, open);
+      const result = useVault
+        .getState()
+        .uploadFile(dest, file.name, file.type || "application/octet-stream", stored, open);
       if (result) error = result;
       else uploaded = true;
     } catch (failure) {
-      error = failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
+      error =
+        failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
     }
   }
   useVault.getState().setSelectedPortfolio(portfolioId);
@@ -159,14 +174,16 @@ export async function ingestExternalFiles(
   if (error) useVault.getState().setDialog({ type: "upload-error", message: error });
 }
 
-/** «Nuevo dibujo»: un dibujo de Excalidraw vacío en `portfolioId`, que queda abierto. */
+/** Create and open an empty Excalidraw drawing in portfolioId. */
 export async function createDrawing(portfolioId: string | null): Promise<void> {
   const file = new File([emptyDrawing()], `${t("Dibujo")}.excalidraw`, { type: DRAWING_MIME });
   await ingestExternalFiles([file], portfolioId, { open: true });
 }
 
-/** «Nueva tabla»: una tabla de datos vacía en `portfolioId`, que queda abierta (ver `domain/vault/table.ts`). */
+/** Create and open an empty data table in portfolioId; see domain/vault/table.ts. */
 export async function createTable(portfolioId: string | null): Promise<void> {
-  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
+  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, {
+    type: TABLE_MIME,
+  });
   await ingestExternalFiles([file], portfolioId, { open: true });
 }

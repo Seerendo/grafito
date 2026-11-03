@@ -5,7 +5,7 @@ import { createToken, listTokens, revokeToken } from "@/server/api-tokens";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 
-/** Cuenta → API: tokens personales para la API REST. */
+/** Account personal REST API tokens. */
 
 async function owner(userId: string) {
   const sql = await requireLease(userId);

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { t } from "@/app/i18n";
 import { auditExport, auditPage, saveAuditRetention } from "@/server/audit.functions";
 
-/** Administración → Monitorización → Auditoría. */
+/** Administration audit monitoring. */
 
 type Row = {
   at: string;
@@ -233,7 +233,6 @@ export function AuditBoard() {
         </button>
         {notice ? <p className="pb-3 text-xs text-muted">{notice}</p> : null}
       </div>
-      <p className="text-xs text-muted">{t("Entre 7 y 3650 días. Lo más viejo se borra solo.")}</p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {rows.length === 0 && !error ? (
         <p className="text-sm text-muted">{t("Todavía no hay eventos.")}</p>

@@ -19,17 +19,16 @@ import { SignPdf } from "@signpdf/signpdf";
 import { P12Signer } from "@signpdf/signer-p12";
 import { boxToPdf, type SignatureBox } from "../domain/signature-box.ts";
 
-/** Hueco del PKCS#7. Una cadena larga cabe; si no, se rechaza el certificado. */
+/** Reserved PKCS#7 space; reject certificate chains that exceed it. */
 const SIGNATURE_LENGTH = 32_768;
 const BYTE_RANGE = "**********";
 const MAX_P12 = 2_000_000;
 const LABEL = "Firmado electrónicamente por:";
 
 /**
- * Firma el PDF con un certificado .p12 del firmante. La contraseña solo abre
- * el archivo en memoria: ni ella, ni el .p12, ni la clave privada se guardan.
- * El recuadro muestra un QR y el nombre. No es una firma cualificada ni un
- * sello de un prestador de confianza.
+ * Sign a PDF with the signer's .p12 in memory, retaining neither certificate, password nor
+ * private key. Render QR/name appearance. This is not a qualified trust-provider signature or
+ * seal.
  */
 
 export function decodeCertificate(raw: string): Uint8Array | "big" | null {
@@ -42,29 +41,48 @@ export function decodeCertificate(raw: string): Uint8Array | "big" | null {
   return new Uint8Array(bytes);
 }
 
-/** El PDF ya lleva un PKCS#7 con rango de bytes. Una reescritura lo invalidaría. */
+/** Existing byte-range PKCS#7 signatures would be invalidated by rewriting the PDF. */
 export function hasCertificateSignature(pdfBytes: Uint8Array): boolean {
-  return /\/ByteRange\s*\[\s*\d+\s+\d+\s+\d+\s+\d+\s*\]/.test(Buffer.from(pdfBytes).toString("latin1"));
+  return /\/ByteRange\s*\[\s*\d+\s+\d+\s+\d+\s+\d+\s*\]/.test(
+    Buffer.from(pdfBytes).toString("latin1"),
+  );
 }
 
-/** Mensaje para quien firma, sin repetir el detalle de la librería ni la contraseña. */
+/** Signer-facing error without library internals or password disclosure. */
 function certificateError(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
-  if (/password|MAC could not|Invalid password/i.test(message)) return "La contraseña del certificado no es correcta.";
-  if (/private key|clave para firmar/i.test(message)) return "Ese certificado no tiene una clave para firmar.";
-  if (/placeholder|too small|not large enough/i.test(message)) return "Ese certificado no cabe en la firma.";
-  if (message.startsWith("Ese ") || message.startsWith("La ") || message.startsWith("No se pudo") || message.startsWith("El recuadro")) return message;
+  if (/password|MAC could not|Invalid password/i.test(message))
+    return "La contraseña del certificado no es correcta.";
+  if (/private key|clave para firmar/i.test(message))
+    return "Ese certificado no tiene una clave para firmar.";
+  if (/placeholder|too small|not large enough/i.test(message))
+    return "Ese certificado no cabe en la firma.";
+  if (
+    message.startsWith("Ese ") ||
+    message.startsWith("La ") ||
+    message.startsWith("No se pudo") ||
+    message.startsWith("El recuadro")
+  )
+    return message;
   return "Ese archivo no es un certificado .p12.";
 }
 
 type OpenedCertificate = { name: string; fingerprint: string };
-type ForgeKey = { n?: { compareTo: (other: unknown) => number }; e?: { compareTo: (other: unknown) => number } };
-type ForgeCert = { subject: { getField: (name: string) => { value?: unknown } | null }; publicKey: ForgeKey };
+type ForgeKey = {
+  n?: { compareTo: (other: unknown) => number };
+  e?: { compareTo: (other: unknown) => number };
+};
+type ForgeCert = {
+  subject: { getField: (name: string) => { value?: unknown } | null };
+  publicKey: ForgeKey;
+};
 
-/** Abre el .p12 para comprobar la contraseña y leer el nombre. No devuelve la clave. */
+/** Open .p12 to verify password and read signer name without returning the private key. */
 function openCertificate(bytes: Uint8Array, password: string): OpenedCertificate {
   let p12: {
-    getBags(query: { bagType: string }): Record<string, Array<{ key?: unknown; cert?: unknown }> | undefined>;
+    getBags(query: {
+      bagType: string;
+    }): Record<string, Array<{ key?: unknown; cert?: unknown }> | undefined>;
   };
   try {
     const asn1 = forge.asn1.fromDer(forge.util.createBuffer(Buffer.from(bytes).toString("binary")));
@@ -75,7 +93,8 @@ function openCertificate(bytes: Uint8Array, password: string): OpenedCertificate
   const keyKind = forge.pki.oids.pkcs8ShroudedKeyBag;
   const keys = keyKind ? p12.getBags({ bagType: keyKind })[keyKind] : undefined;
   const privateKey = keys?.[0]?.key as ForgeKey | undefined;
-  if (!privateKey?.n || !privateKey.e) throw new Error("Ese certificado no tiene una clave para firmar.");
+  if (!privateKey?.n || !privateKey.e)
+    throw new Error("Ese certificado no tiene una clave para firmar.");
   const certKind = forge.pki.oids.certBag;
   const certs = certKind ? p12.getBags({ bagType: certKind })[certKind] : undefined;
   let matched: ForgeCert | undefined;
@@ -91,15 +110,20 @@ function openCertificate(bytes: Uint8Array, password: string): OpenedCertificate
   if (!matched) throw new Error("Ese certificado no tiene una clave para firmar.");
   const value = matched.subject.getField("CN")?.value;
   const name = typeof value === "string" ? value.trim() : "";
-  const der = Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(matched as never)).getBytes(), "binary");
+  const der = Buffer.from(
+    forge.asn1.toDer(forge.pki.certificateToAsn1(matched as never)).getBytes(),
+    "binary",
+  );
   return { name, fingerprint: createHash("sha256").update(der).digest("hex") };
 }
 
 function pdfText(text: string): PDFHexString | PDFString {
-  return [...text].some((character) => character.charCodeAt(0) > 127) ? PDFHexString.fromText(text) : PDFString.of(text);
+  return [...text].some((character) => character.charCodeAt(0) > 127)
+    ? PDFHexString.fromText(text)
+    : PDFString.of(text);
 }
 
-/** Helvetica no dibuja todo Unicode: lo que no cabe se omite. */
+/** Omit characters Helvetica cannot render. */
 function visibleName(name: string): string {
   const kept = [...name]
     .filter((character) => {
@@ -124,18 +148,28 @@ function encoded(font: PDFFont, text: string): string {
   try {
     return font.encodeText(text).toString();
   } catch {
-    const safe = [...text].filter((character) => character.charCodeAt(0) < 128).join("").trim() || "Firma";
+    const safe =
+      [...text]
+        .filter((character) => character.charCodeAt(0) < 128)
+        .join("")
+        .trim() || "Firma";
     return font.encodeText(safe).toString();
   }
 }
 
-function fitSize(font: PDFFont, text: string, width: number, preferred: number, minimum: number): number {
+function fitSize(
+  font: PDFFont,
+  text: string,
+  width: number,
+  preferred: number,
+  minimum: number,
+): number {
   let size = preferred;
   while (size > minimum && font.widthOfTextAtSize(text, size) > width) size -= 0.5;
   return size;
 }
 
-/** Módulos negros del QR, en el sistema de coordenadas de la apariencia. */
+/** QR dark modules in appearance coordinates. */
 function qrMarks(text: string, x: number, y: number, size: number): string {
   const code = QRCode.create(text, { errorCorrectionLevel: "M" });
   const modules = code.modules.size;
@@ -153,9 +187,8 @@ function qrMarks(text: string, x: number, y: number, size: number): string {
 }
 
 /**
- * Apariencia del recuadro: QR a la izquierda y el nombre a la derecha.
- * El QR repite el nombre, la hora y la huella del certificado. No es un
- * enlace a un prestador de confianza.
+ * Signature appearance uses QR on the left and name on the right. QR contains name, time and
+ * certificate fingerprint, not a trust-provider link.
  */
 function signatureAppearance(
   pdf: PDFDocument,
@@ -180,7 +213,11 @@ function signatureAppearance(
   const dateY = base;
   const nameY = dateY + dateSize + 2;
   const labelY = nameY + nameSize + 2;
-  const payload = [`Firmado electrónicamente por: ${certificate.name || "Firma"}`, `Fecha: ${clock}`, `Huella: ${certificate.fingerprint}`].join("\n");
+  const payload = [
+    `Firmado electrónicamente por: ${certificate.name || "Firma"}`,
+    `Fecha: ${clock}`,
+    `Huella: ${certificate.fingerprint}`,
+  ].join("\n");
   const content = [
     "q",
     "1 1 1 rg",
@@ -218,9 +255,8 @@ function signatureAppearance(
 type FieldLinks = { page: PDFRef; form: PDFRef; catalog: boolean; extra: PDFRef[] };
 
 /**
- * Deja el hueco de la firma en la página del recuadro. Adaptado de
- * `@signpdf/placeholder-pdf-lib` (MIT) para que cada persona tenga su propio
- * nombre de campo y la apariencia (QR y nombre) que muestra el lector.
+ * Reserve a page signature field. Adapted from MIT-licensed @signpdf/placeholder-pdf-lib for
+ * unique field names and custom QR/name appearance.
  */
 function addSignatureField(
   pdf: PDFDocument,
@@ -265,7 +301,7 @@ function addSignatureField(
     T: PDFString.of(fieldName),
     F: 4,
     P: page.ref,
-    // Sin esto el lector dibuja el borde por defecto (1 pt) alrededor de la firma.
+    // Suppress the reader's default one-point signature border.
     Border: [0, 0, 0],
     BS: { W: 0, S: PDFName.of("S") },
     AP: { N: appearance },
@@ -334,7 +370,9 @@ function revisionRefs(pdf: PDFDocument, before: Set<string>, links: FieldLinks):
 function previousStartxref(bytes: Buffer): number | null {
   const marker = bytes.lastIndexOf("startxref");
   if (marker < 0) return null;
-  const slice = bytes.subarray(marker + "startxref".length, marker + "startxref".length + 32).toString("latin1");
+  const slice = bytes
+    .subarray(marker + "startxref".length, marker + "startxref".length + 32)
+    .toString("latin1");
   const match = /(\d+)/.exec(slice);
   if (!match) return null;
   const position = Number(match[1]);
@@ -347,12 +385,16 @@ function serializeObject(object: PDFObject): Buffer {
   return Buffer.from(bytes);
 }
 
-/** Añade objetos al final. Los bytes ya firmados no se reescriben. */
+/** Append objects without rewriting already signed bytes. */
 function appendRevision(original: Buffer, pdf: PDFDocument, refs: PDFRef[]): Buffer {
   const previous = previousStartxref(original);
   const root = pdf.context.trailerInfo.Root;
-  if (previous == null || !(root instanceof PDFRef)) throw new Error("No se pudo estampar la firma en el PDF.");
-  let out = original[original.length - 1] === 0x0a ? original : Buffer.concat([original, Buffer.from("\n")]);
+  if (previous == null || !(root instanceof PDFRef))
+    throw new Error("No se pudo estampar la firma en el PDF.");
+  let out =
+    original[original.length - 1] === 0x0a
+      ? original
+      : Buffer.concat([original, Buffer.from("\n")]);
   const entries: { number: number; offset: number }[] = [];
   for (const ref of refs) {
     const object = pdf.context.lookup(ref);
@@ -369,7 +411,8 @@ function appendRevision(original: Buffer, pdf: PDFDocument, refs: PDFRef[]): Buf
   while (index < entries.length) {
     const start = entries[index]?.number ?? 0;
     let end = index;
-    while (end + 1 < entries.length && entries[end + 1].number === entries[end].number + 1) end += 1;
+    while (end + 1 < entries.length && entries[end + 1].number === entries[end].number + 1)
+      end += 1;
     xref += `${start} ${end - index + 1}\n`;
     for (let cursor = index; cursor <= end; cursor += 1) {
       xref += `${String(entries[cursor].offset).padStart(10, "0")} 00000 n \n`;
@@ -385,9 +428,8 @@ function appendRevision(original: Buffer, pdf: PDFDocument, refs: PDFRef[]): Buf
 }
 
 /**
- * Dibuja el QR y el nombre en el recuadro y firma el PDF con el .p12.
- * `password` no sale de esta función. Si el PDF ya tenía una firma, la nueva
- * se añade al final para que la anterior siga pudiendo comprobarse.
+ * Render appearance and sign with .p12. Password remains within this function. Append
+ * subsequent signatures incrementally to preserve prior verification.
  */
 export async function stampCertificate(
   pdfBytes: Uint8Array,
@@ -402,22 +444,40 @@ export async function stampCertificate(
   } catch {
     throw new Error("No se pudo estampar la firma en el PDF.");
   }
-  if (box.page < 1 || box.page > pdf.getPageCount()) throw new Error("El recuadro no cabe en la página.");
+  if (box.page < 1 || box.page > pdf.getPageCount())
+    throw new Error("El recuadro no cabe en la página.");
   const page = pdf.getPage(box.page - 1);
   if (!page) throw new Error("El recuadro no cabe en la página.");
   const crop = page.getCropBox();
   const placed = boxToPdf(box, crop.width, crop.height, page.getRotation().angle);
-  const rect = [crop.x + placed.x, crop.y + placed.y, crop.x + placed.x + placed.width, crop.y + placed.y + placed.height];
+  const rect = [
+    crop.x + placed.x,
+    crop.y + placed.y,
+    crop.x + placed.x + placed.width,
+    crop.y + placed.y + placed.height,
+  ];
   const when = new Date();
   const before = objectTags(pdf);
   let links: FieldLinks;
   try {
     const font = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-    const appearance = signatureAppearance(pdf, font, bold, placed.width, placed.height, certificate, when);
+    const appearance = signatureAppearance(
+      pdf,
+      font,
+      bold,
+      placed.width,
+      placed.height,
+      certificate,
+      when,
+    );
     links = addSignatureField(pdf, box.page - 1, rect, certificate.name, when, appearance);
   } catch (error) {
-    if (error instanceof Error && (error.message.startsWith("El recuadro") || error.message.startsWith("No se pudo"))) throw error;
+    if (
+      error instanceof Error &&
+      (error.message.startsWith("El recuadro") || error.message.startsWith("No se pudo"))
+    )
+      throw error;
     throw new Error("No se pudo estampar la firma en el PDF.");
   }
   let prepared: Buffer;

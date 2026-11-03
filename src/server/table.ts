@@ -27,19 +27,38 @@ import {
   type VaultRef,
 } from "@/domain/vault/table";
 import { computeFormulas, type FormulaValue } from "@/domain/vault/formula";
-import { endFormLink, noteAccess, readTrail, retireExpired, type AccessHit, type GrantPeriod } from "@/server/access-trace";
+import {
+  endFormLink,
+  noteAccess,
+  readTrail,
+  retireExpired,
+  type AccessHit,
+  type GrantPeriod,
+} from "@/server/access-trace";
 import type { Document, ManualLink } from "@/domain/vault/types";
 import { VaultError, nextRevision, pushChanges } from "./vault";
 
 /**
- * Datos de las tablas (solo servidor). Ver `migrations/0026_tables.sql` y
- * `domain/vault/table.ts`. Todo va por dueño (`ownerId`, el de la bóveda
- * donde está la tabla) y documento; quién puede leer o cambiar lo decide
- * `table.functions.ts`.
+ * Table persistence is scoped by vault owner and document. table.functions.ts enforces access;
+ * see migration 0026 and domain/vault/table.ts.
  */
 
-type FieldRow = { id: string; name: string; type: string; options: string; position: unknown; width: unknown };
-type DataRow = { id: string; position: unknown; cells: unknown; updated_at: unknown; updated_by: string; deleted?: unknown };
+type FieldRow = {
+  id: string;
+  name: string;
+  type: string;
+  options: string;
+  position: unknown;
+  width: unknown;
+};
+type DataRow = {
+  id: string;
+  position: unknown;
+  cells: unknown;
+  updated_at: unknown;
+  updated_by: string;
+  deleted?: unknown;
+};
 
 function flag(value: unknown): boolean {
   return value === true || value === "t" || value === 1;
@@ -48,18 +67,30 @@ function flag(value: unknown): boolean {
 function toField(row: FieldRow): TableField {
   let options: { choices?: unknown; tableId?: unknown; formula?: unknown } = {};
   try {
-    options = JSON.parse(row.options) as { choices?: unknown; tableId?: unknown; formula?: unknown };
+    options = JSON.parse(row.options) as {
+      choices?: unknown;
+      tableId?: unknown;
+      formula?: unknown;
+    };
   } catch {
-    /* sin opciones */
+    /* No choices. */
   }
-  const type = (FIELD_TYPES as readonly string[]).includes(row.type) ? (row.type as FieldType) : "text";
+  const type = (FIELD_TYPES as readonly string[]).includes(row.type)
+    ? (row.type as FieldType)
+    : "text";
   const formula = typeof options.formula === "string" ? options.formula.slice(0, 500) : "";
   return {
     id: row.id,
     name: row.name,
     type,
-    ...(Array.isArray(options.choices) ? { choices: options.choices.filter((choice): choice is string => typeof choice === "string") } : {}),
-    ...(typeof options.tableId === "string" && options.tableId ? { relatedTableId: options.tableId } : {}),
+    ...(Array.isArray(options.choices)
+      ? {
+          choices: options.choices.filter((choice): choice is string => typeof choice === "string"),
+        }
+      : {}),
+    ...(typeof options.tableId === "string" && options.tableId
+      ? { relatedTableId: options.tableId }
+      : {}),
     ...(type === "formula" ? { formula } : {}),
     position: Number(row.position),
     width: row.width === null || row.width === undefined ? null : Number(row.width),
@@ -67,8 +98,17 @@ function toField(row: FieldRow): TableField {
 }
 
 function toRow(row: DataRow): TableRow {
-  const cells = typeof row.cells === "string" ? (JSON.parse(row.cells) as Record<string, CellValue>) : ((row.cells ?? {}) as Record<string, CellValue>);
-  return { id: row.id, position: Number(row.position), cells, updatedAt: Number(row.updated_at), updatedBy: row.updated_by };
+  const cells =
+    typeof row.cells === "string"
+      ? (JSON.parse(row.cells) as Record<string, CellValue>)
+      : ((row.cells ?? {}) as Record<string, CellValue>);
+  return {
+    id: row.id,
+    position: Number(row.position),
+    cells,
+    updatedAt: Number(row.updated_at),
+    updatedBy: row.updated_by,
+  };
 }
 
 export async function readFields(sql: Sql, ownerId: string, docId: string): Promise<TableField[]> {
@@ -79,13 +119,20 @@ export async function readFields(sql: Sql, ownerId: string, docId: string): Prom
   return rows.map(toField);
 }
 
-/** Columnas y filas. Una tabla nueva no trae columnas: se añaden a mano. */
+/** Columns and rows; new tables start without columns. */
 export async function readTable(
   sql: Sql,
   ownerId: string,
   docId: string,
   _canCreate: boolean,
-): Promise<{ fields: TableField[]; rows: TableRow[]; labels: Record<string, string>; form: TableForm | null; layout: TableLayout; at: number }> {
+): Promise<{
+  fields: TableField[];
+  rows: TableRow[];
+  labels: Record<string, string>;
+  form: TableForm | null;
+  layout: TableLayout;
+  at: number;
+}> {
   const at = Date.now();
   const fields = await readFields(sql, ownerId, docId);
   const rows = await sql<DataRow>`
@@ -95,16 +142,29 @@ export async function readTable(
   `;
   const mapped = rows.map(toRow);
   await indexTable(sql, ownerId, docId);
-  return { fields, rows: mapped, at, labels: await relationLabels(sql, ownerId, fields, mapped), form: await readForm(sql, ownerId, docId), layout: await readLayout(sql, ownerId, docId) };
+  return {
+    fields,
+    rows: mapped,
+    at,
+    labels: await relationLabels(sql, ownerId, fields, mapped),
+    form: await readForm(sql, ownerId, docId),
+    layout: await readLayout(sql, ownerId, docId),
+  };
 }
 
-/** Lo que cambió desde `since` (también las filas borradas), para ver lo de los demás sin recargar. */
+/** Changes since a timestamp, including deleted rows, for incremental refresh. */
 export async function rowsSince(
   sql: Sql,
   ownerId: string,
   docId: string,
   since: number,
-): Promise<{ rows: TableRow[]; deleted: string[]; fields: TableField[]; labels: Record<string, string>; at: number }> {
+): Promise<{
+  rows: TableRow[];
+  deleted: string[];
+  fields: TableField[];
+  labels: Record<string, string>;
+  at: number;
+}> {
   const at = Date.now();
   const changed = await sql<DataRow>`
     select id, position, cells, updated_at, updated_by, deleted from data_row
@@ -130,25 +190,43 @@ export async function saveField(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const name = field.name.trim().slice(0, 120) || "Columna";
   const type = (FIELD_TYPES as readonly string[]).includes(field.type) ? field.type : "text";
-  const choices = type === "select" ? [...new Set((field.choices ?? []).map((choice) => choice.trim().slice(0, 120)).filter(Boolean))].slice(0, 100) : undefined;
-  const related = type === "relation" && field.relatedTableId ? field.relatedTableId.slice(0, 80) : undefined;
+  const choices =
+    type === "select"
+      ? [
+          ...new Set(
+            (field.choices ?? []).map((choice) => choice.trim().slice(0, 120)).filter(Boolean),
+          ),
+        ].slice(0, 100)
+      : undefined;
+  const related =
+    type === "relation" && field.relatedTableId ? field.relatedTableId.slice(0, 80) : undefined;
   const formula = type === "formula" ? (field.formula ?? "").trim().slice(0, 500) : undefined;
-  const options = JSON.stringify({ ...(choices ? { choices } : {}), ...(related ? { tableId: related } : {}), ...(formula ? { formula } : {}) });
+  const options = JSON.stringify({
+    ...(choices ? { choices } : {}),
+    ...(related ? { tableId: related } : {}),
+    ...(formula ? { formula } : {}),
+  });
   const existing = await sql<{ id: string; type: string }>`
     select id, type from data_field where owner_id = ${ownerId} and doc_id = ${docId}
   `;
   const current = existing.find((row) => row.id === field.id);
-  if (!current && existing.length >= MAX_FIELDS) return { ok: false, error: `Una tabla tiene como mucho ${MAX_FIELDS} columnas.` };
-  // Pasar a identificador solo si lo que ya hay no se repite.
+  if (!current && existing.length >= MAX_FIELDS)
+    return { ok: false, error: `Una tabla tiene como mucho ${MAX_FIELDS} columnas.` };
+  // Convert to identifier only when existing values are unique.
   if (current && current.type !== type && type === "identifier") {
     const repeated = duplicateIdentifier(await columnValues(sql, ownerId, docId, field.id));
-    if (repeated) return { ok: false, error: "Hay valores repetidos: no se puede usar como identificador." };
+    if (repeated)
+      return { ok: false, error: "Hay valores repetidos: no se puede usar como identificador." };
   }
   const position =
     field.position ??
-    (current ? undefined : (await sql<{ next: unknown }>`
+    (current
+      ? undefined
+      : (
+          await sql<{ next: unknown }>`
       select coalesce(max(position), -1) + 1 as next from data_field where owner_id = ${ownerId} and doc_id = ${docId}
-    `)[0]?.next);
+    `
+        )[0]?.next);
   await sql`
     insert into data_field (owner_id, doc_id, id, name, type, options, position, width)
     values (${ownerId}, ${docId}, ${field.id}, ${name}, ${type}, ${options},
@@ -157,15 +235,23 @@ export async function saveField(
       name = excluded.name, type = excluded.type, options = excluded.options,
       position = coalesce(${field.position ?? null}, data_field.position), width = excluded.width
   `;
-  // Cambió de tipo: los valores que ya no encajan se convierten o se vacían.
-  if (current && current.type !== type) await convertColumn(sql, ownerId, docId, field.id, type as FieldType);
-  const touchesLinks = (kind: string | undefined) => kind === "link" || kind === "file" || kind === "relation";
+  // Convert or clear values incompatible with a changed column type.
+  if (current && current.type !== type)
+    await convertColumn(sql, ownerId, docId, field.id, type as FieldType);
+  const touchesLinks = (kind: string | undefined) =>
+    kind === "link" || kind === "file" || kind === "relation";
   if (touchesLinks(current?.type) || touchesLinks(type)) await syncTableLinks(sql, ownerId, docId);
   await indexTable(sql, ownerId, docId);
   return { ok: true };
 }
 
-async function convertColumn(sql: Sql, ownerId: string, docId: string, fieldId: string, type: FieldType): Promise<void> {
+async function convertColumn(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  fieldId: string,
+  type: FieldType,
+): Promise<void> {
   const rows = await sql<{ id: string; value: unknown }>`
     select id, cells -> ${fieldId}::text as value from data_row
     where owner_id = ${ownerId} and doc_id = ${docId} and not deleted and cells ? ${fieldId}::text
@@ -187,8 +273,13 @@ function safeJson(text: string): unknown {
   }
 }
 
-/** Valores de una columna, para ver si un identificador ya está. */
-async function columnValues(sql: Sql, ownerId: string, docId: string, fieldId: string): Promise<unknown[]> {
+/** Column values used for identifier uniqueness checks. */
+async function columnValues(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  fieldId: string,
+): Promise<unknown[]> {
   const rows = await sql<{ value: unknown }>`
     select cells -> ${fieldId}::text as value from data_row
     where owner_id = ${ownerId} and doc_id = ${docId} and not deleted and cells ? ${fieldId}::text
@@ -196,7 +287,7 @@ async function columnValues(sql: Sql, ownerId: string, docId: string, fieldId: s
   return rows.map((row) => (typeof row.value === "string" ? safeJson(row.value) : row.value));
 }
 
-/** Si otra fila ya tiene ese identificador (los vacíos no cuentan). */
+/** Whether another row has the identifier; empty values do not collide. */
 async function identifierTaken(
   sql: Sql,
   ownerId: string,
@@ -218,18 +309,24 @@ async function identifierTaken(
   return false;
 }
 
-export async function deleteField(sql: Sql, ownerId: string, docId: string, fieldId: string): Promise<void> {
+export async function deleteField(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  fieldId: string,
+): Promise<void> {
   const field = (await readFields(sql, ownerId, docId)).find((item) => item.id === fieldId);
   await sql`delete from data_field where owner_id = ${ownerId} and doc_id = ${docId} and id = ${fieldId}`;
   await sql`
     update data_row set cells = cells - ${fieldId}::text, updated_at = ${Date.now()}
     where owner_id = ${ownerId} and doc_id = ${docId} and cells ? ${fieldId}::text
   `;
-  if (field?.type === "link" || field?.type === "file" || field?.type === "relation") await syncTableLinks(sql, ownerId, docId);
+  if (field?.type === "link" || field?.type === "file" || field?.type === "relation")
+    await syncTableLinks(sql, ownerId, docId);
   await indexTable(sql, ownerId, docId);
 }
 
-/** Filas nuevas al final (o con sus valores, al importar). Devuelve las creadas. */
+/** Append rows, optionally populated during import, and return created rows. */
 export async function addRows(
   sql: Sql,
   ownerId: string,
@@ -242,7 +339,8 @@ export async function addRows(
     select count(*) as count, coalesce(max(position), 0) as last from data_row
     where owner_id = ${ownerId} and doc_id = ${docId} and not deleted
   `;
-  if (Number(stats[0]?.count ?? 0) + input.length > MAX_ROWS) return { ok: false, error: `Una tabla tiene como mucho ${MAX_ROWS} filas.` };
+  if (Number(stats[0]?.count ?? 0) + input.length > MAX_ROWS)
+    return { ok: false, error: `Una tabla tiene como mucho ${MAX_ROWS} filas.` };
   for (const field of fields) {
     if (field.type !== "identifier") continue;
     const seen = new Set<string>();
@@ -274,9 +372,19 @@ export async function addRows(
       values (${ownerId}, ${docId}, ${id}, ${position}, ${JSON.stringify(cells)}::jsonb, ${now}, ${now}, ${actor})
     `;
     created.push({ id, position, cells, updatedAt: now, updatedBy: actor });
-    await rememberRow(sql, ownerId, docId, id, actor, "create", diffCells({}, cells), now + created.length);
+    await rememberRow(
+      sql,
+      ownerId,
+      docId,
+      id,
+      actor,
+      "create",
+      diffCells({}, cells),
+      now + created.length,
+    );
   }
-  if (fields.some((field) => field.type === "link" || field.type === "file")) await syncTableLinks(sql, ownerId, docId);
+  if (fields.some((field) => field.type === "link" || field.type === "file"))
+    await syncTableLinks(sql, ownerId, docId);
   await indexTable(sql, ownerId, docId);
   return { ok: true, rows: created };
 }
@@ -291,7 +399,7 @@ async function writeCell(
   actor: string | null,
   now: number,
 ): Promise<void> {
-  // Solo esa celda: lo que otra persona cambió en otras celdas de la fila se queda.
+  // Update only this cell so concurrent edits to other cells survive.
   if (value === null) {
     await sql`
       update data_row set cells = cells - ${fieldId}::text, updated_at = ${now}, updated_by = coalesce(${actor}, updated_by)
@@ -315,9 +423,14 @@ export async function updateCell(
 ): Promise<{ ok: true; row: TableRow } | { ok: false; error: string }> {
   const field = (await readFields(sql, ownerId, docId)).find((item) => item.id === input.fieldId);
   if (!field) return { ok: false, error: "Esa columna ya no existe." };
-  if (field.type === "formula") return { ok: false, error: "Una fórmula se cambia en la columna, no en la celda." };
+  if (field.type === "formula")
+    return { ok: false, error: "Una fórmula se cambia en la columna, no en la celda." };
   const value = cleanCell(field.type, input.value);
-  if (field.type === "identifier" && typeof value === "string" && (await identifierTaken(sql, ownerId, docId, field.id, identifierKey(value), input.rowId))) {
+  if (
+    field.type === "identifier" &&
+    typeof value === "string" &&
+    (await identifierTaken(sql, ownerId, docId, field.id, identifierKey(value), input.rowId))
+  ) {
     return { ok: false, error: "Ese identificador ya está en la tabla." };
   }
   const before = await sql<{ cells: unknown }>`
@@ -334,14 +447,29 @@ export async function updateCell(
   if (!rows[0]) return { ok: false, error: "Esa fila ya no existe." };
   const after = toRow(rows[0]);
   if (JSON.stringify(previous[input.fieldId] ?? null) !== JSON.stringify(value)) {
-    await rememberRow(sql, ownerId, docId, input.rowId, actor, "update", [{ fieldId: input.fieldId, from: previous[input.fieldId] ?? null, to: value }], now);
+    await rememberRow(
+      sql,
+      ownerId,
+      docId,
+      input.rowId,
+      actor,
+      "update",
+      [{ fieldId: input.fieldId, from: previous[input.fieldId] ?? null, to: value }],
+      now,
+    );
   }
   if (field.type === "link" || field.type === "file") await syncTableLinks(sql, ownerId, docId);
   await indexTable(sql, ownerId, docId);
   return { ok: true, row: after };
 }
 
-export async function deleteRows(sql: Sql, ownerId: string, docId: string, ids: string[], actor: string): Promise<void> {
+export async function deleteRows(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  ids: string[],
+  actor: string,
+): Promise<void> {
   const now = Date.now();
   for (const id of ids) {
     const existing = await sql<{ cells: unknown }>`
@@ -356,15 +484,14 @@ export async function deleteRows(sql: Sql, ownerId: string, docId: string, ids: 
     await rememberRow(sql, ownerId, docId, id, actor, "delete", diffCells(cells, {}), now);
   }
   const fields = await readFields(sql, ownerId, docId);
-  if (fields.some((field) => field.type === "link" || field.type === "file")) await syncTableLinks(sql, ownerId, docId);
+  if (fields.some((field) => field.type === "link" || field.type === "file"))
+    await syncTableLinks(sql, ownerId, docId);
   await indexTable(sql, ownerId, docId);
 }
 
 /**
- * Lo que las celdas de vínculo señalan, como vínculos manuales del documento
- * de la tabla: así aparece en el grafo y en las menciones de cada nota,
- * archivo o portafolio, sin nada aparte. Con revisión nueva, para que lo vean
- * los navegadores al sincronizar y el índice de lo compartido.
+ * Publish cell-derived links as table-document manual links for graph/mentions. Advance
+ * revision for client synchronization and shared-tree indexing.
  */
 export async function syncTableLinks(sql: Sql, ownerId: string, docId: string): Promise<void> {
   const fields = await readFields(sql, ownerId, docId);
@@ -380,16 +507,24 @@ export async function syncTableLinks(sql: Sql, ownerId: string, docId: string): 
       select cells from data_row where owner_id = ${ownerId} and doc_id = ${docId} and not deleted
     `;
     for (const row of rows) {
-      const cells = (typeof row.cells === "string" ? JSON.parse(row.cells) : row.cells) as Record<string, CellValue>;
+      const cells = (typeof row.cells === "string" ? JSON.parse(row.cells) : row.cells) as Record<
+        string,
+        CellValue
+      >;
       for (const field of linked) {
         const value = cells[field.id];
-        if (Array.isArray(value)) for (const ref of value) if (isVaultRef(ref)) refs.set(`${ref.kind}:${ref.id}`, ref);
+        if (Array.isArray(value))
+          for (const ref of value) if (isVaultRef(ref)) refs.set(`${ref.kind}:${ref.id}`, ref);
       }
     }
   }
   const derived: ManualLink[] = [...refs.values()]
     .filter((ref) => ref.id !== docId)
-    .map((ref) => ({ targetId: ref.id, kind: "referencia", ...(ref.kind === "portfolio" ? { target: "portfolio" as const } : {}) }));
+    .map((ref) => ({
+      targetId: ref.id,
+      kind: "referencia",
+      ...(ref.kind === "portfolio" ? { target: "portfolio" as const } : {}),
+    }));
   const current = await sql<{ links_json: string | null }>`
     select links_json from vault_doc where user_id = ${ownerId} and id = ${docId} limit 1
   `;
@@ -397,10 +532,13 @@ export async function syncTableLinks(sql: Sql, ownerId: string, docId: string): 
   const meta = await sql<{ derived_links: string }>`
     select derived_links from data_meta where owner_id = ${ownerId} and doc_id = ${docId} limit 1
   `;
-  const key = (link: ManualLink) => `${link.target ?? "doc"}:${link.targetId}:${link.kind}:${link.anchor ? JSON.stringify(link.anchor) : ""}`;
+  const key = (link: ManualLink) =>
+    `${link.target ?? "doc"}:${link.targetId}:${link.kind}:${link.anchor ? JSON.stringify(link.anchor) : ""}`;
   const before = new Set((safeJson(meta[0]?.derived_links ?? "[]") as ManualLink[]).map(key));
-  // Los puestos a mano se quedan; los que salían de las celdas se cambian por los de ahora.
-  const manual = (safeJson(current[0].links_json ?? "[]") as ManualLink[]).filter((link) => !before.has(key(link)));
+  // Preserve manually added links while replacing prior cell-derived links.
+  const manual = (safeJson(current[0].links_json ?? "[]") as ManualLink[]).filter(
+    (link) => !before.has(key(link)),
+  );
   const merged = [...new Map([...manual, ...derived].map((link) => [key(link), link])).values()];
   await sql`
     insert into data_meta (owner_id, doc_id, derived_links) values (${ownerId}, ${docId}, ${JSON.stringify(derived)})
@@ -416,8 +554,13 @@ function rowKey(ref: RowRef): string {
   return `${ref.tableId}:${ref.rowId}`;
 }
 
-/** Etiquetas de las filas que señalan las celdas de relación (la primera columna de texto). */
-export async function relationLabels(sql: Sql, ownerId: string, fields: TableField[], rows: TableRow[]): Promise<Record<string, string>> {
+/** Labels for related rows come from the first text column. */
+export async function relationLabels(
+  sql: Sql,
+  ownerId: string,
+  fields: TableField[],
+  rows: TableRow[],
+): Promise<Record<string, string>> {
   const wanted = new Map<string, Set<string>>();
   for (const field of fields) {
     if (field.type !== "relation") continue;
@@ -435,7 +578,9 @@ export async function relationLabels(sql: Sql, ownerId: string, fields: TableFie
   const labels: Record<string, string> = {};
   for (const [tableId, ids] of wanted) {
     const targetFields = await readFields(sql, ownerId, tableId);
-    const labelField = targetFields.find((field) => field.type === "text" || field.type === "select") ?? targetFields[0];
+    const labelField =
+      targetFields.find((field) => field.type === "text" || field.type === "select") ??
+      targetFields[0];
     const separator = "\u001f";
     const found = await sql<{ id: string; cells: unknown }>`
       select id, cells from data_row
@@ -443,7 +588,10 @@ export async function relationLabels(sql: Sql, ownerId: string, fields: TableFie
         and id = any(string_to_array(${[...ids].join(separator)}, ${separator}))
     `;
     for (const row of found) {
-      const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<string, CellValue>;
+      const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<
+        string,
+        CellValue
+      >;
       const raw = labelField ? cells?.[labelField.id] : null;
       const label = raw === null || raw === undefined || Array.isArray(raw) ? "" : String(raw);
       labels[rowKey({ tableId, rowId: row.id })] = label || "Fila";
@@ -452,7 +600,7 @@ export async function relationLabels(sql: Sql, ownerId: string, fields: TableFie
   return labels;
 }
 
-/** Filas de una tabla, para el selector de una relación (como mucho 200). */
+/** Up to two hundred rows for the relation picker. */
 export async function rowChoices(
   sql: Sql,
   ownerId: string,
@@ -460,7 +608,8 @@ export async function rowChoices(
   query: string,
 ): Promise<{ id: string; label: string }[]> {
   const fields = await readFields(sql, ownerId, tableId);
-  const labelField = fields.find((field) => field.type === "text" || field.type === "select") ?? fields[0];
+  const labelField =
+    fields.find((field) => field.type === "text" || field.type === "select") ?? fields[0];
   const rows = await sql<{ id: string; cells: unknown }>`
     select id, cells from data_row
     where owner_id = ${ownerId} and doc_id = ${tableId} and not deleted
@@ -469,7 +618,10 @@ export async function rowChoices(
   const needle = query.trim().toLowerCase();
   const choices: { id: string; label: string }[] = [];
   for (const row of rows) {
-    const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<string, CellValue>;
+    const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<
+      string,
+      CellValue
+    >;
     const raw = labelField ? cells?.[labelField.id] : null;
     const label = raw === null || raw === undefined || Array.isArray(raw) ? "" : String(raw);
     const text = label || "Fila";
@@ -480,7 +632,7 @@ export async function rowChoices(
   return choices;
 }
 
-/** Texto de las celdas, para la búsqueda de la bóveda y Elasticsearch. */
+/** Cell text for vault and Elasticsearch search. */
 export async function indexTable(sql: Sql, ownerId: string, docId: string): Promise<void> {
   const fields = await readFields(sql, ownerId, docId);
   const rows = await sql<{ cells: unknown }>`
@@ -490,11 +642,15 @@ export async function indexTable(sql: Sql, ownerId: string, docId: string): Prom
   `;
   const parts: string[] = [];
   for (const row of rows) {
-    const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<string, CellValue>;
+    const cells = (typeof row.cells === "string" ? safeJson(row.cells) : row.cells) as Record<
+      string,
+      CellValue
+    >;
     const computed = computeFormulas(fields, cells ?? {});
     for (const field of fields) {
       const value = field.type === "formula" ? computed.values[field.id] : cells?.[field.id];
-      if (value === null || value === undefined || Array.isArray(value) || value === false) continue;
+      if (value === null || value === undefined || Array.isArray(value) || value === false)
+        continue;
       const text = String(value).trim();
       if (text) parts.push(text);
     }
@@ -505,11 +661,11 @@ export async function indexTable(sql: Sql, ownerId: string, docId: string): Prom
     values (${ownerId}, ${docId}, '[]', ${search})
     on conflict (owner_id, doc_id) do update set search_text = excluded.search_text
   `;
-  // El proceso de fondo vuelve a armar el cuerpo (nota o archivo + celdas).
+  // Background indexing rebuilds the document/file-plus-cells body.
   await sql`delete from content_index where user_id = ${ownerId} and doc_id = ${docId}`;
 }
 
-/** Textos ya indexados, para la búsqueda del navegador (la barra y la paleta). */
+/** Previously indexed text for browser search and command palette. */
 export async function tableDigests(sql: Sql, ownerId: string): Promise<Record<string, string>> {
   const rows = await sql<{ doc_id: string; search_text: string }>`
     select m.doc_id, m.search_text from data_meta m
@@ -520,7 +676,11 @@ export async function tableDigests(sql: Sql, ownerId: string): Promise<Record<st
   return Object.fromEntries(rows.map((row) => [row.doc_id, row.search_text.slice(0, 4000)]));
 }
 
-export async function readForm(sql: Sql, ownerId: string, docId: string): Promise<TableForm | null> {
+export async function readForm(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+): Promise<TableForm | null> {
   const rows = await sql<{
     title: string;
     description: string;
@@ -547,7 +707,7 @@ export async function readForm(sql: Sql, ownerId: string, docId: string): Promis
         .slice(0, MAX_FIELDS);
     }
   } catch {
-    /* sin columnas */
+    /* No columns. */
   }
   const stamp = (value: unknown) => {
     const number = Number(value);
@@ -574,14 +734,15 @@ async function readInvites(sql: Sql, ownerId: string, docId: string): Promise<Fo
     order by granted_at
   `;
   return rows.flatMap((row) =>
-    row.kind === "user" || row.kind === "org" ? [{ kind: row.kind, subjectId: row.subject_id }] : [],
+    row.kind === "user" || row.kind === "org"
+      ? [{ kind: row.kind, subjectId: row.subject_id }]
+      : [],
   );
 }
 
 /**
- * Deja las invitaciones del formulario como se pidieron. El enlace de
- * invitación se crea la primera vez y no cambia, para que el correo siga
- * valiendo. Devuelve quién se añadió ahora (a esos se les escribe).
+ * Replace form invitations while preserving the stable invitation token. Return newly added
+ * recipients for notification.
  */
 export async function syncFormInvites(
   sql: Sql,
@@ -593,8 +754,12 @@ export async function syncFormInvites(
   if (!current) return null;
   const userIds = [...new Set(input.userIds.filter((id) => id && id !== ownerId))].slice(0, 200);
   const orgIds = [...new Set(input.orgIds.filter(Boolean))].slice(0, 200);
-  const hadUser = new Set(current.invites.filter((item) => item.kind === "user").map((item) => item.subjectId));
-  const hadOrg = new Set(current.invites.filter((item) => item.kind === "org").map((item) => item.subjectId));
+  const hadUser = new Set(
+    current.invites.filter((item) => item.kind === "user").map((item) => item.subjectId),
+  );
+  const hadOrg = new Set(
+    current.invites.filter((item) => item.kind === "org").map((item) => item.subjectId),
+  );
   const keepUser = new Set(userIds);
   const keepOrg = new Set(orgIds);
   for (const item of current.invites) {
@@ -643,12 +808,19 @@ export async function saveForm(
   sql: Sql,
   ownerId: string,
   docId: string,
-  input: { title: string; description: string; fields: { id: string; required: boolean }[]; publish: boolean; expiresAt?: number | null },
+  input: {
+    title: string;
+    description: string;
+    fields: { id: string; required: boolean }[];
+    publish: boolean;
+    expiresAt?: number | null;
+  },
   endedBy = "",
 ): Promise<{ ok: true; form: TableForm } | { ok: false; error: string }> {
   const known = new Set((await readFields(sql, ownerId, docId)).map((field) => field.id));
   const fields = input.fields.filter((field) => known.has(field.id)).slice(0, MAX_FIELDS);
-  if (fields.length === 0) return { ok: false, error: "El formulario necesita al menos una columna." };
+  if (fields.length === 0)
+    return { ok: false, error: "El formulario necesita al menos una columna." };
   const title = input.title.trim().slice(0, 160) || "Formulario";
   const description = input.description.trim().slice(0, MAX_FORM_TEXT);
   const current = await readForm(sql, ownerId, docId);
@@ -664,7 +836,14 @@ export async function saveForm(
       revokedAt = null;
     }
   } else if (token && current?.enabled) {
-    await endFormLink(sql, { ownerId, docId, title: current.title, grantedAt: openedAt, expiresAt: current.expiresAt ?? null, endedBy });
+    await endFormLink(sql, {
+      ownerId,
+      docId,
+      title: current.title,
+      grantedAt: openedAt,
+      expiresAt: current.expiresAt ?? null,
+      endedBy,
+    });
     token = null;
     revokedAt = now;
   }
@@ -680,8 +859,13 @@ export async function saveForm(
   return form ? { ok: true, form } : { ok: false, error: "No se pudo guardar el formulario." };
 }
 
-/** Deja el enlace del formulario inservible. */
-export async function revokeFormLink(sql: Sql, ownerId: string, docId: string, endedBy: string): Promise<TableForm | null> {
+/** Invalidate the form link. */
+export async function revokeFormLink(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  endedBy: string,
+): Promise<TableForm | null> {
   const current = await readForm(sql, ownerId, docId);
   if (!current?.publicToken) return null;
   await endFormLink(sql, {
@@ -726,7 +910,14 @@ export async function formActivity(
 
 async function formByToken(sql: Sql, token: string) {
   await retireExpired(sql);
-  const rows = await sql<{ owner_id: string; doc_id: string; title: string; description: string; fields: string; enabled: unknown }>`
+  const rows = await sql<{
+    owner_id: string;
+    doc_id: string;
+    title: string;
+    description: string;
+    fields: string;
+    enabled: unknown;
+  }>`
     select f.owner_id, f.doc_id, f.title, f.description, f.fields, f.enabled
     from data_form f
     join vault_doc d on d.user_id = f.owner_id and d.id = f.doc_id and not d.deleted
@@ -742,7 +933,9 @@ function formFields(raw: string, columns: TableField[], publicOnly: boolean): Fo
   try {
     const parsed = JSON.parse(raw) as { id?: unknown; required?: unknown }[];
     if (Array.isArray(parsed)) {
-      listed = parsed.filter((item) => item && typeof item.id === "string").map((item) => ({ id: item.id as string, required: Boolean(item.required) }));
+      listed = parsed
+        .filter((item) => item && typeof item.id === "string")
+        .map((item) => ({ id: item.id as string, required: Boolean(item.required) }));
     }
   } catch {
     listed = [];
@@ -769,13 +962,17 @@ function shownOnPublic(field: FormFieldView): boolean {
   return isPublicField(field.type) || field.type === "file";
 }
 
-/** Lo que ve quien abre el enlace, sin ninguna fila. */
+/** Public form view excludes rows. */
 export async function publicFormView(
   sql: Sql,
   token: string,
-): Promise<{ ok: true; title: string; description: string; fields: FormFieldView[] } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; title: string; description: string; fields: FormFieldView[] }
+  | { ok: false; error: string }
+> {
   const form = await formByToken(sql, token);
-  if (!form || !flag(form.enabled)) return { ok: false, error: "Este formulario no está disponible." };
+  if (!form || !flag(form.enabled))
+    return { ok: false, error: "Este formulario no está disponible." };
   await noteAccess(sql, {
     ownerId: form.owner_id,
     formDocId: form.doc_id,
@@ -783,26 +980,42 @@ export async function publicFormView(
     actorId: "view",
     actorName: "Alguien abrió el formulario",
   }).catch(() => undefined);
-  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  const fields = formFields(
+    form.fields,
+    await readFields(sql, form.owner_id, form.doc_id),
+    false,
+  ).filter(shownOnPublic);
   return { ok: true, title: form.title, description: form.description, fields };
 }
 
-/** Añade una fila desde el enlace público. No devuelve el resto de la tabla. */
+/** Add a row through a public link without returning the table. */
 export async function submitPublicForm(
   sql: Sql,
   token: string,
   cells: Record<string, unknown>,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const form = await formByToken(sql, token);
-  if (!form || !flag(form.enabled)) return { ok: false, error: "Este formulario no está disponible." };
-  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  if (!form || !flag(form.enabled))
+    return { ok: false, error: "Este formulario no está disponible." };
+  const fields = formFields(
+    form.fields,
+    await readFields(sql, form.owner_id, form.doc_id),
+    false,
+  ).filter(shownOnPublic);
   const clean: Record<string, unknown> = {};
   for (const field of fields) {
     const value = cleanCell(field.type, cells[field.id]);
-    if (field.required && (value === null || value === false)) return { ok: false, error: `Falta «${field.name}».` };
+    if (field.required && (value === null || value === false))
+      return { ok: false, error: `Falta «${field.name}».` };
     if (value !== null) clean[field.id] = value;
   }
-  const created = await addRows(sql, form.owner_id, form.doc_id, [{ cells: clean }], "Formulario público");
+  const created = await addRows(
+    sql,
+    form.owner_id,
+    form.doc_id,
+    [{ cells: clean }],
+    "Formulario público",
+  );
   if (created.ok) {
     await noteAccess(sql, {
       ownerId: form.owner_id,
@@ -815,10 +1028,7 @@ export async function submitPublicForm(
   return created.ok ? { ok: true } : created;
 }
 
-/**
- * Crea el archivo de un adjunto ya subido (su clave) como documento de la
- * bóveda, en el mismo portafolio que la tabla, y devuelve su id.
- */
+/** Create a vault document for an uploaded attachment in the table's portfolio and return its ID. */
 export async function attachFile(
   sql: Sql,
   ownerId: string,
@@ -827,22 +1037,39 @@ export async function attachFile(
 ): Promise<{ ok: true; id: string; title: string } | { ok: false; error: string }> {
   const { ownsKey } = await import("./files");
   const { checkSpace } = await import("./space");
-  if (!ownsKey(ownerId, input.key)) return { ok: false, error: "Ese archivo no es de esta bóveda." };
+  if (!ownsKey(ownerId, input.key))
+    return { ok: false, error: "Ese archivo no es de esta bóveda." };
   const docs = await sql<{ portfolio_id: string | null; title: string }>`
     select portfolio_id, title from vault_doc where user_id = ${ownerId} and id = ${docId} and not deleted limit 1
   `;
   if (!docs[0]) return { ok: false, error: "Esa tabla ya no existe." };
-  const full = await checkSpace(sql, { ownerId, portfolioId: docs[0].portfolio_id, uploaderId: ownerId, bytes: input.size });
+  const full = await checkSpace(sql, {
+    ownerId,
+    portfolioId: docs[0].portfolio_id,
+    uploaderId: ownerId,
+    bytes: input.size,
+  });
   if (full) return { ok: false, error: full };
   const now = Date.now();
-  const base = input.name.replace(/\.[^.]+$/, "").trim().slice(0, 200) || input.name.slice(0, 200) || "Archivo";
+  const base =
+    input.name
+      .replace(/\.[^.]+$/, "")
+      .trim()
+      .slice(0, 200) ||
+    input.name.slice(0, 200) ||
+    "Archivo";
   const file: Document = {
     id: randomUUID(),
     title: base,
     portfolioId: docs[0].portfolio_id,
     kind: "file",
     content: "",
-    file: { name: input.name.slice(0, 200), mime: input.mime.slice(0, 120) || "application/octet-stream", key: input.key, size: input.size },
+    file: {
+      name: input.name.slice(0, 200),
+      mime: input.mime.slice(0, 120) || "application/octet-stream",
+      key: input.key,
+      size: input.size,
+    },
     links: [],
     pinned: false,
     createdAt: now,
@@ -850,11 +1077,16 @@ export async function attachFile(
     createdBy: input.actor,
     updatedBy: input.actor,
   };
-  await pushChanges(sql, ownerId, { docs: [file], deletedDocs: [], portfolios: [], deletedPortfolios: [] });
+  await pushChanges(sql, ownerId, {
+    docs: [file],
+    deletedDocs: [],
+    portfolios: [],
+    deletedPortfolios: [],
+  });
   return { ok: true, id: file.id, title: file.title };
 }
 
-/** Filas para la IA: columnas por nombre, como mucho `limit`. */
+/** AI rows keyed by column names, bounded by limit. */
 export async function queryRows(
   sql: Sql,
   ownerId: string,
@@ -877,7 +1109,10 @@ export async function queryRows(
     const computed = computeFormulas(fields, row.cells);
     for (const field of fields) {
       const value = field.type === "formula" ? computed.values[field.id] : row.cells[field.id];
-      const text = value === null || value === undefined || Array.isArray(value) || value === false ? "" : String(value);
+      const text =
+        value === null || value === undefined || Array.isArray(value) || value === false
+          ? ""
+          : String(value);
       record[field.name] = text;
       if (text) blob.push(text);
     }
@@ -888,7 +1123,7 @@ export async function queryRows(
   return { fields: fields.map((field) => field.name), rows: matched };
 }
 
-/** Una fila nueva a partir de valores nombrados por columna (la IA y los formularios internos). */
+/** Create a row from named columns for AI and internal forms. */
 export async function addNamedRow(
   sql: Sql,
   ownerId: string,
@@ -900,7 +1135,9 @@ export async function addNamedRow(
   if (fields.length === 0) return { ok: false, error: "Esa tabla no tiene columnas." };
   const cells: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(named)) {
-    const field = fields.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase() || item.id === name);
+    const field = fields.find(
+      (item) => item.name.trim().toLowerCase() === name.trim().toLowerCase() || item.id === name,
+    );
     if (field) cells[field.id] = value;
   }
   const created = await addRows(sql, ownerId, docId, [{ cells }], actor);
@@ -909,23 +1146,26 @@ export async function addNamedRow(
   return row ? { ok: true, row } : { ok: false, error: "No se pudo añadir la fila." };
 }
 
-/** Adjunto de un formulario público: el archivo entra en la bóveda del dueño. */
+/** Public form attachments enter the owner's vault. */
 export async function attachPublicFile(
   sql: Sql,
   token: string,
   input: { name: string; mime: string; base64: string },
 ): Promise<{ ok: true; id: string; title: string } | { ok: false; error: string }> {
   const form = await formByToken(sql, token);
-  if (!form || !flag(form.enabled)) return { ok: false, error: "Este formulario no está disponible." };
+  if (!form || !flag(form.enabled))
+    return { ok: false, error: "Este formulario no está disponible." };
   const columns = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false);
-  if (!columns.some((field) => field.type === "file")) return { ok: false, error: "Este formulario no admite archivos." };
+  if (!columns.some((field) => field.type === "file"))
+    return { ok: false, error: "Este formulario no admite archivos." };
   let bytes: Buffer;
   try {
     bytes = Buffer.from(input.base64, "base64");
   } catch {
     return { ok: false, error: "El archivo no se pudo leer." };
   }
-  if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return { ok: false, error: "El archivo debe pesar entre 1 byte y 6 MB." };
+  if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024)
+    return { ok: false, error: "El archivo debe pesar entre 1 byte y 6 MB." };
   const { newFileKey } = await import("./files");
   const { putBlob } = await import("./blobs");
   const key = newFileKey(form.owner_id);
@@ -939,7 +1179,13 @@ export async function attachPublicFile(
   });
 }
 
-type InviteFormRow = { owner_id: string; doc_id: string; title: string; description: string; fields: string };
+type InviteFormRow = {
+  owner_id: string;
+  doc_id: string;
+  title: string;
+  description: string;
+  fields: string;
+};
 
 async function formByInvite(sql: Sql, token: string): Promise<InviteFormRow | null> {
   const rows = await sql<InviteFormRow>`
@@ -952,8 +1198,13 @@ async function formByInvite(sql: Sql, token: string): Promise<InviteFormRow | nu
   return rows[0] ?? null;
 }
 
-/** Invitado directo, o miembro de una organización invitada o de una hija suya. */
-async function userInvited(sql: Sql, ownerId: string, docId: string, userId: string): Promise<boolean> {
+/** Direct invitee or member of an invited organization or descendant. */
+async function userInvited(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  userId: string,
+): Promise<boolean> {
   const rows = await sql<{ ok: number }>`
     with recursive mine(id) as (
       select o.id from app_org o
@@ -974,15 +1225,19 @@ async function userInvited(sql: Sql, ownerId: string, docId: string, userId: str
   return Boolean(rows[0]);
 }
 
-/** Lo que ve quien fue invitado: las preguntas, no la tabla. */
+/** Invited form view exposes questions, not table data. */
 export async function invitedFormView(
   sql: Sql,
   token: string,
   userId: string,
-): Promise<{ ok: true; title: string; description: string; fields: FormFieldView[] } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; title: string; description: string; fields: FormFieldView[] }
+  | { ok: false; error: string }
+> {
   const form = await formByInvite(sql, token);
   if (!form) return { ok: false, error: "Este formulario no está disponible." };
-  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId)))
+    return { ok: false, error: "No tienes invitación a este formulario." };
   await noteAccess(sql, {
     ownerId: form.owner_id,
     formDocId: form.doc_id,
@@ -990,11 +1245,15 @@ export async function invitedFormView(
     actorId: userId,
     actorName: "",
   }).catch(() => undefined);
-  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  const fields = formFields(
+    form.fields,
+    await readFields(sql, form.owner_id, form.doc_id),
+    false,
+  ).filter(shownOnPublic);
   return { ok: true, title: form.title, description: form.description, fields };
 }
 
-/** Añade una fila desde el formulario que le llegó por correo. */
+/** Add a row from an emailed invitation form. */
 export async function submitInvitedForm(
   sql: Sql,
   token: string,
@@ -1004,12 +1263,18 @@ export async function submitInvitedForm(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const form = await formByInvite(sql, token);
   if (!form) return { ok: false, error: "Este formulario no está disponible." };
-  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
-  const fields = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false).filter(shownOnPublic);
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId)))
+    return { ok: false, error: "No tienes invitación a este formulario." };
+  const fields = formFields(
+    form.fields,
+    await readFields(sql, form.owner_id, form.doc_id),
+    false,
+  ).filter(shownOnPublic);
   const clean: Record<string, unknown> = {};
   for (const field of fields) {
     const value = cleanCell(field.type, cells[field.id]);
-    if (field.required && (value === null || value === false)) return { ok: false, error: `Falta «${field.name}».` };
+    if (field.required && (value === null || value === false))
+      return { ok: false, error: `Falta «${field.name}».` };
     if (value !== null) clean[field.id] = value;
   }
   const created = await addRows(sql, form.owner_id, form.doc_id, [{ cells: clean }], actor);
@@ -1025,7 +1290,7 @@ export async function submitInvitedForm(
   return created.ok ? { ok: true } : created;
 }
 
-/** Adjunto de un formulario invitado: entra en la bóveda del dueño de la tabla. */
+/** Invited-form attachments enter the table owner's vault. */
 export async function attachInvitedFile(
   sql: Sql,
   token: string,
@@ -1035,16 +1300,19 @@ export async function attachInvitedFile(
 ): Promise<{ ok: true; id: string; title: string } | { ok: false; error: string }> {
   const form = await formByInvite(sql, token);
   if (!form) return { ok: false, error: "Este formulario no está disponible." };
-  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId))) return { ok: false, error: "No tienes invitación a este formulario." };
+  if (!(await userInvited(sql, form.owner_id, form.doc_id, userId)))
+    return { ok: false, error: "No tienes invitación a este formulario." };
   const columns = formFields(form.fields, await readFields(sql, form.owner_id, form.doc_id), false);
-  if (!columns.some((field) => field.type === "file")) return { ok: false, error: "Este formulario no admite archivos." };
+  if (!columns.some((field) => field.type === "file"))
+    return { ok: false, error: "Este formulario no admite archivos." };
   let bytes: Buffer;
   try {
     bytes = Buffer.from(input.base64, "base64");
   } catch {
     return { ok: false, error: "El archivo no se pudo leer." };
   }
-  if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return { ok: false, error: "El archivo debe pesar entre 1 byte y 6 MB." };
+  if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024)
+    return { ok: false, error: "El archivo debe pesar entre 1 byte y 6 MB." };
   const { newFileKey } = await import("./files");
   const { putBlob } = await import("./blobs");
   const key = newFileKey(form.owner_id);
@@ -1058,8 +1326,7 @@ export async function attachInvitedFile(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Fase 3: vista, historial y lo que usa la API REST.
+// Phase three: layouts, history and REST API support.
 
 const MAX_HISTORY = 40;
 
@@ -1075,10 +1342,15 @@ export type HistoryEntry = {
 
 function cellMap(raw: unknown): Record<string, CellValue> {
   const cells = typeof raw === "string" ? safeJson(raw) : raw;
-  return cells && typeof cells === "object" && !Array.isArray(cells) ? (cells as Record<string, CellValue>) : {};
+  return cells && typeof cells === "object" && !Array.isArray(cells)
+    ? (cells as Record<string, CellValue>)
+    : {};
 }
 
-function diffCells(before: Record<string, CellValue>, after: Record<string, CellValue>): StoredChange[] {
+function diffCells(
+  before: Record<string, CellValue>,
+  after: Record<string, CellValue>,
+): StoredChange[] {
   const ids = new Set([...Object.keys(before), ...Object.keys(after)]);
   const changes: StoredChange[] = [];
   for (const fieldId of ids) {
@@ -1097,7 +1369,7 @@ function historyText(value: CellValue): string {
   return String(value);
 }
 
-/** Deja constancia de un cambio de fila y se queda con las últimas `MAX_HISTORY`. */
+/** Record a row change and retain the latest MAX_HISTORY entries. */
 async function rememberRow(
   sql: Sql,
   ownerId: string,
@@ -1149,19 +1421,38 @@ export async function saveLayout(
   return { ok: true, layout };
 }
 
-/** Los últimos cambios de una fila, del más reciente al más antiguo. */
-export async function rowHistory(sql: Sql, ownerId: string, docId: string, rowId: string): Promise<HistoryEntry[]> {
+/** Recent row changes, newest first. */
+export async function rowHistory(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+  rowId: string,
+): Promise<HistoryEntry[]> {
   const fields = await readFields(sql, ownerId, docId);
-  const rows = await sql<{ id: string; at: unknown; actor: string; kind: string; changes: unknown }>`
+  const rows = await sql<{
+    id: string;
+    at: unknown;
+    actor: string;
+    kind: string;
+    changes: unknown;
+  }>`
     select id, at, actor, kind, changes from data_row_history
     where owner_id = ${ownerId} and doc_id = ${docId} and row_id = ${rowId}
     order by at desc limit ${MAX_HISTORY}
   `;
   return rows.map((row) => {
-    const raw = (typeof row.changes === "string" ? safeJson(row.changes) : row.changes) as { fieldId?: string; from?: CellValue; to?: CellValue }[];
+    const raw = (typeof row.changes === "string" ? safeJson(row.changes) : row.changes) as {
+      fieldId?: string;
+      from?: CellValue;
+      to?: CellValue;
+    }[];
     const changes = (Array.isArray(raw) ? raw : []).map((change) => {
       const field = fields.find((item) => item.id === change.fieldId);
-      return { field: field?.name ?? "Columna", from: historyText(change.from ?? null), to: historyText(change.to ?? null) };
+      return {
+        field: field?.name ?? "Columna",
+        from: historyText(change.from ?? null),
+        to: historyText(change.to ?? null),
+      };
     });
     const kind = row.kind === "create" || row.kind === "delete" ? row.kind : "update";
     return { id: row.id, at: Number(row.at), actor: row.actor, kind, changes };
@@ -1180,7 +1471,7 @@ export function presentField(field: TableField) {
   };
 }
 
-/** Una fila como la ve la API: celdas por nombre de columna y fórmulas ya calculadas. */
+/** API row with cells keyed by column name and evaluated formulas. */
 export function presentRow(fields: TableField[], row: TableRow) {
   const computed = computeFormulas(fields, row.cells);
   const cells: Record<string, CellValue> = {};
@@ -1200,16 +1491,30 @@ export async function listTables(
   sql: Sql,
   userId: string,
 ): Promise<{ id: string; title: string; portfolioId: string | null; updatedAt: number }[]> {
-  const rows = await sql<{ id: string; title: string; portfolio_id: string | null; updated_at: unknown }>`
+  const rows = await sql<{
+    id: string;
+    title: string;
+    portfolio_id: string | null;
+    updated_at: unknown;
+  }>`
     select id, title, portfolio_id, updated_at from vault_doc
     where user_id = ${userId} and not deleted and kind = 'file' and file_name ilike '%.tabla'
     order by updated_at desc limit 500
   `;
-  return rows.map((row) => ({ id: row.id, title: row.title, portfolioId: row.portfolio_id, updatedAt: Number(row.updated_at) }));
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    portfolioId: row.portfolio_id,
+    updatedAt: Number(row.updated_at),
+  }));
 }
 
-/** El documento, si es una tabla de este dueño. */
-export async function tableDocument(sql: Sql, userId: string, docId: string): Promise<{ title: string } | null> {
+/** Return the document only if it is this owner's table. */
+export async function tableDocument(
+  sql: Sql,
+  userId: string,
+  docId: string,
+): Promise<{ title: string } | null> {
   const rows = await sql<{ title: string; file_name: string | null }>`
     select title, file_name from vault_doc where user_id = ${userId} and id = ${docId} and not deleted limit 1
   `;
@@ -1217,7 +1522,7 @@ export async function tableDocument(sql: Sql, userId: string, docId: string): Pr
   return { title: rows[0].title };
 }
 
-/** Crea el archivo `.tabla` en la bóveda. Las columnas nacen al leerla. */
+/** Create the .tabla vault file; columns initialize when read. */
 export async function createTable(
   sql: Sql,
   userId: string,
@@ -1229,10 +1534,21 @@ export async function createTable(
     `;
     if (!found[0]) throw new VaultError("Ese portafolio no existe.", 404);
   }
-  const title = input.title.trim().replace(/\.tabla$/i, "").replace(/[\\/]/g, " ").replace(/\s+/g, " ").slice(0, 180) || "Tabla";
+  const title =
+    input.title
+      .trim()
+      .replace(/\.tabla$/i, "")
+      .replace(/[\\/]/g, " ")
+      .replace(/\s+/g, " ")
+      .slice(0, 180) || "Tabla";
   const bytes = Buffer.from(emptyTableFile(), "utf8");
   const { checkSpace } = await import("./space");
-  const full = await checkSpace(sql, { ownerId: userId, portfolioId: input.portfolioId, uploaderId: userId, bytes: bytes.byteLength });
+  const full = await checkSpace(sql, {
+    ownerId: userId,
+    portfolioId: input.portfolioId,
+    uploaderId: userId,
+    bytes: bytes.byteLength,
+  });
   if (full) throw new VaultError(full, 413);
   const { newFileKey } = await import("./files");
   const { putBlob } = await import("./blobs");
@@ -1253,11 +1569,16 @@ export async function createTable(
     createdBy: input.actor,
     updatedBy: input.actor,
   };
-  await pushChanges(sql, userId, { docs: [doc], deletedDocs: [], portfolios: [], deletedPortfolios: [] });
+  await pushChanges(sql, userId, {
+    docs: [doc],
+    deletedDocs: [],
+    portfolios: [],
+    deletedPortfolios: [],
+  });
   return { id: doc.id, title };
 }
 
-/** Cambia celdas nombradas por columna. Las fórmulas se rechazan. */
+/** Update cells by column name; reject formula writes. */
 export async function patchNamedCells(
   sql: Sql,
   ownerId: string,
@@ -1271,7 +1592,9 @@ export async function patchNamedCells(
   if (names.length === 0) return { ok: false, error: "Nada que cambiar." };
   let last: TableRow | null = null;
   for (const [name, value] of names) {
-    const field = fields.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase() || item.id === name);
+    const field = fields.find(
+      (item) => item.name.trim().toLowerCase() === name.trim().toLowerCase() || item.id === name,
+    );
     if (!field) return { ok: false, error: `No existe la columna «${name}».` };
     if (field.type === "formula") return { ok: false, error: `«${field.name}» es una fórmula.` };
     const saved = await updateCell(sql, ownerId, docId, { rowId, fieldId: field.id, value }, actor);
@@ -1280,5 +1603,3 @@ export async function patchNamedCells(
   }
   return last ? { ok: true, row: last } : { ok: false, error: "Esa fila ya no existe." };
 }
-
-

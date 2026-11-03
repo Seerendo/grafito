@@ -7,9 +7,8 @@ import { recordAudit, requestIp } from "@/server/audit";
 import { readUserProfile } from "@/server/profile";
 
 /**
- * Quién llama a WebDAV (solo servidor). En este orden: Basic (usuario y
- * contraseña, o un token personal en la contraseña), Bearer `gft_…`, o la
- * sesión del navegador. Comprobar la contraseña no abre una sesión.
+ * WebDAV authentication tries Basic password/personal token, gft_ bearer, then browser session.
+ * Password verification does not create a session.
  */
 
 const failures = new Map<string, number[]>();
@@ -70,7 +69,7 @@ async function passwordMatches(sql: Sql, userId: string, password: string): Prom
 
 async function callerFor(sql: Sql, userId: string): Promise<ApiCaller | Response> {
   const profile = await readUserProfile(sql, userId);
-  // Contraseña inicial o la temporal del correo: primero hay que cambiarla en la web.
+  // Initial or temporary passwords must be changed through the web interface first.
   if (profile.mustChangePassword) {
     return new Response("Cambia la contraseña antes de usar WebDAV.", {
       status: 403,

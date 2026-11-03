@@ -45,8 +45,7 @@ export function createSeed(): {
   mode: ViewMode;
 } {
   const portfolios: Portfolio[] = [
-    // Las notas de ejemplo cuelgan de un único portafolio raíz, para que la
-    // bóveda de cada persona empiece ordenada y su propio trabajo quede aparte.
+    // Group sample notes under one root portfolio so new vaults stay organized and personal work remains separate.
     { id: SAMPLE_ROOT_ID, name: SAMPLE_ROOT_NAME, parentId: null },
     { id: "p-inicio", name: "Inicio", parentId: SAMPLE_ROOT_ID },
     { id: "p-atlas", name: "Atlas", parentId: SAMPLE_ROOT_ID },

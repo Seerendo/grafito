@@ -12,9 +12,8 @@ export type ContentHit = {
 };
 
 /**
- * Consulta el índice de contenido mientras se escribe. Menos de dos caracteres
- * no llama al servidor. El resultado llega un instante después, sin frenar
- * el tecleo.
+ * Debounced content-index search while typing. Queries shorter than two characters do not
+ * contact the server.
  */
 export function useContentSearch(query: string): ContentHit[] {
   const [hits, setHits] = useState<ContentHit[]>([]);

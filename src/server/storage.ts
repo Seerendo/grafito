@@ -9,7 +9,9 @@ export async function probeBucket(): Promise<{ ok: boolean; detail: string }> {
     };
   }
   try {
-    const response = await fetch(`${storage.endpoint}/minio/health/live`, { signal: AbortSignal.timeout(1500) });
+    const response = await fetch(`${storage.endpoint}/minio/health/live`, {
+      signal: AbortSignal.timeout(1500),
+    });
     if (!response.ok) return { ok: false, detail: `El bucket respondió ${response.status}.` };
     return { ok: true, detail: `MinIO listo. Cubo «${storage.bucket}».` };
   } catch {
@@ -32,11 +34,17 @@ function sumMetric(text: string, name: string): number | null {
   return found ? total : null;
 }
 
-export async function minioSpace(): Promise<{ total: number; available: number; used: number } | null> {
+export async function minioSpace(): Promise<{
+  total: number;
+  available: number;
+  used: number;
+} | null> {
   const storage = objectStorageEnv();
   if (!storage) return null;
   try {
-    const metrics = await fetch(`${storage.endpoint}/minio/v2/metrics/cluster`, { signal: AbortSignal.timeout(1500) });
+    const metrics = await fetch(`${storage.endpoint}/minio/v2/metrics/cluster`, {
+      signal: AbortSignal.timeout(1500),
+    });
     if (metrics.ok) {
       const text = await metrics.text();
       const total = sumMetric(text, "minio_cluster_capacity_usable_total_bytes");
@@ -65,11 +73,17 @@ async function minioAdminDisk(
   const region = storage.region || "us-east-1";
   const canonicalHeaders = `host:${url.host}\nx-amz-content-sha256:${EMPTY_HASH}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
-  const canonical = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, EMPTY_HASH].join("\n");
+  const canonical = ["GET", url.pathname, "", canonicalHeaders, signedHeaders, EMPTY_HASH].join(
+    "\n",
+  );
   const scope = `${day}/${region}/s3/aws4_request`;
   const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${createHash("sha256").update(canonical).digest("hex")}`;
-  const hmac = (key: Buffer | string, value: string) => createHmac("sha256", key).update(value).digest();
-  const signing = hmac(hmac(hmac(hmac(`AWS4${storage.secretKey}`, day), region), "s3"), "aws4_request");
+  const hmac = (key: Buffer | string, value: string) =>
+    createHmac("sha256", key).update(value).digest();
+  const signing = hmac(
+    hmac(hmac(hmac(`AWS4${storage.secretKey}`, day), region), "s3"),
+    "aws4_request",
+  );
   const signature = createHmac("sha256", signing).update(stringToSign).digest("hex");
   const response = await fetch(url, {
     headers: {

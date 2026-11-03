@@ -9,16 +9,16 @@ type Unit = keyof typeof UNIT;
 
 function split(bytes: number | null): { amount: string; unit: Unit } {
   if (bytes === null) return { amount: "", unit: "GB" };
-  if (bytes >= TB && bytes % (TB / 10) === 0) return { amount: String(Math.round((bytes / TB) * 10) / 10), unit: "TB" };
-  if (bytes >= GB && bytes % (GB / 10) === 0) return { amount: String(Math.round((bytes / GB) * 10) / 10), unit: "GB" };
+  if (bytes >= TB && bytes % (TB / 10) === 0)
+    return { amount: String(Math.round((bytes / TB) * 10) / 10), unit: "TB" };
+  if (bytes >= GB && bytes % (GB / 10) === 0)
+    return { amount: String(Math.round((bytes / GB) * 10) / 10), unit: "GB" };
   return { amount: String(Math.round(bytes / MB)), unit: "MB" };
 }
 
 /**
- * Un tope de espacio: cantidad y unidad (MB, GB o TB). Vacío es «sin tope». Se
- * guarda al pulsar Enter o al salir del campo, si cambió; `onSave` devuelve el
- * error a mostrar, o `null`. Queda alineado al final de su celda, como piden
- * las tablas de espacio.
+ * Storage limit amount and unit (MB, GB or TB). Empty means unlimited. Save changed values on
+ * Enter or blur; onSave returns an error or null. Align at the cell end.
  */
 export function SizeField({
   value,

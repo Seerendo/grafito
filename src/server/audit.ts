@@ -2,9 +2,8 @@ import type { Sql } from "@/lib/db";
 import { clampRetentionDays } from "@/domain/audit-export";
 
 /**
- * Auditoría (solo servidor). Cada fila dice quién, qué, si salió bien y sobre
- * qué. El registro corto (`app_log`) se sigue escribiendo en los cambios de
- * administración, para la pantalla de logs que ya existía.
+ * Structured server audit records actor, action, outcome and target. Administration changes
+ * also retain the existing short app_log.
  */
 
 export type AuditInput = {
@@ -32,7 +31,7 @@ export function requestIp(request: Request): string {
   return first.slice(0, 80);
 }
 
-/** Anota un hecho. No guarda contraseñas ni el cuerpo de un archivo. */
+/** Record an event without passwords or file contents. */
 export async function recordAudit(sql: Sql, input: AuditInput): Promise<void> {
   await sql`
     insert into audit_event (id, actor_id, actor_name, action, outcome, area, target, detail, ip)
@@ -51,10 +50,7 @@ export async function recordAudit(sql: Sql, input: AuditInput): Promise<void> {
   await sweepAudit(sql);
 }
 
-/**
- * Línea del registro corto y, a la vez, de la auditoría. Lo usan los cambios
- * de administración que ya escribían en `app_log`.
- */
+/** Write both short-log and audit entries for administration changes. */
 export async function logActivity(
   sql: Sql,
   input: { actorName: string; area: string; message: string; actorId?: string | null },
@@ -90,7 +86,7 @@ export async function setRetentionDays(sql: Sql, days: number): Promise<void> {
   await sweepAudit(sql);
 }
 
-/** Borra lo más viejo que el plazo, como mucho cada diez minutos por proceso. */
+/** Prune expired audit entries at most every ten minutes per process. */
 export async function sweepAudit(sql: Sql, force = false): Promise<void> {
   const now = Date.now();
   if (!force && now - sweptAt < SWEEP_MS) return;

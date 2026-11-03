@@ -14,7 +14,7 @@ const INDEX = "grafito-docs";
 async function ensureIndex(base: string): Promise<void> {
   const head = await fetch(`${base}/${INDEX}`, { method: "HEAD" });
   if (head.ok) {
-    // El índice ya creado gana el campo nuevo sin rehacer los documentos.
+    // Add the new field mapping without rebuilding existing index documents.
     await fetch(`${base}/${INDEX}/_mapping`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -42,7 +42,10 @@ async function ensureIndex(base: string): Promise<void> {
   });
 }
 
-export async function mirrorToElastic(userId: string, docs: IndexDoc[]): Promise<{ ok: boolean; reason?: string }> {
+export async function mirrorToElastic(
+  userId: string,
+  docs: IndexDoc[],
+): Promise<{ ok: boolean; reason?: string }> {
   const base = elasticUrl();
   if (!base) return { ok: false, reason: "sin elasticsearch" };
   try {
@@ -80,8 +83,12 @@ export async function mirrorToElastic(userId: string, docs: IndexDoc[]): Promise
   }
 }
 
-/** Una sola nota o tabla, sin borrar el resto del índice. */
-export async function upsertElasticDoc(userId: string, doc: IndexDoc, refresh = false): Promise<void> {
+/** Index one note/table without deleting other entries. */
+export async function upsertElasticDoc(
+  userId: string,
+  doc: IndexDoc,
+  refresh = false,
+): Promise<void> {
   const base = elasticUrl();
   if (!base) return;
   try {
@@ -101,18 +108,20 @@ export async function upsertElasticDoc(userId: string, doc: IndexDoc, refresh = 
       }),
     });
   } catch {
-    /* Sin Elasticsearch la búsqueda sigue en Postgres. */
+    /* Without Elasticsearch, search continues in Postgres. */
   }
 }
 
-/** Quita un documento del índice. No falla si Elasticsearch no está. */
+/** Remove an index document; tolerate absent Elasticsearch. */
 export async function deleteElasticDoc(userId: string, docId: string): Promise<void> {
   const base = elasticUrl();
   if (!base) return;
   try {
-    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${docId}`)}`, { method: "DELETE" });
+    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${docId}`)}`, {
+      method: "DELETE",
+    });
   } catch {
-    /* El barrido lo intenta de nuevo con el siguiente documento. */
+    /* The indexing loop retries with the next document. */
   }
 }
 
@@ -137,10 +146,7 @@ export async function searchElastic(userId: string, query: string): Promise<Elas
         query: {
           bool: {
             filter: [{ term: { userId } }],
-            should: [
-              { match_phrase: { title: { query } } },
-              { match_phrase: { body: { query } } },
-            ],
+            should: [{ match_phrase: { title: { query } } }, { match_phrase: { body: { query } } }],
             minimum_should_match: 1,
           },
         },
@@ -183,14 +189,18 @@ export async function probeElastic(): Promise<{ ok: boolean; detail: string }> {
   }
 }
 
-/** Bytes que ocupa el índice de Grafito en Elasticsearch. */
+/** Grafito Elasticsearch index size in bytes. */
 export async function elasticStoreBytes(): Promise<number | null> {
   const base = elasticUrl();
   if (!base) return null;
   try {
-    const response = await fetch(`${base}/${INDEX}/_stats/store`, { signal: AbortSignal.timeout(1500) });
+    const response = await fetch(`${base}/${INDEX}/_stats/store`, {
+      signal: AbortSignal.timeout(1500),
+    });
     if (!response.ok) return null;
-    const data = (await response.json()) as { _all?: { total?: { store?: { size_in_bytes?: number } } } };
+    const data = (await response.json()) as {
+      _all?: { total?: { store?: { size_in_bytes?: number } } };
+    };
     const bytes = Number(data._all?.total?.store?.size_in_bytes);
     return Number.isFinite(bytes) ? bytes : null;
   } catch {
@@ -198,15 +208,22 @@ export async function elasticStoreBytes(): Promise<number | null> {
   }
 }
 
-/** Disco del nodo de Elasticsearch (`total`/`available`) y lo que ocupa el índice (`used`). */
-export async function elasticDisk(): Promise<{ total: number; available: number; used: number } | null> {
+/** Elasticsearch node total/available disk and index used bytes. */
+export async function elasticDisk(): Promise<{
+  total: number;
+  available: number;
+  used: number;
+} | null> {
   const base = elasticUrl();
   if (!base) return null;
   try {
     const response = await fetch(`${base}/_nodes/stats/fs`, { signal: AbortSignal.timeout(1500) });
     if (!response.ok) return null;
     const data = (await response.json()) as {
-      nodes?: Record<string, { fs?: { total?: { total_in_bytes?: number; available_in_bytes?: number } } }>;
+      nodes?: Record<
+        string,
+        { fs?: { total?: { total_in_bytes?: number; available_in_bytes?: number } } }
+      >;
     };
     let total = 0;
     let available = 0;

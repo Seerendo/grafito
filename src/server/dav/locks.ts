@@ -1,7 +1,4 @@
-/**
- * Bloqueos WebDAV de este proceso (LOCK / UNLOCK). No se comparten entre
- * réplicas: cada una guarda los suyos. Caducan solos.
- */
+/** Process-local WebDAV locks expire automatically and are not shared between replicas. */
 
 type Lock = { token: string; until: number };
 
@@ -22,7 +19,7 @@ export function readLock(href: string, now = Date.now()): Lock | null {
   return lock;
 }
 
-/** Crea o renueva. Si otra ficha lo tiene, no. */
+/** Create or renew a lock unless another token owns it. */
 export function takeLock(
   href: string,
   presented: string | null,
@@ -47,7 +44,7 @@ export function dropLock(href: string, token: string | null): boolean {
   return true;
 }
 
-/** Hay un bloqueo y el cliente no trae su ficha. */
+/** A lock exists and the client lacks its token. */
 export function lockBlocks(href: string, presented: string | null): boolean {
   const current = readLock(href);
   return current !== null && current.token !== presented;

@@ -5,13 +5,13 @@ import { TextField } from "@/components/ui/TextField";
 import { mailPreferences, saveMailPreferences } from "@/server/mail.functions";
 import { t } from "@/app/i18n";
 
-/** Cuenta → Correo: la dirección de la persona y si quiere avisos de cambios. */
+/** Account email address and change-notification preference. */
 export function MailForm() {
   const profile = useAccountProfile();
   const [email, setEmail] = useState<string | null>(null);
   const [notify, setNotify] = useState(true);
   const [mailOn, setMailOn] = useState(true);
-  // LDAP, OAuth o SSO: el correo lo da el proveedor y no se edita aquí.
+  // LDAP, OAuth and SSO providers own the email address; it is not editable here.
   const [provider, setProvider] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -34,7 +34,9 @@ export function MailForm() {
     setSaved(false);
     setError("");
     try {
-      const result = await saveMailPreferences({ data: { email: email ?? "", notifyChanges: notify } });
+      const result = await saveMailPreferences({
+        data: { email: email ?? "", notifyChanges: notify },
+      });
       if (!result.ok) {
         setError(result.error);
         return;
@@ -48,7 +50,12 @@ export function MailForm() {
     }
   };
 
-  if (email === null) return error ? <p className="text-sm text-danger">{t(error)}</p> : <p className="text-sm text-muted">{t("Cargando…")}</p>;
+  if (email === null)
+    return error ? (
+      <p className="text-sm text-danger">{t(error)}</p>
+    ) : (
+      <p className="text-sm text-muted">{t("Cargando…")}</p>
+    );
 
   return (
     <form onSubmit={(event) => void submit(event)} className="max-w-lg space-y-4">
@@ -60,16 +67,37 @@ export function MailForm() {
           </p>
         </div>
       ) : (
-        <TextField label={t("Correo")} value={email} onChange={setEmail} autoComplete="email" type="email" optional />
+        <TextField
+          label={t("Correo")}
+          value={email}
+          onChange={setEmail}
+          autoComplete="email"
+          type="email"
+          optional
+        />
       )}
       <div className="flex items-center gap-4 rounded-lg border border-line bg-surface px-4 py-2">
-        <span className="min-w-0 flex-1 text-sm">{t("Avisarme por correo cuando cambien algo que comparto o que me compartieron")}</span>
-        <Switch checked={notify} ariaLabel={t("Avisos de cambios por correo")} onChange={setNotify} />
+        <span className="min-w-0 flex-1 text-sm">
+          {t("Avisarme por correo cuando cambien algo que comparto o que me compartieron")}
+        </span>
+        <Switch
+          checked={notify}
+          ariaLabel={t("Avisos de cambios por correo")}
+          onChange={setNotify}
+        />
       </div>
-      {!mailOn ? <p className="text-sm text-muted">{t("El administrador todavía no configuró el correo.")}</p> : null}
+      {!mailOn ? (
+        <p className="text-sm text-muted">
+          {t("El administrador todavía no configuró el correo.")}
+        </p>
+      ) : null}
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={busy}
+          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
+        >
           {busy ? t("Guardando…") : t("Guardar")}
         </button>
         {saved ? <span className="text-sm text-muted">{t("Guardado")}</span> : null}

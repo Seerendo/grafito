@@ -1,21 +1,10 @@
--- Espacio y permisos por portafolio.
---
--- Espacio: solo cuentan los archivos (su versión actual, también en la
--- papelera hasta vaciarla; no el historial). Hay tres topes, todos opcionales
--- (sin fila = sin tope):
---   space_user       lo que un usuario sube en total, en cualquier portafolio;
---   space_portfolio  lo que cabe en un portafolio con sus subportafolios
---                    (lo pone el administrador del sistema);
---   space_member     lo que un usuario puede subir dentro de un portafolio
---                    (lo ponen el dueño, quien lo administra o el
---                    administrador del sistema), dentro del de ese portafolio.
--- `app_setting.space_default_user`: el tope por usuario cuando no tiene uno propio.
---
--- Permisos: además de «Solo lectura» y «Puede editar» (que ahora también deja
--- crear notas y subir archivos dentro de un portafolio compartido), «admin»
--- administra el portafolio: reparte su espacio y cambia los permisos de los
--- demás. El nivel puede fijarse por invitado (`share_grant.access`,
--- `share_org_grant.access`); sin él vale el del elemento compartido.
+-- Portfolio storage and permissions. Only current file versions count, including trash until
+-- purged; history does not. Optional limits: space_user covers all user uploads; space_portfolio
+-- covers a portfolio subtree and is set by system administrators; space_member limits one user's
+-- uploads within that portfolio and is set by its owner or administrators. Missing rows mean
+-- unlimited. app_setting.space_default_user supplies the default personal limit. Edit access
+-- permits creating notes and uploading files; admin also manages allocation and grants.
+-- Per-recipient access overrides share_item access.
 
 alter table share_item drop constraint if exists share_item_access_check;
 alter table share_item add constraint share_item_access_check check (access in ('read', 'edit', 'admin'));
@@ -23,7 +12,7 @@ alter table share_item add constraint share_item_access_check check (access in (
 alter table share_grant add column if not exists access text check (access in ('read', 'edit', 'admin'));
 alter table share_org_grant add column if not exists access text check (access in ('read', 'edit', 'admin'));
 
--- Quién subió cada archivo (para el espacio de cada usuario). Vacío: el dueño.
+-- Uploader used for personal storage accounting; empty means the owner.
 alter table vault_doc add column if not exists uploaded_by text;
 create index if not exists vault_doc_uploaded_by on vault_doc (uploaded_by) where kind = 'file';
 

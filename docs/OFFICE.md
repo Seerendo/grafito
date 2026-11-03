@@ -26,13 +26,13 @@ docker compose up -d --scale collabora=0
 
 Set `COLLABORA_ADMIN_PASSWORD` in `.env` to your own value either way.
 
-| Variable | What it is | Default |
-| --- | --- | --- |
-| `COLLABORA_URL` | Collabora's address as the **browser** sees it. `same-origin`: on Grafito's own address, through the gateway. Set it to empty to turn the editor off. | `same-origin` |
-| `COLLABORA_INTERNAL_URL` | Collabora's address as the **Grafito server** sees it | `http://collabora:9980` |
-| `GRAFITO_WOPI_URL` | Grafito's address as **Collabora** sees it | `http://app:8080` |
-| `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION` | Only for a `COLLABORA_URL` on an address of its own (see [Servers and HTTPS](#servers-and-https)) | `localhost:*`, `false` |
-| `COLLABORA_ADMIN_PASSWORD` | Password for Collabora's own admin console | a placeholder; change it |
+| Variable                                             | What it is                                                                                                                                            | Default                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `COLLABORA_URL`                                      | Collabora's address as the **browser** sees it. `same-origin`: on Grafito's own address, through the gateway. Set it to empty to turn the editor off. | `same-origin`            |
+| `COLLABORA_INTERNAL_URL`                             | Collabora's address as the **Grafito server** sees it                                                                                                 | `http://collabora:9980`  |
+| `GRAFITO_WOPI_URL`                                   | Grafito's address as **Collabora** sees it                                                                                                            | `http://app:8080`        |
+| `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION` | Only for a `COLLABORA_URL` on an address of its own (see [Servers and HTTPS](#servers-and-https))                                                     | `localhost:*`, `false`   |
+| `COLLABORA_ADMIN_PASSWORD`                           | Password for Collabora's own admin console                                                                                                            | a placeholder; change it |
 
 From other machines, directly or behind an HTTPS proxy, the editor needs no
 settings: see [Servers and HTTPS](#servers-and-https).
@@ -85,8 +85,8 @@ Everything runs on your own machine or network:
 
 ## Licensing and business use
 
-*This is practical guidance, not legal advice. For a commercial launch, have a
-lawyer review it.*
+_This is practical guidance, not legal advice. For a commercial launch, have a
+lawyer review it._
 
 **Collabora Online:**
 
@@ -97,8 +97,8 @@ lawyer review it.*
     installation downloads itself.
   - So Collabora's license (MPL 2.0 for the source code) and Grafito's
     (AGPL-3.0) don't mix.
-- **The CODE image** used here (`collabora/code`) is the free *Development
-  Edition*, intended for home use, testing and small setups. It comes with no
+- **The CODE image** used here (`collabora/code`) is the free _Development
+  Edition_, intended for home use, testing and small setups. It comes with no
   support.
   - The compose file enables `home_mode`, which suits personal use and limits
     concurrent connections and documents.
@@ -135,11 +135,11 @@ With Docker Compose, the `gateway` service (nginx, `docker/gateway.conf`)
 serves it on Grafito's own address and port (`COLLABORA_URL=same-origin`, the
 default):
 
-| Path | Goes to |
-| --- | --- |
-| `/browser/`, `/hosting/`, `/cool/` (including the WebSocket) | Collabora |
-| `/browser/dist/admin/`, `/cool/adminws` | refused (Collabora's admin console) |
-| everything else | Grafito |
+| Path                                                         | Goes to                             |
+| ------------------------------------------------------------ | ----------------------------------- |
+| `/browser/`, `/hosting/`, `/cool/` (including the WebSocket) | Collabora                           |
+| `/browser/dist/admin/`, `/cool/adminws`                      | refused (Collabora's admin console) |
+| everything else                                              | Grafito                             |
 
 So the editor works however Grafito is opened:
 
@@ -184,14 +184,14 @@ leave it blank.
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| Text in the document is hard to read with a dark theme | Fixed in Grafito: without an explicit preference, Collabora follows the system's dark mode and left dark text on a dark page. Grafito now asks for the light theme (`ui_defaults=UITheme=light;SavedUIState=false` on the editor URL), so the editor is shown like a printed page with every Grafito theme and design. `SavedUIState=false` makes this win over a dark mode the browser remembered from an earlier session. |
-| The editor doesn't open when selecting the file | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension |
-| "The Office editor responded 404/502" | `docker compose logs collabora`; Collabora needs about 20 s to start |
-| The editor shows "127.0.0.1 refused to connect" or stays blank | An old `COLLABORA_URL` in `.env` (for example `http://127.0.0.1:9980`). Remove it and run `docker compose up -d`. |
-| "An insecure WebSocket connection may not be initialized from a page loaded over HTTPS" | The editor is on its own `http://` address. Remove `COLLABORA_URL` from `.env` so the gateway serves it, and run `docker compose up -d` |
-| The editor loads but says it can't connect | The reverse proxy doesn't pass WebSocket upgrades. Add the `Upgrade` and `Connection` headers (README, [On a server or a network](../README.md#on-a-server-or-a-network)) |
-| Blank editor on another computer or browser | Open Grafito's address + `/hosting/discovery` from that computer; it should list Collabora's actions. Also check browser extensions that block frames |
-| The document opens but changes aren't saved | `GRAFITO_WOPI_URL` must be reachable from the Collabora container and match `aliasgroup1` |
-| Messages about `CLONE_NEWUSER` / `coolmount` in the logs | Harmless: without extra container privileges Collabora copies its files instead of mounting them (`mount_jail_tree=false`) |
+| Symptom                                                                                 | Check                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Text in the document is hard to read with a dark theme                                  | Fixed in Grafito: without an explicit preference, Collabora follows the system's dark mode and left dark text on a dark page. Grafito now asks for the light theme (`ui_defaults=UITheme=light;SavedUIState=false` on the editor URL), so the editor is shown like a printed page with every Grafito theme and design. `SavedUIState=false` makes this win over a dark mode the browser remembered from an earlier session. |
+| The editor doesn't open when selecting the file                                         | `COLLABORA_URL` isn't empty for the `app` service, and the file has an Office extension                                                                                                                                                                                                                                                                                                                                     |
+| "The Office editor responded 404/502"                                                   | `docker compose logs collabora`; Collabora needs about 20 s to start                                                                                                                                                                                                                                                                                                                                                        |
+| The editor shows "127.0.0.1 refused to connect" or stays blank                          | An old `COLLABORA_URL` in `.env` (for example `http://127.0.0.1:9980`). Remove it and run `docker compose up -d`.                                                                                                                                                                                                                                                                                                           |
+| "An insecure WebSocket connection may not be initialized from a page loaded over HTTPS" | The editor is on its own `http://` address. Remove `COLLABORA_URL` from `.env` so the gateway serves it, and run `docker compose up -d`                                                                                                                                                                                                                                                                                     |
+| The editor loads but says it can't connect                                              | The reverse proxy doesn't pass WebSocket upgrades. Add the `Upgrade` and `Connection` headers (README, [On a server or a network](../README.md#on-a-server-or-a-network))                                                                                                                                                                                                                                                   |
+| Blank editor on another computer or browser                                             | Open Grafito's address + `/hosting/discovery` from that computer; it should list Collabora's actions. Also check browser extensions that block frames                                                                                                                                                                                                                                                                       |
+| The document opens but changes aren't saved                                             | `GRAFITO_WOPI_URL` must be reachable from the Collabora container and match `aliasgroup1`                                                                                                                                                                                                                                                                                                                                   |
+| Messages about `CLONE_NEWUSER` / `coolmount` in the logs                                | Harmless: without extra container privileges Collabora copies its files instead of mounting them (`mount_jail_tree=false`)                                                                                                                                                                                                                                                                                                  |

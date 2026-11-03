@@ -1,10 +1,7 @@
 import { Search, X } from "lucide-react";
 import { t } from "@/app/i18n";
 
-/**
- * Campo de búsqueda compacto con lupa. No toma el foco al aparecer: el cursor
- * de texto solo se ve cuando la persona hace clic para escribir.
- */
+/** Compact search field with icon; does not autofocus when mounted. */
 export function SearchField({
   value,
   onChange,
@@ -15,7 +12,10 @@ export function SearchField({
   placeholder: string;
 }) {
   return (
-    <label data-field className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-line bg-inset px-3 text-sm">
+    <label
+      data-field
+      className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md border border-line bg-inset px-3 text-sm"
+    >
       <Search className="size-4 shrink-0 text-faint" aria-hidden="true" />
       <input
         type="search"

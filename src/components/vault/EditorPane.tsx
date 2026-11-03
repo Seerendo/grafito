@@ -80,13 +80,10 @@ function prefixLines(value: string, start: number, end: number, prefix: string) 
 }
 
 const TABLE = "| Columna | Columna |\n| --- | --- |\n|  |  |\n";
-/**
- * Letra, márgenes y ajuste del texto del editor: los mismos en el cuadro de
- * texto y en la capa coloreada de debajo, o dejarían de coincidir.
- */
+/** Editor textarea and highlight layer must share font, margins and wrapping to stay aligned. */
 const EDITOR_TEXT =
   "px-4 pt-1.5 pb-3 font-sans text-sm leading-normal whitespace-pre-wrap break-words [scrollbar-gutter:stable] [tab-size:4] sm:px-5";
-const TABLE_AT ="| Columna | Columna |\n| --- | --- |\n| ".length;
+const TABLE_AT = "| Columna | Columna |\n| --- | --- |\n| ".length;
 
 export function EditorPane({
   mobile,
@@ -117,25 +114,30 @@ export function EditorPane({
   const openPortfolio = useVault((state) => state.openPortfolio);
   const showStart = useVault((state) => state.showStart);
   const boardPortfolio = useVault((state) =>
-    state.folderPicked && state.selectedPortfolioId && state.portfolios.some((item) => item.id === state.selectedPortfolioId)
+    state.folderPicked &&
+    state.selectedPortfolioId &&
+    state.portfolios.some((item) => item.id === state.selectedPortfolioId)
       ? state.selectedPortfolioId
       : null,
   );
   const can = usePermissions();
   const canEdit = can(PERMISSION.notesEdit);
-  // Quién más edita esta nota; y, en modo Editar o Dividir, aviso de que aquí también.
+  // Show other editors and publish local editing presence in edit/split modes.
   const editors = useNotePresence(
     document?.kind === "markdown" ? document.id : null,
     canEdit && (mode === "edit" || mode === "split"),
   );
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const layerRef = useRef<HTMLPreElement>(null);
-  // Deshacer y rehacer propios (ver `domain/vault/undo.ts`), por nota.
-  const undoRef = useRef<{ docId: string; history: UndoHistory; value: string }>({ docId: "", history: emptyHistory(), value: "" });
-  // Dónde estaba el cursor antes de la última tecla (al escribir, el cuadro ya trae el texto nuevo).
+  // Per-note custom undo/redo; see domain/vault/undo.ts.
+  const undoRef = useRef<{ docId: string; history: UndoHistory; value: string }>({
+    docId: "",
+    history: emptyHistory(),
+    value: "",
+  });
+  // Caret position before the last keystroke; input events already contain updated text.
   const lastSelection = useRef({ start: 0, end: 0 });
-  // Otra nota, o un cambio que no vino de este editor (al sincronizar, otro
-  // dispositivo): se empieza de nuevo, para que deshacer no revierta lo ajeno.
+  // Reset undo history on document changes or external updates so undo never reverts another person's work.
   useEffect(() => {
     const state = undoRef.current;
     if (!document || document.kind !== "markdown") return;
@@ -204,18 +206,21 @@ export function EditorPane({
     );
   }
 
-  const portfolioName = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
+  const portfolioName =
+    portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
   const isFile = document.kind === "file";
-  // Sin permiso de edición la nota siempre se lee, aunque se guardara otro modo.
+  // Without edit permission, always use reading mode regardless of saved preferences.
   const viewMode = canEdit ? mode : "read";
   const showEditor = !isFile && (viewMode === "edit" || (viewMode === "split" && !mobile));
-  const showPreview = isFile || viewMode === "read" || viewMode === "split" || (mobile && viewMode !== "edit");
+  const showPreview =
+    isFile || viewMode === "read" || viewMode === "split" || (mobile && viewMode !== "edit");
   const wiki = showEditor ? unclosedWiki(document.content, cursor) : null;
   const suggestions = wiki
     ? documents
         .filter(
           (item) =>
-            item.id !== document.id && item.title.toLowerCase().includes(wiki.query.trim().toLowerCase()),
+            item.id !== document.id &&
+            item.title.toLowerCase().includes(wiki.query.trim().toLowerCase()),
         )
         .slice(0, 6)
     : [];
@@ -236,12 +241,21 @@ export function EditorPane({
     setTitleError("");
   };
 
-  /** Antes de cambiar el texto: lo deja en el historial de deshacer. */
+  /** Record the current text before applying an edit. */
   const remember = (next: string, typing: boolean, area = areaRef.current) => {
     const state = undoRef.current;
     if (state.docId !== document.id) return;
-    const before = { value: document.content, start: area?.selectionStart ?? 0, end: area?.selectionEnd ?? 0 };
-    state.history = record(state.history, typing ? { ...before, ...lastSelection.current } : before, next, typing);
+    const before = {
+      value: document.content,
+      start: area?.selectionStart ?? 0,
+      end: area?.selectionEnd ?? 0,
+    };
+    state.history = record(
+      state.history,
+      typing ? { ...before, ...lastSelection.current } : before,
+      next,
+      typing,
+    );
     state.value = next;
   };
   const restore = (direction: "undo" | "redo") => {
@@ -278,14 +292,26 @@ export function EditorPane({
   const applyWrap = (before: string, after: string) => {
     const area = areaRef.current;
     if (!area || isFile) return;
-    const edit = wrapSelection(document.content, area.selectionStart, area.selectionEnd, before, after);
+    const edit = wrapSelection(
+      document.content,
+      area.selectionStart,
+      area.selectionEnd,
+      before,
+      after,
+    );
     focusEdit(edit.next, edit.start, edit.end);
   };
 
   const applyBlock = (snippet: string, cursorAt: number) => {
     const area = areaRef.current;
     if (!area || isFile) return;
-    const edit = blockInsert(document.content, area.selectionStart, area.selectionEnd, snippet, cursorAt);
+    const edit = blockInsert(
+      document.content,
+      area.selectionStart,
+      area.selectionEnd,
+      snippet,
+      cursorAt,
+    );
     focusEdit(edit.next, edit.start, edit.end);
     setInsertOpen(false);
   };
@@ -328,7 +354,10 @@ export function EditorPane({
     if (!area || !wiki || isFile) return;
     const clean = picked.trim();
     if (!clean) return;
-    const next = document.content.slice(0, wiki.start) + `[[${clean}]]` + document.content.slice(area.selectionStart);
+    const next =
+      document.content.slice(0, wiki.start) +
+      `[[${clean}]]` +
+      document.content.slice(area.selectionStart);
     const nextCursor = wiki.start + clean.length + 4;
     remember(next, false);
     updateContent(document.id, next);
@@ -423,7 +452,10 @@ export function EditorPane({
               <MoreHorizontal className="size-4" />
             </button>
             {menu ? (
-              <div data-ui="popover" className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl">
+              <div
+                data-ui="popover"
+                className="absolute right-0 z-20 mt-1 w-52 rounded-lg border border-line bg-surface p-1 shadow-2xl"
+              >
                 {can(PERMISSION.notesShare) ? (
                   <MenuButton
                     icon={<Share2 className="size-4" />}
@@ -460,9 +492,11 @@ export function EditorPane({
                     label={t("Historial")}
                     onClick={() => {
                       setMenu(false);
-                      // Primero se sube lo último escrito, para que esté en el historial.
+                      // Upload the latest edits first so version history includes them.
                       const owner = useVault.getState().owner;
-                      void (owner ? syncVault(owner) : Promise.resolve()).finally(() => setHistory(true));
+                      void (owner ? syncVault(owner) : Promise.resolve()).finally(() =>
+                        setHistory(true),
+                      );
                     }}
                   />
                 ) : null}
@@ -504,7 +538,9 @@ export function EditorPane({
                     }}
                   />
                 ) : null}
-                <p className="hidden px-3 py-2 text-xs text-faint only:block">{t("Sin acciones para tu rol.")}</p>
+                <p className="hidden px-3 py-2 text-xs text-faint only:block">
+                  {t("Sin acciones para tu rol.")}
+                </p>
               </div>
             ) : null}
           </div>
@@ -513,11 +549,11 @@ export function EditorPane({
 
       <EditingNow names={editors} />
 
-      {/* Otra persona cambió lo mismo de esta nota: se elige cuál queda (ver `sync.ts`). */}
+      {/* Concurrent edits conflict; choose the version to keep. See sync.ts. */}
       {conflicts[document.id] ? (
         <div className="flex flex-wrap items-center gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm">
           <span className="min-w-0 flex-1">
-            {conflicts[document.id]!.updatedBy}{" "}{t("cambió la nota mientras la editabas.")}
+            {conflicts[document.id]!.updatedBy} {t("cambió la nota mientras la editabas.")}
           </span>
           <button
             type="button"
@@ -544,7 +580,12 @@ export function EditorPane({
 
       {isFile ? null : (
         <div data-ui="modebar" className="flex items-center gap-1 border-b border-line px-3 py-1">
-          <ModeButton active={viewMode === "edit"} label={t("Editar")} disabled={!canEdit} onClick={() => setMode("edit")}>
+          <ModeButton
+            active={viewMode === "edit"}
+            label={t("Editar")}
+            disabled={!canEdit}
+            onClick={() => setMode("edit")}
+          >
             <PenLine className="size-4" />
           </ModeButton>
           <ModeButton
@@ -556,7 +597,11 @@ export function EditorPane({
           >
             <Columns2 className="size-4" />
           </ModeButton>
-          <ModeButton active={viewMode === "read" || (mobile && viewMode === "split")} label={t("Leer")} onClick={() => setMode("read")}>
+          <ModeButton
+            active={viewMode === "read" || (mobile && viewMode === "split")}
+            label={t("Leer")}
+            onClick={() => setMode("read")}
+          >
             <BookOpen className="size-4" />
           </ModeButton>
           {showEditor ? (
@@ -574,93 +619,161 @@ export function EditorPane({
                 <Link2 className="size-4" />
               </ToolButton>
               <div ref={insertRef} className="relative">
-                <ToolButton label={t("Insertar Markdown")} onClick={() => setInsertOpen((open) => !open)}>
+                <ToolButton
+                  label={t("Insertar Markdown")}
+                  onClick={() => setInsertOpen((open) => !open)}
+                >
                   <Plus className="size-4" />
                 </ToolButton>
                 {insertOpen ? (
-                  <div data-ui="popover" className="absolute right-0 z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl">
-                    <MenuButton icon={<Table className="size-4" />} label={t("Tabla")} onClick={() => applyBlock(TABLE, TABLE_AT)} />
-                    <MenuButton icon={<Code className="size-4" />} label={t("Bloque de código")} onClick={applyFence} />
-                    <MenuButton icon={<Heading2 className="size-4" />} label={t("Encabezado")} onClick={() => applyPrefix("## ")} />
-                    <MenuButton icon={<List className="size-4" />} label={t("Lista")} onClick={() => applyPrefix("- ")} />
-                    <MenuButton icon={<ListOrdered className="size-4" />} label={t("Lista numerada")} onClick={() => applyPrefix("1. ")} />
-                    <MenuButton icon={<ListChecks className="size-4" />} label={t("Tareas")} onClick={() => applyPrefix("- [ ] ")} />
-                    <MenuButton icon={<Quote className="size-4" />} label={t("Cita")} onClick={() => applyPrefix("> ")} />
+                  <div
+                    data-ui="popover"
+                    className="absolute right-0 z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
+                  >
+                    <MenuButton
+                      icon={<Table className="size-4" />}
+                      label={t("Tabla")}
+                      onClick={() => applyBlock(TABLE, TABLE_AT)}
+                    />
+                    <MenuButton
+                      icon={<Code className="size-4" />}
+                      label={t("Bloque de código")}
+                      onClick={applyFence}
+                    />
+                    <MenuButton
+                      icon={<Heading2 className="size-4" />}
+                      label={t("Encabezado")}
+                      onClick={() => applyPrefix("## ")}
+                    />
+                    <MenuButton
+                      icon={<List className="size-4" />}
+                      label={t("Lista")}
+                      onClick={() => applyPrefix("- ")}
+                    />
+                    <MenuButton
+                      icon={<ListOrdered className="size-4" />}
+                      label={t("Lista numerada")}
+                      onClick={() => applyPrefix("1. ")}
+                    />
+                    <MenuButton
+                      icon={<ListChecks className="size-4" />}
+                      label={t("Tareas")}
+                      onClick={() => applyPrefix("- [ ] ")}
+                    />
+                    <MenuButton
+                      icon={<Quote className="size-4" />}
+                      label={t("Cita")}
+                      onClick={() => applyPrefix("> ")}
+                    />
                     <MenuButton
                       icon={<Lightbulb className="size-4" />}
                       label={t("Llamado")}
-                      onClick={() => applyBlock(t("> [!idea] Idea\n> "), t("> [!idea] Idea\n> ").length)}
+                      onClick={() =>
+                        applyBlock(t("> [!idea] Idea\n> "), t("> [!idea] Idea\n> ").length)
+                      }
                     />
-                    <MenuButton icon={<Link className="size-4" />} label={t("Enlace")} onClick={applyLink} />
-                    <MenuButton icon={<Minus className="size-4" />} label={t("Regla")} onClick={() => applyBlock("---\n", 4)} />
-                    <MenuButton icon={<Strikethrough className="size-4" />} label={t("Tachado")} onClick={() => applyWrap("~~", "~~")} />
-                    <MenuButton icon={<Highlighter className="size-4" />} label={t("Resaltado")} onClick={() => applyWrap("==", "==")} />
+                    <MenuButton
+                      icon={<Link className="size-4" />}
+                      label={t("Enlace")}
+                      onClick={applyLink}
+                    />
+                    <MenuButton
+                      icon={<Minus className="size-4" />}
+                      label={t("Regla")}
+                      onClick={() => applyBlock("---\n", 4)}
+                    />
+                    <MenuButton
+                      icon={<Strikethrough className="size-4" />}
+                      label={t("Tachado")}
+                      onClick={() => applyWrap("~~", "~~")}
+                    />
+                    <MenuButton
+                      icon={<Highlighter className="size-4" />}
+                      label={t("Resaltado")}
+                      onClick={() => applyWrap("==", "==")}
+                    />
                   </div>
                 ) : null}
               </div>
             </div>
           ) : (
             <p className="ml-auto pr-2 text-xs text-faint">
-              {words}{" "}{t("palabras ·")}{" "}{readingLabel(words)} · {document.updatedBy} · {edited}
+              {words} {t("palabras ·")} {readingLabel(words)} · {document.updatedBy} · {edited}
             </p>
           )}
         </div>
       )}
 
-      <div className={`grid min-h-0 flex-1 ${showEditor && showPreview && !isFile ? "md:grid-cols-2" : "grid-cols-1"}`}>
+      <div
+        className={`grid min-h-0 flex-1 ${showEditor && showPreview && !isFile ? "md:grid-cols-2" : "grid-cols-1"}`}
+      >
         {showEditor ? (
           <div className="flex min-h-0 min-w-0 flex-col border-line pt-1.5 md:border-r md:pr-1">
-            {/* El margen de arriba y la derecha no es editable: un clic sobre la línea divisoria no cae en el editor. */}
+            {/* Top and right margins are not editable, preventing divider clicks from entering the editor. */}
             <div className="relative min-h-0 flex-1">
-            <HighlightLayer ref={layerRef} source={document.content} className={`pointer-events-none absolute inset-0 m-0 overflow-hidden ${EDITOR_TEXT}`} />
-            <textarea
-              ref={areaRef}
-              value={document.content}
-              onScroll={(event) => {
-                // La capa coloreada sigue al cuadro de texto.
-                const layer = layerRef.current;
-                if (layer) {
-                  layer.scrollTop = event.currentTarget.scrollTop;
-                  layer.scrollLeft = event.currentTarget.scrollLeft;
-                }
-              }}
-              onChange={(event) => {
-                remember(event.target.value, true, event.target);
-                updateContent(document.id, event.target.value);
-                setCursor(event.target.selectionStart);
-                lastSelection.current = { start: event.target.selectionStart, end: event.target.selectionEnd };
-              }}
-              onSelect={(event) => {
-                setCursor(event.currentTarget.selectionStart);
-                lastSelection.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd };
-              }}
-              onKeyUp={(event) => setCursor(event.currentTarget.selectionStart)}
-              onClick={(event) => setCursor(event.currentTarget.selectionStart)}
-              onKeyDown={(event) => {
-                const meta = event.metaKey || event.ctrlKey;
-                const key = event.key.toLowerCase();
-                if (meta && !event.altKey && (key === "z" || key === "y")) {
-                  // Ctrl+Z deshace; Ctrl+Y o Ctrl+Mayús+Z rehace.
-                  event.preventDefault();
-                  restore(key === "z" && !event.shiftKey ? "undo" : "redo");
-                } else if (meta && event.key.toLowerCase() === "b") {
-                  event.preventDefault();
-                  applyWrap("**", "**");
-                } else if (meta && event.key.toLowerCase() === "i") {
-                  event.preventDefault();
-                  applyWrap("*", "*");
-                } else if (meta && event.key.toLowerCase() === "e" && event.shiftKey) {
-                  event.preventDefault();
-                  applyFence();
-                } else if (wiki && event.key === "Enter" && (suggestions[0] || wiki.query.trim())) {
-                  event.preventDefault();
-                  acceptWiki(suggestions[0]?.title ?? wiki.query);
-                }
-              }}
-              spellCheck
-              aria-label={t("Contenido de la nota")}
-              className={`absolute inset-0 h-full w-full resize-none overflow-y-auto bg-transparent text-transparent caret-fg outline-none selection:bg-accent/30 selection:text-transparent ${EDITOR_TEXT}`}
-            />
+              <HighlightLayer
+                ref={layerRef}
+                source={document.content}
+                className={`pointer-events-none absolute inset-0 m-0 overflow-hidden ${EDITOR_TEXT}`}
+              />
+              <textarea
+                ref={areaRef}
+                value={document.content}
+                onScroll={(event) => {
+                  // Keep the highlight layer scrolled with the textarea.
+                  const layer = layerRef.current;
+                  if (layer) {
+                    layer.scrollTop = event.currentTarget.scrollTop;
+                    layer.scrollLeft = event.currentTarget.scrollLeft;
+                  }
+                }}
+                onChange={(event) => {
+                  remember(event.target.value, true, event.target);
+                  updateContent(document.id, event.target.value);
+                  setCursor(event.target.selectionStart);
+                  lastSelection.current = {
+                    start: event.target.selectionStart,
+                    end: event.target.selectionEnd,
+                  };
+                }}
+                onSelect={(event) => {
+                  setCursor(event.currentTarget.selectionStart);
+                  lastSelection.current = {
+                    start: event.currentTarget.selectionStart,
+                    end: event.currentTarget.selectionEnd,
+                  };
+                }}
+                onKeyUp={(event) => setCursor(event.currentTarget.selectionStart)}
+                onClick={(event) => setCursor(event.currentTarget.selectionStart)}
+                onKeyDown={(event) => {
+                  const meta = event.metaKey || event.ctrlKey;
+                  const key = event.key.toLowerCase();
+                  if (meta && !event.altKey && (key === "z" || key === "y")) {
+                    // Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes.
+                    event.preventDefault();
+                    restore(key === "z" && !event.shiftKey ? "undo" : "redo");
+                  } else if (meta && event.key.toLowerCase() === "b") {
+                    event.preventDefault();
+                    applyWrap("**", "**");
+                  } else if (meta && event.key.toLowerCase() === "i") {
+                    event.preventDefault();
+                    applyWrap("*", "*");
+                  } else if (meta && event.key.toLowerCase() === "e" && event.shiftKey) {
+                    event.preventDefault();
+                    applyFence();
+                  } else if (
+                    wiki &&
+                    event.key === "Enter" &&
+                    (suggestions[0] || wiki.query.trim())
+                  ) {
+                    event.preventDefault();
+                    acceptWiki(suggestions[0]?.title ?? wiki.query);
+                  }
+                }}
+                spellCheck
+                aria-label={t("Contenido de la nota")}
+                className={`absolute inset-0 h-full w-full resize-none overflow-y-auto bg-transparent text-transparent caret-fg outline-none selection:bg-accent/30 selection:text-transparent ${EDITOR_TEXT}`}
+              />
             </div>
             {wiki ? (
               <div className="border-t border-line bg-surface p-2">
@@ -675,7 +788,8 @@ export function EditorPane({
                       >
                         {item.title}
                         <span className="ml-auto text-xs text-faint">
-                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)?.name ?? t("Carpeta Personal")}
+                          {portfolios.find((portfolio) => portfolio.id === item.portfolioId)
+                            ?.name ?? t("Carpeta Personal")}
                         </span>
                       </button>
                     </li>
@@ -688,7 +802,8 @@ export function EditorPane({
                         onClick={() => acceptWiki(wiki.query.trim())}
                         className="flex h-11 w-full items-center rounded-md px-2 text-left text-sm text-accent hover:bg-elevated"
                       >
-                        {t("Usar [[")}{wiki.query.trim()}]]
+                        {t("Usar [[")}
+                        {wiki.query.trim()}]]
                       </button>
                     </li>
                   ) : null}
@@ -697,13 +812,22 @@ export function EditorPane({
             ) : null}
           </div>
         ) : null}
-        {showPreview && isFile && document.file ? <FileView title={document.title} file={document.file} docId={document.id} onOpenNote={onOpenNote} /> : null}
+        {showPreview && isFile && document.file ? (
+          <FileView
+            title={document.title}
+            file={document.file}
+            docId={document.id}
+            onOpenNote={onOpenNote}
+          />
+        ) : null}
         {showPreview && !isFile ? (
           <div className="min-h-0 overflow-y-auto">
             <MarkdownView
               source={document.content}
               title={document.title}
-              noteExists={(name) => documents.some((item) => item.title.toLowerCase() === name.toLowerCase())}
+              noteExists={(name) =>
+                documents.some((item) => item.title.toLowerCase() === name.toLowerCase())
+              }
               onWiki={(name) => {
                 openTitle(name);
                 onOpenNote(useVault.getState().activeId ?? "");
@@ -720,7 +844,7 @@ export function EditorPane({
       {showEditor ? (
         <footer className="flex h-10 shrink-0 items-center gap-3 border-t border-line px-4 text-xs text-faint">
           <span>
-            {words}{" "}{t("palabras ·")}{" "}{readingLabel(words)}
+            {words} {t("palabras ·")} {readingLabel(words)}
           </span>
           <span className="ml-auto">
             {document.updatedBy} · {edited}

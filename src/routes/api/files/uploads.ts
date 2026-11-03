@@ -8,17 +8,10 @@ import { checkSpace } from "@/server/space";
 import { uploadTarget } from "@/server/upload-target";
 
 /**
- * Subida de archivos por partes (ver `server/blobs.ts`):
- *
- *   POST /api/files/uploads            { name, mime, size }   → { key, uploadId, partSize }
- *   PUT  /api/files/uploads/part?key&uploadId&part  (bytes)    → { etag }
- *   POST /api/files/uploads/complete   { key, uploadId, parts } → { key, size }
- *   POST /api/files/uploads/complete   { key, uploadId, abort: true }
- *
- * La clave queda bajo el usuario que sube; la nota que la usa llega después
- * con la sincronización. Con `shareId`, la subida va a un portafolio compartido
- * conmigo con permiso de edición (`server/upload-target.ts`). `portfolioId` es
- * dónde quedará: con él se comprueba el espacio (`server/space.ts`).
+ * Multipart protocol: POST uploads with name/mime/size returns key/uploadId/partSize; PUT part
+ * bytes returns etag; POST complete with parts finalizes or abort=true cancels. Synchronization
+ * later supplies the referencing document. shareId selects an editable shared destination;
+ * portfolioId enables quota checks through upload-target.ts and space.ts.
  */
 
 const start = z.object({
@@ -43,13 +36,22 @@ export const Route = createFileRoute("/api/files/uploads")({
           const body = start.safeParse(await readJson(request));
           if (!body.success) return apiError(400, "Se espera { name, mime, size }.");
           const max = maxUploadBytes();
-          if (body.data.size > max) return apiError(413, `«${body.data.name}» supera el límite de ${megabytes(max)}.`);
+          if (body.data.size > max)
+            return apiError(413, `«${body.data.name}» supera el límite de ${megabytes(max)}.`);
           const target = await uploadTarget(sql, userId, body.data);
           if (typeof target === "string") return apiError(403, target);
-          const full = await checkSpace(sql, { ...target, uploaderId: userId, bytes: body.data.size });
+          const full = await checkSpace(sql, {
+            ...target,
+            uploaderId: userId,
+            bytes: body.data.size,
+          });
           if (full) return apiError(413, full);
           const key = newFileKey(target.ownerId);
-          const uploadId = await startUpload(sql, key, body.data.mime || "application/octet-stream");
+          const uploadId = await startUpload(
+            sql,
+            key,
+            body.data.mime || "application/octet-stream",
+          );
           return json({ key, uploadId, partSize: PART_SIZE });
         } catch (error) {
           return failure(error);

@@ -18,18 +18,14 @@ import {
 import { intl, t } from "@/app/i18n";
 
 /**
- * Visor de PDF propio (PDF.js), en vez del del navegador. Con clic derecho
- * sobre una selección se puede vincular esa frase (`onLink`) o dejarle una
- * nota (`notes`: un comentario con ancla, sin tocar el archivo). Ctrl+F busca
- * dentro del texto. Las frases vinculadas y las notas se ven resaltadas; al
- * pulsarlas se abre su destino o se leen. Las notas que ya traía el PDF (de
- * otro lector) se muestran también. Cada página se dibuja al acercarse a la
- * vista. Ver `domain/vault/anchor.ts`.
+ * PDF.js viewer supports phrase links, anchored comments, existing PDF annotations and Ctrl+F
+ * text search. Highlights navigate to targets or comments. Render pages near the viewport; see
+ * domain/vault/anchor.ts.
  */
 
 type PdfJs = typeof import("pdfjs-dist");
 
-/** Recuadro de firma sobre la página que se está viendo. */
+/** Signature rectangle on the visible page. */
 export type PdfSignBox = {
   id: string;
   page: number;
@@ -63,44 +59,45 @@ export type PdfViewProps = {
   focus?: TextAnchor | null;
   onFocused?: () => void;
   notes?: { docId: string; shareId?: string };
-  /** Cambia tras estampar, para no reutilizar el PDF que el navegador tenía en caché. */
+  /** Changes after stamping to invalidate the browser's cached PDF. */
   reloadKey?: number;
   signatures?: PdfSignLayer;
 };
 
 let loader: Promise<PdfJs> | null = null;
 
-/** PDF.js y su worker, cargados solo cuando se abre un PDF. */
+/** Lazy-load PDF.js and its worker when opening a PDF. */
 function loadPdfJs(): Promise<PdfJs> {
-  // Solo en el navegador (ver `DrawingView`): fuera del build del servidor.
+  // Browser-only, excluded from server builds; see DrawingView.
   if (import.meta.env.SSR) return Promise.reject(new Error("PDF.js solo en el navegador"));
-  loader ??= Promise.all([import("pdfjs-dist"), import("pdfjs-dist/build/pdf.worker.min.mjs?url")]).then(
-    ([lib, worker]) => {
-      lib.GlobalWorkerOptions.workerSrc = worker.default;
-      return lib;
-    },
-  );
+  loader ??= Promise.all([
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
+  ]).then(([lib, worker]) => {
+    lib.GlobalWorkerOptions.workerSrc = worker.default;
+    return lib;
+  });
   return loader;
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
 type FindHit = { page: number; start: number; end: number };
 type FindMark = { start: number; end: number; current: boolean };
-/** Una frase resaltada: un vínculo (`targetId`) o las notas sobre ella (`noteIds`). */
+/** Highlighted phrase representing a link target or comment IDs. */
 type Mark = { key: string; exact: string; targetId?: string; noteIds?: string[]; rects: Rect[] };
 type Picked = { anchor: TextAnchor; x: number; y: number };
-/** Lo que se lee en el globo: notas de Grafito o una nota del propio PDF. */
+/** Popover content from Grafito comments or embedded PDF annotations. */
 type Bubble = { x: number; y: number; noteIds?: string[]; pdfNote?: PdfNote };
-/** Adónde ir: una frase (`exact`) o solo la página. */
+/** Destination phrase or page. */
 type Focus = { page: number; exact?: string };
-/** Nota del propio PDF con su rectángulo (coordenadas del PDF). */
+/** Embedded PDF annotation with a rectangle in PDF coordinates. */
 type EmbeddedNote = PdfNote & { rect: number[] };
 
-/** Tipos de anotación que no son notas de nadie (enlaces, campos de formulario). */
+/** Annotation types that are not comments, such as links and form fields. */
 const NOT_NOTES = new Set(["Link", "Widget", "Popup"]);
 const NO_COMMENTS: DocComment[] = [];
 
-/** Texto de una página tal como lo devuelve PDF.js, con saltos donde el ítem los marca. */
+/** PDF.js page text with item-marked line breaks. */
 function pagePlainText(items: readonly unknown[]): string {
   let text = "";
   for (const item of items) {
@@ -113,8 +110,8 @@ function pagePlainText(items: readonly unknown[]): string {
 }
 
 /**
- * La selección recortada a la capa de texto bajo el puntero. Un párrafo que
- * cruza de página se queda en esa página: el ancla no puede abarcar dos.
+ * Clamp selection to the text layer under the pointer. Anchors cannot span pages, even when the
+ * paragraph does.
  */
 function anchorInLayer(layer: HTMLElement): TextAnchor | null {
   const selection = window.getSelection();
@@ -137,7 +134,12 @@ function anchorInLayer(layer: HTMLElement): TextAnchor | null {
     before.selectNodeContents(layer);
     before.setEnd(clipped.startContainer, clipped.startOffset);
     const start = before.toString().length;
-    return anchorAt(layer.textContent ?? "", Number(layer.dataset.page), start, start + exact.length);
+    return anchorAt(
+      layer.textContent ?? "",
+      Number(layer.dataset.page),
+      start,
+      start + exact.length,
+    );
   } catch {
     return null;
   }
@@ -172,16 +174,21 @@ export function PdfView({
   const [embedded, setEmbedded] = useState<EmbeddedNote[]>([]);
   const docId = notes?.docId ?? "";
   const shareId = notes?.shareId;
-  const entry = useComments((state) => (notes ? state.docs[commentKey(docId, shareId)] : undefined));
+  const entry = useComments((state) =>
+    notes ? state.docs[commentKey(docId, shareId)] : undefined,
+  );
   const comments = entry?.comments ?? NO_COMMENTS;
-  const storeFocus = useComments((state) => (notes && state.focus?.docId === docId ? state.focus : null));
+  const storeFocus = useComments((state) =>
+    notes && state.focus?.docId === docId ? state.focus : null,
+  );
   const setPdfNotes = useComments((state) => state.setPdfNotes);
 
-  // Las notas se leen con el panel de Comentarios; si aún no, aquí.
+  // Load comments here if the comments panel has not already loaded them.
   const hasNotes = Boolean(notes);
   const canPick = Boolean(onLink) || hasNotes;
   useEffect(() => {
-    if (hasNotes && !useComments.getState().docs[commentKey(docId, shareId)]) void loadComments(docId, shareId);
+    if (hasNotes && !useComments.getState().docs[commentKey(docId, shareId)])
+      void loadComments(docId, shareId);
   }, [hasNotes, docId, shareId]);
 
   useEffect(() => {
@@ -199,7 +206,7 @@ export function PdfView({
         const base = first.getViewport({ scale: 1 });
         if (cancelled) return;
         setPdf({ lib, doc, ratio: base.height / base.width });
-        // Las notas que ya trae el archivo, de todas las páginas.
+        // Embedded annotations from all PDF pages.
         const found: EmbeddedNote[] = [];
         for (let number = 1; number <= doc.numPages && !cancelled; number += 1) {
           const page = await doc.getPage(number);
@@ -214,7 +221,9 @@ export function PdfView({
           for (const item of annotations) {
             const body = item.contentsObj?.str?.trim();
             if (!body || NOT_NOTES.has(item.subtype)) continue;
-            const date = item.modificationDate ? lib.PDFDateString.toDateObject(item.modificationDate) : null;
+            const date = item.modificationDate
+              ? lib.PDFDateString.toDateObject(item.modificationDate)
+              : null;
             found.push({
               id: `${number}-${item.id}`,
               page: number,
@@ -236,19 +245,26 @@ export function PdfView({
     };
   }, [url, reloadKey]);
 
-  // El panel de Comentarios las lista (sin el rectángulo).
+  // The comments panel lists annotations without rectangle metadata.
   useEffect(() => {
-    if (hasNotes) setPdfNotes(docId, embedded.map(({ rect: _rect, ...note }) => note));
+    if (hasNotes)
+      setPdfNotes(
+        docId,
+        embedded.map(({ rect: _rect, ...note }) => note),
+      );
   }, [embedded, hasNotes, docId, setPdfNotes]);
 
-  // Ancho disponible: las páginas se dibujan a ese ancho (y se rehacen si cambia).
+  // Render pages at available width and rerender on width changes.
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     let timer = 0;
     const measure = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setWidth(Math.max(240, Math.floor(element.clientWidth - 32))), 120);
+      timer = window.setTimeout(
+        () => setWidth(Math.max(240, Math.floor(element.clientWidth - 32))),
+        120,
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -259,8 +275,7 @@ export function PdfView({
     };
   }, []);
 
-  // Ctrl+F abre la búsqueda del PDF, salvo que el foco esté en otro campo
-  // (la paleta, el título, un diálogo).
+  // Ctrl+F opens PDF search unless focus belongs to another input or dialog.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (error) return;
@@ -280,7 +295,7 @@ export function PdfView({
     if (findOpen) findInput.current?.focus();
   }, [findOpen]);
 
-  // Esc cierra la búsqueda antes que la vista, salvo que se esté escribiendo una nota.
+  // Esc closes search before the viewer unless composing a comment.
   useEffect(() => {
     if (!findOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -356,15 +371,20 @@ export function PdfView({
     if (!findOpen) return;
     const hit = findHits[findAt];
     if (!hit) return;
-    scrollRef.current?.querySelector(`[data-page="${hit.page}"]`)?.scrollIntoView({ block: "nearest" });
+    scrollRef.current
+      ?.querySelector(`[data-page="${hit.page}"]`)
+      ?.scrollIntoView({ block: "nearest" });
   }, [findOpen, findHits, findAt]);
 
-  /** Un punto de la pantalla, en coordenadas del contenido que se desplaza. */
+  /** Viewport point converted to scroll-content coordinates. */
   const toScroller = useCallback((clientX: number, clientY: number) => {
     const scroller = scrollRef.current;
     if (!scroller) return { x: 0, y: 0 };
     const frame = scroller.getBoundingClientRect();
-    return { x: clientX - frame.left + scroller.scrollLeft, y: clientY - frame.top + scroller.scrollTop + 8 };
+    return {
+      x: clientX - frame.left + scroller.scrollLeft,
+      y: clientY - frame.top + scroller.scrollTop + 8,
+    };
   }, []);
 
   const active: Focus | null = storeFocus ?? focus ?? null;
@@ -377,9 +397,16 @@ export function PdfView({
 
   if (error) return <p className="text-sm text-danger">{t("No se pudo abrir el PDF.")}</p>;
 
-  const bubbleNotes = bubble?.noteIds ? comments.filter((comment) => bubble.noteIds!.includes(comment.id)) : [];
+  const bubbleNotes = bubble?.noteIds
+    ? comments.filter((comment) => bubble.noteIds!.includes(comment.id))
+    : [];
   const when = (ms: number) =>
-    new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+    new Intl.DateTimeFormat(intl(), {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
   const needle = findQuery.trim().toLowerCase();
   const findSettled = findDone === needle;
 
@@ -392,7 +419,8 @@ export function PdfView({
     if (!anchor) return;
     const at = toScroller(event.clientX, event.clientY);
     const items: ContextItem[] = [];
-    if (notes) items.push({ label: t("Nota"), onClick: () => setComposing({ anchor, x: at.x, y: at.y }) });
+    if (notes)
+      items.push({ label: t("Nota"), onClick: () => setComposing({ anchor, x: at.x, y: at.y }) });
     if (onLink) {
       items.push({
         label: t("Vincular"),
@@ -406,7 +434,11 @@ export function PdfView({
   };
 
   return (
-    <div data-ui="pdf" aria-label={title} className="flex h-full min-h-[60vh] flex-col overflow-hidden rounded-md border border-line bg-inset">
+    <div
+      data-ui="pdf"
+      aria-label={title}
+      className="flex h-full min-h-[60vh] flex-col overflow-hidden rounded-md border border-line bg-inset"
+    >
       {findOpen ? (
         <form
           data-ui="pdf-find"
@@ -427,7 +459,11 @@ export function PdfView({
             className="h-8 min-w-0 flex-1 bg-transparent px-1 text-sm text-fg outline-none placeholder:text-faint"
           />
           <span className="shrink-0 text-xs text-muted">
-            {needle && findSettled ? (findHits.length > 0 ? t("{n} de {total}", { n: findAt + 1, total: findHits.length }) : t("Sin resultados")) : ""}
+            {needle && findSettled
+              ? findHits.length > 0
+                ? t("{n} de {total}", { n: findAt + 1, total: findHits.length })
+                : t("Sin resultados")
+              : ""}
           </span>
           <button
             type="button"
@@ -461,115 +497,121 @@ export function PdfView({
         ref={scrollRef}
         className="relative min-h-0 flex-1 overflow-auto p-4"
         onMouseDown={(event) => {
-          if (bubble && !(event.target as HTMLElement).closest("[data-ui='pdf-bubble']")) setBubble(null);
+          if (bubble && !(event.target as HTMLElement).closest("[data-ui='pdf-bubble']"))
+            setBubble(null);
         }}
         onContextMenu={onPdfMenu}
       >
-      {!pdf || width === 0 ? (
-        <p className="text-sm text-faint">{t("Cargando…")}</p>
-      ) : (
-        <div className="mx-auto flex flex-col items-center gap-4" style={{ width }}>
-          {Array.from({ length: pdf.doc.numPages }, (_, index) => (
-            <PdfPage
-              key={`${index + 1}-${width}`}
-              lib={pdf.lib}
-              doc={pdf.doc}
-              number={index + 1}
-              width={width}
-              ratio={pdf.ratio}
-              links={links.filter((link) => link.anchor?.page === index + 1)}
-              notes={anchored.filter((comment) => comment.anchor!.page === index + 1)}
-              embedded={embedded.filter((note) => note.page === index + 1)}
-              targetTitle={targetTitle}
-              onOpen={onOpen}
-              onBubble={(next, clientX, clientY) => setBubble({ ...next, ...toScroller(clientX, clientY) })}
-              focus={active?.page === index + 1 ? active : null}
-              onFocused={focused}
-              find={findByPage.get(index + 1)}
-              signatures={signatures}
-            />
-          ))}
-        </div>
-      )}
-      {composing && notes ? (
-        <NoteComposer
-          key={`${composing.x}:${composing.y}:${composing.anchor.page}:${composing.anchor.exact}`}
-          at={composing}
-          scroller={scrollRef.current}
-          onCancel={() => setComposing(null)}
-          onSave={async (body) => {
-            const failed = await sendComment(notes.docId, notes.shareId, body, composing.anchor);
-            if (!failed) {
-              window.getSelection()?.removeAllRanges();
-              setComposing(null);
-            }
-            return failed;
-          }}
-        />
-      ) : null}
-      {bubble ? (
-        <Bubble
-          at={bubble}
-          scroller={scrollRef.current}
-          data-ui="pdf-bubble"
-          className="absolute z-20 w-72 max-w-[calc(100%-1rem)] space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              setBubble(null);
-            }
-          }}
-        >
-          {bubble.pdfNote ? (
-            <div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="min-w-0 flex-1 truncate font-medium text-fg">{bubble.pdfNote.author || t("Sin autor")}</span>
-                {bubble.pdfNote.at ? <span className="shrink-0 text-faint">{when(bubble.pdfNote.at)}</span> : null}
-              </div>
-              <p className="mt-1 max-h-60 overflow-y-auto text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
-                {bubble.pdfNote.body}
-              </p>
-              <p className="mt-1.5 text-xs text-faint">{t("Nota que trae el PDF")}</p>
-            </div>
-          ) : (
-            bubbleNotes.map((comment) => (
-              <div key={comment.id} className="group">
+        {!pdf || width === 0 ? (
+          <p className="text-sm text-faint">{t("Cargando…")}</p>
+        ) : (
+          <div className="mx-auto flex flex-col items-center gap-4" style={{ width }}>
+            {Array.from({ length: pdf.doc.numPages }, (_, index) => (
+              <PdfPage
+                key={`${index + 1}-${width}`}
+                lib={pdf.lib}
+                doc={pdf.doc}
+                number={index + 1}
+                width={width}
+                ratio={pdf.ratio}
+                links={links.filter((link) => link.anchor?.page === index + 1)}
+                notes={anchored.filter((comment) => comment.anchor!.page === index + 1)}
+                embedded={embedded.filter((note) => note.page === index + 1)}
+                targetTitle={targetTitle}
+                onOpen={onOpen}
+                onBubble={(next, clientX, clientY) =>
+                  setBubble({ ...next, ...toScroller(clientX, clientY) })
+                }
+                focus={active?.page === index + 1 ? active : null}
+                onFocused={focused}
+                find={findByPage.get(index + 1)}
+                signatures={signatures}
+              />
+            ))}
+          </div>
+        )}
+        {composing && notes ? (
+          <NoteComposer
+            key={`${composing.x}:${composing.y}:${composing.anchor.page}:${composing.anchor.exact}`}
+            at={composing}
+            scroller={scrollRef.current}
+            onCancel={() => setComposing(null)}
+            onSave={async (body) => {
+              const failed = await sendComment(notes.docId, notes.shareId, body, composing.anchor);
+              if (!failed) {
+                window.getSelection()?.removeAllRanges();
+                setComposing(null);
+              }
+              return failed;
+            }}
+          />
+        ) : null}
+        {bubble ? (
+          <Bubble
+            at={bubble}
+            scroller={scrollRef.current}
+            data-ui="pdf-bubble"
+            className="absolute z-20 w-72 max-w-[calc(100%-1rem)] space-y-2 overflow-y-auto rounded-lg border border-line bg-surface p-2.5 shadow-2xl"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setBubble(null);
+              }
+            }}
+          >
+            {bubble.pdfNote ? (
+              <div>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="min-w-0 flex-1 truncate font-medium text-fg">{comment.author}</span>
-                  <span className="shrink-0 text-faint">{when(comment.at)}</span>
-                  {notes && (comment.mine || entry?.isOwner) ? (
-                    <button
-                      type="button"
-                      aria-label={t("Borrar nota")}
-                      title={t("Borrar nota")}
-                      onClick={() => {
-                        void deleteComment(notes.docId, notes.shareId, comment.id);
-                        if (bubbleNotes.length === 1) setBubble(null);
-                      }}
-                      className="grid size-6 shrink-0 place-items-center rounded text-faint hover:text-danger"
-                    >
-                      <X className="size-3.5" />
-                    </button>
+                  <span className="min-w-0 flex-1 truncate font-medium text-fg">
+                    {bubble.pdfNote.author || t("Sin autor")}
+                  </span>
+                  {bubble.pdfNote.at ? (
+                    <span className="shrink-0 text-faint">{when(bubble.pdfNote.at)}</span>
                   ) : null}
                 </div>
                 <p className="mt-1 max-h-60 overflow-y-auto text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
-                  {comment.body}
+                  {bubble.pdfNote.body}
                 </p>
+                <p className="mt-1.5 text-xs text-faint">{t("Nota que trae el PDF")}</p>
               </div>
-            ))
-          )}
-        </Bubble>
-      ) : null}
+            ) : (
+              bubbleNotes.map((comment) => (
+                <div key={comment.id} className="group">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="min-w-0 flex-1 truncate font-medium text-fg">
+                      {comment.author}
+                    </span>
+                    <span className="shrink-0 text-faint">{when(comment.at)}</span>
+                    {notes && (comment.mine || entry?.isOwner) ? (
+                      <button
+                        type="button"
+                        aria-label={t("Borrar nota")}
+                        title={t("Borrar nota")}
+                        onClick={() => {
+                          void deleteComment(notes.docId, notes.shareId, comment.id);
+                          if (bubbleNotes.length === 1) setBubble(null);
+                        }}
+                        className="grid size-6 shrink-0 place-items-center rounded text-faint hover:text-danger"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 max-h-60 overflow-y-auto text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+                    {comment.body}
+                  </p>
+                </div>
+              ))
+            )}
+          </Bubble>
+        ) : null}
       </div>
       {menu.element}
     </div>
   );
 }
 
-/**
- * Coloca el recuadro dentro del marco visible. Si el punto está junto a un
- * borde, el recuadro cambia de lado en vez de quedar debajo del borde.
- */
+/** Keep the popover visible, flipping its side near viewport edges. */
 function useAnchoredStyle<T extends HTMLElement>(
   at: { x: number; y: number },
   prefer: "left" | "center",
@@ -578,7 +620,13 @@ function useAnchoredStyle<T extends HTMLElement>(
   const ref = useRef<T>(null);
   const place = useCallback(
     (width: number, height: number) => {
-      if (!scroller) return { left: at.x, top: at.y, maxHeight: undefined as number | undefined, maxWidth: undefined as number | undefined };
+      if (!scroller)
+        return {
+          left: at.x,
+          top: at.y,
+          maxHeight: undefined as number | undefined,
+          maxWidth: undefined as number | undefined,
+        };
       const maxHeight = Math.max(96, scroller.clientHeight - 16);
       const maxWidth = Math.max(96, scroller.clientWidth - 16);
       const box = placePopup({
@@ -602,7 +650,10 @@ function useAnchoredStyle<T extends HTMLElement>(
     if (!node) return;
     const next = place(node.offsetWidth, node.offsetHeight);
     setStyle((current) =>
-      current.left === next.left && current.top === next.top && current.maxHeight === next.maxHeight && current.maxWidth === next.maxWidth
+      current.left === next.left &&
+      current.top === next.top &&
+      current.maxHeight === next.maxHeight &&
+      current.maxWidth === next.maxWidth
         ? current
         : next,
     );
@@ -667,14 +718,16 @@ function NoteComposer({
         void save();
       }}
     >
-      <p className="line-clamp-2 border-l-2 border-yellow-400 pl-2 text-xs text-muted">{at.anchor.exact}</p>
+      <p className="line-clamp-2 border-l-2 border-yellow-400 pl-2 text-xs text-muted">
+        {at.anchor.exact}
+      </p>
       <textarea
         autoFocus
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
-            // Solo cierra la nota, no la vista ni el modal.
+            // Close only the comment, not the viewer or modal.
             event.stopPropagation();
             onCancel();
           }
@@ -691,7 +744,11 @@ function NoteComposer({
       />
       {error ? <p className="text-xs text-danger">{t(error)}</p> : null}
       <div className="flex justify-end gap-1.5">
-        <button type="button" onClick={onCancel} className="h-8 rounded-md px-2.5 text-xs text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-8 rounded-md px-2.5 text-xs text-muted hover:bg-elevated hover:text-fg"
+        >
           {t("Cancelar")}
         </button>
         <button
@@ -706,7 +763,7 @@ function NoteComposer({
   );
 }
 
-/** El tramo `[start, end)` del texto de una capa como `Range`. */
+/** Convert the text layer's half-open character interval into a DOM Range. */
 function rangeAt(root: HTMLElement, start: number, end: number): Range | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const range = document.createRange();
@@ -727,7 +784,7 @@ function rangeAt(root: HTMLElement, start: number, end: number): Range | null {
   return null;
 }
 
-/** Clave de la frase de una nota: las notas sobre la misma frase se juntan. */
+/** Phrase key groups comments attached to the same phrase. */
 function anchorKey(anchor: TextAnchor): string {
   return `note#${anchor.page}:${anchor.prefix}\u0000${anchor.exact}\u0000${anchor.suffix}`;
 }
@@ -762,7 +819,7 @@ function PdfPage({
   onBubble: (bubble: Omit<Bubble, "x" | "y">, clientX: number, clientY: number) => void;
   focus: Focus | null;
   onFocused?: () => void;
-  /** Coincidencias de la búsqueda en esta página. */
+  /** Search matches on this page. */
   find?: { query: string; hits: FindMark[] };
   signatures?: PdfSignLayer;
 }) {
@@ -783,17 +840,20 @@ function PdfPage({
   useEffect(() => {
     const element = pageRef.current;
     if (!element) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setVisible(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: "600px 0px" });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
 
-  // Ir a una frase o una página pedida: la página se dibuja aunque esté lejos.
+  // Render requested destination pages even when far from the viewport.
   useEffect(() => {
     if (focus) {
       setVisible(true);
@@ -818,11 +878,19 @@ function PdfPage({
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(next.width * dpr);
       canvas.height = Math.floor(next.height * dpr);
-      const render = page.render({ canvas, viewport: next, transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0] });
+      const render = page.render({
+        canvas,
+        viewport: next,
+        transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+      });
       task = render;
       layer.replaceChildren();
       layer.style.setProperty("--total-scale-factor", String(scale));
-      const text = new lib.TextLayer({ textContentSource: await page.getTextContent(), container: layer, viewport: next });
+      const text = new lib.TextLayer({
+        textContentSource: await page.getTextContent(),
+        container: layer,
+        viewport: next,
+      });
       await Promise.all([render.promise.catch(() => undefined), text.render()]);
       if (!cancelled) setReady(true);
     })();
@@ -832,7 +900,7 @@ function PdfPage({
     };
   }, [visible, doc, lib, number, width]);
 
-  // Las frases vinculadas y las notas de esta página, donde estén ahora en el texto.
+  // Locate this page's linked and commented phrases in the current text.
   const place = useCallback(() => {
     const page = pageRef.current;
     const layer = textRef.current;
@@ -854,7 +922,8 @@ function PdfPage({
     for (const link of links) {
       if (!link.anchor) continue;
       const rects = rectsOf(link.anchor);
-      if (rects) next.push({ key: linkKey(link), exact: link.anchor.exact, targetId: link.targetId, rects });
+      if (rects)
+        next.push({ key: linkKey(link), exact: link.anchor.exact, targetId: link.targetId, rects });
     }
     const byAnchor = new Map<string, Mark>();
     for (const note of notes) {
@@ -877,9 +946,7 @@ function PdfPage({
     if (ready) place();
   }, [ready, place]);
 
-  // Resalta la búsqueda. Si el texto de la capa no coincide con el del
-  // escaneo, se busca la misma frase en la capa. Si tampoco está, la página
-  // igual se desplaza.
+  // Highlight search matches; if scanned text differs from the rendered layer, locate the phrase again. Scroll to the page even if highlighting fails.
   useEffect(() => {
     if (!ready || !find?.hits.length || !find.query) {
       setFound([]);
@@ -926,7 +993,10 @@ function PdfPage({
     const mark = focus.exact ? marks.find((item) => item.exact === focus.exact) : undefined;
     if (mark?.rects[0]) {
       const top = mark.rects[0].y;
-      pageRef.current?.parentElement?.parentElement?.scrollBy({ top: top - 80, behavior: "smooth" });
+      pageRef.current?.parentElement?.parentElement?.scrollBy({
+        top: top - 80,
+        behavior: "smooth",
+      });
       setFlash(mark.key);
       window.setTimeout(() => setFlash(null), 1600);
     }
@@ -939,16 +1009,24 @@ function PdfPage({
     const x = event.clientX - frame.left;
     const y = event.clientY - frame.top;
     const found = marks.filter((mark) =>
-      mark.rects.some((rect) => x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height),
+      mark.rects.some(
+        (rect) =>
+          x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height,
+      ),
     );
-    // Un vínculo solo responde si se pueden abrir los destinos.
-    return found.find((mark) => mark.noteIds) ?? (onOpen ? (found.find((mark) => mark.targetId) ?? null) : null);
+    // Links respond only when target navigation is available.
+    return (
+      found.find((mark) => mark.noteIds) ??
+      (onOpen ? (found.find((mark) => mark.targetId) ?? null) : null)
+    );
   };
 
-  /** Las notas del propio PDF, sobre su rectángulo en la página. */
+  /** Embedded PDF annotations positioned over their page rectangles. */
   const badges = viewport
     ? embedded.map((note) => {
-        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(note.rect as [number, number, number, number]);
+        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(
+          note.rect as [number, number, number, number],
+        );
         return { note, left: Math.min(x1!, x2!), top: Math.min(y1!, y2!) };
       })
     : [];
@@ -969,7 +1047,9 @@ function PdfPage({
       ref={pageRef}
       data-page={number}
       style={{ width: size.width, height: size.height }}
-      title={hover ? (hover.targetId ? (targetTitle?.(hover.targetId) ?? "") : t("Ver nota")) : undefined}
+      title={
+        hover ? (hover.targetId ? (targetTitle?.(hover.targetId) ?? "") : t("Ver nota")) : undefined
+      }
       className={`relative shrink-0 bg-white shadow-md ${hover ? "pdf-link-hover" : ""} ${placing ? "cursor-crosshair select-none" : ""}`}
       onMouseMove={(event) => {
         if (placing) return;
@@ -1035,7 +1115,12 @@ function PdfPage({
             <span
               key={`${mark.key}-${index}`}
               data-ui={mark.noteIds ? "pdf-note-mark" : "pdf-link"}
-              style={{ left: rect.x - 1, top: rect.y - 1, width: rect.width + 2, height: rect.height + 2 }}
+              style={{
+                left: rect.x - 1,
+                top: rect.y - 1,
+                width: rect.width + 2,
+                height: rect.height + 2,
+              }}
               className={`absolute rounded-sm transition-colors ${
                 mark.noteIds
                   ? flash === mark.key
@@ -1057,7 +1142,12 @@ function PdfPage({
             <span
               key={`find-${index}-${rectIndex}`}
               data-ui={hit.current ? "pdf-find-current" : "pdf-find-hit"}
-              style={{ left: rect.x, top: rect.y, width: Math.max(rect.width, 2), height: rect.height }}
+              style={{
+                left: rect.x,
+                top: rect.y,
+                width: Math.max(rect.width, 2),
+                height: rect.height,
+              }}
               className={`pointer-events-none absolute ${hit.current ? "bg-accent/50" : "bg-accent/25"}`}
             />
           )),
@@ -1086,7 +1176,12 @@ function PdfPage({
       {draft ? (
         <span
           className="pointer-events-none absolute bg-accent/10"
-          style={{ left: `${draft.x * 100}%`, top: `${draft.y * 100}%`, width: `${draft.w * 100}%`, height: `${draft.h * 100}%` }}
+          style={{
+            left: `${draft.x * 100}%`,
+            top: `${draft.y * 100}%`,
+            width: `${draft.w * 100}%`,
+            height: `${draft.h * 100}%`,
+          }}
         />
       ) : null}
       {pageBoxes.map((box) => (
@@ -1094,27 +1189,51 @@ function PdfPage({
           key={box.id}
           data-ui="pdf-sign"
           className={`absolute ${box.status === "signed" && !box.stale ? "pointer-events-none" : "bg-accent/5"}`}
-          style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%` }}
+          style={{
+            left: `${box.x * 100}%`,
+            top: `${box.y * 100}%`,
+            width: `${box.w * 100}%`,
+            height: `${box.h * 100}%`,
+          }}
         >
           <span
             className={`absolute bottom-full left-0 mb-0.5 max-w-full truncate rounded px-1 text-[10px] leading-4 ${box.stale ? "bg-danger/15 text-danger" : "bg-surface/95 text-fg"}`}
           >
-            {box.stale ? t("Firmada · el documento cambió después") : box.status === "signed" ? box.signerName : `${box.signerName} · ${t("Pendiente")}`}
+            {box.stale
+              ? t("Firmada · el documento cambió después")
+              : box.status === "signed"
+                ? box.signerName
+                : `${box.signerName} · ${t("Pendiente")}`}
           </span>
           {box.status === "pending" ? (
             <span className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-0.5">
               {box.mine ? (
                 <>
-                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures?.onSign(box.id)} className="pointer-events-auto h-6 rounded bg-accent px-1.5 text-[10px] font-medium text-accent-fg">
+                  <button
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => signatures?.onSign(box.id)}
+                    className="pointer-events-auto h-6 rounded bg-accent px-1.5 text-[10px] font-medium text-accent-fg"
+                  >
                     {t("Firmar")}
                   </button>
-                  <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures?.onDecline(box.id)} className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted">
+                  <button
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={() => signatures?.onDecline(box.id)}
+                    className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted"
+                  >
                     {t("Rechazar")}
                   </button>
                 </>
               ) : null}
               {signatures?.canPlace ? (
-                <button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={() => signatures.onRemove(box.id)} className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted">
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => signatures.onRemove(box.id)}
+                  className="pointer-events-auto h-6 rounded bg-surface px-1.5 text-[10px] text-muted"
+                >
                   {t("Quitar")}
                 </button>
               ) : null}

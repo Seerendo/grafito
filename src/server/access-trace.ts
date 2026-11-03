@@ -2,9 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
 
 /**
- * Caducidad, revocación y rastro (migración 0029). Lo vigente vive en el
- * permiso o en el token; al cerrarse queda en `access_grant_log`. Las
- * aperturas van a `access_event`, como mucho una por persona y hora.
+ * Expiry, revocation and access history from migration 0029. Active grants/tokens move to
+ * access_grant_log when closed. access_event records at most one opening per person per hour.
  */
 
 const HOUR = 60 * 60 * 1000;
@@ -64,7 +63,7 @@ async function logPeriod(sql: Sql, row: LogRow): Promise<void> {
   `;
 }
 
-/** Pasa a historial lo que ya caducó y lo quita del permiso vigente. */
+/** Archive expired grants and remove their active permissions. */
 export async function retireExpired(sql: Sql, now = Date.now()): Promise<void> {
   const users = await sql<{
     share_id: string;
@@ -189,7 +188,7 @@ export async function retireExpired(sql: Sql, now = Date.now()): Promise<void> {
   await sql`delete from access_event where at < ${now - KEEP_EVENTS}`;
 }
 
-/** Anota una apertura. Si la misma persona ya entró en la última hora, no repite. */
+/** Record an opening unless this person already opened it within the last hour. */
 export async function noteAccess(
   sql: Sql,
   input: {
@@ -224,7 +223,13 @@ export async function noteAccess(
 
 export async function endUserGrant(
   sql: Sql,
-  input: { ownerId: string; shareId: string; userId: string; endedBy: string; endKind?: "revoked" | "expired" },
+  input: {
+    ownerId: string;
+    shareId: string;
+    userId: string;
+    endedBy: string;
+    endKind?: "revoked" | "expired";
+  },
 ): Promise<boolean> {
   const rows = await sql<{ granted_at: unknown; expires_at: unknown; name: string }>`
     select g.granted_at, g.expires_at, u.name from share_grant g
@@ -282,7 +287,14 @@ export async function endOrgGrant(
 
 export async function endPublicLink(
   sql: Sql,
-  input: { ownerId: string; shareId: string; title: string; grantedAt: number | null; expiresAt: number | null; endedBy: string },
+  input: {
+    ownerId: string;
+    shareId: string;
+    title: string;
+    grantedAt: number | null;
+    expiresAt: number | null;
+    endedBy: string;
+  },
 ): Promise<void> {
   const now = Date.now();
   await logPeriod(sql, {
@@ -302,7 +314,14 @@ export async function endPublicLink(
 
 export async function endFormLink(
   sql: Sql,
-  input: { ownerId: string; docId: string; title: string; grantedAt: number | null; expiresAt: number | null; endedBy: string },
+  input: {
+    ownerId: string;
+    docId: string;
+    title: string;
+    grantedAt: number | null;
+    expiresAt: number | null;
+    endedBy: string;
+  },
 ): Promise<void> {
   const now = Date.now();
   await logPeriod(sql, {
@@ -331,7 +350,8 @@ function periodFrom(row: {
 }): GrantPeriod {
   const endKind = row.end_kind === "revoked" || row.end_kind === "expired" ? row.end_kind : "";
   return {
-    subjectKind: row.subject_kind === "org" || row.subject_kind === "link" ? row.subject_kind : "user",
+    subjectKind:
+      row.subject_kind === "org" || row.subject_kind === "link" ? row.subject_kind : "user",
     subjectId: row.subject_id,
     subjectName: row.subject_name,
     grantedAt: millis(row.granted_at) ?? 0,

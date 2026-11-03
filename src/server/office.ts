@@ -3,32 +3,26 @@ import type { Sql } from "@/lib/db";
 import { readToken, signToken } from "./file-links";
 
 /**
- * Editor de Office (solo servidor): Collabora Online habla con Grafito por
- * WOPI (`/wopi/files/:id`). Es un servicio aparte y opcional (perfil `office`
- * de docker-compose): Grafito no incluye su código, solo le pasa el archivo y
- * recibe lo guardado. Sin `COLLABORA_URL` la función está apagada.
- *
- *  - `COLLABORA_URL`: dirección de Collabora para el navegador (el iframe);
- *    `same-origin`, la misma de Grafito (la sirve `docker/gateway.conf`).
- *  - `COLLABORA_INTERNAL_URL`: para el servidor de Grafito (discovery).
- *  - `GRAFITO_WOPI_URL`: cómo llega Collabora a Grafito.
+ * Optional Collabora integration over /wopi/files/:id. COLLABORA_URL is the browser URL or
+ * same-origin gateway; COLLABORA_INTERNAL_URL is for discovery; GRAFITO_WOPI_URL is Collabora's
+ * route back to Grafito. Empty COLLABORA_URL disables editing.
  */
 
 export type OfficeToken = {
-  /** Documento, dueño, quien edita y su nombre. */
+  /** Document, owner and editor identity/display name. */
   d: string;
   o: string;
   u: string;
   n: string;
-  /** Puede guardar. */
+  /** Whether saving is allowed. */
   w: boolean;
-  /** Origen del navegador, para los mensajes entre el editor y Grafito. */
+  /** Browser origin for editor/application messaging. */
   p: string;
-  /** Elemento compartido por el que se edita (si no es del propio usuario). */
+  /** Share authorizing edits to another user's document. */
   s?: string;
 };
 
-/** Duración de una sesión del editor. */
+/** Editor session lifetime. */
 const SESSION_SECONDS = 10 * 60 * 60;
 
 const EXTENSIONS = /\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf|csv)$/i;
@@ -46,10 +40,7 @@ export function officeEnabled(): boolean {
   return Boolean(env("COLLABORA_URL"));
 }
 
-/**
- * Origen del editor para una página abierta en `pageOrigin`, para la CSP
- * (`frame-src`, `form-action`) y la URL del editor (ver `office-reach.ts`).
- */
+/** Editor origin used for CSP frame-src/form-action and editor URLs; see office-reach.ts. */
 export function officeOrigin(pageOrigin?: string | null): string | null {
   const url = env("COLLABORA_URL");
   if (!url || isSameOrigin(url)) return null;
@@ -60,7 +51,7 @@ export function officeOrigin(pageOrigin?: string | null): string | null {
   }
 }
 
-/** Lo que impedirá ver el editor desde `pageOrigin`, con el ajuste que lo arregla, o `null`. */
+/** Editor reachability problem and corrective setting, or null. */
 export function officeReachProblem(pageOrigin: string): string | null {
   const url = env("COLLABORA_URL");
   if (!url) return null;
@@ -79,11 +70,12 @@ export function officeReachProblem(pageOrigin: string): string | null {
 type Discovery = { actions: Map<string, { edit?: string; view?: string }>; at: number };
 let discovery: Discovery | null = null;
 
-/** Qué abre Collabora y con qué URL (`/hosting/discovery`), una hora en caché. */
+/** Supported Collabora formats and URLs from discovery, cached one hour. */
 async function readDiscovery(): Promise<Discovery> {
   if (discovery && Date.now() - discovery.at < 60 * 60_000) return discovery;
   const configured = env("COLLABORA_URL");
-  const base = env("COLLABORA_INTERNAL_URL") ?? (configured && !isSameOrigin(configured) ? configured : null);
+  const base =
+    env("COLLABORA_INTERNAL_URL") ?? (configured && !isSameOrigin(configured) ? configured : null);
   if (!base) throw new Error("El editor de Office no está configurado.");
   const response = await fetch(`${base}/hosting/discovery`, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`El editor de Office respondió ${response.status}.`);
@@ -103,7 +95,7 @@ async function readDiscovery(): Promise<Discovery> {
   return discovery;
 }
 
-/** La URL del editor para un archivo, con la dirección pública de Collabora y el WOPISrc. */
+/** Public editor URL with WOPISrc for the file. */
 export async function editorUrl(
   docId: string,
   fileName: string,
@@ -122,11 +114,7 @@ export async function editorUrl(
   const wopiBase = env("GRAFITO_WOPI_URL") ?? env("BETTER_AUTH_URL") ?? "http://app:8080";
   target.searchParams.set("WOPISrc", `${wopiBase}/wopi/files/${encodeURIComponent(docId)}`);
   target.searchParams.set("lang", lang);
-  // Sin preferencia explícita, Collabora sigue el modo oscuro del sistema y,
-  // con un tema oscuro, deja el texto oscuro sobre la página oscura. El editor
-  // se abre siempre en claro, como un documento impreso, con cualquier tema
-  // de Grafito. `SavedUIState=false` hace que valga esto y no un modo oscuro
-  // que el navegador recordara de una sesión anterior.
+  // Force light editor mode to keep printed-document text readable under any Grafito theme. SavedUIState=false overrides remembered dark-mode preferences.
   target.searchParams.set("ui_defaults", "UITheme=light;SavedUIState=false");
   return target.toString();
 }
@@ -135,14 +123,14 @@ export function issueOfficeToken(data: OfficeToken): { token: string; expiresAt:
   return signToken(data, SESSION_SECONDS);
 }
 
-/** La ficha de una petición WOPI, si es válida y para ese documento. */
+/** Validate a WOPI request token for this document. */
 export function readOfficeToken(request: Request, docId: string): OfficeToken | null {
   const token = new URL(request.url).searchParams.get("access_token");
   const data = token ? readToken<OfficeToken>(token) : null;
   return data && data.d === docId ? data : null;
 }
 
-/** Nombre visible de un usuario (para el editor y los autores de versiones). */
+/** User display name for editor presence and version authors. */
 export async function displayNameOf(sql: Sql, userId: string): Promise<string> {
   const rows = await sql<{ name: string }>`select name from "user" where id = ${userId} limit 1`;
   return rows[0]?.name?.trim() || "Alguien";

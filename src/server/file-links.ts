@@ -1,11 +1,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 /**
- * Enlaces y fichas firmados para archivos (solo servidor). Quien los pide ya
- * pasó los permisos; lo firmado lleva el dueño, qué se permite y la
- * caducidad, con HMAC. Así una `<img>` o un `<iframe>` pueden cargar el
- * archivo aunque el navegador no tenga la cookie de sesión (http fuera de
- * localhost), y el editor de Office (WOPI) puede leerlo y guardarlo.
+ * HMAC-signed file links/tokens encode owner, capabilities and expiry after permission checks.
+ * They support image/iframe requests without cookies and WOPI read/write access.
  */
 
 const TTL_SECONDS = 60 * 60;
@@ -15,7 +12,7 @@ let fallback: Buffer | null = null;
 function secret(): Buffer {
   const raw = process.env.BETTER_AUTH_SECRET?.trim() || process.env.GRAFITO_ENCRYPTION_KEY?.trim();
   if (raw) return createHash("sha256").update(`grafito-file-links:${raw}`).digest();
-  // Sin secreto configurado: uno por proceso (los enlaces caducan al reiniciar).
+  // Without a configured secret, use a per-process secret; restart invalidates links.
   fallback ??= randomBytes(32);
   return fallback;
 }
@@ -36,13 +33,20 @@ function signature(docId: string, ownerId: string, expires: number, download: bo
 
 export function signedFileUrl(docId: string, ownerId: string, download = false): string {
   const expires = Math.floor(Date.now() / 1000) + TTL_SECONDS;
-  const params = new URLSearchParams({ o: ownerId, e: String(expires), s: signature(docId, ownerId, expires, download) });
+  const params = new URLSearchParams({
+    o: ownerId,
+    e: String(expires),
+    s: signature(docId, ownerId, expires, download),
+  });
   if (download) params.set("d", "1");
   return `/api/files/${encodeURIComponent(docId)}?${params}`;
 }
 
-/** Dueño y permiso de descarga de un enlace firmado válido; null si no lo es. */
-export function verifyFileUrl(docId: string, params: URLSearchParams): { ownerId: string; download: boolean } | null {
+/** Valid signed-link owner and download permission, or null. */
+export function verifyFileUrl(
+  docId: string,
+  params: URLSearchParams,
+): { ownerId: string; download: boolean } | null {
   const ownerId = params.get("o");
   const expires = Number(params.get("e"));
   const given = params.get("s");
@@ -51,11 +55,11 @@ export function verifyFileUrl(docId: string, params: URLSearchParams): { ownerId
   return same(signature(docId, ownerId, expires, download), given) ? { ownerId, download } : null;
 }
 
-/**
- * Ficha firmada con datos arbitrarios (`<datos>.<firma>`, base64url) y
- * caducidad en segundos. La usa el editor de Office como `access_token`.
- */
-export function signToken<T extends object>(data: T, ttlSeconds: number): { token: string; expiresAt: number } {
+/** Signed base64url data.signature token with expiry in seconds, used as WOPI access_token. */
+export function signToken<T extends object>(
+  data: T,
+  ttlSeconds: number,
+): { token: string; expiresAt: number } {
   const expiresAt = Date.now() + ttlSeconds * 1000;
   const body = Buffer.from(JSON.stringify({ ...data, exp: expiresAt })).toString("base64url");
   return { token: `${body}.${hmac(`token.${body}`)}`, expiresAt };
@@ -65,7 +69,9 @@ export function readToken<T extends object>(token: string): T | null {
   const [body, given] = token.split(".");
   if (!body || !given || !same(hmac(`token.${body}`), given)) return null;
   try {
-    const data = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as T & { exp?: number };
+    const data = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as T & {
+      exp?: number;
+    };
     return typeof data.exp === "number" && data.exp > Date.now() ? data : null;
   } catch {
     return null;

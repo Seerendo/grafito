@@ -31,7 +31,7 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
-  // Lo que pasó con el último acceso enviado (correo o enlace para entregar a mano).
+  // Outcome of the latest access invitation, via email or a manually delivered link.
   const [sent, setSent] = useState<{ name: string; access: AccessOutcome } | null>(null);
   const people = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -48,21 +48,38 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
       <div className="flex items-center gap-2">
         <SearchField value={query} onChange={setQuery} placeholder={t("Buscar usuario")} />
         {can(view, "users.create") ? (
-          <button type="button" onClick={() => { setError(""); setOpen("new"); }} className="h-11 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setOpen("new");
+            }}
+            className="h-11 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+          >
             {t("Nuevo usuario")}
           </button>
         ) : null}
       </div>
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
-      {sent ? <AccessNotice name={sent.name} access={sent.access} onClose={() => setSent(null)} /> : null}
-      {people.length === 0 ? <p className="text-sm text-muted">{t("Ningún usuario coincide.")}</p> : null}
+      {sent ? (
+        <AccessNotice name={sent.name} access={sent.access} onClose={() => setSent(null)} />
+      ) : null}
+      {people.length === 0 ? (
+        <p className="text-sm text-muted">{t("Ningún usuario coincide.")}</p>
+      ) : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface empty:hidden">
         {people.map((person) => (
-          <li key={person.id} className="flex items-center gap-2 border-b border-line last:border-b-0">
+          <li
+            key={person.id}
+            className="flex items-center gap-2 border-b border-line last:border-b-0"
+          >
             {can(view, "users.update") ? (
               <button
                 type="button"
-                onClick={() => { setError(""); setOpen({ id: person.id }); }}
+                onClick={() => {
+                  setError("");
+                  setOpen({ id: person.id });
+                }}
                 className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 text-left text-sm hover:bg-elevated"
               >
                 <span className="flex min-w-0 items-center gap-2">
@@ -117,7 +134,12 @@ export function UsersBoard({ view, reload }: { view: AdminView; reload: () => vo
           onClose={() => setOpen(null)}
           onSubmit={async (values) => {
             const result = await createVaultUser({
-              data: { name: values.name, username: values.username, email: values.email, roleId: values.roleId },
+              data: {
+                name: values.name,
+                username: values.username,
+                email: values.email,
+                roleId: values.roleId,
+              },
             });
             if (!result.ok) return result.error;
             setOpen(null);
@@ -170,14 +192,18 @@ const SOURCE_LABEL: Record<string, string> = {
   sso: "SSO",
 };
 
-/** Origen de una cuenta creada al entrar por un proveedor externo. */
-type AccessOutcome = { mailed: true; expiresAt: number } | { mailed: false; link: string; expiresAt: number; reason: string };
+/** External provider that provisioned an account. */
+type AccessOutcome =
+  | { mailed: true; expiresAt: number }
+  | { mailed: false; link: string; expiresAt: number; reason: string };
 
 function formatWhen(ms: number) {
-  return new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(
+    new Date(ms),
+  );
 }
 
-/** Estado del acceso temporal por correo de un usuario. */
+/** User's temporary email-access status. */
 function AccessState({ access }: { access: AdminView["users"][number]["access"] }) {
   if (!access) return null;
   const text =
@@ -186,19 +212,33 @@ function AccessState({ access }: { access: AdminView["users"][number]["access"] 
       : access.state === "used"
         ? t("Entró con la contraseña temporal; aún no la cambió")
         : t("El acceso venció: reenvíalo");
-  return <span className={`text-xs ${access.state === "expired" ? "text-danger" : "text-accent"}`}>{text}</span>;
+  return (
+    <span className={`text-xs ${access.state === "expired" ? "text-danger" : "text-accent"}`}>
+      {text}
+    </span>
+  );
 }
 
 /**
- * Tras crear un usuario o reenviarle el acceso: si el correo salió, o el enlace
- * de un solo uso para entregárselo a mano (se muestra solo esta vez).
+ * After account creation or resending access, show email delivery status or the one-time link
+ * for manual delivery.
  */
-function AccessNotice({ name, access, onClose }: { name: string; access: AccessOutcome; onClose: () => void }) {
+function AccessNotice({
+  name,
+  access,
+  onClose,
+}: {
+  name: string;
+  access: AccessOutcome;
+  onClose: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-2 rounded-lg border border-line bg-surface p-4 text-sm">
       {access.mailed ? (
-        <p>{t("Se envió el acceso a {0}. Vence {1}.", { 0: name, 1: formatWhen(access.expiresAt) })}</p>
+        <p>
+          {t("Se envió el acceso a {0}. Vence {1}.", { 0: name, 1: formatWhen(access.expiresAt) })}
+        </p>
       ) : (
         <>
           <p className="text-danger">{t("No se envió el correo: {0}", { 0: t(access.reason) })}</p>
@@ -232,11 +272,14 @@ function AccessNotice({ name, access, onClose }: { name: string; access: AccessO
   );
 }
 
-/** Primer ingreso y última conexión, con fecha y hora. */
+/** First sign-in and latest connection timestamps. */
 function SignIns({ first, last }: { first: number | null; last: number | null }) {
   const when = (ms: number) =>
-    new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(new Date(ms));
-  if (!first && !last) return <span className="text-xs text-faint">{t("Todavía no ha ingresado")}</span>;
+    new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(
+      new Date(ms),
+    );
+  if (!first && !last)
+    return <span className="text-xs text-faint">{t("Todavía no ha ingresado")}</span>;
   return (
     <span className="flex flex-wrap gap-x-4 text-xs text-faint">
       {first ? <span>{t("Primer ingreso: {0}", { 0: when(first) })}</span> : null}
@@ -248,7 +291,11 @@ function SignIns({ first, last }: { first: number | null; last: number | null })
 function SourceTag({ source }: { source: string }) {
   const label = SOURCE_LABEL[source];
   if (!label) return null;
-  return <span className="shrink-0 rounded border border-line px-1.5 text-[11px] leading-5 text-faint">{label}</span>;
+  return (
+    <span className="shrink-0 rounded border border-line px-1.5 text-[11px] leading-5 text-faint">
+      {label}
+    </span>
+  );
 }
 
 function UserForm({
@@ -263,14 +310,23 @@ function UserForm({
   title: string;
   person?: AdminView["users"][number];
   onClose: () => void;
-  onSubmit: (values: { name: string; username: string; email: string; roleId: string }) => Promise<string>;
-  /** Reenviar el acceso por correo (solo al editar una cuenta local). */
+  onSubmit: (values: {
+    name: string;
+    username: string;
+    email: string;
+    roleId: string;
+  }) => Promise<string>;
+  /** Resend access email when editing a local account. */
   onResend?: () => Promise<string>;
 }) {
   const [name, setName] = useState(person?.name ?? "");
   const [username, setUsername] = useState(person?.loginName ?? "");
   const [email, setEmail] = useState(person?.email ?? "");
-  const [roleId, setRoleId] = useState(person?.owner ? "admin" : person?.roleId || roles.find((role) => role.id === "miembro")?.id || roles[0]?.id || "");
+  const [roleId, setRoleId] = useState(
+    person?.owner
+      ? "admin"
+      : person?.roleId || roles.find((role) => role.id === "miembro")?.id || roles[0]?.id || "",
+  );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -289,7 +345,12 @@ function UserForm({
       <h2 className="font-serif text-2xl">{title}</h2>
       <label className="block text-sm">
         <span className="text-muted">{t("Nombre")}</span>
-        <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3" />
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          required
+          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3"
+        />
       </label>
       <label className="block text-sm">
         <span className="text-muted">{t("Usuario")}</span>
@@ -309,7 +370,7 @@ function UserForm({
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required={!person}
-          // Con LDAP, OAuth o SSO el correo lo da el proveedor.
+          // LDAP, OAuth and SSO supply the email address.
           readOnly={Boolean(person && person.source !== "local")}
           autoComplete="off"
           className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 read-only:text-muted"
@@ -318,7 +379,10 @@ function UserForm({
       <label className="block text-sm">
         <span className="text-muted">{t("Rol")}</span>
         {person?.owner ? (
-          <p className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted" title={t("El administrador inicial siempre es Administrador")}>
+          <p
+            className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted"
+            title={t("El administrador inicial siempre es Administrador")}
+          >
             {t("Administrador")}
           </p>
         ) : (
@@ -333,7 +397,11 @@ function UserForm({
       </label>
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <div className="flex gap-2">
-        <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={busy}
+          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
+        >
           {busy ? t("Guardando…") : t("Guardar")}
         </button>
         {onResend && person && !person.owner && person.source === "local" ? (
@@ -353,7 +421,11 @@ function UserForm({
             {t("Reenviar acceso")}
           </button>
         ) : null}
-        <button type="button" onClick={onClose} className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated"
+        >
           {t("Cancelar")}
         </button>
       </div>
@@ -378,9 +450,17 @@ export function RolesBoard({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const role = view.roles.find((item) => item.id === roleId) ?? null;
-  if (!can(view, "roles.manage")) return <p className="text-sm text-muted">{t("Este rol no administra permisos.")}</p>;
+  if (!can(view, "roles.manage"))
+    return <p className="text-sm text-muted">{t("Este rol no administra permisos.")}</p>;
   if (role) {
-    return <RoleGrid role={role} permissions={view.permissions} onBack={() => onOpen(null)} reload={reload} />;
+    return (
+      <RoleGrid
+        role={role}
+        permissions={view.permissions}
+        onBack={() => onOpen(null)}
+        reload={reload}
+      />
+    );
   }
   return (
     <div className="space-y-4">
@@ -409,7 +489,10 @@ export function RolesBoard({
             required
             className="h-11 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
           />
-          <button type="submit" className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
+          <button
+            type="submit"
+            className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+          >
             {t("Crear")}
           </button>
           <button
@@ -437,10 +520,20 @@ export function RolesBoard({
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface">
         {view.roles.map((item) => (
-          <li key={item.id} className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 last:border-b-0">
-            <button type="button" onClick={() => onOpen(item.id)} className="min-w-0 flex-1 text-left">
+          <li
+            key={item.id}
+            className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 last:border-b-0"
+          >
+            <button
+              type="button"
+              onClick={() => onOpen(item.id)}
+              className="min-w-0 flex-1 text-left"
+            >
               <span className="block text-sm">{t(item.name)}</span>
-              <span className="block text-xs text-muted">{item.fixed ? t("Predeterminado") : t("Creado aquí")} · {item.permissions.length}{" "}{t("permisos")}</span>
+              <span className="block text-xs text-muted">
+                {item.fixed ? t("Predeterminado") : t("Creado aquí")} · {item.permissions.length}{" "}
+                {t("permisos")}
+              </span>
             </button>
             {item.fixed ? null : renaming === item.id ? (
               <form
@@ -535,7 +628,9 @@ function RoleGrid({
       <div className="space-y-5">
         {areas.map((group) => (
           <section key={group.area}>
-            <h3 className="text-xs font-medium tracking-widest text-faint uppercase">{t(group.area)}</h3>
+            <h3 className="text-xs font-medium tracking-widest text-faint uppercase">
+              {t(group.area)}
+            </h3>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {group.items.map((permission) => {
                 const on = role.locked || role.permissions.includes(permission.key);
@@ -546,7 +641,9 @@ function RoleGrid({
                     aria-pressed={on}
                     disabled={role.locked}
                     onClick={() => {
-                      void setRolePermission({ data: { roleId: role.id, key: permission.key, granted: !on } }).then(reload);
+                      void setRolePermission({
+                        data: { roleId: role.id, key: permission.key, granted: !on },
+                      }).then(reload);
                     }}
                     className={`flex min-h-16 items-start gap-3 rounded-md border px-3 py-3 text-left disabled:opacity-80 ${
                       on ? "border-accent bg-surface" : "border-line bg-inset"
@@ -558,7 +655,13 @@ function RoleGrid({
                       }`}
                     >
                       {on ? (
-                        <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" className="block">
+                        <svg
+                          viewBox="0 0 12 12"
+                          width="10"
+                          height="10"
+                          aria-hidden="true"
+                          className="block"
+                        >
                           <path
                             d="M2.2 6.1 4.7 8.6 9.8 3.4"
                             fill="none"
@@ -583,7 +686,10 @@ function RoleGrid({
 }
 
 export function MonitorBoard() {
-  const [snap, setSnap] = useState<Extract<Awaited<ReturnType<typeof systemSnapshot>>, { ok: true }> | null>(null);
+  const [snap, setSnap] = useState<Extract<
+    Awaited<ReturnType<typeof systemSnapshot>>,
+    { ok: true }
+  > | null>(null);
   const [error, setError] = useState("");
   const load = () => {
     setError("");
@@ -599,7 +705,8 @@ export function MonitorBoard() {
   }, []);
   if (error) return <p className="text-sm text-danger">{t(error)}</p>;
   if (!snap) return <p className="text-sm text-muted">{t("Leyendo…")}</p>;
-  const mem = snap.memTotal > 0 ? Math.round(((snap.memTotal - snap.memFree) / snap.memTotal) * 100) : 0;
+  const mem =
+    snap.memTotal > 0 ? Math.round(((snap.memTotal - snap.memFree) / snap.memTotal) * 100) : 0;
   const meters = [
     ["CPU", `${snap.cpu}%`, snap.cpu],
     [t("Memoria"), `${mem}%`, mem],
@@ -607,8 +714,14 @@ export function MonitorBoard() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <p className="text-sm text-muted">{snap.hostname} · {snap.cores}{" "}{t("núcleos")}</p>
-        <button type="button" onClick={load} className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+        <p className="text-sm text-muted">
+          {snap.hostname} · {snap.cores} {t("núcleos")}
+        </p>
+        <button
+          type="button"
+          onClick={load}
+          className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated"
+        >
           {t("Actualizar")}
         </button>
       </div>
@@ -623,12 +736,16 @@ export function MonitorBoard() {
         <div className="border border-line bg-surface p-4">
           <p className="text-xs tracking-widest text-faint uppercase">{t("Carga")}</p>
           <p className="mt-1 font-serif text-3xl">{snap.load[0] ?? 0}</p>
-          <p className="mt-2 text-xs text-muted">{t("1, 5 y 15 min:")}{" "}{snap.load.join(" · ")}</p>
+          <p className="mt-2 text-xs text-muted">
+            {t("1, 5 y 15 min:")} {snap.load.join(" · ")}
+          </p>
         </div>
         <div className="border border-line bg-surface p-4">
           <p className="text-xs tracking-widest text-faint uppercase">{t("En marcha")}</p>
           <p className="mt-1 font-serif text-3xl">{formatUptime(snap.uptime)}</p>
-          <p className="mt-2 text-xs text-muted">{t("Proceso")}{" "}{formatBytes(snap.rss)}</p>
+          <p className="mt-2 text-xs text-muted">
+            {t("Proceso")} {formatBytes(snap.rss)}
+          </p>
         </div>
       </div>
     </div>
@@ -636,7 +753,9 @@ export function MonitorBoard() {
 }
 
 export function LogsBoard() {
-  const [rows, setRows] = useState<Extract<Awaited<ReturnType<typeof systemLogs>>, { ok: true }>["rows"]>([]);
+  const [rows, setRows] = useState<
+    Extract<Awaited<ReturnType<typeof systemLogs>>, { ok: true }>["rows"]
+  >([]);
   const [error, setError] = useState("");
   useEffect(() => {
     void loadLogs()
@@ -647,7 +766,8 @@ export function LogsBoard() {
       .catch(() => setError(t("No se pudieron leer los registros.")));
   }, []);
   if (error) return <p className="text-sm text-danger">{t(error)}</p>;
-  if (rows.length === 0) return <p className="text-sm text-muted">{t("Todavía no hay registros.")}</p>;
+  if (rows.length === 0)
+    return <p className="text-sm text-muted">{t("Todavía no hay registros.")}</p>;
   return (
     <ul className="overflow-hidden rounded-lg border border-line bg-surface">
       {rows.map((row) => (
@@ -663,7 +783,10 @@ export function LogsBoard() {
 }
 
 export function IndexBoard() {
-  const [status, setStatus] = useState<Extract<Awaited<ReturnType<typeof indexStatus>>, { ok: true }> | null>(null);
+  const [status, setStatus] = useState<Extract<
+    Awaited<ReturnType<typeof indexStatus>>,
+    { ok: true }
+  > | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -710,7 +833,8 @@ export function IndexBoard() {
 
   if (!status && error) return <p className="text-sm text-danger">{error}</p>;
   if (!status) return <p className="text-sm text-muted">{t("Leyendo…")}</p>;
-  const phase = status.pending > 0 ? t("Indexando…") : status.failed > 0 ? t("Con errores") : t("Al día");
+  const phase =
+    status.pending > 0 ? t("Indexando…") : status.failed > 0 ? t("Con errores") : t("Al día");
   const engine = status.engine === "elasticsearch" ? "Elasticsearch" : "Postgres";
   const cards = [
     [t("Indexados"), `${status.done} / ${status.total}`],

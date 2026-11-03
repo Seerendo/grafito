@@ -8,8 +8,8 @@ import { encryptionReady } from "@/server/crypto";
 import { mailReady, readMailSettings, sendMail, testMail, writeMailSettings } from "@/server/mail";
 
 /**
- * Administración → Correo electrónico (permiso `mail.manage`), Cuenta → Correo
- * y la nota secreta del correo de acceso. Ver docs/MAIL.md.
+ * Mail administration requires mail.manage; also provides account preferences and access-email
+ * secret notes. See docs/MAIL.md.
  */
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,7 +39,8 @@ function checkSettings(data: z.infer<typeof settingsInput>): string {
   if (data.publicUrl) {
     try {
       const url = new URL(data.publicUrl);
-      if (url.protocol !== "http:" && url.protocol !== "https:") return "La dirección de Grafito debe empezar por http:// o https://.";
+      if (url.protocol !== "http:" && url.protocol !== "https:")
+        return "La dirección de Grafito debe empezar por http:// o https://.";
     } catch {
       return "La dirección de Grafito no es válida (ej.: https://notas.ejemplo.com).";
     }
@@ -53,7 +54,12 @@ export const mailState = createServerFn({ method: "GET" })
     const { sql, allowed } = await manager(context.userId);
     if (!allowed) return { ok: false as const };
     const { password: _password, ...settings } = await readMailSettings(sql);
-    return { ok: true as const, settings, ready: mailReady(settings), encryption: encryptionReady() };
+    return {
+      ok: true as const,
+      settings,
+      ready: mailReady(settings),
+      encryption: encryptionReady(),
+    };
   });
 
 export const saveMailSettings = createServerFn({ method: "POST" })
@@ -65,7 +71,10 @@ export const saveMailSettings = createServerFn({ method: "POST" })
     const problem = checkSettings(data);
     if (problem) return { ok: false as const, error: problem };
     if (data.password && !encryptionReady()) {
-      return { ok: false as const, error: "Falta GRAFITO_ENCRYPTION_KEY en el servidor: no se puede guardar la contraseña." };
+      return {
+        ok: false as const,
+        error: "Falta GRAFITO_ENCRYPTION_KEY en el servidor: no se puede guardar la contraseña.",
+      };
     }
     await writeMailSettings(sql, data);
     await logActivity(sql, {
@@ -77,14 +86,17 @@ export const saveMailSettings = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-/** Prueba con lo que hay en el formulario (sin guardarlo); sin contraseña, usa la guardada. */
+/** Test unsaved mail settings, using the saved password when input is empty. */
 export const sendTestMail = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => settingsInput.extend({ to: z.string().trim().max(200) }).parse(input))
+  .validator((input: unknown) =>
+    settingsInput.extend({ to: z.string().trim().max(200) }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const { sql, profile, allowed } = await manager(context.userId);
     if (!allowed) return { ok: false as const, error: "Sin permiso." };
-    if (!emailPattern.test(data.to)) return { ok: false as const, error: "Escribe un correo válido para la prueba." };
+    if (!emailPattern.test(data.to))
+      return { ok: false as const, error: "Escribe un correo válido para la prueba." };
     const problem = checkSettings(data);
     if (problem) return { ok: false as const, error: problem };
     const saved = await readMailSettings(sql);
@@ -94,16 +106,20 @@ export const sendTestMail = createServerFn({ method: "POST" })
       hasPassword: true,
       publicUrl: data.publicUrl || saved.publicUrl,
     };
-    if (!mailReady(settings)) return { ok: false as const, error: "Falta el servidor o el remitente." };
+    if (!mailReady(settings))
+      return { ok: false as const, error: "Falta el servidor o el remitente." };
     try {
       await sendMail(sql, testMail(profile.locale || "es", data.to), settings);
       return { ok: true as const };
     } catch (error) {
-      return { ok: false as const, error: error instanceof Error ? error.message : "No se pudo enviar el correo." };
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "No se pudo enviar el correo.",
+      };
     }
   });
 
-// --- Cuenta → Correo --------------------------------------------------------------
+// Account email settings.
 
 export const mailPreferences = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -112,9 +128,14 @@ export const mailPreferences = createServerFn({ method: "GET" })
     const profile = await readUserProfile(sql, context.userId);
     const settings = await readMailSettings(sql);
     const { externalEmail } = await import("@/lib/auth/provision.server");
-    // Con LDAP, OAuth o SSO el correo lo da el proveedor y no se cambia aquí.
+    // External providers control account email.
     const provider = await externalEmail(sql, context.userId);
-    return { email: profile.contactEmail, notifyChanges: profile.notifyChanges, mailOn: mailReady(settings), provider };
+    return {
+      email: profile.contactEmail,
+      notifyChanges: profile.notifyChanges,
+      mailOn: mailReady(settings),
+      provider,
+    };
   });
 
 export const saveMailPreferences = createServerFn({ method: "POST" })
@@ -123,17 +144,24 @@ export const saveMailPreferences = createServerFn({ method: "POST" })
     z.object({ email: z.string().trim().max(120), notifyChanges: z.boolean() }).parse(input),
   )
   .handler(async ({ context, data }) => {
-    if (data.email && !emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
+    if (data.email && !emailPattern.test(data.email))
+      return { ok: false as const, error: "El correo no es válido." };
     const sql = await requireLease(context.userId);
     const { externalEmail } = await import("@/lib/auth/provision.server");
     if (await externalEmail(sql, context.userId)) {
-      // El correo lo fija el proveedor: solo se guardan los avisos.
+      // Persist notification preferences only when email is provider-controlled.
       await sql`
         insert into app_profile (user_id, notify_changes) values (${context.userId}, ${data.notifyChanges})
         on conflict (user_id) do update set notify_changes = excluded.notify_changes
       `;
-      const rows = await sql<{ contact_email: string | null }>`select contact_email from app_profile where user_id = ${context.userId}`;
-      return { ok: true as const, email: rows[0]?.contact_email ?? "", notifyChanges: data.notifyChanges };
+      const rows = await sql<{
+        contact_email: string | null;
+      }>`select contact_email from app_profile where user_id = ${context.userId}`;
+      return {
+        ok: true as const,
+        email: rows[0]?.contact_email ?? "",
+        notifyChanges: data.notifyChanges,
+      };
     }
     const email = data.email || null;
     await sql`
@@ -144,12 +172,9 @@ export const saveMailPreferences = createServerFn({ method: "POST" })
     return { ok: true as const, email: data.email, notifyChanges: data.notifyChanges };
   });
 
-// --- Nota secreta del correo de acceso (sin sesión) -------------------------------
+// Unauthenticated access-email secret note.
 
-/**
- * Abre la nota del correo de acceso y la destruye. Sin sesión: quien tiene el
- * enlace es quien la puede leer, una sola vez.
- */
+/** Read and destroy the access note. Possession of the link permits one unauthenticated read. */
 export const revealAccessNote = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ token: z.string().max(100) }).parse(input))
   .handler(async ({ data }) => {
@@ -161,7 +186,12 @@ export const revealAccessNote = createServerFn({ method: "POST" })
     try {
       const note = JSON.parse(plain) as { password?: string; login?: string; expiresAt?: number };
       if (!note.password) return { ok: false as const };
-      return { ok: true as const, password: note.password, login: note.login ?? "", expiresAt: note.expiresAt ?? 0 };
+      return {
+        ok: true as const,
+        password: note.password,
+        login: note.login ?? "",
+        expiresAt: note.expiresAt ?? 0,
+      };
     } catch {
       return { ok: false as const };
     }

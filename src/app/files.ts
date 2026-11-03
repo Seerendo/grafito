@@ -7,8 +7,8 @@ import { fileLink } from "@/server/files.functions";
 import { t } from "@/app/i18n";
 
 /**
- * Archivos en el cliente: subida por partes a `/api/files/uploads`, enlaces
- * firmados para ver y descargar, y el progreso de las subidas en curso.
+ * Client files: multipart uploads to /api/files/uploads, signed view/download links and upload
+ * progress.
  */
 
 export type FileLinks = { url: string; downloadUrl: string | null };
@@ -19,7 +19,9 @@ export const useUploads = create<{ uploads: Upload[] }>(() => ({ uploads: [] }))
 
 function track(upload: Upload | null, id: string): void {
   useUploads.setState((state) => ({
-    uploads: upload ? [...state.uploads.filter((item) => item.id !== id), upload] : state.uploads.filter((item) => item.id !== id),
+    uploads: upload
+      ? [...state.uploads.filter((item) => item.id !== id), upload]
+      : state.uploads.filter((item) => item.id !== id),
   }));
 }
 
@@ -30,14 +32,14 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
     headers: { ...(init.headers as Record<string, string> | undefined), ...bearerHeader() },
   });
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error || t("El servidor respondió {0}.", { 0: response.status }));
+  if (!response.ok)
+    throw new Error(body.error || t("El servidor respondió {0}.", { 0: response.status }));
   return body;
 }
 
 /**
- * Sube un archivo por partes. Devuelve su clave y tamaño, o lanza un Error con
- * el motivo. `target`: el portafolio donde quedará (para el espacio) y, si es
- * uno compartido conmigo, su `shareId`.
+ * Upload a file in parts, returning its key and size or throwing an explanatory Error. target
+ * identifies the destination portfolio for quota accounting and an optional shareId.
  */
 export async function uploadVaultFile(
   file: File,
@@ -48,19 +50,29 @@ export async function uploadVaultFile(
   track({ id, name: file.name, sent: 0, total: file.size }, id);
   let started: { key: string; uploadId: string; partSize: number } | null = null;
   try {
-    started = await call<{ key: string; uploadId: string; partSize: number }>("/api/files/uploads", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: file.name, mime, size: file.size, ...target }),
-    });
+    started = await call<{ key: string; uploadId: string; partSize: number }>(
+      "/api/files/uploads",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: file.name, mime, size: file.size, ...target }),
+      },
+    );
     const parts: { part: number; etag: string }[] = [];
     let offset = 0;
     let part = 1;
     do {
       const chunk = file.slice(offset, offset + started.partSize);
-      const query = new URLSearchParams({ key: started.key, uploadId: started.uploadId, part: String(part) });
+      const query = new URLSearchParams({
+        key: started.key,
+        uploadId: started.uploadId,
+        part: String(part),
+      });
       if (target.shareId) query.set("shareId", target.shareId);
-      const { etag } = await call<{ etag: string }>(`/api/files/uploads/part?${query}`, { method: "PUT", body: chunk });
+      const { etag } = await call<{ etag: string }>(`/api/files/uploads/part?${query}`, {
+        method: "PUT",
+        body: chunk,
+      });
       parts.push({ part, etag });
       offset += chunk.size;
       part += 1;
@@ -76,7 +88,12 @@ export async function uploadVaultFile(
       void call("/api/files/uploads/complete", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key: started.key, uploadId: started.uploadId, abort: true, ...target }),
+        body: JSON.stringify({
+          key: started.key,
+          uploadId: started.uploadId,
+          abort: true,
+          ...target,
+        }),
       }).catch(() => undefined);
     }
     throw error instanceof Error ? error : new Error(t("No se pudo subir."));
@@ -85,34 +102,35 @@ export async function uploadVaultFile(
   }
 }
 
-/** Los enlaces firmados duran una hora; se piden de nuevo pasados 50 minutos. */
+/** Signed links last one hour; refresh after fifty minutes. */
 const FRESH_MS = 50 * 60_000;
 const links = new Map<string, { links: FileLinks | null; at: number }>();
 
 /**
- * Por documento y versión del archivo (`key`): al guardarse (un dibujo, el
- * editor de Office) el archivo pasa a otro objeto y el anterior puede
- * borrarse, así que un enlace guardado de la versión vieja ya no sirve.
+ * Cache by document and file key. Drawing or Office saves replace the object and may delete its
+ * predecessor, invalidating links to the old version.
  */
 async function ownLinks(docId: string, key: string | null): Promise<FileLinks | null> {
   const id = `${docId}:${key ?? ""}`;
   const cached = links.get(id);
   if (cached && Date.now() - cached.at < FRESH_MS) return cached.links;
   const fresh = await fileLink({ data: { docId } }).catch(() => null);
-  // Solo se recuerda lo que salió bien: un archivo recién subido aún puede no estar en el servidor.
+  // Cache only successful results; newly uploaded files may not yet be known to the server.
   if (fresh) links.set(id, { links: fresh, at: Date.now() });
   return fresh;
 }
 
-/** Reintentos si el servidor aún no conoce el archivo (recién subido, sincronizando). */
+/** Retry while a newly uploaded file is still synchronizing to the server. */
 const LINK_RETRIES = 5;
 
 /**
- * Enlaces de un archivo propio. Los archivos antiguos que aún traen el
- * contenido (`dataUrl`) se ven directamente. `retry` vuelve a pedirlos, por
- * ejemplo cuando el archivo recién subido aún no había llegado al servidor.
+ * Links for an owned file. Legacy dataUrl files render directly. retry requests links again if
+ * an upload had not yet reached the server.
  */
-export function useFileLinks(docId: string, file: VaultFile | null): { links: FileLinks | null; retry: () => void } {
+export function useFileLinks(
+  docId: string,
+  file: VaultFile | null,
+): { links: FileLinks | null; retry: () => void } {
   const [state, setState] = useState<FileLinks | null>(null);
   const [attempt, setAttempt] = useState(0);
   const inline = !file?.key && file?.dataUrl ? file.dataUrl : null;
@@ -125,9 +143,7 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
   useEffect(() => {
     if (inline || !key) return;
     let cancelled = false;
-    // Otro documento: sin enlaces hasta tener los suyos. El mismo con una
-    // versión nueva (lo guardó un dibujo o el editor de Office): se siguen
-    // mostrando los anteriores mientras llegan, sin desmontar la vista.
+    // Clear links when changing documents. For a new version of the same file, keep existing links until replacements arrive to avoid unmounting the viewer.
     if (shownFor.current !== docId) {
       shownFor.current = docId;
       setState(null);
@@ -136,7 +152,8 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
     void ownLinks(docId, key).then((next) => {
       if (cancelled) return;
       setState(next);
-      if (!next && attempt < LINK_RETRIES) timer = window.setTimeout(() => setAttempt((value) => value + 1), 1500);
+      if (!next && attempt < LINK_RETRIES)
+        timer = window.setTimeout(() => setAttempt((value) => value + 1), 1500);
     });
     return () => {
       cancelled = true;
@@ -153,7 +170,7 @@ export function useFileLinks(docId: string, file: VaultFile | null): { links: Fi
   };
 }
 
-/** Descarga un archivo propio. */
+/** Download an owned file. */
 export async function downloadFile(document: Document): Promise<void> {
   const file = document.file;
   if (!file) return;

@@ -5,15 +5,16 @@ import { resolveToken, TOKEN_PREFIX } from "@/server/api-tokens";
 import { VaultError } from "@/server/vault";
 
 /**
- * Utilidades de las rutas HTTP propias (`/api/v1/*`, `/api/ai/*`), solo servidor.
- *
- * Autenticación, en este orden:
- *  - `Authorization: Bearer gft_…`: token personal (Cuenta → API).
- *  - La sesión del navegador (cookie o bearer de sesión), con su plazo vigente.
- *    Con cookie, solo desde el mismo sitio: otra web no puede usarla a escondidas.
+ * Server HTTP helpers. Authenticate personal gft_ bearer tokens first, then active browser
+ * cookie/session-bearer leases. Cookie-authenticated scripted requests require the same origin.
  */
 
-export type ApiCaller = { sql: Sql; userId: string; profile: UserProfile; via: "token" | "session" };
+export type ApiCaller = {
+  sql: Sql;
+  userId: string;
+  profile: UserProfile;
+  via: "token" | "session";
+};
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -26,7 +27,7 @@ export function apiError(status: number, message: string): Response {
   return json({ error: message }, status);
 }
 
-/** Convierte errores conocidos en respuestas HTTP. */
+/** Convert known failures into HTTP responses. */
 export function failure(error: unknown): Response {
   if (error instanceof Response) return error;
   if (error instanceof VaultError) return apiError(error.status, error.message);
@@ -39,7 +40,7 @@ function sameSite(request: Request): boolean {
   return !site || site === "same-origin" || site === "none";
 }
 
-/** Quién llama, o lanza una `Response` 401/403 lista para devolver. */
+/** Resolve the caller or throw a ready-to-return 401/403 Response. */
 export async function apiCaller(request: Request): Promise<ApiCaller> {
   const { getSql } = await import("@/lib/db");
   const sql = await getSql();

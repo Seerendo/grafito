@@ -1,11 +1,4 @@
-import {
-  FileText,
-  Folder,
-  Link2,
-  Network,
-  Plus,
-  Search,
-} from "lucide-react";
+import { FileText, Folder, Link2, Network, Plus, Search } from "lucide-react";
 import { clearStrayCaret, releaseFocus } from "@/app/blank-click";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Mark } from "@/components/brand/Mark";
@@ -24,14 +17,24 @@ import { useAiChat } from "@/app/ai-chat";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
-import { asDocuments, canEditSharedPortfolio, orderDocuments, rootParent } from "@/components/share/shared-tree";
+import {
+  asDocuments,
+  canEditSharedPortfolio,
+  orderDocuments,
+  rootParent,
+} from "@/components/share/shared-tree";
 import { SignatureDialog } from "./SignatureDialog";
 import { TrashBoard } from "./TrashBoard";
 import { ShareDialog } from "./ShareDialog";
 import { GitDialog } from "./GitDialog";
 import { SpaceDialog } from "./SpaceDialog";
 import { commitSharedLink, sharedCandidates, useSharedLinkCheck } from "@/app/shared-links";
-import { deletePortfolioFromShared, newSharedPortfolio, report, uploadFolderToShared } from "@/app/shared-actions";
+import {
+  deletePortfolioFromShared,
+  newSharedPortfolio,
+  report,
+  uploadFolderToShared,
+} from "@/app/shared-actions";
 import { ShareMirror } from "./ShareMirror";
 import { VisibilityProvider } from "./visibility";
 import { useVault } from "@/app/vault/store";
@@ -61,13 +64,13 @@ function useIsMobile() {
 }
 
 /**
- * La bóveda del usuario con sesión. No pinta nada hasta que el store tenga
- * cargada la bóveda de ese usuario, para no mostrar (ni replicar) la de otro.
+ * Render the signed-in user's vault only after the store has loaded that owner, preventing
+ * display or replication of another user's data.
  */
 export function VaultApp() {
   const userId = useCurrentUser()?.id;
   const owner = useVault((state) => state.owner);
-  // Los vínculos a lo compartido conmigo se quitan si pierdo el acceso.
+  // Remove shared-target links after confirmed access loss.
   useSharedLinkCheck();
 
   useEffect(() => {
@@ -84,7 +87,10 @@ export function VaultApp() {
 function NoReadAccess() {
   return (
     <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+      <header
+        data-ui="topbar"
+        className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3"
+      >
         <span className="flex items-center gap-0.5">
           <Mark />
           <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
@@ -121,15 +127,13 @@ function VaultWorkspace() {
 
   const holdGraph = graph && !mobile;
 
-
   const openNote = (id: string) => {
     if (id) useVault.getState().setActive(id);
     setGraph(false);
     setPane("note");
   };
 
-  // El grafo es el de lo que está abierto: un espacio de trabajo o algo
-  // compartido conmigo, o si no la Carpeta Personal.
+  // Graph the current shared/workspace view, otherwise the personal vault.
   const graphView = sharedTree ? (
     <GraphView
       onOpenNote={(id) => {
@@ -155,8 +159,7 @@ function VaultWorkspace() {
 
   const showFiles = () => setPane("files");
 
-  // Un documento compartido conmigo, o la papelera, ocupa el área principal
-  // hasta que se abre una nota propia o se vuelve a la raíz.
+  // Shared documents or trash occupy the main area until personal content or the root is opened.
   const openSharedDoc = () => {
     useTrashView.getState().setOpen(false);
     useVault.getState().closeActive();
@@ -201,7 +204,7 @@ function VaultWorkspace() {
     setPane("files");
   };
 
-  // Al volver desde Cuenta o Administración, sin un cursor suelto en «Filtrar».
+  // Clear stray filter carets when returning from account or administration.
   useEffect(() => {
     clearStrayCaret();
     const frame = requestAnimationFrame(clearStrayCaret);
@@ -220,7 +223,11 @@ function VaultWorkspace() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (useFullscreen.getState().on && !useVault.getState().dialog && !useAiChat.getState().open) {
+        if (
+          useFullscreen.getState().on &&
+          !useVault.getState().dialog &&
+          !useAiChat.getState().open
+        ) {
           useFullscreen.getState().exit();
           return;
         }
@@ -245,10 +252,10 @@ function VaultWorkspace() {
           target.blur();
           return;
         }
-        const hadChrome = state.graph || state.activeId || state.selectedPortfolioId || state.rootPicked;
+        const hadChrome =
+          state.graph || state.activeId || state.selectedPortfolioId || state.rootPicked;
         state.clearSelection();
-        // La fila que se había pulsado conserva el foco, y Esc (teclado) le
-        // dibujaría el anillo de foco: se suelta junto con la selección.
+        // Release row focus with selection so pressing Esc does not leave a focus ring.
         releaseFocus();
         if (hadChrome) setPane("files");
         return;
@@ -271,9 +278,13 @@ function VaultWorkspace() {
           mode === "read" ? "edit" : mode === "edit" && !narrow ? "split" : "read";
         useVault.getState().setMode(next);
       } else if (key === "b") {
-        // En el editor de la nota, Ctrl+B es negrita; en el resto, el chat de IA.
+        // Ctrl+B means bold inside the note editor and AI chat elsewhere.
         const target = event.target;
-        if (target instanceof HTMLTextAreaElement && target.getAttribute("aria-label") === "Contenido de la nota") return;
+        if (
+          target instanceof HTMLTextAreaElement &&
+          target.getAttribute("aria-label") === "Contenido de la nota"
+        )
+          return;
         event.preventDefault();
         useAiChat.getState().toggle();
       } else if (key === "g") {
@@ -300,13 +311,13 @@ function VaultWorkspace() {
   }, []);
 
   const toggleTree = () => {
-    // Sin recordar: al volver a la bóveda el directorio aparece desplegado.
+    // Do not persist collapse state; returning to the vault expands the directory.
     setTreeOpen((open) => !open);
   };
 
   const fullscreen = useFullscreen((state) => state.on);
   useEffect(() => watchFullscreen(), []);
-  // Sin nada abierto no hay qué ver a pantalla completa.
+  // Without an open item, fullscreen has no content.
   const nothingOpen = useVault((state) => !state.activeId) && !sharedPane;
   useEffect(() => {
     if (fullscreen && nothingOpen) useFullscreen.getState().exit();
@@ -340,99 +351,82 @@ function VaultWorkspace() {
 
   return (
     <VisibilityProvider>
-    <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      {fullscreen ? null : (
-      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button
-          type="button"
-          aria-label={t("Inicio")}
-          onClick={goHome}
-          onContextMenu={(event) => event.preventDefault()}
-          className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity hover:opacity-80"
-        >
-          <Mark />
-          <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setPalette(true)}
-          className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md bg-inset px-3 text-left text-sm text-muted"
-        >
-          <Search className="size-4 shrink-0" />
-          <span className="truncate">{t("Buscar")}</span>
-          <span className="ml-auto hidden text-xs text-faint lg:inline">{t("Ctrl K")}</span>
-        </button>
-        <AccountMenu />
-        {canGraph ? (
-        <button
-          type="button"
-          aria-label={graph ? t("Cerrar grafo") : t("Abrir grafo")}
-          aria-pressed={graph}
-          onClick={() => {
-            const next = !graph;
-            setGraph(next);
-            setPane(next ? "graph" : "note");
-          }}
-          className={`hidden h-11 w-11 shrink-0 place-items-center rounded-md md:grid ${
-            graph ? "text-accent" : "text-muted hover:text-fg"
-          }`}
-        >
-          <Network className="size-4" />
-        </button>
-        ) : null}
-        {canCreate ? (
-          <button
-            type="button"
-            aria-label={t("Nueva nota")}
-            onClick={() => {
-              createDocument(selectedPortfolioId);
-              setPane("note");
-            }}
-            className="ml-2 grid h-11 w-11 shrink-0 place-items-center rounded-md bg-accent text-accent-fg"
+      <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
+        {fullscreen ? null : (
+          <header
+            data-ui="topbar"
+            className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3"
           >
-            <Plus className="size-4" />
-          </button>
-        ) : null}
-      </header>
-      )}
+            <button
+              type="button"
+              aria-label={t("Inicio")}
+              onClick={goHome}
+              onContextMenu={(event) => event.preventDefault()}
+              className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity hover:opacity-80"
+            >
+              <Mark />
+              <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPalette(true)}
+              className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-md bg-inset px-3 text-left text-sm text-muted"
+            >
+              <Search className="size-4 shrink-0" />
+              <span className="truncate">{t("Buscar")}</span>
+              <span className="ml-auto hidden text-xs text-faint lg:inline">{t("Ctrl K")}</span>
+            </button>
+            <AccountMenu />
+            {canGraph ? (
+              <button
+                type="button"
+                aria-label={graph ? t("Cerrar grafo") : t("Abrir grafo")}
+                aria-pressed={graph}
+                onClick={() => {
+                  const next = !graph;
+                  setGraph(next);
+                  setPane(next ? "graph" : "note");
+                }}
+                className={`hidden h-11 w-11 shrink-0 place-items-center rounded-md md:grid ${
+                  graph ? "text-accent" : "text-muted hover:text-fg"
+                }`}
+              >
+                <Network className="size-4" />
+              </button>
+            ) : null}
+            {canCreate ? (
+              <button
+                type="button"
+                aria-label={t("Nueva nota")}
+                onClick={() => {
+                  createDocument(selectedPortfolioId);
+                  setPane("note");
+                }}
+                className="ml-2 grid h-11 w-11 shrink-0 place-items-center rounded-md bg-accent text-accent-fg"
+              >
+                <Plus className="size-4" />
+              </button>
+            ) : null}
+          </header>
+        )}
 
-      <div data-ui="panes" className="flex min-h-0 flex-1">
-        {fullscreen ? (
-          // Pantalla completa: solo la nota o el archivo abierto (ver `app/fullscreen.ts`).
-          <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
-            <FileDrop enabled={canAddFiles}>
-              {sharedPane ?? <EditorPane mobile={mobile} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />}
-            </FileDrop>
-          </div>
-        ) : mobile ? (
-          pane === "files" ? (
-            <Sidebar
-              onOpenNote={openNote}
-              onInspect={inspect}
-              onHome={showHome}
-              onOpenPortfolio={showPortfolio}
-              onOpenShared={openSharedDoc}
-              onOpenTrash={openTrash}
-              holdGraph={holdGraph}
-            />
-          ) : pane === "graph" ? (
-            <FileDrop enabled={canAddFiles}>
-              {graphView}
-            </FileDrop>
-          ) : pane === "links" ? (
-            <ContextPane onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} onFilter={showFiles} />
-          ) : sharedPane ? (
-            <FileDrop enabled={canAddFiles}>
-              {sharedPane}
-            </FileDrop>
-          ) : (
-            <FileDrop enabled={canAddFiles}>
-              <EditorPane mobile onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
-            </FileDrop>
-          )
-        ) : (
-          <>
-            {treeOpen ? (
+        <div data-ui="panes" className="flex min-h-0 flex-1">
+          {fullscreen ? (
+            // Fullscreen shows only the open document; see app/fullscreen.ts.
+            <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
+              <FileDrop enabled={canAddFiles}>
+                {sharedPane ?? (
+                  <EditorPane
+                    mobile={mobile}
+                    onOpenNote={openNote}
+                    onFilter={showFiles}
+                    onClose={closeNote}
+                  />
+                )}
+              </FileDrop>
+            </div>
+          ) : mobile ? (
+            pane === "files" ? (
               <Sidebar
                 onOpenNote={openNote}
                 onInspect={inspect}
@@ -440,96 +434,150 @@ function VaultWorkspace() {
                 onOpenPortfolio={showPortfolio}
                 onOpenShared={openSharedDoc}
                 onOpenTrash={openTrash}
-                onCollapse={toggleTree}
                 holdGraph={holdGraph}
               />
+            ) : pane === "graph" ? (
+              <FileDrop enabled={canAddFiles}>{graphView}</FileDrop>
+            ) : pane === "links" ? (
+              <ContextPane
+                onOpenNote={openNote}
+                onInspect={inspect}
+                holdGraph={holdGraph}
+                onFilter={showFiles}
+              />
+            ) : sharedPane ? (
+              <FileDrop enabled={canAddFiles}>{sharedPane}</FileDrop>
             ) : (
-              <SidebarRail onExpand={toggleTree} />
-            )}
-            <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
               <FileDrop enabled={canAddFiles}>
-                {graph ? (
-                  graphView
-                ) : sharedPane ? (
-                  sharedPane
-                ) : (
-                  <EditorPane mobile={false} onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
-                )}
+                <EditorPane mobile onOpenNote={openNote} onFilter={showFiles} onClose={closeNote} />
               </FileDrop>
-            </div>
-            <div data-ui="context-slot" className="hidden h-full lg:block">
-              {detailsOpen ? (
-                <ContextPane
+            )
+          ) : (
+            <>
+              {treeOpen ? (
+                <Sidebar
                   onOpenNote={openNote}
                   onInspect={inspect}
+                  onHome={showHome}
+                  onOpenPortfolio={showPortfolio}
+                  onOpenShared={openSharedDoc}
+                  onOpenTrash={openTrash}
+                  onCollapse={toggleTree}
                   holdGraph={holdGraph}
-                  onFilter={showFiles}
-                  onCollapse={() => setDetailsOpen(false)}
                 />
               ) : (
-                <ContextRail onExpand={() => setDetailsOpen(true)} />
+                <SidebarRail onExpand={toggleTree} />
               )}
-            </div>
-          </>
-        )}
-      </div>
+              <div data-ui="workspace" className="min-h-0 min-w-0 flex-1">
+                <FileDrop enabled={canAddFiles}>
+                  {graph ? (
+                    graphView
+                  ) : sharedPane ? (
+                    sharedPane
+                  ) : (
+                    <EditorPane
+                      mobile={false}
+                      onOpenNote={openNote}
+                      onFilter={showFiles}
+                      onClose={closeNote}
+                    />
+                  )}
+                </FileDrop>
+              </div>
+              <div data-ui="context-slot" className="hidden h-full lg:block">
+                {detailsOpen ? (
+                  <ContextPane
+                    onOpenNote={openNote}
+                    onInspect={inspect}
+                    holdGraph={holdGraph}
+                    onFilter={showFiles}
+                    onCollapse={() => setDetailsOpen(false)}
+                  />
+                ) : (
+                  <ContextRail onExpand={() => setDetailsOpen(true)} />
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
-      {mobile && !fullscreen ? (
-        <nav data-ui="tabbar" className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}>
-          <NavButton active={pane === "files"} label={t("Notas")} onClick={() => setPane("files")}>
-            <Folder className="size-5" />
-          </NavButton>
-          <NavButton active={pane === "note"} label={t("Nota")} onClick={() => { setGraph(false); setPane("note"); }}>
-            <FileText className="size-5" />
-          </NavButton>
-          {canGraph ? (
+        {mobile && !fullscreen ? (
+          <nav
+            data-ui="tabbar"
+            className={`grid h-16 shrink-0 border-t border-line bg-surface ${canGraph ? "grid-cols-4" : "grid-cols-3"}`}
+          >
             <NavButton
-              active={pane === "graph"}
-              label={t("Grafo")}
+              active={pane === "files"}
+              label={t("Notas")}
+              onClick={() => setPane("files")}
+            >
+              <Folder className="size-5" />
+            </NavButton>
+            <NavButton
+              active={pane === "note"}
+              label={t("Nota")}
               onClick={() => {
-                setGraph(true);
-                setPane("graph");
+                setGraph(false);
+                setPane("note");
               }}
             >
-              <Network className="size-5" />
+              <FileText className="size-5" />
             </NavButton>
-          ) : null}
-          <NavButton active={pane === "links"} label={t("Vínculos")} onClick={() => setPane("links")}>
-            <Link2 className="size-5" />
-          </NavButton>
-        </nav>
-      ) : null}
+            {canGraph ? (
+              <NavButton
+                active={pane === "graph"}
+                label={t("Grafo")}
+                onClick={() => {
+                  setGraph(true);
+                  setPane("graph");
+                }}
+              >
+                <Network className="size-5" />
+              </NavButton>
+            ) : null}
+            <NavButton
+              active={pane === "links"}
+              label={t("Vínculos")}
+              onClick={() => setPane("links")}
+            >
+              <Link2 className="size-5" />
+            </NavButton>
+          </nav>
+        ) : null}
 
-      <CommandPalette onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} />
-      <VaultDialogs />
-      <VaultMirror />
-      <TableIndexSync ownerId={owner} />
-      <VaultSync />
-      <ShareMirror />
-      <NotePdfHost />
-      <AiChat mobile={mobile} onOpenNote={openNote} />
-    </div>
+        <CommandPalette onOpenNote={openNote} onInspect={inspect} holdGraph={holdGraph} />
+        <VaultDialogs />
+        <VaultMirror />
+        <TableIndexSync ownerId={owner} />
+        <VaultSync />
+        <ShareMirror />
+        <NotePdfHost />
+        <AiChat mobile={mobile} onOpenNote={openNote} />
+      </div>
     </VisibilityProvider>
   );
 }
 
-function FileDrop({
-  enabled,
-  children,
-}: {
-  enabled: boolean;
-  children: ReactNode;
-}) {
+function FileDrop({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   const [over, setOver] = useState(false);
   const place = () => {
     const view = useSharedView.getState();
     const tree = view.tree;
     if (tree && tree.share.kind !== "portfolio") {
-      return { kind: "shared" as const, shareId: tree.share.id, portfolioId: null, name: tree.share.title, ok: false };
+      return {
+        kind: "shared" as const,
+        shareId: tree.share.id,
+        portfolioId: null,
+        name: tree.share.title,
+        ok: false,
+      };
     }
     if (tree?.share.kind === "portfolio") {
-      const root = tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
-      const fromDoc = view.docId ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null) : null;
+      const root =
+        tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
+      const fromDoc = view.docId
+        ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null)
+        : null;
       const portfolioId = view.docId
         ? fromDoc && tree.portfolios.some((portfolio) => portfolio.id === fromDoc)
           ? fromDoc
@@ -537,13 +585,22 @@ function FileDrop({
         : view.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === view.portfolioId)
           ? view.portfolioId
           : root;
-      const name = tree.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? tree.share.title;
-      return { kind: "shared" as const, shareId: tree.share.id, portfolioId, name, ok: canEditSharedPortfolio(tree, portfolioId) };
+      const name =
+        tree.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? tree.share.title;
+      return {
+        kind: "shared" as const,
+        shareId: tree.share.id,
+        portfolioId,
+        name,
+        ok: canEditSharedPortfolio(tree, portfolioId),
+      };
     }
     const state = useVault.getState();
     const active = state.documents.find((document) => document.id === state.activeId);
     const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
-    const name = state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? t("Carpeta Personal");
+    const name =
+      state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ??
+      t("Carpeta Personal");
     return { kind: "personal" as const, portfolioId, name, ok: true };
   };
 
@@ -588,7 +645,13 @@ function FileDrop({
       {children}
       {over ? (
         <div className="pointer-events-none absolute inset-3 z-30 grid place-items-center rounded-lg border-2 border-dashed border-accent bg-bg/80 text-sm text-fg">
-          {place().ok ? <>{t("Soltar para agregar a")}{" "}{place().name}</> : t("No puedes añadir nada a ese portafolio.")}
+          {place().ok ? (
+            <>
+              {t("Soltar para agregar a")} {place().name}
+            </>
+          ) : (
+            t("No puedes añadir nada a ese portafolio.")
+          )}
         </div>
       ) : null}
     </div>
@@ -618,7 +681,14 @@ function NavButton({
   );
 }
 
-type LinkCandidate = { key: string; targetId: string; target?: "portfolio"; shareId?: string; title: string; detail: string };
+type LinkCandidate = {
+  key: string;
+  targetId: string;
+  target?: "portfolio";
+  shareId?: string;
+  title: string;
+  detail: string;
+};
 
 function VaultDialogs() {
   const dialog = useVault((state) => state.dialog);
@@ -661,13 +731,13 @@ function VaultDialogs() {
       setQuery("");
       setLinkError("");
       setLinking(false);
-      // En un espacio el destino es de ese espacio. En la carpeta personal, también lo compartido conmigo.
+      // Workspace link targets belong to that workspace; personal targets may also include shared items.
       setShared([]);
       if (!dialog.shareId) void sharedCandidates().then(setShared);
     }
   }, [dialog]);
 
-  /** Notas, archivos y portafolios propios, y lo compartido conmigo. */
+  /** Owned notes, files and portfolios plus shared targets. */
   const candidates = useMemo(() => {
     if (dialog?.type !== "link") return [];
     const needle = query.trim().toLowerCase();
@@ -725,7 +795,13 @@ function VaultDialogs() {
   if (!dialog) return null;
 
   if (dialog.type === "signatures") {
-    return <SignatureDialog docId={dialog.docId} shareId={dialog.shareId} onClose={() => setDialog(null)} />;
+    return (
+      <SignatureDialog
+        docId={dialog.docId}
+        shareId={dialog.shareId}
+        onClose={() => setDialog(null)}
+      />
+    );
   }
 
   if (dialog.type === "share") {
@@ -765,7 +841,13 @@ function VaultDialogs() {
   }
 
   if (dialog.type === "space") {
-    return <SpaceDialog portfolioId={dialog.portfolioId} shareId={dialog.shareId} onClose={() => setDialog(null)} />;
+    return (
+      <SpaceDialog
+        portfolioId={dialog.portfolioId}
+        shareId={dialog.shareId}
+        onClose={() => setDialog(null)}
+      />
+    );
   }
 
   if (dialog.type === "git") {
@@ -813,7 +895,9 @@ function VaultDialogs() {
               return;
             }
             const ok =
-              dialog.type === "rename-document" ? rename(dialog.id, name) : renamePortfolio(dialog.id, name);
+              dialog.type === "rename-document"
+                ? rename(dialog.id, name)
+                : renamePortfolio(dialog.id, name);
             if (!ok) {
               setRenameError(t("Ese nombre ya está en este lugar."));
               setName(current ?? "");
@@ -844,14 +928,18 @@ function VaultDialogs() {
 
   if (dialog.type === "move-conflict") {
     const source = documents.find((item) => item.id === dialog.id);
-    const place = portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? t("Carpeta Personal");
+    const place =
+      portfolios.find((item) => item.id === dialog.portfolioId)?.name ?? t("Carpeta Personal");
     return (
       <Modal title={t("Mismo nombre")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          {t("Ya hay un «{0}» en {1}. Reemplazar borra el que ya estaba. Renombrar mueve este con otro nombre.", {
-            0: source?.title ?? t("documento"),
-            1: place,
-          })}
+          {t(
+            "Ya hay un «{0}» en {1}. Reemplazar borra el que ya estaba. Renombrar mueve este con otro nombre.",
+            {
+              0: source?.title ?? t("documento"),
+              1: place,
+            },
+          )}
         </p>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
@@ -885,7 +973,9 @@ function VaultDialogs() {
     return (
       <Modal title={t("Eliminar portafolio")} onClose={() => setDialog(null)}>
         <p className="text-sm text-muted">
-          {t("«{0}» y todo lo que contiene irán a la papelera.", { 0: dialog.name ?? portfolio?.name ?? t("Este portafolio") })}
+          {t("«{0}» y todo lo que contiene irán a la papelera.", {
+            0: dialog.name ?? portfolio?.name ?? t("Este portafolio"),
+          })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
@@ -911,13 +1001,20 @@ function VaultDialogs() {
       docs ? (docs === 1 ? t("1 documento") : t("{n} documentos", { n: docs })) : "",
     ].filter(Boolean);
     return (
-      <Modal title={t("Eliminar {n} elementos", { n: dialog.keys.length })} onClose={() => setDialog(null)}>
+      <Modal
+        title={t("Eliminar {n} elementos", { n: dialog.keys.length })}
+        onClose={() => setDialog(null)}
+      >
         <p className="text-sm text-muted">
-          {t("{0} irán a la papelera (los portafolios, con todo lo que contienen).", { 0: parts.join(t(" y ")) })}
+          {t("{0} irán a la papelera (los portafolios, con todo lo que contienen).", {
+            0: parts.join(t(" y ")),
+          })}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
-          <Danger onClick={() => useVault.getState().deleteMany(dialog.keys)}>{t("Eliminar")}</Danger>
+          <Danger onClick={() => useVault.getState().deleteMany(dialog.keys)}>
+            {t("Eliminar")}
+          </Danger>
         </div>
       </Modal>
     );
@@ -929,12 +1026,23 @@ function VaultDialogs() {
         {dialog.anchor ? (
           <p className="mb-3 rounded-md bg-inset px-3 py-2 text-sm">
             «{dialog.anchor.exact}»
-            <span className="text-faint">{" · "}{t("pág. {0}", { 0: dialog.anchor.page })}</span>
+            <span className="text-faint">
+              {" · "}
+              {t("pág. {0}", { 0: dialog.anchor.page })}
+            </span>
           </p>
         ) : null}
         <div className="grid grid-cols-2 gap-2">
-          <KindButton active={kind === "referencia"} label={t("Referencia")} onClick={() => setKind("referencia")} />
-          <KindButton active={kind === "llama"} label={t("Invoca")} onClick={() => setKind("llama")} />
+          <KindButton
+            active={kind === "referencia"}
+            label={t("Referencia")}
+            onClick={() => setKind("referencia")}
+          />
+          <KindButton
+            active={kind === "llama"}
+            label={t("Invoca")}
+            onClick={() => setKind("llama")}
+          />
         </div>
         <input
           value={query}
@@ -977,11 +1085,15 @@ function VaultDialogs() {
                 className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-elevated disabled:opacity-50"
               >
                 <span className="truncate">{item.title}</span>
-                <span className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-faint">{item.detail}</span>
+                <span className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-faint">
+                  {item.detail}
+                </span>
               </button>
             </li>
           ))}
-          {candidates.length === 0 ? <li className="px-2 py-3 text-sm text-faint">{t("No hay destinos.")}</li> : null}
+          {candidates.length === 0 ? (
+            <li className="px-2 py-3 text-sm text-faint">{t("No hay destinos.")}</li>
+          ) : null}
         </ul>
         {linkError ? <p className="mt-2 text-sm text-danger">{t(linkError)}</p> : null}
       </Modal>
@@ -1002,7 +1114,9 @@ function VaultDialogs() {
   return (
     <Modal title={t("Restaurar el ejemplo")} onClose={() => setDialog(null)}>
       <p className="text-sm text-muted">
-        {t("Esto sustituye la bóveda actual por los portafolios de ejemplo, incluido Inicio. Lo que hayas escrito aquí se pierde.")}
+        {t(
+          "Esto sustituye la bóveda actual por los portafolios de ejemplo, incluido Inicio. Lo que hayas escrito aquí se pierde.",
+        )}
       </p>
       <div className="mt-4 flex justify-end gap-2">
         <Ghost onClick={() => setDialog(null)}>{t("Cancelar")}</Ghost>
@@ -1012,7 +1126,15 @@ function VaultDialogs() {
   );
 }
 
-function KindButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function KindButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -1026,7 +1148,11 @@ function KindButton({ active, label, onClick }: { active: boolean; label: string
 
 function Ghost({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
+    >
       {children}
     </button>
   );
@@ -1042,7 +1168,11 @@ function Primary({
   onClick?: () => void;
 }) {
   return (
-    <button type={type} onClick={onClick} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg">
+    <button
+      type={type}
+      onClick={onClick}
+      className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg"
+    >
       {children}
     </button>
   );
@@ -1050,7 +1180,11 @@ function Primary({
 
 function Danger({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="h-11 rounded-md bg-danger px-4 text-sm font-medium text-accent-fg">
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-11 rounded-md bg-danger px-4 text-sm font-medium text-accent-fg"
+    >
       {children}
     </button>
   );

@@ -1,16 +1,9 @@
 /**
- * Qué puede ver y cambiar el asistente. Puro (sin base de datos): las mismas
- * reglas que la bóveda, para poder probarlas solas.
- *
- * - Lo propio se lee con `notes.read` y se cambia con `notes.edit` (y el
- *   perfil de solo lectura lo impide). Un administrador no salta la bóveda
- *   de otra persona: aquí no entra nada que no sea suyo o que le hayan dado.
- * - Un elemento compartido que no es un espacio se lee entero; se cambia
- *   solo si el acceso es de edición o de administración.
- * - En un espacio, quien no lo tiene entero solo ve las carpetas concedidas.
- *   Lectura o edición sale de esa concesión, no del rol. Coincide con
- *   `mayReadInPortfolio` / `mayWriteInPortfolio` (`server/share.ts`) y con
- *   `canEditSharedPortfolio` (`components/share/shared-tree.ts`).
+ * Pure assistant visibility/write rules mirror the vault. Owned content requires role
+ * permissions and respects read-only personas. Shared non-workspace content requires share
+ * access. Workspace members see only granted folders unless they have full access.
+ * Administrator status cannot bypass ownership or grants. Keep consistent with server/share.ts
+ * and components/share/shared-tree.ts.
  */
 
 export type ShareLevel = "admin" | "edit" | "read";
@@ -20,17 +13,16 @@ export type AiSource = "propio" | "compartido" | "espacio";
 
 export type ShareFacts = {
   access: ShareLevel;
-  /** Espacio de trabajo (la cuenta interna compartida con una organización). */
+  /** Organization workspace backed by an internal account. */
   workspace?: boolean;
   /**
-   * Concesión por carpeta. La trae el árbol cuando la persona no administra
-   * el espacio ni lo tiene entero en edición. Sin la clave, la carpeta es
-   * solo el camino.
+   * Per-folder grants for users without full workspace edit/admin access. Missing keys denote
+   * navigation-only folders.
    */
   folderAccess?: Readonly<Record<string, FolderLevel>>;
 };
 
-/** Permisos del rol ya resueltos, más el perfil de solo lectura. */
+/** Resolved role capabilities plus the read-only persona flag. */
 export type VaultCaps = {
   readOnly: boolean;
   editNotes: boolean;
@@ -41,7 +33,7 @@ export type VaultCaps = {
 export type AiDoc = {
   id: string;
   ownerId: string;
-  /** `null` en la bóveda propia. */
+  /** null for the owned vault. */
   shareId: string | null;
   title: string;
   kind: "markdown" | "file";
@@ -53,7 +45,7 @@ export type AiDoc = {
 };
 
 export type AiFolder = {
-  /** `null` es la Carpeta Personal. */
+  /** null denotes the personal root. */
   id: string | null;
   ownerId: string;
   shareId: string | null;
@@ -90,7 +82,7 @@ export type ShareSlice = {
 
 const CHOICES = 8;
 
-/** Si se puede leer un documento de ese portafolio. Fuera de un espacio, el elemento basta. */
+/** Whether documents in this portfolio are readable; ordinary shares require only share access. */
 export function canReadShare(facts: ShareFacts, portfolioId: string | null): boolean {
   if (facts.access === "admin" || facts.access === "edit") return true;
   if (facts.folderAccess) {
@@ -101,7 +93,7 @@ export function canReadShare(facts: ShareFacts, portfolioId: string | null): boo
   return true;
 }
 
-/** Si se puede crear o cambiar en ese portafolio. No mira el rol ni el perfil. */
+/** Portfolio write/create access, excluding role and persona checks. */
 export function canWriteShare(facts: ShareFacts, portfolioId: string | null): boolean {
   if (facts.access === "admin") return true;
   if (facts.folderAccess) return Boolean(portfolioId && facts.folderAccess[portfolioId] === "edit");
@@ -109,7 +101,7 @@ export function canWriteShare(facts: ShareFacts, portfolioId: string | null): bo
   return facts.access === "edit";
 }
 
-/** Escritura en la bóveda propia: el rol lo permite y el perfil no es de solo lectura. */
+/** Owned-vault writes require the role capability and a writable persona. */
 export function canWriteOwn(roleCanEdit: boolean, readOnlyProfile: boolean): boolean {
   return roleCanEdit && !readOnlyProfile;
 }
@@ -124,7 +116,7 @@ export function createRefusal(folder: Pick<AiFolder, "place" | "access">): strin
   return `Puedes ver «${folder.place}» pero no crear ni modificar nada ahí.`;
 }
 
-/** Quita `[[ ]]` y comillas que el modelo suele dejar alrededor de un título. */
+/** Strip wiki brackets and quotes that models often wrap around titles. */
 export function cleanRef(ref: string): string {
   return ref
     .trim()
@@ -137,9 +129,8 @@ export type DocMatch =
   { status: "one"; doc: AiDoc } | { status: "choices"; docs: AiDoc[] } | { status: "none" };
 
 /**
- * Un documento por id exacto, por título exacto o, si solo uno lo contiene,
- * por parte del título. Varios resultados no se colapsan al primero: el
- * modelo tiene que elegir. Un id que no está no se busca en otros títulos.
+ * Resolve exact IDs or titles, or unique title substrings. Preserve ambiguity for the model to
+ * resolve. Missing IDs must not fall back to title search.
  */
 export function matchDocs(docs: readonly AiDoc[], ref: string): DocMatch {
   const key = cleanRef(ref);
@@ -166,8 +157,8 @@ export type FolderMatch =
   | { status: "missing" };
 
 /**
- * Un portafolio por id, por ruta («Proyectos › Atlas» o el sitio completo) o
- * por nombre si no se repite. «root» y «Carpeta Personal» son la raíz propia.
+ * Resolve portfolios by ID, path or unique name. root and the localized personal-root name
+ * denote the owned root.
  */
 export function matchFolders(folders: readonly AiFolder[], ref: string): FolderMatch {
   const key = cleanRef(ref);
@@ -194,8 +185,8 @@ export function matchFolders(folders: readonly AiFolder[], ref: string): FolderM
 }
 
 /**
- * De una búsqueda en la bóveda de alguien, solo los documentos que esta
- * persona puede abrir. Lo demás no sale del servidor hacia el modelo.
+ * Filter another vault's search results to documents the caller may open before exposing
+ * anything to the model.
  */
 export function takeVisible(
   hits: readonly { id: string }[],
@@ -247,7 +238,7 @@ function shareLabel(share: ShareSlice): string {
   return share.workspace ? `Espacio · ${share.title}` : `Compartido · ${share.ownerName}`;
 }
 
-/** Una nota propia que no venía en el lote cargado (la búsqueda la encontró). */
+/** Owned note found by search but absent from the preloaded batch. */
 export function describeOwnDoc(
   userId: string,
   caps: VaultCaps,
@@ -292,9 +283,9 @@ function sharedDocAccess(caps: VaultCaps, facts: ShareFacts, portfolioId: string
 }
 
 /**
- * Arma lo que el asistente puede nombrar. Un documento de un espacio que no
- * está concedido no entra, aunque el árbol lo trajera. Si el mismo documento
- * llega por dos elementos, se queda el que permite editar.
+ * Build the assistant's visible corpus, excluding ungranted workspace documents even if
+ * supplied in a tree. Prefer writable access when the same document appears through multiple
+ * shares.
  */
 export function assembleView(input: {
   userId: string;

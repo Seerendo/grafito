@@ -1,6 +1,6 @@
 import { markSpans, type Passage } from "@/domain/search-text";
 
-/** Pinta en negrita cada vez que la frase aparece en un título. */
+/** Bold every occurrence of the search phrase in a title. */
 export function Marked({ text, query }: { text: string; query: string }) {
   return markSpans(text, query).map((span, index) =>
     span.mark ? (
@@ -13,7 +13,7 @@ export function Marked({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** Una línea por aparición: el texto del documento, con la frase en negrita. */
+/** One document excerpt per match, with the phrase bolded. */
 export function PassageLines({
   passages,
   more = 0,

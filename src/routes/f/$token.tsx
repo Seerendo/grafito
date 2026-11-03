@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PublicFormScreen } from "@/components/vault/TableForm";
 
-/** Formulario público de una tabla. No pasa por el ingreso. */
+/** Public table form bypassing sign-in. */
 export const Route = createFileRoute("/f/$token")({
   component: PublicForm,
 });

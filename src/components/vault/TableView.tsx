@@ -27,7 +27,15 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { rememberTableText } from "@/app/table-index";
 import { computeFormulas, type FormulaRun } from "@/domain/vault/formula";
 import { fetchSharedTree } from "@/app/shared-open";
@@ -75,11 +83,9 @@ import { FormDialog } from "./TableForm";
 import { intl, t } from "@/app/i18n";
 
 /**
- * Una tabla de datos (ver `domain/vault/table.ts`): columnas con tipo y filas,
- * editables celda a celda. Cada cambio se guarda al momento en el servidor y
- * cada 10 segundos llegan los de los demás. Las columnas de vínculo apuntan a
- * notas, archivos y portafolios de la misma bóveda (la propia, o la del
- * espacio de trabajo con `shareId`).
+ * Typed data-table columns and rows, edited cell by cell. Save each change immediately and
+ * refresh other users' changes every ten seconds. Link columns reference documents and
+ * portfolios in the same personal or shared workspace vault.
  */
 
 const ROW_HEIGHT = 36;
@@ -128,19 +134,40 @@ const WIDTH: Record<FieldType, number> = {
   formula: 160,
 };
 
-type Target = { id: string; title: string; kind: "document" | "portfolio"; file: boolean; table: boolean; place: string };
+type Target = {
+  id: string;
+  title: string;
+  kind: "document" | "portfolio";
+  file: boolean;
+  table: boolean;
+  place: string;
+};
 
-/** Lo que se puede vincular y cómo abrirlo: la bóveda propia, o la del elemento compartido. */
-function useTargets(shareId: string | undefined, selfId: string, onOpenNote?: (id: string) => void) {
+/** Available link targets and navigation for the personal or shared vault. */
+function useTargets(
+  shareId: string | undefined,
+  selfId: string,
+  onOpenNote?: (id: string) => void,
+) {
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
-  const tree = useSharedView((state) => (shareId && state.tree?.share.id === shareId ? state.tree : null));
+  const tree = useSharedView((state) =>
+    shareId && state.tree?.share.id === shareId ? state.tree : null,
+  );
   const targets = useMemo<Target[]>(() => {
-    const folderName = (list: { id: string; name: string }[], id: string | null) => list.find((item) => item.id === id)?.name ?? "";
+    const folderName = (list: { id: string; name: string }[], id: string | null) =>
+      list.find((item) => item.id === id)?.name ?? "";
     if (shareId) {
       if (!tree) return [];
       return [
-        ...tree.portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, table: false, place: folderName(tree.portfolios, portfolio.parentId) })),
+        ...tree.portfolios.map((portfolio) => ({
+          id: portfolio.id,
+          title: portfolio.name,
+          kind: "portfolio" as const,
+          file: false,
+          table: false,
+          place: folderName(tree.portfolios, portfolio.parentId),
+        })),
         ...tree.documents
           .filter((document) => document.id !== selfId)
           .map((document) => ({
@@ -154,7 +181,14 @@ function useTargets(shareId: string | undefined, selfId: string, onOpenNote?: (i
       ];
     }
     return [
-      ...portfolios.map((portfolio) => ({ id: portfolio.id, title: portfolio.name, kind: "portfolio" as const, file: false, table: false, place: folderName(portfolios, portfolio.parentId) })),
+      ...portfolios.map((portfolio) => ({
+        id: portfolio.id,
+        title: portfolio.name,
+        kind: "portfolio" as const,
+        file: false,
+        table: false,
+        place: folderName(portfolios, portfolio.parentId),
+      })),
       ...documents
         .filter((document) => document.id !== selfId)
         .map((document) => ({
@@ -167,7 +201,10 @@ function useTargets(shareId: string | undefined, selfId: string, onOpenNote?: (i
         })),
     ];
   }, [shareId, tree, documents, portfolios, selfId]);
-  const byKey = useMemo(() => new Map(targets.map((target) => [`${target.kind}:${target.id}`, target])), [targets]);
+  const byKey = useMemo(
+    () => new Map(targets.map((target) => [`${target.kind}:${target.id}`, target])),
+    [targets],
+  );
   const title = (ref: VaultRef) => byKey.get(`${ref.kind}:${ref.id}`)?.title ?? t("(ya no está)");
   const open = (ref: VaultRef) => {
     if (shareId) {
@@ -204,7 +241,11 @@ export function TableView({
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, string>>({});
   const [form, setForm] = useState<TableForm | null>(null);
-  const [layout, setLayout] = useState<TableLayout>({ mode: "grid", kanbanFieldId: null, calendarFieldId: null });
+  const [layout, setLayout] = useState<TableLayout>({
+    mode: "grid",
+    kanbanFieldId: null,
+    calendarFieldId: null,
+  });
   const [formOpen, setFormOpen] = useState(false);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -215,7 +256,9 @@ export function TableView({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<{ rowId: string; fieldId: string } | null>(null);
   const [fieldMenu, setFieldMenu] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<null | { kind: "rows" } | { kind: "field"; id: string }>(null);
+  const [confirmDelete, setConfirmDelete] = useState<
+    null | { kind: "rows" } | { kind: "field"; id: string }
+  >(null);
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ top: 0, height: 600 });
@@ -224,7 +267,7 @@ export function TableView({
   const { targets, title: refTitle, open: openRef } = useTargets(shareId, docId, onOpenNote);
   const editable = canEdit && mayEdit;
 
-  // Cargar, y luego lo de los demás cada pocos segundos (si la pestaña se ve).
+  // Load initially, then poll while the tab is visible.
   useEffect(() => {
     let alive = true;
     setLoaded(false);
@@ -257,9 +300,13 @@ export function TableView({
             const gone = new Set(result.deleted);
             setRows((current) => {
               const changed = new Map(result.rows.map((row) => [row.id, row]));
-              const kept = current.filter((row) => !gone.has(row.id)).map((row) => changed.get(row.id) ?? row);
+              const kept = current
+                .filter((row) => !gone.has(row.id))
+                .map((row) => changed.get(row.id) ?? row);
               const known = new Set(kept.map((row) => row.id));
-              return [...kept, ...result.rows.filter((row) => !known.has(row.id))].sort((a, b) => a.position - b.position);
+              return [...kept, ...result.rows.filter((row) => !known.has(row.id))].sort(
+                (a, b) => a.position - b.position,
+              );
             });
           }
         })
@@ -281,15 +328,19 @@ export function TableView({
     return map;
   }, [fields, rows]);
   const cellOf = (row: TableRow, field: TableField): CellValue =>
-    field.type === "formula" ? (formulas.get(row.id)?.values[field.id] ?? null) : (row.cells[field.id] ?? null);
+    field.type === "formula"
+      ? (formulas.get(row.id)?.values[field.id] ?? null)
+      : (row.cells[field.id] ?? null);
 
-  // Lo que se ve: búsqueda, filtros por columna y orden.
+  // Visible rows after search, column filters and sorting.
   const shown = useMemo(() => {
-    const text = (field: TableField, value: CellValue) => String(sortKey(field.type, value, labelOf, rowTitle)).toLowerCase();
+    const text = (field: TableField, value: CellValue) =>
+      String(sortKey(field.type, value, labelOf, rowTitle)).toLowerCase();
     const needle = search.trim().toLowerCase();
     const active = Object.entries(filters).filter(([, value]) => value.trim());
     let list = rows.filter((row) => {
-      if (needle && !fields.some((field) => text(field, cellOf(row, field)).includes(needle))) return false;
+      if (needle && !fields.some((field) => text(field, cellOf(row, field)).includes(needle)))
+        return false;
       return active.every(([fieldId, value]) => {
         const field = fields.find((item) => item.id === fieldId);
         if (!field) return true;
@@ -305,7 +356,10 @@ export function TableView({
         list = [...list].sort((a, b) => {
           const left = cellOf(a, field);
           const right = cellOf(b, field);
-          const order = compareKeys(sortKey(field.type, left, labelOf, rowTitle), sortKey(field.type, right, labelOf, rowTitle));
+          const order = compareKeys(
+            sortKey(field.type, left, labelOf, rowTitle),
+            sortKey(field.type, right, labelOf, rowTitle),
+          );
           const blankA = left === null || left === "";
           const blankB = right === null || right === "";
           return blankA !== blankB ? (blankA ? 1 : -1) : order * sort.dir;
@@ -316,9 +370,12 @@ export function TableView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, fields, search, filters, sort, targets, labels, names, formulas]);
 
-  // Solo se dibujan las filas visibles (y unas cuantas más): miles de filas sin trabarse.
+  // Virtualize rows with a small overscan to keep large tables responsive.
   const first = Math.max(0, Math.floor(scroll.top / ROW_HEIGHT) - OVERSCAN);
-  const last = Math.min(shown.length, Math.ceil((scroll.top + scroll.height) / ROW_HEIGHT) + OVERSCAN);
+  const last = Math.min(
+    shown.length,
+    Math.ceil((scroll.top + scroll.height) / ROW_HEIGHT) + OVERSCAN,
+  );
   const visible = shown.slice(first, last);
   useEffect(() => {
     const element = scrollRef.current;
@@ -332,7 +389,8 @@ export function TableView({
 
   const report = (error?: string) => setMessage(error ? t(error) : "");
   const linkChanged = (field: TableField) => {
-    if ((field.type !== "link" && field.type !== "file" && field.type !== "relation") || shareId) return;
+    if ((field.type !== "link" && field.type !== "file" && field.type !== "relation") || shareId)
+      return;
     const owner = useVault.getState().owner;
     if (owner) void syncVault(owner);
   };
@@ -340,15 +398,27 @@ export function TableView({
   useEffect(() => {
     const text = rows
       .map((row) =>
-        fields.map((field) => plainCell(field.type, cellOf(row, field), (ref) => ("kind" in ref ? labelOf(ref as VaultRef) : rowTitle(ref as RowRef)))).join(" "),
+        fields
+          .map((field) =>
+            plainCell(field.type, cellOf(row, field), (ref) =>
+              "kind" in ref ? labelOf(ref as VaultRef) : rowTitle(ref as RowRef),
+            ),
+          )
+          .join(" "),
       )
       .join("\n");
     rememberTableText(docId, text);
   }, [docId, rows, fields, labels, names, formulas]);
 
   const setCell = async (row: TableRow, field: TableField, value: CellValue) => {
-    setRows((current) => current.map((item) => (item.id === row.id ? { ...item, cells: { ...item.cells, [field.id]: value } } : item)));
-    const result = await tableUpdateCell({ data: { ...where, rowId: row.id, fieldId: field.id, value } }).catch(() => null);
+    setRows((current) =>
+      current.map((item) =>
+        item.id === row.id ? { ...item, cells: { ...item.cells, [field.id]: value } } : item,
+      ),
+    );
+    const result = await tableUpdateCell({
+      data: { ...where, rowId: row.id, fieldId: field.id, value },
+    }).catch(() => null);
     if (!result?.ok) {
       setRows((current) => current.map((item) => (item.id === row.id ? row : item)));
       report(result?.error ?? "No se pudo guardar.");
@@ -360,7 +430,9 @@ export function TableView({
 
   const addRow = async () => {
     setBusy(true);
-    const result = await tableAddRows({ data: { ...where, rows: [{ cells: {} }] } }).catch(() => null);
+    const result = await tableAddRows({ data: { ...where, rows: [{ cells: {} }] } }).catch(
+      () => null,
+    );
     setBusy(false);
     if (!result?.ok) return report(result?.error ?? "No se pudo añadir la fila.");
     setRows((current) => [...current, ...result.rows]);
@@ -368,14 +440,33 @@ export function TableView({
     setFilters({});
     const created = result.rows[0];
     const firstField = fields[0];
-    if (created && firstField && firstField.type !== "checkbox" && firstField.type !== "formula") setEditing({ rowId: created.id, fieldId: firstField.id });
-    requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }));
+    if (created && firstField && firstField.type !== "checkbox" && firstField.type !== "formula")
+      setEditing({ rowId: created.id, fieldId: firstField.id });
+    requestAnimationFrame(() =>
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }),
+    );
   };
 
   const saveField = async (field: TableField) => {
-    setFields((current) => (current.some((item) => item.id === field.id) ? current.map((item) => (item.id === field.id ? field : item)) : [...current, field]));
+    setFields((current) =>
+      current.some((item) => item.id === field.id)
+        ? current.map((item) => (item.id === field.id ? field : item))
+        : [...current, field],
+    );
     const result = await tableSaveField({
-      data: { ...where, field: { id: field.id, name: field.name, type: field.type, choices: field.choices, position: field.position, width: field.width ?? null, relatedTableId: field.relatedTableId ?? null, formula: field.formula ?? null } },
+      data: {
+        ...where,
+        field: {
+          id: field.id,
+          name: field.name,
+          type: field.type,
+          choices: field.choices,
+          position: field.position,
+          width: field.width ?? null,
+          relatedTableId: field.relatedTableId ?? null,
+          formula: field.formula ?? null,
+        },
+      },
     }).catch(() => null);
     if (!result?.ok) {
       const fresh = await tableOpen({ data: where }).catch(() => null);
@@ -386,7 +477,7 @@ export function TableView({
       }
       return report(result?.error ?? "No se pudo guardar la columna.");
     }
-    // Al cambiar de tipo, los valores se convierten en el servidor.
+    // Convert existing values on the server when changing column type.
     const fresh = await tableOpen({ data: where }).catch(() => null);
     if (fresh?.ok) {
       setFields(fresh.fields);
@@ -398,7 +489,12 @@ export function TableView({
 
   const addField = () => {
     const position = Math.max(-1, ...fields.map((field) => field.position)) + 1;
-    const field: TableField = { id: crypto.randomUUID(), name: t("Columna {n}", { n: fields.length + 1 }), type: "text", position };
+    const field: TableField = {
+      id: crypto.randomUUID(),
+      name: t("Columna {n}", { n: fields.length + 1 }),
+      type: "text",
+      position,
+    };
     void saveField(field);
     setFieldMenu(field.id);
   };
@@ -416,22 +512,52 @@ export function TableView({
     setRows((current) => current.filter((row) => !picked.has(row.id)));
     setPicked(new Set());
     for (let index = 0; index < ids.length; index += 1000) {
-      const result = await tableDeleteRows({ data: { ...where, rowIds: ids.slice(index, index + 1000) } }).catch(() => null);
+      const result = await tableDeleteRows({
+        data: { ...where, rowIds: ids.slice(index, index + 1000) },
+      }).catch(() => null);
       if (!result?.ok) return report(result?.error ?? "No se pudieron borrar las filas.");
     }
-    if (fields.some((field) => field.type === "link" || field.type === "file" || field.type === "relation")) linkChanged(fields.find((field) => field.type === "link" || field.type === "file" || field.type === "relation")!);
+    if (
+      fields.some(
+        (field) => field.type === "link" || field.type === "file" || field.type === "relation",
+      )
+    )
+      linkChanged(
+        fields.find(
+          (field) => field.type === "link" || field.type === "file" || field.type === "relation",
+        )!,
+      );
   };
 
   const display = (field: TableField, value: CellValue): string => {
     if (value === null || value === undefined) return "";
-    if ((field.type === "number" || field.type === "formula") && typeof value === "number") return new Intl.NumberFormat(intl()).format(value);
-    if (typeof value === "string" && (field.type === "date" || (field.type === "formula" && /^\d{4}-\d{2}-\d{2}$/.test(value)))) {
+    if ((field.type === "number" || field.type === "formula") && typeof value === "number")
+      return new Intl.NumberFormat(intl()).format(value);
+    if (
+      typeof value === "string" &&
+      (field.type === "date" || (field.type === "formula" && /^\d{4}-\d{2}-\d{2}$/.test(value)))
+    ) {
       const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-      return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", year: "numeric" }).format(date);
+      return Number.isNaN(date.getTime())
+        ? value
+        : new Intl.DateTimeFormat(intl(), {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }).format(date);
     }
-    if (field.type === "checkbox" || (field.type === "formula" && typeof value === "boolean")) return value ? t("Sí") : "";
-    if ((field.type === "link" || field.type === "file") && Array.isArray(value)) return value.filter((ref) => "kind" in ref).map((ref) => labelOf(ref as VaultRef)).join(", ");
-    if (field.type === "relation" && Array.isArray(value)) return value.filter((ref) => "rowId" in ref).map((ref) => rowTitle(ref as RowRef)).join(", ");
+    if (field.type === "checkbox" || (field.type === "formula" && typeof value === "boolean"))
+      return value ? t("Sí") : "";
+    if ((field.type === "link" || field.type === "file") && Array.isArray(value))
+      return value
+        .filter((ref) => "kind" in ref)
+        .map((ref) => labelOf(ref as VaultRef))
+        .join(", ");
+    if (field.type === "relation" && Array.isArray(value))
+      return value
+        .filter((ref) => "rowId" in ref)
+        .map((ref) => rowTitle(ref as RowRef))
+        .join(", ");
     return String(value);
   };
 
@@ -441,7 +567,13 @@ export function TableView({
       fields.map((field) => {
         const value = cellOf(row, field);
         if (field.type === "checkbox") return value ? "sí" : "no";
-        if (field.type === "number" || field.type === "date" || field.type === "time" || field.type === "identifier") return value === null ? "" : String(value);
+        if (
+          field.type === "number" ||
+          field.type === "date" ||
+          field.type === "time" ||
+          field.type === "identifier"
+        )
+          return value === null ? "" : String(value);
         return display(field, value);
       }),
     );
@@ -460,7 +592,7 @@ export function TableView({
     if (!header || data.length === 0) return report("El archivo no tiene filas.");
     setBusy(true);
     setMessage(t("Importando {n} filas…", { n: data.length }));
-    // Columnas por nombre; las que no existen se crean (con el tipo que parezcan tener).
+    // Match columns by name; infer types when creating missing columns.
     const empty = rows.length === 0 && fields.length === 1 && fields[0]!.name === "Nombre";
     let known = [...fields];
     let position = Math.max(-1, ...known.map((field) => field.position)) + 1;
@@ -471,12 +603,19 @@ export function TableView({
       let field = known.find((item) => item.name.trim().toLowerCase() === name.toLowerCase());
       if (!field && empty && index === 0) {
         field = { ...known[0]!, name, type: guessType(values) };
-        await tableSaveField({ data: { ...where, field: { id: field.id, name, type: field.type } } }).catch(() => null);
+        await tableSaveField({
+          data: { ...where, field: { id: field.id, name, type: field.type } },
+        }).catch(() => null);
         known = [field];
       }
       if (!field) {
         field = { id: crypto.randomUUID(), name, type: guessType(values), position: position++ };
-        const saved = await tableSaveField({ data: { ...where, field: { id: field.id, name, type: field.type, position: field.position } } }).catch(() => null);
+        const saved = await tableSaveField({
+          data: {
+            ...where,
+            field: { id: field.id, name, type: field.type, position: field.position },
+          },
+        }).catch(() => null);
         if (!saved?.ok) {
           setBusy(false);
           return report(saved?.error ?? "No se pudo crear la columna.");
@@ -487,7 +626,9 @@ export function TableView({
     }
     for (let index = 0; index < data.length; index += 500) {
       const batch = data.slice(index, index + 500).map((line) => ({
-        cells: Object.fromEntries(columnIds.map((fieldId, column) => [fieldId, line[column] ?? ""])),
+        cells: Object.fromEntries(
+          columnIds.map((fieldId, column) => [fieldId, line[column] ?? ""]),
+        ),
       }));
       const result = await tableAddRows({ data: { ...where, rows: batch } }).catch(() => null);
       if (!result?.ok) {
@@ -506,14 +647,22 @@ export function TableView({
   };
 
   const portfolioId = shareId
-    ? (useSharedView.getState().tree?.documents.find((document) => document.id === docId)?.portfolioId ?? null)
-    : (useVault.getState().documents.find((document) => document.id === docId)?.portfolioId ?? null);
+    ? (useSharedView.getState().tree?.documents.find((document) => document.id === docId)
+        ?.portfolioId ?? null)
+    : (useVault.getState().documents.find((document) => document.id === docId)?.portfolioId ??
+      null);
 
   const attach = async (file: File): Promise<VaultRef | null> => {
     try {
       const stored = await uploadVaultFile(file, { portfolioId, ...(shareId ? { shareId } : {}) });
       const created = await tableAttach({
-        data: { ...where, name: file.name, mime: file.type || "application/octet-stream", key: stored.key, size: stored.size },
+        data: {
+          ...where,
+          name: file.name,
+          mime: file.type || "application/octet-stream",
+          key: stored.key,
+          size: stored.size,
+        },
       });
       if (!created.ok) {
         report(created.error);
@@ -535,12 +684,19 @@ export function TableView({
   };
 
   if (!loaded) {
-    return <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{message || t("Cargando…")}</p>;
+    return (
+      <p className="grid flex-1 place-items-center px-6 text-sm text-muted">
+        {message || t("Cargando…")}
+      </p>
+    );
   }
 
-  const tables = targets.filter((target) => target.table).map((target) => ({ id: target.id, title: target.title }));
+  const tables = targets
+    .filter((target) => target.table)
+    .map((target) => ({ id: target.id, title: target.title }));
   const widthOf = (field: TableField) => field.width ?? WIDTH[field.type];
-  const totalWidth = 64 + fields.reduce((sum, field) => sum + widthOf(field), 0) + (editable ? 44 : 0);
+  const totalWidth =
+    64 + fields.reduce((sum, field) => sum + widthOf(field), 0) + (editable ? 44 : 0);
   const allPicked = shown.length > 0 && shown.every((row) => picked.has(row.id));
   const updateLayout = (patch: Partial<TableLayout>) => {
     const next = { ...layout, ...patch };
@@ -553,24 +709,32 @@ export function TableView({
     { id: "gallery", label: "Galería", icon: LayoutGrid },
     { id: "calendar", label: "Calendario", icon: Calendar },
   ];
-  // Las vistas van con aria-pressed, así que el menú automático del panel no las recoge.
+  // View buttons use aria-pressed so automatic context menus omit them.
   const onTableMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest("input, textarea, select, [contenteditable='true']")) return;
     if (window.getSelection()?.toString()) return;
     areaMenu.open(event, [
-      ...modes.map((item) => ({ label: t(item.label), onClick: () => updateLayout({ mode: item.id }) })),
-      ...(Object.values(filters).some((value) => value.trim()) ? [{ label: t("Quitar filtros"), onClick: () => setFilters({}) }] : []),
+      ...modes.map((item) => ({
+        label: t(item.label),
+        onClick: () => updateLayout({ mode: item.id }),
+      })),
+      ...(Object.values(filters).some((value) => value.trim())
+        ? [{ label: t("Quitar filtros"), onClick: () => setFilters({}) }]
+        : []),
       ...(editable && picked.size > 0
         ? [
             {
-              label: picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size }),
+              label:
+                picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size }),
               danger: true,
               onClick: () => setConfirmDelete({ kind: "rows" as const }),
             },
           ]
         : []),
-      ...(editable ? [{ label: t("Importar CSV"), onClick: () => importRef.current?.click() }] : []),
+      ...(editable
+        ? [{ label: t("Importar CSV"), onClick: () => importRef.current?.click() }]
+        : []),
       { label: t("Exportar CSV"), onClick: exportCsv },
       { label: t("Formulario"), onClick: () => setFormOpen(true) },
       ...(editable
@@ -622,7 +786,11 @@ export function TableView({
             : t("{n} de {m} filas", { n: shown.length, m: rows.length })}
         </span>
         {Object.values(filters).some((value) => value.trim()) ? (
-          <button type="button" onClick={() => setFilters({})} className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-accent hover:bg-elevated">
+          <button
+            type="button"
+            onClick={() => setFilters({})}
+            className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-accent hover:bg-elevated"
+          >
             <X className="size-3.5" />
             {t("Quitar filtros")}
           </button>
@@ -635,12 +803,17 @@ export function TableView({
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-danger/40 px-3 text-sm text-danger hover:bg-danger/10"
             >
               <Trash2 className="size-4" />
-              {(picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size }))}
+              {picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size })}
             </button>
           ) : null}
           {editable ? (
             <>
-              <ToolButton icon={<Upload className="size-4" />} label={t("Importar CSV")} onClick={() => importRef.current?.click()} disabled={busy} />
+              <ToolButton
+                icon={<Upload className="size-4" />}
+                label={t("Importar CSV")}
+                onClick={() => importRef.current?.click()}
+                disabled={busy}
+              />
               <input
                 ref={importRef}
                 type="file"
@@ -654,8 +827,16 @@ export function TableView({
               />
             </>
           ) : null}
-          <ToolButton icon={<Download className="size-4" />} label={t("Exportar CSV")} onClick={exportCsv} />
-          <ToolButton icon={<ClipboardList className="size-4" />} label={t("Formulario")} onClick={() => setFormOpen(true)} />
+          <ToolButton
+            icon={<Download className="size-4" />}
+            label={t("Exportar CSV")}
+            onClick={exportCsv}
+          />
+          <ToolButton
+            icon={<ClipboardList className="size-4" />}
+            label={t("Formulario")}
+            onClick={() => setFormOpen(true)}
+          />
           {editable ? (
             <button
               type="button"
@@ -672,166 +853,202 @@ export function TableView({
       </div>
 
       {layout.mode === "grid" ? (
-      <div
-        ref={scrollRef}
-        className="relative min-h-0 flex-1 overflow-auto"
-        onScroll={(event) => setScroll({ top: event.currentTarget.scrollTop, height: event.currentTarget.clientHeight })}
-      >
-        <table className="border-separate border-spacing-0 text-sm" style={{ width: totalWidth, tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: 64 }} />
-            {fields.map((field) => (
-              <col key={field.id} style={{ width: widthOf(field) }} />
-            ))}
-            {editable ? <col style={{ width: 44 }} /> : null}
-          </colgroup>
-          <thead className="sticky top-0 z-10 bg-surface">
-            <tr>
-              <th className="h-9 border-b border-line px-2">
-                {editable ? (
-                  <input
-                    type="checkbox"
-                    aria-label={t("Elegir todas")}
-                    checked={allPicked}
-                    onChange={() => setPicked(allPicked ? new Set() : new Set(shown.map((row) => row.id)))}
-                  />
-                ) : null}
-              </th>
-              {fields.map((field) => {
-                const Icon = TYPE_ICON[field.type];
-                const sorted = sort?.fieldId === field.id ? sort.dir : 0;
-                return (
-                  <th key={field.id} className="relative h-9 border-b border-l border-line p-0 text-left font-medium">
-                    <button
-                      type="button"
-                      onClick={() => setFieldMenu(fieldMenu === field.id ? null : field.id)}
-                      className="flex h-9 w-full items-center gap-1.5 px-2 text-left text-xs text-muted hover:bg-elevated hover:text-fg"
-                    >
-                      <Icon className="size-3.5 shrink-0 text-faint" />
-                      <span className="min-w-0 flex-1 truncate">{field.name}</span>
-                      {filters[field.id]?.trim() ? <Search className="size-3 shrink-0 text-accent" /> : null}
-                      {sorted === 1 ? <ArrowUp className="size-3 shrink-0 text-accent" /> : sorted === -1 ? <ArrowDown className="size-3 shrink-0 text-accent" /> : null}
-                    </button>
-                    {fieldMenu === field.id ? (
-                      <FieldMenu
-                        field={field}
-                        tables={tables}
-                        editable={editable}
-                        filter={filters[field.id] ?? ""}
-                        sort={sorted}
-                        onSort={(dir) => setSort(dir ? { fieldId: field.id, dir } : null)}
-                        onFilter={(value) => setFilters((current) => ({ ...current, [field.id]: value }))}
-                        onSave={(next) => void saveField(next)}
-                        onDelete={() => setConfirmDelete({ kind: "field", id: field.id })}
-                        onClose={() => setFieldMenu(null)}
-                      />
-                    ) : null}
-                  </th>
-                );
-              })}
-              {editable ? (
-                <th className="h-9 border-b border-l border-line p-0">
-                  <button
-                    type="button"
-                    aria-label={t("Nueva columna")}
-                    title={t("Nueva columna")}
-                    onClick={addField}
-                    className="grid h-9 w-full place-items-center text-muted hover:bg-elevated hover:text-fg"
-                  >
-                    <Plus className="size-4" />
-                  </button>
+        <div
+          ref={scrollRef}
+          className="relative min-h-0 flex-1 overflow-auto"
+          onScroll={(event) =>
+            setScroll({
+              top: event.currentTarget.scrollTop,
+              height: event.currentTarget.clientHeight,
+            })
+          }
+        >
+          <table
+            className="border-separate border-spacing-0 text-sm"
+            style={{ width: totalWidth, tableLayout: "fixed" }}
+          >
+            <colgroup>
+              <col style={{ width: 64 }} />
+              {fields.map((field) => (
+                <col key={field.id} style={{ width: widthOf(field) }} />
+              ))}
+              {editable ? <col style={{ width: 44 }} /> : null}
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-surface">
+              <tr>
+                <th className="h-9 border-b border-line px-2">
+                  {editable ? (
+                    <input
+                      type="checkbox"
+                      aria-label={t("Elegir todas")}
+                      checked={allPicked}
+                      onChange={() =>
+                        setPicked(allPicked ? new Set() : new Set(shown.map((row) => row.id)))
+                      }
+                    />
+                  ) : null}
                 </th>
-              ) : null}
-            </tr>
-          </thead>
-          <tbody>
-            {first > 0 ? (
-              <tr aria-hidden style={{ height: first * ROW_HEIGHT }}>
-                <td colSpan={fields.length + 2} />
-              </tr>
-            ) : null}
-            {visible.map((row) => (
-              <tr key={row.id} className={`group ${picked.has(row.id) ? "bg-accent/10" : "hover:bg-elevated/60"}`} style={{ height: ROW_HEIGHT }}>
-                <td className="border-b border-line px-1 text-center">
-                  <span className="inline-flex items-center justify-center gap-0.5">
-                    {editable ? (
-                      <input
-                        type="checkbox"
-                        aria-label={t("Elegir fila")}
-                        checked={picked.has(row.id)}
-                        onChange={() =>
-                          setPicked((current) => {
-                            const next = new Set(current);
-                            if (next.has(row.id)) next.delete(row.id);
-                            else next.add(row.id);
-                            return next;
-                          })
-                        }
-                      />
-                    ) : null}
+                {fields.map((field) => {
+                  const Icon = TYPE_ICON[field.type];
+                  const sorted = sort?.fieldId === field.id ? sort.dir : 0;
+                  return (
+                    <th
+                      key={field.id}
+                      className="relative h-9 border-b border-l border-line p-0 text-left font-medium"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setFieldMenu(fieldMenu === field.id ? null : field.id)}
+                        className="flex h-9 w-full items-center gap-1.5 px-2 text-left text-xs text-muted hover:bg-elevated hover:text-fg"
+                      >
+                        <Icon className="size-3.5 shrink-0 text-faint" />
+                        <span className="min-w-0 flex-1 truncate">{field.name}</span>
+                        {filters[field.id]?.trim() ? (
+                          <Search className="size-3 shrink-0 text-accent" />
+                        ) : null}
+                        {sorted === 1 ? (
+                          <ArrowUp className="size-3 shrink-0 text-accent" />
+                        ) : sorted === -1 ? (
+                          <ArrowDown className="size-3 shrink-0 text-accent" />
+                        ) : null}
+                      </button>
+                      {fieldMenu === field.id ? (
+                        <FieldMenu
+                          field={field}
+                          tables={tables}
+                          editable={editable}
+                          filter={filters[field.id] ?? ""}
+                          sort={sorted}
+                          onSort={(dir) => setSort(dir ? { fieldId: field.id, dir } : null)}
+                          onFilter={(value) =>
+                            setFilters((current) => ({ ...current, [field.id]: value }))
+                          }
+                          onSave={(next) => void saveField(next)}
+                          onDelete={() => setConfirmDelete({ kind: "field", id: field.id })}
+                          onClose={() => setFieldMenu(null)}
+                        />
+                      ) : null}
+                    </th>
+                  );
+                })}
+                {editable ? (
+                  <th className="h-9 border-b border-l border-line p-0">
                     <button
                       type="button"
-                      aria-label={t("Historial")}
-                      title={t("Historial")}
-                      onClick={() => setHistoryId(row.id)}
-                      className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+                      aria-label={t("Nueva columna")}
+                      title={t("Nueva columna")}
+                      onClick={addField}
+                      className="grid h-9 w-full place-items-center text-muted hover:bg-elevated hover:text-fg"
                     >
-                      <History className="size-3.5" />
+                      <Plus className="size-4" />
                     </button>
-                  </span>
-                </td>
-                {fields.map((field, column) => (
-                  <Cell
-                    key={field.id}
-                    field={field}
-                    value={cellOf(row, field)}
-                    text={display(field, cellOf(row, field))}
-                    hint={field.type === "formula" ? formulas.get(row.id)?.errors[field.id] : undefined}
-                    editable={editable && field.type !== "formula"}
-                    editing={editing?.rowId === row.id && editing.fieldId === field.id}
-                    targets={targets}
-                    refTitle={labelOf}
-                    rowTitle={rowTitle}
-                    onAttach={attach}
-                    where={where}
-                    onOpenRef={openRef}
-                    onEdit={() => setEditing({ rowId: row.id, fieldId: field.id })}
-                    onCommit={(value, move) => {
-                      setEditing(null);
-                      const current = row.cells[field.id] ?? null;
-                      if (JSON.stringify(current) !== JSON.stringify(value)) void setCell(row, field, value);
-                      if (!move) return;
-                      // Enter baja a la fila siguiente; Tab pasa a la columna siguiente.
-                      const index = shown.findIndex((item) => item.id === row.id);
-                      const next =
-                        move === "down"
-                          ? { row: shown[index + 1], field }
-                          : { row, field: fields[column + 1] ?? undefined };
-                      if (next.row && next.field && next.field.type !== "checkbox" && next.field.type !== "formula") setEditing({ rowId: next.row.id, fieldId: next.field.id });
-                    }}
-                    onCancel={() => setEditing(null)}
-                  />
-                ))}
-                {editable ? <td className="border-b border-l border-line" /> : null}
+                  </th>
+                ) : null}
               </tr>
-            ))}
-            {last < shown.length ? (
-              <tr aria-hidden style={{ height: (shown.length - last) * ROW_HEIGHT }}>
-                <td colSpan={fields.length + 2} />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-        {rows.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-muted">
-            {editable && fields.length === 0
-              ? t("Esta tabla no tiene columnas. Pulsa + para añadir la primera.")
-              : editable
-                ? t("La tabla está vacía. Añade una fila o importa un CSV.")
-                : t("La tabla está vacía.")}
-          </p>
-        ) : null}
-      </div>
+            </thead>
+            <tbody>
+              {first > 0 ? (
+                <tr aria-hidden style={{ height: first * ROW_HEIGHT }}>
+                  <td colSpan={fields.length + 2} />
+                </tr>
+              ) : null}
+              {visible.map((row) => (
+                <tr
+                  key={row.id}
+                  className={`group ${picked.has(row.id) ? "bg-accent/10" : "hover:bg-elevated/60"}`}
+                  style={{ height: ROW_HEIGHT }}
+                >
+                  <td className="border-b border-line px-1 text-center">
+                    <span className="inline-flex items-center justify-center gap-0.5">
+                      {editable ? (
+                        <input
+                          type="checkbox"
+                          aria-label={t("Elegir fila")}
+                          checked={picked.has(row.id)}
+                          onChange={() =>
+                            setPicked((current) => {
+                              const next = new Set(current);
+                              if (next.has(row.id)) next.delete(row.id);
+                              else next.add(row.id);
+                              return next;
+                            })
+                          }
+                        />
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label={t("Historial")}
+                        title={t("Historial")}
+                        onClick={() => setHistoryId(row.id)}
+                        className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+                      >
+                        <History className="size-3.5" />
+                      </button>
+                    </span>
+                  </td>
+                  {fields.map((field, column) => (
+                    <Cell
+                      key={field.id}
+                      field={field}
+                      value={cellOf(row, field)}
+                      text={display(field, cellOf(row, field))}
+                      hint={
+                        field.type === "formula"
+                          ? formulas.get(row.id)?.errors[field.id]
+                          : undefined
+                      }
+                      editable={editable && field.type !== "formula"}
+                      editing={editing?.rowId === row.id && editing.fieldId === field.id}
+                      targets={targets}
+                      refTitle={labelOf}
+                      rowTitle={rowTitle}
+                      onAttach={attach}
+                      where={where}
+                      onOpenRef={openRef}
+                      onEdit={() => setEditing({ rowId: row.id, fieldId: field.id })}
+                      onCommit={(value, move) => {
+                        setEditing(null);
+                        const current = row.cells[field.id] ?? null;
+                        if (JSON.stringify(current) !== JSON.stringify(value))
+                          void setCell(row, field, value);
+                        if (!move) return;
+                        // Enter moves to the next row; Tab moves to the next column.
+                        const index = shown.findIndex((item) => item.id === row.id);
+                        const next =
+                          move === "down"
+                            ? { row: shown[index + 1], field }
+                            : { row, field: fields[column + 1] ?? undefined };
+                        if (
+                          next.row &&
+                          next.field &&
+                          next.field.type !== "checkbox" &&
+                          next.field.type !== "formula"
+                        )
+                          setEditing({ rowId: next.row.id, fieldId: next.field.id });
+                      }}
+                      onCancel={() => setEditing(null)}
+                    />
+                  ))}
+                  {editable ? <td className="border-b border-l border-line" /> : null}
+                </tr>
+              ))}
+              {last < shown.length ? (
+                <tr aria-hidden style={{ height: (shown.length - last) * ROW_HEIGHT }}>
+                  <td colSpan={fields.length + 2} />
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+          {rows.length === 0 ? (
+            <p className="px-4 py-8 text-sm text-muted">
+              {editable && fields.length === 0
+                ? t("Esta tabla no tiene columnas. Pulsa + para añadir la primera.")
+                : editable
+                  ? t("La tabla está vacía. Añade una fila o importa un CSV.")
+                  : t("La tabla está vacía.")}
+            </p>
+          ) : null}
+        </div>
       ) : (
         <TableBoards
           mode={layout.mode}
@@ -849,18 +1066,31 @@ export function TableView({
 
       {confirmDelete ? (
         <Modal
-          title={confirmDelete.kind === "rows" ? (picked.size === 1 ? t("Borrar 1 fila") : t("Borrar {n} filas", { n: picked.size })) : t("Borrar la columna")}
+          title={
+            confirmDelete.kind === "rows"
+              ? picked.size === 1
+                ? t("Borrar 1 fila")
+                : t("Borrar {n} filas", { n: picked.size })
+              : t("Borrar la columna")
+          }
           onClose={() => setConfirmDelete(null)}
         >
           <p className="text-sm text-muted">
             {confirmDelete.kind === "rows"
               ? t("Las filas elegidas se borrarán. No se puede deshacer.")
               : t("«{0}» y sus valores en todas las filas se borrarán. No se puede deshacer.", {
-                  0: fields.find((field) => confirmDelete.kind === "field" && field.id === confirmDelete.id)?.name ?? "",
+                  0:
+                    fields.find(
+                      (field) => confirmDelete.kind === "field" && field.id === confirmDelete.id,
+                    )?.name ?? "",
                 })}
           </p>
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={() => setConfirmDelete(null)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(null)}
+              className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated"
+            >
               {t("Cancelar")}
             </button>
             <button
@@ -892,13 +1122,25 @@ export function TableView({
           onAdded={(created) => setRows((current) => [...current, ...created])}
         />
       ) : null}
-      {historyId ? <RowHistoryDialog where={where} rowId={historyId} onClose={() => setHistoryId(null)} /> : null}
+      {historyId ? (
+        <RowHistoryDialog where={where} rowId={historyId} onClose={() => setHistoryId(null)} />
+      ) : null}
       {areaMenu.element}
     </div>
   );
 }
 
-function ToolButton({ icon, label, onClick, disabled }: { icon: ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
+function ToolButton({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -912,7 +1154,7 @@ function ToolButton({ icon, label, onClick, disabled }: { icon: ReactNode; label
   );
 }
 
-/** Menú de una columna: ordenar, filtrar y (con permiso) nombre, tipo, opciones y borrar. */
+/** Column menu supports sorting, filtering and authorized schema changes or deletion. */
 function FieldMenu({
   field,
   tables,
@@ -944,8 +1186,7 @@ function FieldMenu({
     const close = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (target && ref.current?.parentElement?.contains(target)) return;
-      // La lista de opciones se dibuja fuera del menú (para que no la recorte
-      // la tabla). Un clic ahí no es «fuera».
+      // Options render outside the menu to avoid table clipping; clicks there still count as inside.
       if (target instanceof Element && target.closest("[data-ui=popover]")) return;
       const active = document.activeElement;
       if (active instanceof HTMLSelectElement && ref.current?.contains(active)) return;
@@ -965,7 +1206,10 @@ function FieldMenu({
     if (name.trim() && name.trim() !== field.name) onSave({ ...field, name: name.trim() });
   };
   const commitChoices = () => {
-    const list = choices.split(",").map((choice) => choice.trim()).filter(Boolean);
+    const list = choices
+      .split(",")
+      .map((choice) => choice.trim())
+      .filter(Boolean);
     if (list.join(",") !== (field.choices ?? []).join(",")) onSave({ ...field, choices: list });
   };
   return (
@@ -998,7 +1242,9 @@ function FieldMenu({
             <PickList
               value={field.type}
               options={FIELD_TYPES.map((type) => ({ value: type, label: t(TYPE_LABEL[type]) }))}
-              onChange={(type) => onSave({ ...field, name: name.trim() || field.name, type: type as FieldType })}
+              onChange={(type) =>
+                onSave({ ...field, name: name.trim() || field.name, type: type as FieldType })
+              }
               className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
             />
           </label>
@@ -1019,8 +1265,17 @@ function FieldMenu({
               <span className="text-xs text-faint">{t("Tabla relacionada")}</span>
               <PickList
                 value={field.relatedTableId ?? ""}
-                options={[{ value: "", label: t("Elige una tabla") }, ...tables.map((table) => ({ value: table.id, label: table.title }))]}
-                onChange={(tableId) => onSave({ ...field, name: name.trim() || field.name, relatedTableId: tableId || null })}
+                options={[
+                  { value: "", label: t("Elige una tabla") },
+                  ...tables.map((table) => ({ value: table.id, label: table.title })),
+                ]}
+                onChange={(tableId) =>
+                  onSave({
+                    ...field,
+                    name: name.trim() || field.name,
+                    relatedTableId: tableId || null,
+                  })
+                }
                 className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
               />
             </label>
@@ -1035,11 +1290,16 @@ function FieldMenu({
                 spellCheck={false}
                 onChange={(event) => setFormula(event.target.value)}
                 onBlur={() => {
-                  if (formula.trim() !== (field.formula ?? "")) onSave({ ...field, name: name.trim() || field.name, formula: formula.trim() });
+                  if (formula.trim() !== (field.formula ?? ""))
+                    onSave({ ...field, name: name.trim() || field.name, formula: formula.trim() });
                 }}
                 className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 font-mono text-xs outline-none"
               />
-              <span className="mt-1 block text-xs text-faint">{t("Cita una columna entre llaves. También: si, redondear, hoy, dias, vacio, largo y contiene.")}</span>
+              <span className="mt-1 block text-xs text-faint">
+                {t(
+                  "Cita una columna entre llaves. También: si, redondear, hoy, dias, vacio, largo y contiene.",
+                )}
+              </span>
             </label>
           ) : null}
         </>
@@ -1078,7 +1338,10 @@ function FieldMenu({
         ) : field.type === "select" ? (
           <PickList
             value={filter}
-            options={[{ value: "", label: t("Todas") }, ...(field.choices ?? []).map((choice) => ({ value: choice, label: choice }))]}
+            options={[
+              { value: "", label: t("Todas") },
+              ...(field.choices ?? []).map((choice) => ({ value: choice, label: choice })),
+            ]}
             onChange={onFilter}
             className="mt-1 flex h-9 w-full items-center rounded-md border border-line bg-inset px-2 text-left"
           />
@@ -1092,7 +1355,11 @@ function FieldMenu({
         )}
       </label>
       {editable ? (
-        <button type="button" onClick={onDelete} className="inline-flex h-8 items-center gap-1.5 text-xs text-danger">
+        <button
+          type="button"
+          onClick={onDelete}
+          className="inline-flex h-8 items-center gap-1.5 text-xs text-danger"
+        >
           <Trash2 className="size-3.5" />
           {t("Borrar la columna")}
         </button>
@@ -1101,7 +1368,7 @@ function FieldMenu({
   );
 }
 
-/** Una celda: se ve su valor y, al pulsarla (con permiso), se edita según su tipo. */
+/** Cell display and permission-controlled editing according to its type. */
 function Cell({
   field,
   value,
@@ -1197,16 +1464,31 @@ function Cell({
     const refs = Array.isArray(value) ? value.filter((ref): ref is RowRef => "rowId" in ref) : [];
     return (
       <td className={`${base} relative`}>
-        <div className="flex h-9 items-center gap-1 overflow-hidden" onClick={editable && !editing ? onEdit : undefined}>
+        <div
+          className="flex h-9 items-center gap-1 overflow-hidden"
+          onClick={editable && !editing ? onEdit : undefined}
+        >
           {refs.map((ref) => (
-            <span key={`${ref.tableId}:${ref.rowId}`} className="inline-flex h-6 max-w-40 shrink-0 items-center rounded-full border border-line px-2 text-xs">
+            <span
+              key={`${ref.tableId}:${ref.rowId}`}
+              className="inline-flex h-6 max-w-40 shrink-0 items-center rounded-full border border-line px-2 text-xs"
+            >
               <span className="truncate">{rowTitle(ref)}</span>
             </span>
           ))}
-          {editable && refs.length === 0 ? <span className="text-xs text-faint">{t("Relacionar…")}</span> : null}
+          {editable && refs.length === 0 ? (
+            <span className="text-xs text-faint">{t("Relacionar…")}</span>
+          ) : null}
         </div>
         {editing ? (
-          <RelationPicker field={field} refs={refs} where={where} rowTitle={rowTitle} onCommit={onCommit} onCancel={onCancel} />
+          <RelationPicker
+            field={field}
+            refs={refs}
+            where={where}
+            rowTitle={rowTitle}
+            onCommit={onCommit}
+            onCancel={onCancel}
+          />
         ) : null}
       </td>
     );
@@ -1215,7 +1497,10 @@ function Cell({
     const refs = Array.isArray(value) ? value.filter(isVaultRef) : [];
     return (
       <td className={`${base} relative`}>
-        <div className="flex h-9 items-center gap-1 overflow-hidden" onClick={editable && !editing ? onEdit : undefined}>
+        <div
+          className="flex h-9 items-center gap-1 overflow-hidden"
+          onClick={editable && !editing ? onEdit : undefined}
+        >
           {refs.map((ref) => (
             <button
               key={`${ref.kind}:${ref.id}`}
@@ -1226,13 +1511,27 @@ function Cell({
               }}
               className="inline-flex h-6 max-w-40 shrink-0 items-center gap-1 rounded-full border border-line px-2 text-xs text-fg hover:border-accent"
             >
-              {ref.kind === "portfolio" ? <Folder className="size-3 shrink-0 text-faint" /> : <FileText className="size-3 shrink-0 text-faint" />}
+              {ref.kind === "portfolio" ? (
+                <Folder className="size-3 shrink-0 text-faint" />
+              ) : (
+                <FileText className="size-3 shrink-0 text-faint" />
+              )}
               <span className="truncate">{refTitle(ref)}</span>
             </button>
           ))}
-          {editable && refs.length === 0 ? <span className="text-xs text-faint">{t("Vincular…")}</span> : null}
+          {editable && refs.length === 0 ? (
+            <span className="text-xs text-faint">{t("Vincular…")}</span>
+          ) : null}
         </div>
-        {editing ? <LinkPicker refs={refs} targets={targets} refTitle={refTitle} onCommit={onCommit} onCancel={onCancel} /> : null}
+        {editing ? (
+          <LinkPicker
+            refs={refs}
+            targets={targets}
+            refTitle={refTitle}
+            onCommit={onCommit}
+            onCancel={onCancel}
+          />
+        ) : null}
       </td>
     );
   }
@@ -1297,7 +1596,15 @@ function CellEditor({
   return (
     <input
       autoFocus
-      type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "time" ? "time" : "text"}
+      type={
+        field.type === "number"
+          ? "number"
+          : field.type === "date"
+            ? "date"
+            : field.type === "time"
+              ? "time"
+              : "text"
+      }
       step="any"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
@@ -1308,7 +1615,7 @@ function CellEditor({
   );
 }
 
-/** Lista propia, en vez de un `<select>`: el del navegador se cierra al instante dentro del recuadro. */
+/** Custom dropdown avoids the native select closing immediately inside the cell editor. */
 function PickList({
   value,
   options,
@@ -1333,7 +1640,8 @@ function PickList({
     if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
     let top = rect.bottom + 4;
     const height = menu.current?.getBoundingClientRect().height ?? 0;
-    if (height > 0 && top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+    if (height > 0 && top + height > window.innerHeight - 8)
+      top = Math.max(8, rect.top - height - 4);
     setPlace({ top, left, width });
   }, [open, options.length]);
   useEffect(() => {
@@ -1356,7 +1664,14 @@ function PickList({
   const label = options.find((option) => option.value === value)?.label ?? value;
   return (
     <>
-      <button type="button" ref={button} aria-expanded={open} onMouseDown={(event) => event.stopPropagation()} onClick={() => setOpen((current) => !current)} className={className}>
+      <button
+        type="button"
+        ref={button}
+        aria-expanded={open}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={() => setOpen((current) => !current)}
+        className={className}
+      >
         <span className="min-w-0 flex-1 truncate">{label || "—"}</span>
       </button>
       {open
@@ -1394,8 +1709,8 @@ function PickList({
 }
 
 /**
- * Lista de una celda de selección. El `<select>` nativo se cerraba al abrirse:
- * al perder el foco la celda se desmontaba y no daba tiempo a elegir.
+ * Selection-cell dropdown remains mounted while choosing; the native select lost focus and
+ * unmounted too early.
  */
 function SelectEditor({
   field,
@@ -1417,7 +1732,12 @@ function SelectEditor({
   ];
   const anchor = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  const [cursor, setCursor] = useState(() => Math.max(0, options.findIndex((option) => option.value === current)));
+  const [cursor, setCursor] = useState(() =>
+    Math.max(
+      0,
+      options.findIndex((option) => option.value === current),
+    ),
+  );
   const [place, setPlace] = useState({ top: 0, left: 0, width: 180, ready: false });
   const placeMenu = () => {
     const rect = anchor.current?.getBoundingClientRect();
@@ -1426,10 +1746,12 @@ function SelectEditor({
     const margin = 8;
     const width = Math.min(280, Math.max(rect.width, 180));
     let left = rect.left;
-    if (left + width > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - width - margin);
+    if (left + width > window.innerWidth - margin)
+      left = Math.max(margin, window.innerWidth - width - margin);
     let top = rect.bottom + 4;
     const height = box?.height ?? 0;
-    if (height > 0 && top + height > window.innerHeight - margin) top = Math.max(margin, rect.top - height - 4);
+    if (height > 0 && top + height > window.innerHeight - margin)
+      top = Math.max(margin, rect.top - height - 4);
     setPlace({ top, left, width, ready: true });
   };
   useLayoutEffect(() => {
@@ -1470,7 +1792,10 @@ function SelectEditor({
   }, [onCancel, onCommit, options, cursor]);
   return (
     <>
-      <div ref={anchor} className="flex h-9 items-center bg-inset px-2 text-sm ring-1 ring-accent ring-inset">
+      <div
+        ref={anchor}
+        className="flex h-9 items-center bg-inset px-2 text-sm ring-1 ring-accent ring-inset"
+      >
         <span className="truncate">{current || t("Ninguna")}</span>
       </div>
       {createPortal(
@@ -1480,10 +1805,17 @@ function SelectEditor({
           role="listbox"
           data-ui="popover"
           className="fixed z-50 max-h-64 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-2xl"
-          style={{ top: place.top, left: place.left, width: place.width, visibility: place.ready ? "visible" : "hidden" }}
+          style={{
+            top: place.top,
+            left: place.left,
+            width: place.width,
+            visibility: place.ready ? "visible" : "hidden",
+          }}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {choices.length === 0 ? <p className="px-2 py-1.5 text-xs text-faint">{t("Opciones, separadas por comas")}</p> : null}
+          {choices.length === 0 ? (
+            <p className="px-2 py-1.5 text-xs text-faint">{t("Opciones, separadas por comas")}</p>
+          ) : null}
           {options.map((option, index) => (
             <button
               key={option.value || "empty"}
@@ -1504,7 +1836,7 @@ function SelectEditor({
   );
 }
 
-/** Elegir notas, archivos o portafolios de la bóveda para una celda de vínculo. */
+/** Choose vault notes, files or portfolios for a link cell. */
 function LinkPicker({
   refs,
   targets,
@@ -1525,14 +1857,18 @@ function LinkPicker({
   latest.current = chosen;
   useEffect(() => {
     const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onCommit(latest.current.length ? latest.current : null);
+      if (!ref.current?.contains(event.target as Node))
+        onCommit(latest.current.length ? latest.current : null);
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [onCommit]);
   const needle = query.trim().toLowerCase();
-  const has = (target: Target) => chosen.some((item) => item.id === target.id && item.kind === target.kind);
-  const options = targets.filter((target) => !has(target) && (!needle || target.title.toLowerCase().includes(needle))).slice(0, 40);
+  const has = (target: Target) =>
+    chosen.some((item) => item.id === target.id && item.kind === target.kind);
+  const options = targets
+    .filter((target) => !has(target) && (!needle || target.title.toLowerCase().includes(needle)))
+    .slice(0, 40);
   return (
     <div
       ref={ref}
@@ -1545,12 +1881,19 @@ function LinkPicker({
       {chosen.length ? (
         <div className="mb-2 flex flex-wrap gap-1">
           {chosen.map((item) => (
-            <span key={`${item.kind}:${item.id}`} className="inline-flex h-6 max-w-full items-center gap-1 rounded-full border border-line pr-1 pl-2 text-xs">
+            <span
+              key={`${item.kind}:${item.id}`}
+              className="inline-flex h-6 max-w-full items-center gap-1 rounded-full border border-line pr-1 pl-2 text-xs"
+            >
               <span className="truncate">{refTitle(item)}</span>
               <button
                 type="button"
                 aria-label={t("Quitar")}
-                onClick={() => setChosen((current) => current.filter((other) => !(other.id === item.id && other.kind === item.kind)))}
+                onClick={() =>
+                  setChosen((current) =>
+                    current.filter((other) => !(other.id === item.id && other.kind === item.kind)),
+                  )
+                }
                 className="grid size-5 place-items-center rounded-full text-faint hover:text-fg"
               >
                 <X className="size-3" />
@@ -1576,17 +1919,23 @@ function LinkPicker({
             <li key={`${target.kind}:${target.id}`}>
               <button
                 type="button"
-                onClick={() => setChosen((current) => [...current, { id: target.id, kind: target.kind }])}
+                onClick={() =>
+                  setChosen((current) => [...current, { id: target.id, kind: target.kind }])
+                }
                 className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-elevated"
               >
                 <Icon className="size-3.5 shrink-0 text-faint" />
                 <span className="min-w-0 flex-1 truncate">{target.title}</span>
-                <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">{target.place}</span>
+                <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">
+                  {target.place}
+                </span>
               </button>
             </li>
           );
         })}
-        {options.length === 0 ? <li className="px-2 py-2 text-xs text-faint">{t("Nada coincide.")}</li> : null}
+        {options.length === 0 ? (
+          <li className="px-2 py-2 text-xs text-faint">{t("Nada coincide.")}</li>
+        ) : null}
       </ul>
       <div className="mt-2 flex justify-end">
         <button
@@ -1601,7 +1950,7 @@ function LinkPicker({
   );
 }
 
-/** Elige filas de la tabla relacionada. */
+/** Choose rows from the related table. */
 function RelationPicker({
   field,
   refs,
@@ -1637,7 +1986,8 @@ function RelationPicker({
   }, [tableId, query, where.docId, where.shareId]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) onCommit(latest.current.length ? latest.current : null);
+      if (!box.current?.contains(event.target as Node))
+        onCommit(latest.current.length ? latest.current : null);
     };
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
@@ -1654,7 +2004,11 @@ function RelationPicker({
   }
   const picked = (id: string) => chosen.some((item) => item.rowId === id);
   return (
-    <div ref={box} data-ui="popover" className="absolute top-full left-0 z-20 mt-1 w-72 rounded-lg border border-line bg-surface p-2 text-sm shadow-2xl">
+    <div
+      ref={box}
+      data-ui="popover"
+      className="absolute top-full left-0 z-20 mt-1 w-72 rounded-lg border border-line bg-surface p-2 text-sm shadow-2xl"
+    >
       <input
         autoFocus
         value={query}
@@ -1669,7 +2023,9 @@ function RelationPicker({
               type="button"
               onClick={() =>
                 setChosen((current) =>
-                  picked(option.id) ? current.filter((item) => item.rowId !== option.id) : [...current, { tableId, rowId: option.id }],
+                  picked(option.id)
+                    ? current.filter((item) => item.rowId !== option.id)
+                    : [...current, { tableId, rowId: option.id }],
                 )
               }
               className={`flex h-9 w-full items-center rounded-md px-2 text-left hover:bg-elevated ${picked(option.id) ? "text-accent" : ""}`}
@@ -1678,9 +2034,15 @@ function RelationPicker({
             </button>
           </li>
         ))}
-        {options.length === 0 ? <li className="px-2 py-3 text-xs text-faint">{t("Sin filas")}</li> : null}
+        {options.length === 0 ? (
+          <li className="px-2 py-3 text-xs text-faint">{t("Sin filas")}</li>
+        ) : null}
       </ul>
-      <button type="button" onClick={() => onCommit(chosen.length ? chosen : null)} className="mt-1 h-8 w-full rounded-md text-xs text-accent hover:bg-elevated">
+      <button
+        type="button"
+        onClick={() => onCommit(chosen.length ? chosen : null)}
+        className="mt-1 h-8 w-full rounded-md text-xs text-accent hover:bg-elevated"
+      >
         {chosen.length ? chosen.map((item) => rowTitle(item)).join(", ") : t("Listo")}
       </button>
     </div>

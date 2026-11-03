@@ -1,13 +1,7 @@
 /**
- * Token de sesión como bearer, guardado en `localStorage`: lo comparten todas
- * las pestañas del navegador, que así tienen una sola sesión (ver
- * `session-sync.ts`).
- *
- * Better Auth devuelve el token en la cabecera `set-auth-token` al entrar o al
- * cambiar la contraseña. Si el navegador no guarda la cookie `__Host-` (Secure
- * sobre http fuera de localhost, p. ej. un servidor sin HTTPS), el cliente
- * sigue autenticado mandando este token. Con la cookie funcionando, el token
- * es redundante e inofensivo.
+ * Session bearer token in localStorage shared across tabs; see session-sync.ts. Better Auth
+ * returns set-auth-token on sign-in/password changes. It preserves authentication when Secure
+ * __Host- cookies are unavailable over non-localhost HTTP; otherwise it is redundant.
  */
 const BEARER_KEY = "grafito-auth.bearer-token";
 
@@ -30,13 +24,13 @@ export function setBearerToken(token: string | null): void {
   }
 }
 
-/** Guarda el token que trae una respuesta de Better Auth, si trae uno. */
+/** Store a Better Auth response token when present. */
 export function rememberBearerFrom(response: Response): void {
   const token = response.headers.get("set-auth-token");
   if (token) setBearerToken(token);
 }
 
-/** Cabecera `Authorization` para un `fetch` a mano, o nada. */
+/** Authorization header for manual fetch calls, or no header. */
 export function bearerHeader(): Record<string, string> {
   const token = getBearerToken();
   return token ? { authorization: `Bearer ${token}` } : {};

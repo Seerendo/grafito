@@ -7,6 +7,7 @@ import { runAgent, type AgentEvent } from "@/server/ai/agent";
 import { compressConversation } from "@/server/ai/compact";
 import { AiUnavailable, endpointFor } from "@/server/ai/config";
 import { readProfile } from "@/server/ai/profiles";
+import { ndjsonResponse } from "@/server/ai/stream";
 import { ProviderError } from "@/server/ai/types";
 
 const body = z.object({
@@ -14,12 +15,14 @@ const body = z.object({
   model: z.string().min(1).max(200),
   profileId: z.string().uuid().optional(),
   messages: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(40_000) }))
+    .array(
+      z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(40_000) }),
+    )
     .min(1)
     .max(16),
-  /** Memoria ya comprimida, si los turnos recientes no son toda la conversación. */
+  /** Compressed memory when recent turns do not cover the full conversation. */
   memory: z.string().max(2_000).optional(),
-  /** Turnos viejos que hay que resumir antes de responder. */
+  /** Older turns requiring summarization before responding. */
   fold: z
     .object({
       prior: z.string().max(2_000),
@@ -30,10 +33,9 @@ const body = z.object({
 });
 
 /**
- * `POST /api/ai/chat` con `{ provider, model, messages, profileId?, memory?, fold? }`.
- * Responde con NDJSON (un evento JSON por línea): `memory` si se comprimió el
- * historial, `tool` por cada herramienta usada, `text` con la respuesta,
- * `error` o `done` (con `changed` si la bóveda cambió).
+ * POST /api/ai/chat accepts provider, model, messages and optional profileId, memory and fold.
+ * NDJSON emits memory, tool, text, error or done events; done.changed indicates vault
+ * mutations.
  */
 export const Route = createFileRoute("/api/ai/chat")({
   server: {
@@ -44,25 +46,29 @@ export const Route = createFileRoute("/api/ai/chat")({
           requirePermission(caller.profile, "ai.use", "Tu rol no puede usar la IA.");
           const parsed = body.safeParse(await readJson(request));
           if (!parsed.success) return apiError(400, "Se espera { provider, model, messages }.");
-          // Un perfil que ya no existe (borrado en otra pestaña) no impide responder.
-          const persona = parsed.data.profileId ? await readProfile(caller.sql, caller.userId, parsed.data.profileId) : null;
-          const encoder = new TextEncoder();
-          const stream = new ReadableStream<Uint8Array>({
-            async start(controller) {
-              const emit = (event: AgentEvent | { type: "memory"; text: string; untilId: string }) =>
-                controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+          // A persona deleted in another tab must not block the response.
+          const persona = parsed.data.profileId
+            ? await readProfile(caller.sql, caller.userId, parsed.data.profileId)
+            : null;
+          return ndjsonResponse<AgentEvent | { type: "memory"; text: string; untilId: string }>(
+            request,
+            async (emit, signal) => {
               try {
                 let memory = parsed.data.memory?.trim() ?? "";
                 const fold = parsed.data.fold;
                 if (fold) {
-                  const { policy, endpoint } = await endpointFor(caller.sql, caller.userId, parsed.data.provider);
+                  const { policy, endpoint } = await endpointFor(
+                    caller.sql,
+                    caller.userId,
+                    parsed.data.provider,
+                  );
                   memory = await compressConversation({
                     protocol: policy.protocol,
                     endpoint,
                     model: parsed.data.model,
                     prior: fold.prior,
                     digest: fold.digest,
-                    signal: request.signal,
+                    signal,
                   });
                   emit({ type: "memory", text: memory, untilId: fold.untilId });
                 }
@@ -74,7 +80,7 @@ export const Route = createFileRoute("/api/ai/chat")({
                   model: parsed.data.model,
                   persona,
                   history: withMemory(memory, parsed.data.messages),
-                  signal: request.signal,
+                  signal,
                   emit,
                 });
               } catch (error) {
@@ -84,16 +90,13 @@ export const Route = createFileRoute("/api/ai/chat")({
                     : error instanceof Error && error.name === "AbortError"
                       ? "Cancelado."
                       : "No se pudo hablar con el proveedor. Revisa la dirección o la conexión.";
-                if (!(error instanceof AiUnavailable || error instanceof ProviderError)) console.error("[ai]", error);
+                if (!(error instanceof AiUnavailable || error instanceof ProviderError))
+                  console.error("[ai]", error);
                 emit({ type: "error", message });
-              } finally {
-                controller.close();
               }
             },
-          });
-          return new Response(stream, {
-            headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
-          });
+            () => ({ type: "error", message: "No se pudo completar la respuesta." }),
+          );
         } catch (error) {
           return failure(error);
         }

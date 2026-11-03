@@ -1,6 +1,6 @@
 export const ADMIN_EMAIL = "admin@grafito.app";
 export const ADMIN_INITIAL_PASSWORD = "admin";
-/** Largo mínimo de una contraseña que no obliga a cambiarla al entrar. */
+/** Minimum password length that avoids forced change on sign-in. */
 export const STRONG_PASSWORD = 8;
 
 export function emailForUsername(username: string): string | null {
@@ -45,7 +45,7 @@ export function documentEngine(): "elasticsearch" | "postgres" {
   return elasticUrl() ? "elasticsearch" : "postgres";
 }
 
-/** Dónde se guardan los bytes de los archivos (ver `server/blobs.ts`). */
+/** File byte storage backend; see server/blobs.ts. */
 export function fileEngine(): "minio" | "postgres" {
   return objectStorageEnv() ? "minio" : "postgres";
 }

@@ -1,19 +1,10 @@
 /**
- * Cómo llega el navegador al editor de Office (Collabora) y por qué podría no
- * llegar (solo servidor; sin `@/` en los imports: se prueba con `node --test`).
- * Ver docs/OFFICE.md, «Servidores y HTTPS».
- *
- * - `COLLABORA_URL=same-origin` (lo de fábrica con Docker): la puerta de
- *   entrada (`docker/gateway.conf`) sirve el editor en la misma dirección que
- *   Grafito, así que no hay nada que pueda fallar aquí.
- * - `editorOrigin`: si `COLLABORA_URL` quedó en 127.0.0.1/localhost y Grafito
- *   se abre desde otra dirección, el editor se pide a esa misma dirección, en
- *   el puerto de Collabora: 127.0.0.1 sería el equipo de quien navega.
- * - `officeProblem`: lo que el navegador va a bloquear, con el ajuste exacto
- *   que lo arregla, en vez de un editor en blanco.
+ * Office reachability diagnostics. same-origin uses the gateway. Loopback editor URLs are
+ * rewritten to the browser's Grafito hostname at the Collabora port. officeProblem explains
+ * browser blocking with the required setting. See docs/OFFICE.md.
  */
 
-/** Valor de `COLLABORA_URL` para el editor servido en la dirección de Grafito. */
+/** COLLABORA_URL value for same-origin editor hosting. */
 export const SAME_ORIGIN = "same-origin";
 
 export function isSameOrigin(configured: string): boolean {
@@ -26,7 +17,7 @@ function isLoopback(hostname: string): boolean {
   return LOOPBACK.test(hostname);
 }
 
-/** Origen del editor para una página abierta en `pageOrigin`. */
+/** Editor origin for the given page origin. */
 export function editorOrigin(configured: string, pageOrigin?: string | null): string {
   if (isSameOrigin(configured)) {
     if (!pageOrigin) throw new Error("Falta la dirección de la página.");
@@ -41,10 +32,8 @@ export function editorOrigin(configured: string, pageOrigin?: string | null): st
 }
 
 /**
- * Si una lista de `frame-ancestors` (la de Collabora: `GRAFITO_PUBLIC_ORIGIN`)
- * deja insertar el editor en `pageOrigin`. Entradas separadas por espacios:
- * `localhost:*`, `notas.ejemplo.com`, `https://notas.ejemplo.com:8443`,
- * `*.ejemplo.com`. 127.0.0.1 siempre vale (Collabora lo permite).
+ * Check Collabora frame-ancestors against pageOrigin, supporting space-separated hosts,
+ * schemes, ports and wildcards. Collabora always allows 127.0.0.1.
  */
 export function ancestorsAllow(list: string, pageOrigin: string): boolean {
   const page = new URL(pageOrigin);
@@ -65,11 +54,13 @@ export function ancestorsAllow(list: string, pageOrigin: string): boolean {
         : host.toLowerCase() === page.hostname.toLowerCase();
       if (!hostOk) return false;
       if (port === "*") return true;
-      return (port ?? (scheme === "https" ? "443" : scheme === "http" ? "80" : defaultPort)) === pagePort;
+      return (
+        (port ?? (scheme === "https" ? "443" : scheme === "http" ? "80" : defaultPort)) === pagePort
+      );
     });
 }
 
-/** Lo que impedirá ver el editor desde `pageOrigin`, o `null` si nada. */
+/** Reason the editor cannot load from pageOrigin, or null. */
 export function officeProblem(input: {
   collaboraUrl: string;
   pageOrigin: string;

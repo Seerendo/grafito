@@ -59,9 +59,8 @@ import { davCaller } from "./auth";
 import { dropLock, lockBlocks, takeLock } from "./locks";
 
 /**
- * WebDAV en `/dav` (solo servidor). Personal es la bóveda de quien entra.
- * Compartidos es lo que puede ver, con el mismo permiso de lectura o edición
- * que en la aplicación. El rol sigue mandando (crear, subir, borrar).
+ * Server WebDAV exposes personal and authorized shared content with the same read/edit grants
+ * and role restrictions as the application.
  */
 
 const ALLOW = "OPTIONS, HEAD, GET, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, MOVE, LOCK, UNLOCK";
@@ -271,7 +270,7 @@ async function proppatch(bag: Bag, request: Request, where: DavWhere): Promise<R
   const place = await locate(bag, where);
   if (!place) return plain(404, "No está.");
   const body = await request.text();
-  // Las propiedades no se guardan: el cliente solo necesita seguir.
+  // Properties are not persisted; acknowledge so clients continue.
   return xml(207, proppatchXml(hrefOf(place, place.kind !== "file"), body.slice(0, 100_000)));
 }
 
@@ -330,7 +329,7 @@ async function putOne(bag: Bag, request: Request, where: DavWhere): Promise<Resp
   const parent = await locate(bag, tail.parent);
   if (!parent || parent.kind !== "folder") return plain(409, "La carpeta no existe.");
   const existing = await locate(bag, where);
-  // La carpeta de un documento compartido no admite vecinos: solo reemplazar ese archivo.
+  // A single shared-document folder permits replacement only, not sibling creation.
   if (parent.virtualDoc && existing?.kind !== "file")
     return deny(bag, request, "Ahí solo está el documento compartido.");
   const href = davHref([...parent.prefix, tail.name], false);
@@ -720,7 +719,7 @@ async function readLimited(request: Request): Promise<Uint8Array | Response> {
   return bytes;
 }
 
-/** `null` en la bóveda propia. En lo compartido, leer o escribir ese portafolio. */
+/** null means owned vault; otherwise check shared portfolio read/write access. */
 async function shareGate(
   bag: Bag,
   share: ShareCtx | null,

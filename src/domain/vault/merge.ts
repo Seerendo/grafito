@@ -1,31 +1,28 @@
 /**
- * Mezcla de tres vías de una nota (por líneas), como `diff3`: dos personas
- * parten de la misma versión (`base`) y cada una guarda la suya. Lo que solo
- * cambió una se toma de ella; si las dos tocaron las mismas líneas (una borra
- * un párrafo que la otra está editando, por ejemplo) es un conflicto y no se
- * mezcla: decide la persona (ver `server/vault.ts` y `editSharedDoc`).
+ * Three-way line merge from a common base. Accept one-sided edits; conflicting changes to the
+ * same lines require user resolution rather than automatic merging. See server/vault.ts and
+ * editSharedDoc.
  */
 
 export type MergeResult = { ok: true; text: string } | { ok: false };
 
-/** Tope de líneas × líneas para el emparejamiento (unos 4 millones de celdas). */
+/** Maximum LCS matrix size, approximately four million cells. */
 const MAX_CELLS = 4_000_000;
 
-/**
- * Para cada línea de `a`, la línea de `b` con la que se empareja en una
- * subsecuencia común más larga, o -1. Los emparejamientos son crecientes.
- */
+/** Map each line of a to its increasing LCS match in b, or minus one when unmatched. */
 function matches(a: string[], b: string[]): Int32Array | null {
   const n = a.length;
   const m = b.length;
   if ((n + 1) * (m + 1) > MAX_CELLS) return null;
-  // lcs[i][j]: longitud común de a[i..] y b[j..].
+  // lcs[i][j] is the common-subsequence length of the remaining suffixes.
   const width = m + 1;
   const lcs = new Int32Array((n + 1) * width);
   for (let i = n - 1; i >= 0; i -= 1) {
     for (let j = m - 1; j >= 0; j -= 1) {
       lcs[i * width + j] =
-        a[i] === b[j] ? lcs[(i + 1) * width + j + 1]! + 1 : Math.max(lcs[(i + 1) * width + j]!, lcs[i * width + j + 1]!);
+        a[i] === b[j]
+          ? lcs[(i + 1) * width + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * width + j]!, lcs[i * width + j + 1]!);
     }
   }
   const out = new Int32Array(n).fill(-1);
@@ -42,12 +39,12 @@ function matches(a: string[], b: string[]): Int32Array | null {
   return out;
 }
 
-const same = (x: string[], y: string[]) => x.length === y.length && x.every((line, index) => line === y[index]);
+const same = (x: string[], y: string[]) =>
+  x.length === y.length && x.every((line, index) => line === y[index]);
 
 /**
- * Un bloque que las dos cambiaron línea por línea (sin añadir ni quitar):
- * dos puntos seguidos de una lista, por ejemplo. Se resuelve por líneas; solo
- * es conflicto si las dos cambiaron la misma línea de forma distinta.
+ * For same-size edited blocks, merge line by line; conflict only when both sides change one
+ * line differently.
  */
 function lineByLine(o: string[], a: string[], b: string[]): string[] | null {
   if (a.length !== o.length || b.length !== o.length) return null;
@@ -75,7 +72,7 @@ export function merge3(base: string, mine: string, theirs: string): MergeResult 
   let ia = 0;
   let ib = 0;
   while (i <= o.length) {
-    // Siguiente línea de la base que sigue en las dos versiones (estable).
+    // Next base line preserved in both versions.
     let k = i;
     while (k < o.length && (toA[k]! < ia || toB[k]! < ib)) k += 1;
     const endA = k < o.length ? toA[k]! : a.length;

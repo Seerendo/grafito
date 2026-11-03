@@ -4,7 +4,7 @@ import { TextField } from "@/components/ui/TextField";
 import { Switch } from "@/components/ui/Switch";
 import { clamavAdminState, probeClamav, saveClamavSettings } from "@/server/clamav.functions";
 
-/** Administración → Seguridad: servidor ClamAV, puerto y plazo de análisis. */
+/** ClamAV host, port and scan timeout administration. */
 
 type State = Extract<Awaited<ReturnType<typeof clamavAdminState>>, { ok: true }>;
 type Status = "off" | "up" | "down";

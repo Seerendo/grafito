@@ -1,8 +1,7 @@
--- Seguimiento de firmas de un documento (ver `src/server/signature.ts`).
--- No es un certificado: cada fila es una persona a la que se le pidió
--- confirmar una versión. `fingerprint` es el SHA-256 de esa versión en el
--- momento de firmar; si el documento cambia después, la firma queda sobre
--- la versión anterior. `status`: pending, signed o declined.
+-- Document signature tracking; see src/server/signature.ts. Each row requests confirmation of a
+-- version, not a certificate. fingerprint is that version's SHA-256 at signing time. Later
+-- changes leave the signature attached to the earlier version. Status is pending, signed or
+-- declined.
 
 create table if not exists doc_signature (
   id text primary key,

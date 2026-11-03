@@ -20,8 +20,8 @@ import { ProfileForm } from "./ProfileForm";
 import { t } from "@/app/i18n";
 
 /**
- * Cuenta: por secciones, con la misma estructura que Administración (barra
- * plegable en escritorio, tarjetas y «Atrás» en móvil).
+ * Account sections use the administration layout: collapsible desktop navigation and mobile
+ * cards with back navigation.
  */
 
 type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "ia" | "api";
@@ -44,8 +44,7 @@ export function AccountScreen() {
   const can = usePermissions();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
-  // La sección abierta sobrevive a recargar y al cambio de idioma (que vuelve a
-  // montar la página); entrar de nuevo a Cuenta empieza desde el principio.
+  // Preserve the section across reload and language remount; reopening Account normally starts fresh.
   const [section, setSection] = useState<Section | null>(() => {
     const saved = readReloadState<string>(SECTION_KEY);
     return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
@@ -94,7 +93,8 @@ export function AccountScreen() {
   if (profile.mustChangePassword) return <Navigate to="/" />;
 
   const items = SECTIONS.filter(
-    (item) => (item.id !== "ia" || can(PERMISSION.aiUse)) && (item.id !== "api" || can(PERMISSION.apiUse)),
+    (item) =>
+      (item.id !== "ia" || can(PERMISSION.aiUse)) && (item.id !== "api" || can(PERMISSION.apiUse)),
   );
   const current = items.find((item) => item.id === section) ?? null;
 
@@ -112,18 +112,28 @@ export function AccountScreen() {
         <div data-ui="workspace" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <div className="grafito-in w-full px-4 py-6 sm:px-8">
             {current ? (
-              <button type="button" onClick={() => setSection(null)} className="mb-3 text-sm text-accent md:hidden">
+              <button
+                type="button"
+                onClick={() => setSection(null)}
+                className="mb-3 text-sm text-accent md:hidden"
+              >
                 {t("Atrás")}
               </button>
             ) : null}
-            <h1 className="font-serif text-3xl tracking-tight">{current ? t(current.label) : t("Cuenta")}</h1>
+            <h1 className="font-serif text-3xl tracking-tight">
+              {current ? t(current.label) : t("Cuenta")}
+            </h1>
             <div className="mt-6">
               {!current ? <OptionGrid items={items} onPick={setSection} /> : null}
               {current?.id === "perfil" ? (
                 <ProfileForm
                   userId={user.id}
                   initial={{ name: profile.displayName }}
-                  identity={{ loginName: profile.loginName, isAdmin: profile.isAdmin, canAdmin: profile.canAdmin }}
+                  identity={{
+                    loginName: profile.loginName,
+                    isAdmin: profile.isAdmin,
+                    canAdmin: profile.canAdmin,
+                  }}
                 />
               ) : null}
               {current?.id === "correo" ? <MailForm /> : null}

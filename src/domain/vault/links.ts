@@ -94,8 +94,8 @@ export function readingLabel(words: number): string {
 
 export function backlinkLine(content: string, title: string): string {
   const key = title.toLowerCase();
-  const line = content.split("\n").find((row) =>
-    extractWikiLinks(row).some((item) => item.toLowerCase() === key),
-  );
+  const line = content
+    .split("\n")
+    .find((row) => extractWikiLinks(row).some((item) => item.toLowerCase() === key));
   return (line ?? "").replace(/^>\s?/, "").trim();
 }

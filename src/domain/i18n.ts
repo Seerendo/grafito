@@ -1,13 +1,9 @@
 import { en } from "./i18n/en.ts";
 
 /**
- * Traducción de la interfaz (lógica pura, sin estado). El texto en español es
- * la clave: `translate("en", "Guardar")` → "Save". Lo que no tiene traducción
- * se queda en español.
- *
- * Variables: `{nombre}` en la clave y en la traducción. Los mensajes que llegan
- * ya armados del servidor («Conecta Ollama en tu cuenta…») se reconocen con
- * esas mismas claves como patrones.
+ * Stateless interface translation uses Spanish source text as keys and falls back to it when
+ * untranslated. Named placeholders also identify already-interpolated server messages through
+ * patterns.
  */
 
 export type Locale = "es" | "en";
@@ -48,17 +44,23 @@ function compile(locale: Exclude<Locale, "es">): Pattern[] {
       .join("");
     list.push({ regex: new RegExp(`^${body}$`), names, target });
   }
-  // Los patrones más específicos (más texto fijo) primero.
+  // Try more specific patterns with more literal text first.
   list.sort((a, b) => b.regex.source.length - a.regex.source.length);
   patterns.set(locale, list);
   return list;
 }
 
 function fill(template: string, vars: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
+  return template.replace(/\{(\w+)\}/g, (whole, name: string) =>
+    name in vars ? String(vars[name]) : whole,
+  );
 }
 
-export function translate(locale: Locale, text: string, vars?: Record<string, string | number>): string {
+export function translate(
+  locale: Locale,
+  text: string,
+  vars?: Record<string, string | number>,
+): string {
   if (locale === "es" || !text) return vars ? fill(text, vars) : text;
   const catalog = catalogs[locale];
   const direct = catalog[text];
@@ -77,7 +79,7 @@ export function translate(locale: Locale, text: string, vars?: Record<string, st
   return vars ? fill(text, vars) : text;
 }
 
-/** Locale de `Intl` para fechas y números. */
+/** Intl locale for dates and numbers. */
 export function intlLocale(locale: Locale): string {
   return locale === "en" ? "en" : "es";
 }

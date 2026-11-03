@@ -1,4 +1,3 @@
--- Notas sobre una frase de un PDF: un comentario con su ancla (la frase, la
--- página y el contexto, como los vínculos; ver `domain/vault/anchor.ts`), en
--- JSON. Sin ancla, es un comentario del documento entero.
+-- PDF phrase comments store a JSON anchor with phrase, page and context; see
+-- domain/vault/anchor.ts. Without an anchor, a comment applies to the whole document.
 alter table doc_comment add column if not exists anchor text;

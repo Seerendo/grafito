@@ -4,7 +4,7 @@ import { MAX_ROWS } from "@/domain/vault/table";
 import { apiCaller, apiError, failure, json, requirePermission } from "@/server/api";
 import { presentField, presentRow, readTable, tableDocument } from "@/server/table";
 
-/** `GET /api/v1/tables/:id?q=<texto>&limit=<n>`: columnas, filas y fórmulas calculadas. */
+/** GET /api/v1/tables/:id with query and limit returns columns, rows and calculated formulas. */
 export const Route = createFileRoute("/api/v1/tables/$id")({
   server: {
     handlers: {
@@ -18,9 +18,12 @@ export const Route = createFileRoute("/api/v1/tables/$id")({
           const query = new URL(request.url).searchParams;
           const needle = (query.get("q") ?? "").trim().toLowerCase();
           const limit = Math.min(MAX_ROWS, Math.max(1, Number(query.get("limit")) || 500));
-          const rows = (needle
-            ? table.rows.filter((row) => JSON.stringify(presentRow(table.fields, row)).toLowerCase().includes(needle))
-            : table.rows
+          const rows = (
+            needle
+              ? table.rows.filter((row) =>
+                  JSON.stringify(presentRow(table.fields, row)).toLowerCase().includes(needle),
+                )
+              : table.rows
           ).slice(0, limit);
           return json({
             table: {

@@ -11,7 +11,7 @@ import { t } from "@/app/i18n";
 
 type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
 
-/** `/compartidos`: lo que otros usuarios compartieron conmigo. */
+/** /compartidos lists items shared with the current user. */
 export function SharedWithMeScreen() {
   const [items, setItems] = useState<Inbox | null>(null);
   const [error, setError] = useState("");
@@ -30,7 +30,9 @@ export function SharedWithMeScreen() {
           {error ? <p className="mt-6 text-sm text-danger">{t(error)}</p> : null}
           {!items && !error ? <p className="mt-6 text-sm text-muted">{t("Cargando…")}</p> : null}
           {items && items.length === 0 ? (
-            <p className="mt-6 text-sm text-muted">{t("Nadie ha compartido nada contigo todavía.")}</p>
+            <p className="mt-6 text-sm text-muted">
+              {t("Nadie ha compartido nada contigo todavía.")}
+            </p>
           ) : null}
           {items && items.length > 0 ? (
             <ul className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
@@ -45,9 +47,12 @@ export function SharedWithMeScreen() {
                     >
                       <Icon className="size-4 shrink-0 text-faint" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{item.title || t("Sin título")}</span>
+                        <span className="block truncate text-sm">
+                          {item.title || t("Sin título")}
+                        </span>
                         <span className="block text-xs text-muted">
-                          {item.kind === "portfolio" ? t("Portafolio") : t("Nota")}{" "}{t("· de")}{" "}{item.ownerName}
+                          {item.kind === "portfolio" ? t("Portafolio") : t("Nota")} {t("· de")}{" "}
+                          {item.ownerName}
                         </span>
                       </span>
                     </Link>
@@ -62,7 +67,7 @@ export function SharedWithMeScreen() {
   );
 }
 
-/** `/compartidos/$shareId`: un elemento compartido conmigo. */
+/** /compartidos/$shareId displays a shared item. */
 export function SharedItemScreen({ shareId }: { shareId: string }) {
   const tree = useTree(() => fetchSharedTree(shareId), shareId);
   return (
@@ -72,7 +77,7 @@ export function SharedItemScreen({ shareId }: { shareId: string }) {
   );
 }
 
-/** `/p/$token`: vista pública por enlace, sin sesión. */
+/** /p/$token is a public view without a session. */
 export function PublicShareScreen({ token }: { token: string }) {
   const tree = useTree(() => fetchPublicTree(token), token);
   const title = tree && tree !== "loading" && tree !== "error" ? tree.share.title : "";
@@ -81,13 +86,19 @@ export function PublicShareScreen({ token }: { token: string }) {
   }, [title]);
   return (
     <div data-ui="shell" className="flex h-dvh flex-col overflow-hidden bg-bg text-fg">
-      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+      <header
+        data-ui="topbar"
+        className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3"
+      >
         <span className="flex items-center gap-0.5">
           <Mark />
           <span className="select-none font-semibold tracking-tight">{t("Grafito")}</span>
         </span>
         {title ? <span className="min-w-0 truncate text-sm text-muted">· {title}</span> : null}
-        <Link to="/" className="ml-auto text-sm text-muted underline-offset-4 hover:text-fg hover:underline">
+        <Link
+          to="/"
+          className="ml-auto text-sm text-muted underline-offset-4 hover:text-fg hover:underline"
+        >
           {t("Entrar")}
         </Link>
       </header>
@@ -113,7 +124,7 @@ function useTree(load: () => Promise<SharedTree | null>, key: string): TreeLoad 
     return () => {
       cancelled = true;
     };
-    // `load` cambia en cada render; la clave identifica qué abrir.
+    // load changes every render; the key identifies the item to open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return tree;
@@ -127,5 +138,7 @@ function TreeState({ tree, missing }: { tree: TreeLoad; missing: string }) {
 }
 
 function Centered({ children }: { children: ReactNode }) {
-  return <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">{children}</p>;
+  return (
+    <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">{children}</p>
+  );
 }

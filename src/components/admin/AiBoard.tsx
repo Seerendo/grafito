@@ -4,9 +4,8 @@ import { aiAdminState, saveAiPolicy } from "@/server/ai.functions";
 import { t } from "@/app/i18n";
 
 /**
- * Administración → IA: qué proveedores pueden usar las personas. Cada una los
- * conecta en Cuenta → IA con su propia clave o, en Ollama y LM Studio, con la
- * dirección de su propia instancia.
+ * Administrators enable AI providers; users connect them in Account with personal credentials
+ * or local Ollama/LM Studio addresses.
  */
 
 type State = Extract<Awaited<ReturnType<typeof aiAdminState>>, { ok: true }>;
@@ -32,7 +31,10 @@ export function AiBoard() {
     <div className="space-y-4">
       {!state.encryption ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {t("Falta")}{" "}<code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}{t("(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.")}
+          {t("Falta")} <code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}
+          {t(
+            "(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.",
+          )}
         </p>
       ) : null}
       <ul className="overflow-hidden rounded-lg border border-line bg-surface">

@@ -1,13 +1,8 @@
 /**
- * Prueba manual del permiso del asistente contra un LM Studio local.
- * No forma parte de `npm test` (en CI no hay modelo).
- *
- *   node --experimental-strip-types scripts/ai-access-lmstudio.ts
- *
- * La garantía no es lo que el modelo escriba: es que la herramienta, al
- * ejecutar lo que el modelo pide, no devuelve un documento ajeno y no modifica
- * uno de solo lectura. Si el modelo no llama herramientas, el cierre directo
- * (sin modelo) igual tiene que cumplirse.
+ * Manual assistant permission test against local LM Studio, excluded from npm test because CI
+ * has no model. Run: node --experimental-strip-types scripts/ai-access-lmstudio.ts. Tools must
+ * never return foreign documents or modify read-only documents, regardless of model output.
+ * Direct authorization checks must also pass when the model calls no tools.
  */
 import assert from "node:assert/strict";
 import {

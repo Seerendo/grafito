@@ -76,16 +76,14 @@ function isLegacyNote(value: unknown): value is LegacyNote {
   );
 }
 
-/** Portafolio raíz que agrupa las notas de ejemplo. */
+/** Root portfolio grouping sample notes. */
 export const SAMPLE_ROOT_ID = "p-documentacion";
 export const SAMPLE_ROOT_NAME = "Documentación";
 const SAMPLE_PORTFOLIO_IDS = ["p-inicio", "p-atlas", "p-personal", "p-taller", "p-diario"];
 
 /**
- * Las bóvedas creadas antes de «Documentación» tienen los portafolios de
- * ejemplo en la raíz: los mueve dentro de ese portafolio (o de uno raíz que ya
- * se llame así). Se aplica una sola vez: si el raíz ya existe, no toca nada,
- * así que respeta a quien luego los mueva a mano. Devuelve `null` si no cambia.
+ * One-time migration nests legacy sample portfolios under Documentation. If that root already
+ * exists, leave user organization unchanged. Return null when no changes are needed.
  */
 export function nestSamplePortfolios(portfolios: Portfolio[]): Portfolio[] | null {
   if (portfolios.some((portfolio) => portfolio.id === SAMPLE_ROOT_ID)) return null;
@@ -94,7 +92,9 @@ export function nestSamplePortfolios(portfolios: Portfolio[]): Portfolio[] | nul
   );
   if (loose.length === 0) return null;
   const named = portfolios.find(
-    (portfolio) => portfolio.parentId === null && portfolio.name.trim().toLowerCase() === SAMPLE_ROOT_NAME.toLowerCase(),
+    (portfolio) =>
+      portfolio.parentId === null &&
+      portfolio.name.trim().toLowerCase() === SAMPLE_ROOT_NAME.toLowerCase(),
   );
   const rootId = named?.id ?? SAMPLE_ROOT_ID;
   const moved = portfolios.map((portfolio) =>

@@ -1,13 +1,8 @@
--- Espacios de trabajo: los portafolios de una organización, que no son de
--- ninguna persona. Cada uno vive en la bóveda de una cuenta interna (`owner_id`,
--- sin contraseña ni forma de entrar) y se comparte con la organización (y sus
--- suborganizaciones) con permiso de edición (`share_id`). Sus administradores
--- son invitados con nivel `admin`. Ver `src/server/workspace.ts`.
---
--- `bytes`: su espacio total (sin tope si es nulo). Lo de las suborganizaciones
--- sale de ahí: la suma de lo que se les asigna no puede pasarlo, y el propio
--- espacio de trabajo usa lo que queda. Lo que se sube aquí no cuenta en el
--- espacio personal de nadie.
+-- Organization workspaces belong to an internal account (owner_id) with no password or sign-in.
+-- They are shared with the organization and descendants via share_id; administrators receive
+-- direct admin grants. See src/server/workspace.ts. bytes is the total quota, null for unlimited.
+-- Child organization allocations cannot exceed it; the workspace uses the remainder. Workspace
+-- uploads do not count toward personal quotas.
 create table if not exists workspace (
   org_id text primary key references app_org (id) on delete cascade,
   owner_id text not null unique references "user" ("id") on delete cascade,

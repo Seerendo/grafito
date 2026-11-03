@@ -36,12 +36,9 @@ function formatSize(bytes: number | undefined): string {
 }
 
 /**
- * Vista de un archivo. En la bóveda propia pide sus enlaces firmados
- * (`docId`); en lo compartido llegan hechos (`links`). Los documentos de
- * Office se abren en el editor si el servidor lo tiene (`office`): `own` para
- * los propios, `shareId` para lo compartido conmigo. En los PDF propios se
- * puede vincular una frase con otro documento, y en todos (salvo un enlace
- * público) dejarle una nota (`PdfView`).
+ * File viewer uses signed links for owned files and supplied links for shares. Office files use
+ * the enabled editor with own/shareId authorization. Owned PDFs support phrase links; all
+ * signed-in PDF views support comments.
  */
 export function FileView({
   title,
@@ -59,17 +56,21 @@ export function FileView({
   links?: FileLinks;
   shareId?: string;
   onOpenNote?: (id: string) => void;
-  /** En lo compartido: si se puede editar (dibujos). */
+  /** Whether the shared drawing is editable. */
   canEdit?: boolean;
-  /** Frases de un PDF compartido: vínculos que ya tiene y, si se puede, crear uno. */
+  /** Shared PDF phrase links and optional link creation. */
   manual?: Omit<PdfLinking, "focus" | "onFocused">;
 }) {
   const can = usePermissions();
-  // Una tabla de datos: sus filas viven en el servidor, no en el archivo.
+  // Table rows live on the server, not in the file object.
   if (isTableName(file.name)) {
-    // Por enlace público no hay sesión: las tablas solo se ven dentro de Grafito.
+    // Public links have no session; tables are available only inside Grafito.
     if (links && !shareId) {
-      return <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">{t("Las tablas no se pueden ver por enlace público.")}</p>;
+      return (
+        <p className="grid flex-1 place-items-center px-6 text-center text-sm text-muted">
+          {t("Las tablas no se pueden ver por enlace público.")}
+        </p>
+      );
     }
     return (
       <TableView
@@ -83,7 +84,15 @@ export function FileView({
   }
   return links ? (
     manual ? (
-      <ManualFile title={title} file={file} docId={docId} fileLinks={links} shareId={shareId} canEdit={canEdit} manual={manual} />
+      <ManualFile
+        title={title}
+        file={file}
+        docId={docId}
+        fileLinks={links}
+        shareId={shareId}
+        canEdit={canEdit}
+        manual={manual}
+      />
     ) : (
       <FileBody
         title={title}
@@ -98,7 +107,7 @@ export function FileView({
   );
 }
 
-/** Lo que el visor de PDF necesita para vincular frases y abrir sus destinos. */
+/** PDF viewer dependencies for phrase linking and target navigation. */
 type PdfLinking = {
   links: ManualLink[];
   targetTitle: (id: string) => string | undefined;
@@ -122,14 +131,18 @@ function OwnFile({
   const own = useFileLinks(docId, file);
   const documents = useVault((state) => state.documents);
   const setDialog = useVault((state) => state.setDialog);
-  const focus = useVault((state) => (state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null));
+  const focus = useVault((state) =>
+    state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null,
+  );
   const setFocusAnchor = useVault((state) => state.setFocusAnchor);
   const can = usePermissions();
   const onFocused = useCallback(() => setFocusAnchor(null), [setFocusAnchor]);
   const pdf: PdfLinking = {
     links: documents.find((item) => item.id === docId)?.links ?? [],
     targetTitle: (id) => documents.find((item) => item.id === id)?.title,
-    onLink: can(PERMISSION.linksManage) ? (anchor) => setDialog({ type: "link", sourceId: docId, anchor }) : undefined,
+    onLink: can(PERMISSION.linksManage)
+      ? (anchor) => setDialog({ type: "link", sourceId: docId, anchor })
+      : undefined,
     onOpen: onOpenNote,
     focus,
     onFocused,
@@ -147,7 +160,7 @@ function OwnFile({
   );
 }
 
-/** PDF de un espacio o de lo compartido: las frases vinculadas se abren y, con permiso, se crean. */
+/** Shared/workspace PDFs support opening phrase links and creating them with permission. */
 function ManualFile({
   title,
   file,
@@ -165,7 +178,9 @@ function ManualFile({
   canEdit: boolean;
   manual: Omit<PdfLinking, "focus" | "onFocused">;
 }) {
-  const focus = useVault((state) => (state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null));
+  const focus = useVault((state) =>
+    state.focusAnchor?.docId === docId ? state.focusAnchor.anchor : null,
+  );
   const setFocusAnchor = useVault((state) => state.setFocusAnchor);
   const onFocused = useCallback(() => setFocusAnchor(null), [setFocusAnchor]);
   return (
@@ -180,7 +195,7 @@ function ManualFile({
   );
 }
 
-/** Tras una subida, el archivo tarda un instante en llegar al servidor: se reintenta unas veces. */
+/** Retry briefly while a newly uploaded file synchronizes to the server. */
 const RETRIES = 4;
 
 function FileBody({
@@ -204,13 +219,14 @@ function FileBody({
   const [failures, setFailures] = useState(0);
   const officeEnabled = useOfficeEnabled();
   const canOpen = Boolean(office) && officeEnabled && isOfficeFile(file.name);
-  // Un documento de Office se abre directamente en el editor al seleccionarlo.
-  // Si se cierra desde el propio editor, queda un botón para volver a abrirlo.
+  // Open selected Office documents directly in the editor. If closed within the editor, leave a reopen button.
   const [closed, setClosed] = useState(false);
   const editing = canOpen && !closed;
-  const generation = useOfficeReload((state) => (office ? (state.generation[office.docId] ?? 0) : 0));
+  const generation = useOfficeReload((state) =>
+    office ? (state.generation[office.docId] ?? 0) : 0,
+  );
   useEffect(() => setClosed(false), [office?.docId, generation]);
-  // Lo guardado en el editor cambia el archivo en el servidor: se baja a la bóveda.
+  // Editor saves update server files; pull them into the browser vault.
   const pull = () => {
     const owner = useVault.getState().owner;
     if (owner && !office?.shareId) void syncVault(owner);
@@ -225,7 +241,9 @@ function FileBody({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3 text-sm text-muted sm:px-6">
         <span className="min-w-0 flex-1 truncate">{file.name}</span>
-        {file.size ? <span className="shrink-0 text-xs text-faint">{formatSize(file.size)}</span> : null}
+        {file.size ? (
+          <span className="shrink-0 text-xs text-faint">{formatSize(file.size)}</span>
+        ) : null}
         {canOpen && !editing ? (
           <button
             type="button"
@@ -260,50 +278,51 @@ function FileBody({
           }}
         />
       ) : (
-      <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-6">
-        {!links ? (
-          <p className="text-sm text-faint">{t("Cargando…")}</p>
-        ) : kind === "image" ? (
-          <img
-            key={links.url}
-            src={links.url}
-            alt={title}
-            onError={broken}
-            className="mx-auto max-h-full max-w-full rounded-md border border-line"
-          />
-        ) : kind === "drawing" ? (
-          <DrawingView
-            docId={drawing.docId}
-            shareId={drawing.shareId}
-            canEdit={drawing.canEdit}
-            onSaved={pull}
-            onOpenNote={drawing.onOpenNote}
-          />
-        ) : kind === "pdf" ? (
-          office ? (
-            <PdfSignatures
+        <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-6">
+          {!links ? (
+            <p className="text-sm text-faint">{t("Cargando…")}</p>
+          ) : kind === "image" ? (
+            <img
               key={links.url}
-              url={links.url}
-              title={title}
-              {...pdf}
-              notes={{ docId: office.docId, shareId: office.shareId }}
+              src={links.url}
+              alt={title}
+              onError={broken}
+              className="mx-auto max-h-full max-w-full rounded-md border border-line"
             />
+          ) : kind === "drawing" ? (
+            <DrawingView
+              docId={drawing.docId}
+              shareId={drawing.shareId}
+              canEdit={drawing.canEdit}
+              onSaved={pull}
+              onOpenNote={drawing.onOpenNote}
+            />
+          ) : kind === "pdf" ? (
+            office ? (
+              <PdfSignatures
+                key={links.url}
+                url={links.url}
+                title={title}
+                {...pdf}
+                notes={{ docId: office.docId, shareId: office.shareId }}
+              />
+            ) : (
+              <PdfView key={links.url} url={links.url} title={title} {...pdf} />
+            )
+          ) : kind === "video" ? (
+            <video
+              key={links.url}
+              src={links.url}
+              controls
+              onError={broken}
+              className="mx-auto max-h-[70vh] max-w-full rounded-md"
+            />
+          ) : kind === "audio" ? (
+            <audio key={links.url} src={links.url} controls onError={broken} className="w-full" />
           ) : (
-            <PdfView
-              key={links.url}
-              url={links.url}
-              title={title}
-              {...pdf}
-            />
-          )
-        ) : kind === "video" ? (
-          <video key={links.url} src={links.url} controls onError={broken} className="mx-auto max-h-[70vh] max-w-full rounded-md" />
-        ) : kind === "audio" ? (
-          <audio key={links.url} src={links.url} controls onError={broken} className="w-full" />
-        ) : (
-          <p className="text-sm text-faint">{file.name}</p>
-        )}
-      </div>
+            <p className="text-sm text-faint">{file.name}</p>
+          )}
+        </div>
       )}
     </div>
   );

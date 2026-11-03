@@ -11,8 +11,8 @@ const createBody = z.object({
 });
 
 /**
- * `GET /api/v1/notes?portfolio=<id|root>&q=<texto>&limit=<n>`: notas y archivos (sin contenido).
- * `POST /api/v1/notes` con `{ title, content?, portfolioId? }`: crea una nota Markdown.
+ * GET /api/v1/notes lists notes/files without content, filtering by portfolio, query and limit.
+ * POST creates a Markdown note from title, optional content and portfolioId.
  */
 export const Route = createFileRoute("/api/v1/notes")({
   server: {

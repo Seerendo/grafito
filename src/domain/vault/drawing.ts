@@ -1,7 +1,6 @@
 /**
- * Dibujos de Excalidraw: un archivo `.excalidraw` (JSON) como cualquier otro,
- * así que se vinculan, comparten y guardan versiones igual. Se dibujan y
- * editan en `components/vault/DrawingView.tsx`.
+ * Excalidraw JSON files behave like other vault files for links, sharing and versions.
+ * DrawingView renders and edits them.
  */
 
 export const DRAWING_MIME = "application/vnd.excalidraw+json";
@@ -10,7 +9,7 @@ export function isDrawingName(name: string): boolean {
   return /\.excalidraw$/i.test(name);
 }
 
-/** Un dibujo vacío, para «Nuevo dibujo». */
+/** Empty drawing used for creation. */
 export function emptyDrawing(): string {
   return JSON.stringify({
     type: "excalidraw",

@@ -1,9 +1,7 @@
--- Bóveda en el servidor, API REST y asistente de IA.
+-- Server vault, REST API and AI assistant.
 
--- La bóveda de cada usuario. El navegador conserva una copia y se sincroniza
--- por revisiones: cada cambio recibe la siguiente revisión del usuario y las
--- bajas quedan como lápida (deleted = true) para que los demás navegadores se
--- enteren.
+-- Per-user vault. Browsers keep a copy synchronized by revision. Every change advances the user's
+-- revision; deleted rows remain as tombstones so other browsers observe deletions.
 create table if not exists vault_state (
   user_id text primary key references "user"(id) on delete cascade,
   revision bigint not null default 0
@@ -43,8 +41,7 @@ create table if not exists vault_doc (
 create index if not exists vault_doc_rev_idx on vault_doc (user_id, rev);
 create index if not exists vault_portfolio_rev_idx on vault_portfolio (user_id, rev);
 
--- Tokens personales para la API REST. Solo se guarda el hash; el token se
--- muestra una única vez al crearlo.
+-- Personal REST API tokens: store only the hash and reveal the token once, on creation.
 create table if not exists api_token (
   id text primary key,
   user_id text not null references "user"(id) on delete cascade,
@@ -57,17 +54,17 @@ create table if not exists api_token (
 
 create index if not exists api_token_user_idx on api_token (user_id);
 
--- Proveedores de IA que el administrador permite. base_url solo para los
--- locales (Ollama, LM Studio): la fija el administrador, no cada usuario, para
--- que nadie pueda hacer que el servidor llame a otras direcciones internas.
+-- Administrator-enabled AI providers. Originally, only local providers (Ollama and LM Studio)
+-- used base_url, configured by administrators to prevent requests to arbitrary internal
+-- addresses.
 create table if not exists ai_provider (
   id text primary key,
   enabled boolean not null default false,
   base_url text not null default ''
 );
 
--- Credenciales de IA de cada usuario. api_key va cifrada (AES-256-GCM con
--- GRAFITO_ENCRYPTION_KEY); key_hint guarda solo los 4 últimos caracteres.
+-- Per-user AI credentials. api_key uses AES-256-GCM with GRAFITO_ENCRYPTION_KEY; key_hint keeps
+-- only the final four characters.
 create table if not exists ai_credential (
   user_id text not null references "user"(id) on delete cascade,
   provider text not null,

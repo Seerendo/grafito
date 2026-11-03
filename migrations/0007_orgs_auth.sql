@@ -1,6 +1,6 @@
--- Organizaciones y proveedores externos de inicio de sesión.
+-- Organizations and external sign-in providers.
 
--- Organizaciones jerárquicas: parent_id nulo es una organización raíz.
+-- Hierarchical organizations: a null parent_id denotes a root.
 create table if not exists app_org (
   id text primary key,
   name text not null,
@@ -18,17 +18,15 @@ create table if not exists app_org_member (
 
 create index if not exists app_org_member_user_idx on app_org_member (user_id);
 
--- Compartir con una organización llega a sus miembros y a los de todas sus
--- sub-organizaciones (ver server/share.ts).
+-- Organization shares include members of all descendant organizations; see server/share.ts.
 create table if not exists share_org_grant (
   share_id text not null references share_item(id) on delete cascade,
   org_id text not null references app_org(id) on delete cascade,
   primary key (share_id, org_id)
 );
 
--- Proveedores externos: 'ldap', 'google', 'github', 'microsoft' y 'sso' (OIDC,
--- p. ej. Keycloak). config guarda JSON con los datos de conexión, secretos
--- incluidos; nunca se devuelve al navegador sin enmascarar.
+-- External providers: ldap, google, github, microsoft and sso (OIDC, such as Keycloak). config
+-- stores connection JSON including secrets; mask it before returning it to the browser.
 create table if not exists auth_provider (
   id text primary key,
   enabled boolean not null default false,
@@ -38,7 +36,7 @@ create table if not exists auth_provider (
   updated_at timestamptz not null default now()
 );
 
--- De qué proveedor salió cada cuenta creada al vuelo (para mostrarlo y auditar).
+-- Provider that provisioned each account, for display and auditing.
 alter table app_user_role add column if not exists source text not null default 'local';
 
 insert into app_permission (key, label, description, area, sort) values

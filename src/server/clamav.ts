@@ -11,11 +11,9 @@ import type { Sql } from "@/lib/db";
 import { deleteBlob, readBlob } from "./blobs";
 
 /**
- * Antivirus (solo servidor). `docker compose up` levanta clamd. Hasta que
- * Administración → Seguridad guarda, el análisis está encendido en
- * clamav:3310. Después manda lo guardado, también para apagarlo. Encendido,
- * clamd recibe el archivo por INSTREAM: si no contesta o lo marca, el
- * archivo se borra y la subida no sigue.
+ * Server antivirus defaults to Compose clamd at clamav:3310 until settings are saved. Enabled
+ * scans stream through INSTREAM; infection or scanner failure deletes the object and rejects
+ * completion.
  */
 
 export type ClamdEndpoint = { host: string; port: number };
@@ -31,7 +29,7 @@ const KEYS = {
 
 export type ClamavSettings = ClamavConfig & { source: "saved" | "default" };
 
-/** Lo guardado en la instalación, o clamav:3310 activo si esa pantalla aún no se usó. */
+/** Installation scanner settings, defaulting to enabled clamav:3310. */
 export async function readClamavSettings(sql: Sql): Promise<ClamavSettings> {
   const rows = await sql<{ key: string; value: string }>`
     select key, value from app_setting
@@ -45,7 +43,7 @@ export async function readClamavSettings(sql: Sql): Promise<ClamavSettings> {
     port: Number(map.get(KEYS.port) ?? 3310),
     timeoutSeconds: Number(map.get(KEYS.timeout) ?? 60),
   });
-  // Una fila ilegible no apaga el análisis: vuelve a la dirección de origen.
+  // Unreadable settings must not disable scanning; fall back to defaults.
   if (!parsed.ok) return { ...DEFAULT_CLAMAV, source: "default" };
   return { ...parsed.config, source: "saved" };
 }
@@ -68,8 +66,8 @@ export async function writeClamavSettings(sql: Sql, config: ClamavConfig): Promi
 export type ScanBlock = { status: number; message: string; signature: string; detail: string };
 
 /**
- * `null` si se puede quedar (apagado o limpio). Si no, el motivo y el archivo
- * ya no está en el almacén.
+ * null means the object may remain because scanning is disabled or clean. Otherwise return the
+ * reason after deleting it.
  */
 export async function blockUnsafeBlob(sql: Sql, key: string): Promise<ScanBlock | null> {
   const settings = await readClamavSettings(sql);
@@ -118,7 +116,7 @@ export async function probeClamd(sql: Sql): Promise<"off" | "up" | "down"> {
   return pingEndpoint(clamavEndpoint(settings));
 }
 
-/** Pregunta a clamd sin guardar. `off` si no hay servidor al que llamar. */
+/** Probe clamd without persisting settings; off means no configured host. */
 export async function pingEndpoint(endpoint: ClamdEndpoint | null): Promise<"off" | "up" | "down"> {
   if (!endpoint) return "off";
   try {
@@ -139,7 +137,7 @@ export async function scanBytes(
   return parseClamdReply(text);
 }
 
-/** `zINSTREAM` y los trozos con su largo en 4 bytes, y un trozo vacío al final. */
+/** Send zINSTREAM, chunks prefixed by four-byte lengths, and a final empty chunk. */
 function instream(bytes: Uint8Array): Buffer {
   const parts: Buffer[] = [Buffer.from(`zINSTREAM${NUL}`)];
   const size = 64 * 1024;

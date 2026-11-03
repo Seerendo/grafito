@@ -18,9 +18,8 @@ import {
 } from "@/server/signature";
 
 /**
- * Seguimiento de firmas de un documento. Lo ve quien puede abrirlo. Pedir
- * firmas es de quien puede editarlo. Firmar o rechazar, solo de la persona
- * a la que se lo pidieron.
+ * Readers see signature tracking; editors request signatures; only requested recipients may
+ * sign or decline.
  */
 
 const id = z.string().min(1).max(80);
@@ -29,8 +28,12 @@ const target = z.object({ docId: id, shareId: id.optional() });
 async function context(userId: string, docId: string, shareId?: string) {
   const sql = await requireLease(userId);
   const profile = await readUserProfile(sql, userId);
-  const ownerId = allows(profile, PERMISSION.notesRead) ? await signatureOwner(sql, userId, docId, shareId) : null;
-  const canRequest = ownerId ? await canRequestSignatures(sql, userId, ownerId, docId, shareId) : false;
+  const ownerId = allows(profile, PERMISSION.notesRead)
+    ? await signatureOwner(sql, userId, docId, shareId)
+    : null;
+  const canRequest = ownerId
+    ? await canRequestSignatures(sql, userId, ownerId, docId, shareId)
+    : false;
   return { sql, profile, ownerId, canRequest };
 }
 
@@ -48,7 +51,7 @@ export const signatureState = createServerFn({ method: "GET" })
     };
   });
 
-/** Quien ya puede abrir este documento, y su dueño. No todos los usuarios. */
+/** Eligible recipients already have document access, including its owner; never list all users. */
 export const signaturePeople = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.parse(input))
@@ -60,10 +63,17 @@ export const signaturePeople = createServerFn({ method: "GET" })
 
 export const askSignatures = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => target.extend({ userIds: z.array(id).min(1).max(50) }).parse(input))
+  .validator((input: unknown) =>
+    target.extend({ userIds: z.array(id).min(1).max(50) }).parse(input),
+  )
   .handler(async ({ context: auth, data }) => {
-    const { sql, profile, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
-    if (!ownerId || !canRequest) return { ok: false as const, error: "No puedes pedir firmas en este documento." };
+    const { sql, profile, ownerId, canRequest } = await context(
+      auth.userId,
+      data.docId,
+      data.shareId,
+    );
+    if (!ownerId || !canRequest)
+      return { ok: false as const, error: "No puedes pedir firmas en este documento." };
     const { blocked } = await requestSignatures(sql, {
       ownerId,
       docId: data.docId,
@@ -87,7 +97,12 @@ export const answerSignature = createServerFn({ method: "POST" })
   )
   .handler(async ({ context: auth, data }) => {
     const sql = await requireLease(auth.userId);
-    return decideSignature(sql, { userId: auth.userId, id: data.id, status: data.status, note: data.note ?? "" });
+    return decideSignature(sql, {
+      userId: auth.userId,
+      id: data.id,
+      status: data.status,
+      note: data.note ?? "",
+    });
   });
 
 const box = z.object({
@@ -98,13 +113,18 @@ const box = z.object({
   h: z.number().min(0).max(1),
 });
 
-/** El dueño o quien edita el PDF marca el recuadro de una persona. */
+/** Owner or PDF editor places a recipient's rectangle. */
 export const placeSignature = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.extend({ userId: id, box }).parse(input))
   .handler(async ({ context: auth, data }) => {
-    const { sql, profile, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
-    if (!ownerId || !canRequest) return { ok: false as const, error: "No puedes pedir firmas en este documento." };
+    const { sql, profile, ownerId, canRequest } = await context(
+      auth.userId,
+      data.docId,
+      data.shareId,
+    );
+    if (!ownerId || !canRequest)
+      return { ok: false as const, error: "No puedes pedir firmas en este documento." };
     return placeSignatureBox(sql, {
       ownerId,
       docId: data.docId,
@@ -115,21 +135,18 @@ export const placeSignature = createServerFn({ method: "POST" })
     });
   });
 
-/** Quita un recuadro pendiente. La imagen, si ya se firmó, está en el PDF y no se borra. */
+/** Remove a pending rectangle; already stamped PDF images cannot be removed this way. */
 export const removeSignature = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.extend({ signatureId: id }).parse(input))
   .handler(async ({ context: auth, data }) => {
     const { sql, ownerId, canRequest } = await context(auth.userId, data.docId, data.shareId);
-    if (!ownerId || !canRequest) return { ok: false as const, error: "No puedes pedir firmas en este documento." };
+    if (!ownerId || !canRequest)
+      return { ok: false as const, error: "No puedes pedir firmas en este documento." };
     return removeSignatureBox(sql, { ownerId, id: data.signatureId });
   });
 
-/**
- * La persona del recuadro firma una vez. Una imagen se estampa; un .p12 firma
- * el PDF con esa clave. Ni la imagen, ni el certificado, ni la contraseña se
- * guardan.
- */
+/** Each recipient signs once using an image or .p12. Do not retain image, certificate or password. */
 export const signPdf = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -146,7 +163,8 @@ export const signPdf = createServerFn({ method: "POST" })
   .handler(async ({ context: auth, data }) => {
     const sql = await requireLease(auth.userId);
     const profile = await readUserProfile(sql, auth.userId);
-    if (!allows(profile, PERMISSION.notesRead)) return { ok: false as const, error: "Ya no tienes acceso a este documento." };
+    if (!allows(profile, PERMISSION.notesRead))
+      return { ok: false as const, error: "Ya no tienes acceso a este documento." };
     return signPdfBox(sql, {
       userId: auth.userId,
       userName: profile.displayName || profile.loginName || "Alguien",

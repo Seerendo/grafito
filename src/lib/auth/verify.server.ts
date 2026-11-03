@@ -2,14 +2,11 @@ import { createHash } from "node:crypto";
 import { getRequest } from "@tanstack/react-start/server";
 import { getAuth } from "./server";
 
-/**
- * Resolución de la sesión en el servidor (solo servidor). Nunca fiarse de un id
- * de usuario mandado por el cliente: solo del resultado de esta verificación.
- */
+/** Server-side session resolution. Never trust client-supplied user IDs; use only the verified result. */
 
 /**
- * Lo lanza `requireUserId` sin sesión válida. Lleva `status: 401`; el mensaje
- * es un contrato estable: el cliente compara `err.message === "Unauthorized"`.
+ * requireUserId throws this with status 401 when no valid session exists. Keep the Unauthorized
+ * message stable because clients compare it.
  */
 export class UnauthorizedError extends Error {
   readonly status = 401;
@@ -22,9 +19,8 @@ export class UnauthorizedError extends Error {
 export type VerifiedUser = { id: string; email: string | null };
 
 /**
- * Usuario de la petición actual, o `null` sin sesión. `bearerToken` llega de
- * `authMiddleware` cuando el cliente se autentica con el token en vez de la
- * cookie (ver `./bearer`).
+ * Current request user or null. authMiddleware supplies bearerToken when authenticating without
+ * a cookie.
  */
 export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser | null> {
   const request = getRequest();
@@ -38,12 +34,9 @@ export async function getSessionUser(bearerToken?: string): Promise<VerifiedUser
 }
 
 /**
- * Sesiones verificadas hace poco, por credencial (la cookie de sesión firmada
- * o el token bearer, tal cual llegan): validar con Better Auth en cada
- * petición era lo que más CPU gastaba con mucha gente. Se guarda unos
- * segundos; cerrar sesión deja de valer como mucho en ese tiempo, y quitar el
- * acceso a alguien (`revokeUser`) corta al momento por el plazo de
- * `assertLease`, que se mira en cada petición.
+ * Briefly cache verified sessions by exact signed cookie or bearer credential to reduce
+ * authentication CPU. Sign-out invalidation may take the cache interval; revokeUser cuts access
+ * immediately through assertLease on every request.
  */
 const SESSION_CACHE_MS = 10_000;
 const MAX_SESSIONS = 10_000;
@@ -61,7 +54,7 @@ function credentialKey(headers: Headers): string | null {
   return createHash("sha256").update(`${authorization}\n${cookies}`).digest("base64url");
 }
 
-/** El usuario de la sesión que traen estas cabeceras, o `null`. */
+/** Resolve a user from these request headers, or null. */
 export async function sessionUser(headers: Headers): Promise<VerifiedUser | null> {
   const key = credentialKey(headers);
   if (!key) return null;
@@ -75,15 +68,20 @@ export async function sessionUser(headers: Headers): Promise<VerifiedUser | null
   }
   const user = { id: session.user.id, email: session.user.email ?? null };
   const expires = new Date(session.session.expiresAt).getTime();
-  recentSessions.set(key, { user, until: Math.min(now + SESSION_CACHE_MS, Number.isFinite(expires) ? expires : now) });
+  recentSessions.set(key, {
+    user,
+    until: Math.min(now + SESSION_CACHE_MS, Number.isFinite(expires) ? expires : now),
+  });
   if (recentSessions.size > MAX_SESSIONS) {
-    for (const [stale, entry] of recentSessions) if (entry.until <= now) recentSessions.delete(stale);
-    while (recentSessions.size > MAX_SESSIONS) recentSessions.delete(recentSessions.keys().next().value!);
+    for (const [stale, entry] of recentSessions)
+      if (entry.until <= now) recentSessions.delete(stale);
+    while (recentSessions.size > MAX_SESSIONS)
+      recentSessions.delete(recentSessions.keys().next().value!);
   }
   return user;
 }
 
-/** Id del usuario verificado, o `UnauthorizedError`. Mejor vía `authMiddleware`. */
+/** Verified user ID or UnauthorizedError; normally accessed through authMiddleware. */
 export async function requireUserId(bearerToken?: string): Promise<string> {
   const user = await getSessionUser(bearerToken);
   if (!user) throw new UnauthorizedError();

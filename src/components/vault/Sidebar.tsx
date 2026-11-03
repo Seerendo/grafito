@@ -1,6 +1,29 @@
-import { ChevronRight, ChevronsLeft, ChevronsRight, File, FileText, Folder, FolderOpen, FolderPlus, House, Pin, Search, Sheet, Trash2, X } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  File,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  House,
+  Pin,
+  Search,
+  Sheet,
+  Trash2,
+  X,
+} from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
-import { createContext, useContext, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+} from "react";
 import { extractTags } from "@/domain/vault/links";
 import { buildForest, type PortfolioNode } from "@/domain/vault/portfolios";
 import type { Document } from "@/domain/vault/types";
@@ -21,23 +44,31 @@ import { t } from "@/app/i18n";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
-/** Varios elementos a la vez (selección con Ctrl o Shift): JSON con sus claves. */
+/** JSON selection keys for dragging multiple Ctrl/Shift-selected items. */
 const MANY_MIME = "application/x-grafito-many";
 
 type PickKey = `doc:${string}` | `port:${string}`;
 
 /**
- * Selección de varias filas del directorio: Ctrl (⌘ en Mac) o Shift + clic.
- * `onPick` devuelve `true` si el clic fue de selección (y no hay que abrir nada).
+ * Directory multiselection via Ctrl/Cmd or Shift. onPick returns true for selection-only clicks
+ * that must not open content.
  */
-const PickContext = createContext<{ picked: Set<string>; onPick: (event: MouseEvent, key: PickKey) => boolean }>({
+const PickContext = createContext<{
+  picked: Set<string>;
+  onPick: (event: MouseEvent, key: PickKey) => boolean;
+}>({
   picked: new Set(),
   onPick: () => false,
 });
 
 function isVaultDrag(data: DataTransfer): boolean {
   const types = [...data.types];
-  return types.includes(DOC_MIME) || types.includes(PORT_MIME) || types.includes(MANY_MIME) || types.includes("text/plain");
+  return (
+    types.includes(DOC_MIME) ||
+    types.includes(PORT_MIME) ||
+    types.includes(MANY_MIME) ||
+    types.includes("text/plain")
+  );
 }
 
 function readMany(data: DataTransfer): { kind: "document" | "portfolio"; id: string }[] | null {
@@ -80,7 +111,7 @@ export function Sidebar({
   onOpenNote: (id: string) => void;
   onOpenShared: () => void;
   onOpenTrash: () => void;
-  /** Abre un portafolio en el centro (sus subportafolios, notas y archivos). */
+  /** Open a portfolio page in the main area. */
   onOpenPortfolio: (id: string) => void;
   onInspect: (id: string) => void;
   onHome: () => void;
@@ -98,13 +129,13 @@ export function Sidebar({
   const canUpload = can(PERMISSION.filesUpload);
   const canImport = can(PERMISSION.notesCreate);
   const rootPicked = useVault((state) => state.rootPicked);
-  // Una carpeta solo se resalta si fue lo último que se eligió (ver `folderPicked`).
+  // Highlight a folder only when it was the last selected item; see folderPicked.
   const folderPicked = useVault((state) => state.folderPicked);
   const trashShown = useTrashView((state) => state.open);
-  // Con la papelera o algo compartido abierto, lo propio no queda resaltado.
+  // Do not highlight personal entries while trash or shared content is open.
   const elsewhere = useSharedView((state) => state.tree !== null) || trashShown;
   const rootLit = selectedId === null && rootPicked && folderPicked && !elsewhere;
-  // Una sola fila resaltada: la carpeta si fue lo último elegido, si no el documento abierto.
+  // Highlight one row: the last-picked folder or the open document.
   const litId = folderPicked || elsewhere ? null : activeId;
   const trashOpen = useTrashView((state) => state.open);
   const collapsed = useVault((state) => state.collapsed);
@@ -124,13 +155,17 @@ export function Sidebar({
   const setAnchor = useDirectoryPick((state) => state.setAnchor);
   const scrolled = useRef<string | null>(null);
 
-  // Esc quita la selección; Supr (o Retroceso en Mac) pide eliminar lo elegido.
+  // Esc clears selection; Delete or macOS Backspace requests deletion.
   useEffect(() => {
     if (picked.length === 0) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Delete" || (event.key === "Backspace" && event.metaKey)) {
         const target = event.target;
-        if (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']")) return;
+        if (
+          target instanceof Element &&
+          target.closest("input, textarea, select, [contenteditable='true']")
+        )
+          return;
         if (useVault.getState().dialog) return;
         event.preventDefault();
         setDialog({ type: "delete-many", keys: picked });
@@ -145,7 +180,7 @@ export function Sidebar({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [picked, setDialog]);
 
-  // Lo que ya no existe (eliminado, o borrado en otro dispositivo) sale de la selección.
+  // Remove deleted or externally removed items from selection.
   useEffect(() => {
     if (picked.length === 0) return;
     const alive = (key: string) =>
@@ -165,10 +200,7 @@ export function Sidebar({
     }
     event.preventDefault();
     if (event.shiftKey && anchor) {
-      // Rango en el orden en que se ven las filas.
-      // Un rango desde una nota o archivo solo toma notas y archivos (y desde un
-      // portafolio, solo portafolios): pasar por encima de un portafolio no lo
-      // mete entero en la selección. Para eso está Ctrl+clic.
+      // Select ranges in visible order, keeping documents/files separate from portfolios so crossing a folder does not select its whole subtree. Ctrl-click allows mixed selection.
       const kind = anchor.slice(0, anchor.indexOf(":") + 1);
       const order = [...document.querySelectorAll<HTMLElement>("[data-ui='sidebar'] [data-pick]")]
         .map((element) => element.dataset.pick!)
@@ -182,21 +214,28 @@ export function Sidebar({
       }
     }
     setPicked((current) => {
-      // El primer Ctrl+clic también se lleva la fila elegida antes.
+      // The first Ctrl-click also includes the previously selected row.
       const base = current.length === 0 && anchor && anchor !== key ? [anchor] : current;
       return base.includes(key) ? base.filter((item) => item !== key) : [...base, key];
     });
     setAnchor(key);
     return true;
   };
-  const { openMenu: showMenu, closeMenu, element: menuElement } = useRowMenu(onOpenNote, (target) => {
-    useDirectoryPick.getState().add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
+  const {
+    openMenu: showMenu,
+    closeMenu,
+    element: menuElement,
+  } = useRowMenu(onOpenNote, (target) => {
+    useDirectoryPick
+      .getState()
+      .add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
   });
 
   const tableText = useTableIndex((state) => state.text);
   const filtered = documents.filter((document) => {
     if (tag && document.kind === "markdown") {
-      if (!extractTags(document.content).some((item) => item.toLowerCase() === tag.toLowerCase())) return false;
+      if (!extractTags(document.content).some((item) => item.toLowerCase() === tag.toLowerCase()))
+        return false;
     } else if (tag) return false;
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
@@ -208,11 +247,19 @@ export function Sidebar({
     );
   });
   const searching = query.trim().length > 0 || Boolean(tag);
-  // Al abrir un archivo o un portafolio, la fila queda a la vista (sus padres ya se desplegaron).
-  const revealKey = elsewhere ? null : litId ? `doc:${litId}` : folderPicked && selectedId ? `port:${selectedId}` : null;
+  // Reveal the opened document or portfolio row after expanding ancestors.
+  const revealKey = elsewhere
+    ? null
+    : litId
+      ? `doc:${litId}`
+      : folderPicked && selectedId
+        ? `port:${selectedId}`
+        : null;
   useEffect(() => {
     if (!revealKey || scrolled.current === revealKey) return;
-    const row = document.querySelector(`[data-ui="sidebar"] [data-pick="${CSS.escape(revealKey)}"]`);
+    const row = document.querySelector(
+      `[data-ui="sidebar"] [data-pick="${CSS.escape(revealKey)}"]`,
+    );
     if (!row) return;
     row.scrollIntoView({ block: "nearest" });
     scrolled.current = revealKey;
@@ -239,16 +286,28 @@ export function Sidebar({
   };
 
   const openMenu = (event: MouseEvent, next: { x: number; y: number } & RowMenuTarget) => {
-    // Clic derecho sobre una de varias elegidas: el menú vale para todas.
-    const key = next.kind === "document" ? `doc:${next.id}` : next.kind === "portfolio" ? `port:${next.id}` : null;
-    showMenu(event, key && picked.length > 1 && picked.includes(key) ? { ...next, many: picked } : next);
+    // Context actions on a selected row apply to all selected rows.
+    const key =
+      next.kind === "document"
+        ? `doc:${next.id}`
+        : next.kind === "portfolio"
+          ? `port:${next.id}`
+          : null;
+    showMenu(
+      event,
+      key && picked.length > 1 && picked.includes(key) ? { ...next, many: picked } : next,
+    );
   };
 
   const acceptDrop = (event: DragEvent, key: string) => {
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
     const internal = isVaultDrag(event.dataTransfer) && canManagePortfolios;
     if (!external && (searching || !internal)) return;
-    if (key === "root" && (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")) return;
+    if (
+      key === "root" &&
+      (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = external ? "copy" : "move";
@@ -266,11 +325,15 @@ export function Sidebar({
     const external = isExternalFileDrag(event.dataTransfer) && (canUpload || canImport);
     const internal = isVaultDrag(event.dataTransfer) && canManagePortfolios;
     if (!external && (searching || !internal)) return;
-    if (portfolioId === null && (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")) return;
+    if (
+      portfolioId === null &&
+      (event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share]")
+    )
+      return;
     event.preventDefault();
     event.stopPropagation();
     setDropOver(null);
-    // Una carpeta puede llegar sin `files` y sí con entradas: no exigir la lista.
+    // Folder drops may provide entries without files; do not require a file list.
     if (external) {
       takeExternal(event.dataTransfer, portfolioId);
       return;
@@ -278,14 +341,16 @@ export function Sidebar({
     const many = readMany(event.dataTransfer);
     if (many && many.length > 0) {
       const skipped = moveMany(many, portfolioId);
-      // Una selección terminada no deja ancla: el próximo Ctrl+clic empieza de cero.
+      // Clear the anchor after selection ends so the next Ctrl-click starts fresh.
       setPicked([]);
       setAnchor(null);
       if (skipped.length > 0) {
         setDialog({
           type: "upload-error",
           title: "No se movieron todos",
-          message: t("Ya hay un documento con ese nombre en el destino: {0}.", { 0: skipped.join(", ") }),
+          message: t("Ya hay un documento con ese nombre en el destino: {0}.", {
+            0: skipped.join(", "),
+          }),
         });
       }
       return;
@@ -296,7 +361,7 @@ export function Sidebar({
     else moveDocument(payload.id, portfolioId);
   };
 
-  /** Arrastrar una fila seleccionada arrastra toda la selección. */
+  /** Dragging a selected row drags the whole selection. */
   const dragMany = (event: DragEvent, key: string): boolean => {
     if (picked.length < 2 || !picked.includes(key)) return false;
     event.dataTransfer.setData(MANY_MIME, JSON.stringify(picked));
@@ -324,221 +389,253 @@ export function Sidebar({
 
   return (
     <PickContext.Provider value={{ picked: new Set(picked), onPick }}>
-    <aside
-      data-ui="sidebar"
-      className="flex h-full min-h-0 w-full flex-col bg-surface md:w-72 md:border-r md:border-line"
-      // Un clic normal en cualquier otra cosa del directorio (la Carpeta
-      // Personal, un espacio de trabajo, la papelera, un hueco…) quita la
-      // selección hecha con Ctrl o Mayús. Las flechas de plegar no, para poder
-      // abrir carpetas mientras se elige; las filas lo resuelven en `onPick`.
-      onClickCapture={(event) => {
-        if (picked.length === 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        const target = event.target as HTMLElement;
-        if (target.closest("[data-pick], [data-keep-pick], [data-ui='selection']")) return;
-        setPicked([]);
-        setAnchor(null);
-      }}
-      onDragOver={(event) => {
-        if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
-        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share], [data-drop-root]")) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "copy";
-      }}
-      onDrop={(event) => {
-        if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
-        if ((event.target as HTMLElement).closest("[data-drop-portfolio], [data-drop-share], [data-drop-root]")) return;
-        event.preventDefault();
-        event.stopPropagation();
-        setDropOver(null);
-        takeExternal(event.dataTransfer, selectedId);
-      }}
-    >
-      <div className="flex items-center gap-2 px-2 pt-2">
-        <label data-field className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md bg-inset px-3 text-sm text-muted">
-          <Search className="size-4 shrink-0" />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filtrar")}
-            className="min-w-0 flex-1 bg-transparent pl-1 text-fg outline-none placeholder:text-faint"
-          />
-          {query ? (
-            <button type="button" aria-label={t("Limpiar filtro")} onClick={() => setQuery("")} className="text-faint hover:text-fg">
-              <X className="size-4" />
-            </button>
-          ) : null}
-        </label>
-        {canManagePortfolios ? (
-          <button
-            type="button"
-            aria-label={t("Nuevo portafolio")}
-            onClick={() => setDialog({ type: "portfolio", parentId: selectedId })}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted hover:text-fg"
-          >
-            <FolderPlus className="size-4" />
-          </button>
-        ) : null}
-        {onCollapse ? (
-          <button
-            type="button"
-            aria-label={t("Plegar el directorio")}
-            title={t("Plegar el directorio")}
-            onClick={onCollapse}
-            className="grid h-11 w-7 shrink-0 place-items-center rounded-md text-faint hover:text-fg"
-          >
-            <ChevronsLeft className="size-4" />
-          </button>
-        ) : null}
-      </div>
-
-      {tag ? (
-        <div className="px-3 pt-2">
-          <button
-            type="button"
-            onClick={() => setTag(null)}
-            className="inline-flex h-8 items-center gap-1 rounded-full bg-elevated px-3 text-xs text-accent"
-          >
-            #{tag}
-            <X className="size-3" />
-          </button>
-        </div>
-      ) : null}
-
-      <div
-        className="mt-1 min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropOver(null);
+      <aside
+        data-ui="sidebar"
+        className="flex h-full min-h-0 w-full flex-col bg-surface md:w-72 md:border-r md:border-line"
+        // Normal clicks elsewhere in the directory clear multiselection. Expansion arrows preserve it while browsing; rows handle selection through onPick.
+        onClickCapture={(event) => {
+          if (picked.length === 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+          const target = event.target as HTMLElement;
+          if (target.closest("[data-pick], [data-keep-pick], [data-ui='selection']")) return;
+          setPicked([]);
+          setAnchor(null);
         }}
-        onContextMenu={(event) => {
-          if ((event.target as HTMLElement).closest("button")) return;
-          openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" });
+        onDragOver={(event) => {
+          if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
+          if (
+            (event.target as HTMLElement).closest(
+              "[data-drop-portfolio], [data-drop-share], [data-drop-root]",
+            )
+          )
+            return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={(event) => {
+          if (!(canUpload || canImport) || !isExternalFileDrag(event.dataTransfer)) return;
+          if (
+            (event.target as HTMLElement).closest(
+              "[data-drop-portfolio], [data-drop-share], [data-drop-root]",
+            )
+          )
+            return;
+          event.preventDefault();
+          event.stopPropagation();
+          setDropOver(null);
+          takeExternal(event.dataTransfer, selectedId);
         }}
       >
-        {searching ? (
-          filtered.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm text-faint">{t("Nada coincide.")}</p>
-          ) : (
-            <ul>
-              {filtered.map((document) => (
-                <li key={document.id}>
-                  <DocButton
-                    document={document}
-                    active={document.id === litId}
-                    depth={0}
-                    onOpen={open}
-                    onOpenContent={openContent}
-                    onDragStart={startDrag}
-                    onContextMenu={(event, id) =>
-                      openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          )
-        ) : (
-          <div
-            data-drop-root
-            className="flex min-h-full flex-col"
-            onDragOver={(event) => acceptDrop(event, "root")}
-            onDrop={(event) => takeDrop(event, null)}
+        <div className="flex items-center gap-2 px-2 pt-2">
+          <label
+            data-field
+            className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-md bg-inset px-3 text-sm text-muted"
           >
+            <Search className="size-4 shrink-0" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Filtrar")}
+              className="min-w-0 flex-1 bg-transparent pl-1 text-fg outline-none placeholder:text-faint"
+            />
+            {query ? (
+              <button
+                type="button"
+                aria-label={t("Limpiar filtro")}
+                onClick={() => setQuery("")}
+                className="text-faint hover:text-fg"
+              >
+                <X className="size-4" />
+              </button>
+            ) : null}
+          </label>
+          {canManagePortfolios ? (
             <button
               type="button"
-              onClick={onHome}
-              onContextMenu={(event) => openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" })}
+              aria-label={t("Nuevo portafolio")}
+              onClick={() => setDialog({ type: "portfolio", parentId: selectedId })}
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted hover:text-fg"
+            >
+              <FolderPlus className="size-4" />
+            </button>
+          ) : null}
+          {onCollapse ? (
+            <button
+              type="button"
+              aria-label={t("Plegar el directorio")}
+              title={t("Plegar el directorio")}
+              onClick={onCollapse}
+              className="grid h-11 w-7 shrink-0 place-items-center rounded-md text-faint hover:text-fg"
+            >
+              <ChevronsLeft className="size-4" />
+            </button>
+          ) : null}
+        </div>
+
+        {tag ? (
+          <div className="px-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setTag(null)}
+              className="inline-flex h-8 items-center gap-1 rounded-full bg-elevated px-3 text-xs text-accent"
+            >
+              #{tag}
+              <X className="size-3" />
+            </button>
+          </div>
+        ) : null}
+
+        <div
+          className="mt-1 min-h-0 flex-1 overflow-y-auto px-1.5 pb-2"
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+              setDropOver(null);
+          }}
+          onContextMenu={(event) => {
+            if ((event.target as HTMLElement).closest("button")) return;
+            openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" });
+          }}
+        >
+          {searching ? (
+            filtered.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-faint">{t("Nada coincide.")}</p>
+            ) : (
+              <ul>
+                {filtered.map((document) => (
+                  <li key={document.id}>
+                    <DocButton
+                      document={document}
+                      active={document.id === litId}
+                      depth={0}
+                      onOpen={open}
+                      onOpenContent={openContent}
+                      onDragStart={startDrag}
+                      onContextMenu={(event, id) =>
+                        openMenu(event, {
+                          x: event.clientX,
+                          y: event.clientY,
+                          kind: "document",
+                          id,
+                        })
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : (
+            <div
+              data-drop-root
+              className="flex min-h-full flex-col"
               onDragOver={(event) => acceptDrop(event, "root")}
               onDrop={(event) => takeDrop(event, null)}
-              className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
-                dropOver === "root"
-                  ? "bg-accent/15 text-fg ring-1 ring-accent"
-                  : rootLit
-                    ? "bg-inset text-fg"
-                    : "text-muted hover:bg-elevated hover:text-fg"
-              }`}
             >
-              <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
-              <span className="truncate font-medium">{dropOver === "root" ? t("Soltar en la Carpeta Personal") : t("Carpeta Personal")}</span>
-            </button>
-            {forest.roots.map((node) => (
-              <PortfolioBranch
-                key={node.portfolio.id}
-                node={node}
-                depth={0}
+              <button
+                type="button"
+                onClick={onHome}
+                onContextMenu={(event) =>
+                  openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" })
+                }
+                onDragOver={(event) => acceptDrop(event, "root")}
+                onDrop={(event) => takeDrop(event, null)}
+                className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
+                  dropOver === "root"
+                    ? "bg-accent/15 text-fg ring-1 ring-accent"
+                    : rootLit
+                      ? "bg-inset text-fg"
+                      : "text-muted hover:bg-elevated hover:text-fg"
+                }`}
+              >
+                <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
+                <span className="truncate font-medium">
+                  {dropOver === "root" ? t("Soltar en la Carpeta Personal") : t("Carpeta Personal")}
+                </span>
+              </button>
+              {forest.roots.map((node) => (
+                <PortfolioBranch
+                  key={node.portfolio.id}
+                  node={node}
+                  depth={0}
+                  activeId={litId}
+                  selectedId={folderPicked && !elsewhere ? selectedId : null}
+                  collapsed={collapsed}
+                  dropOver={dropOver}
+                  onOpen={open}
+                  onOpenContent={openContent}
+                  onSelect={holdGraph ? setSelectedPortfolio : onOpenPortfolio}
+                  onToggle={toggleCollapsed}
+                  onDragOver={acceptDrop}
+                  onDrop={takeDrop}
+                  onDragStart={startDrag}
+                  onPortfolioDragStart={startPortfolioDrag}
+                  onDocumentMenu={(event, id) =>
+                    openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
+                  }
+                  onPortfolioMenu={(event, id) =>
+                    openMenu(event, { x: event.clientX, y: event.clientY, kind: "portfolio", id })
+                  }
+                />
+              ))}
+              <GroupedDocs
+                documents={forest.loose}
+                scope="root"
                 activeId={litId}
-                selectedId={folderPicked && !elsewhere ? selectedId : null}
+                depth={0}
                 collapsed={collapsed}
-                dropOver={dropOver}
                 onOpen={open}
                 onOpenContent={openContent}
-                onSelect={holdGraph ? setSelectedPortfolio : onOpenPortfolio}
-                onToggle={toggleCollapsed}
-                onDragOver={acceptDrop}
-                onDrop={takeDrop}
                 onDragStart={startDrag}
-                onPortfolioDragStart={startPortfolioDrag}
-                onDocumentMenu={(event, id) =>
+                onToggle={toggleCollapsed}
+                onContextMenu={(event, id) =>
                   openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
                 }
-                onPortfolioMenu={(event, id) =>
-                  openMenu(event, { x: event.clientX, y: event.clientY, kind: "portfolio", id })
-                }
               />
-            ))}
-            <GroupedDocs
-              documents={forest.loose}
-              scope="root"
-              activeId={litId}
-              depth={0}
-              collapsed={collapsed}
-              onOpen={open}
-              onOpenContent={openContent}
-              onDragStart={startDrag}
-              onToggle={toggleCollapsed}
-              onContextMenu={(event, id) => openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })}
-            />
-            <SharedSection workspaces onOpen={onOpenShared} />
-            <SharedSection onOpen={onOpenShared} />
+              <SharedSection workspaces onOpen={onOpenShared} />
+              <SharedSection onOpen={onOpenShared} />
+              <button
+                type="button"
+                onClick={onOpenTrash}
+                className={`mt-1 flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
+                  trashOpen ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                }`}
+              >
+                <Trash2 className={`size-4 shrink-0 ${trashOpen ? "text-accent" : "text-faint"}`} />
+                <span className="truncate font-medium">{t("Papelera")}</span>
+              </button>
+              <div className="min-h-16 flex-1" />
+            </div>
+          )}
+        </div>
+
+        {picked.length > 0 ? (
+          <div
+            data-ui="selection"
+            className="flex items-center gap-2 border-t border-line px-3 py-2 text-xs text-muted"
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {t("{n} seleccionados", { n: picked.length })}
+            </span>
             <button
               type="button"
-              onClick={onOpenTrash}
-              className={`mt-1 flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
-                trashOpen ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
-              }`}
+              aria-label={t("Quitar selección")}
+              title={t("Quitar selección")}
+              onClick={() => {
+                setPicked([]);
+                setAnchor(null);
+              }}
+              className="grid size-7 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
             >
-              <Trash2 className={`size-4 shrink-0 ${trashOpen ? "text-accent" : "text-faint"}`} />
-              <span className="truncate font-medium">{t("Papelera")}</span>
+              <X className="size-3.5" />
             </button>
-            <div className="min-h-16 flex-1" />
           </div>
-        )}
-      </div>
-
-      {picked.length > 0 ? (
-        <div data-ui="selection" className="flex items-center gap-2 border-t border-line px-3 py-2 text-xs text-muted">
-          <span className="min-w-0 flex-1 truncate">{t("{n} seleccionados", { n: picked.length })}</span>
-          <button
-            type="button"
-            aria-label={t("Quitar selección")}
-            title={t("Quitar selección")}
-            onClick={() => {
-              setPicked([]);
-              setAnchor(null);
-            }}
-            className="grid size-7 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      ) : null}
-      <UploadProgress />
-      {menuElement}
-    </aside>
+        ) : null}
+        <UploadProgress />
+        {menuElement}
+      </aside>
     </PickContext.Provider>
   );
 }
 
-/** Notas y archivos juntos, por nombre (`buildForest` ya los ordena). */
+/** Notes and files sorted together by name through buildForest. */
 function GroupedDocs({
   documents,
   activeId,
@@ -627,7 +724,8 @@ function DocButton({
   onContextMenu: (event: MouseEvent, id: string) => void;
 }) {
   const pad = PAD[Math.min(depth, PAD.length - 1)];
-  const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
+  const Icon =
+    document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
   const { picked, onPick } = useContext(PickContext);
   const key = `doc:${document.id}` as const;
   const isPicked = picked.has(key);
@@ -731,13 +829,19 @@ function PortfolioBranch({
         {selected ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
         <button
           type="button"
-          aria-label={isCollapsed ? t("Abrir {0}", { 0: node.portfolio.name }) : t("Cerrar {0}", { 0: node.portfolio.name })}
+          aria-label={
+            isCollapsed
+              ? t("Abrir {0}", { 0: node.portfolio.name })
+              : t("Cerrar {0}", { 0: node.portfolio.name })
+          }
           data-keep-pick
           onClick={() => onToggle(node.portfolio.id)}
           onContextMenu={menuEvent}
           className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
         >
-          <ChevronRight className={`size-3.5 transition-transform ${isCollapsed ? "" : "rotate-90"}`} />
+          <ChevronRight
+            className={`size-3.5 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+          />
         </button>
         <button
           type="button"
@@ -754,7 +858,9 @@ function PortfolioBranch({
           {isCollapsed ? (
             <Folder className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`} />
           ) : (
-            <FolderOpen className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`} />
+            <FolderOpen
+              className={`size-3.5 shrink-0 ${selected ? "text-accent" : "text-faint"}`}
+            />
           )}
           <span className="truncate">{node.portfolio.name}</span>
           <VisibilityMark id={node.portfolio.id} className="ml-auto mr-2" />
@@ -801,10 +907,13 @@ function PortfolioBranch({
   );
 }
 
-/** Directorio plegado: un riel estrecho con una flecha para volver a desplegarlo. */
+/** Collapsed directory rail with an expansion arrow. */
 export function SidebarRail({ onExpand }: { onExpand: () => void }) {
   return (
-    <div data-ui="rail" className="flex h-full w-9 shrink-0 flex-col items-center border-r border-line bg-surface pt-2">
+    <div
+      data-ui="rail"
+      className="flex h-full w-9 shrink-0 flex-col items-center border-r border-line bg-surface pt-2"
+    >
       <button
         type="button"
         aria-label={t("Desplegar el directorio")}
@@ -818,7 +927,7 @@ export function SidebarRail({ onExpand }: { onExpand: () => void }) {
   );
 }
 
-/** Subidas en curso, con su avance. */
+/** Active uploads and their progress. */
 function UploadProgress() {
   const uploads = useUploads((state) => state.uploads);
   if (uploads.length === 0) return null;
@@ -833,7 +942,10 @@ function UploadProgress() {
               <span className="shrink-0 tabular-nums">{percent}%</span>
             </span>
             <span className="mt-1 block h-1 overflow-hidden rounded-full bg-inset">
-              <span className="block h-full bg-accent transition-[width]" style={{ width: `${percent}%` }} />
+              <span
+                className="block h-full bg-accent transition-[width]"
+                style={{ width: `${percent}%` }}
+              />
             </span>
           </li>
         );

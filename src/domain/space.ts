@@ -1,4 +1,4 @@
-/** Tamaños y reparto del espacio de archivos (puro; ver `server/space.ts`). */
+/** Pure file-size and quota-allocation helpers; see server/space.ts. */
 
 export function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 KB";
@@ -8,15 +8,13 @@ export function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/**
- * Valida el reparto de un portafolio: ningún tope por usuario puede pasar del
- * del portafolio, ni la suma de todos.
- */
+/** Validate that individual member quotas and their sum do not exceed the portfolio quota. */
 export function checkShares(portfolio: number | null, members: Map<string, number>): string | null {
   if (portfolio === null) return null;
   let sum = 0;
   for (const bytes of members.values()) {
-    if (bytes > portfolio) return `Ningún usuario puede tener más que el portafolio (${formatBytes(portfolio)}).`;
+    if (bytes > portfolio)
+      return `Ningún usuario puede tener más que el portafolio (${formatBytes(portfolio)}).`;
     sum += bytes;
   }
   if (sum > portfolio) {

@@ -54,17 +54,17 @@ start takes a few minutes while the images download and the app builds.
 
 This starts:
 
-| Service | What it does | Reachable at |
-| --- | --- | --- |
-| `gateway` | One port for Grafito and the Office editor (nginx) | `http://127.0.0.1:8080` |
-| `app` | Grafito (production build) | through `gateway` |
-| `postgres` | Accounts, vaults, sharing, versions | this machine only |
-| `elasticsearch` | Full-text search | this machine only |
-| `redis` | Session deadlines | this machine only |
-| `minio` | Uploaded files | this machine only |
-| `collabora` | Office editor (Collabora Online) | through `gateway` |
-| `clamav` | Antivirus. Scans uploaded files (on by default at `clamav:3310`) | this machine only; port 3310 is not published |
-| `backup`, `backup-files` | Daily copies of the database and the files in `./backups` | — |
+| Service                  | What it does                                                     | Reachable at                                  |
+| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------- |
+| `gateway`                | One port for Grafito and the Office editor (nginx)               | `http://127.0.0.1:8080`                       |
+| `app`                    | Grafito (production build)                                       | through `gateway`                             |
+| `postgres`               | Accounts, vaults, sharing, versions                              | this machine only                             |
+| `elasticsearch`          | Full-text search                                                 | this machine only                             |
+| `redis`                  | Session deadlines                                                | this machine only                             |
+| `minio`                  | Uploaded files                                                   | this machine only                             |
+| `collabora`              | Office editor (Collabora Online)                                 | through `gateway`                             |
+| `clamav`                 | Antivirus. Scans uploaded files (on by default at `clamav:3310`) | this machine only; port 3310 is not published |
+| `backup`, `backup-files` | Daily copies of the database and the files in `./backups`        | —                                             |
 
 Migrations run automatically when the app starts. This setup works as is on
 your own computer.
@@ -86,15 +86,15 @@ cp .env.example .env
 Uncomment and fill in what you need, then apply it with
 `docker compose up -d`. Generate secrets with `openssl rand -base64 32`.
 
-| Variable | Set it when | Notes |
-| --- | --- | --- |
-| `BETTER_AUTH_SECRET` | Optional | Signs sessions, file links and Office editor tokens. Empty: Grafito creates one for this installation (in the `grafito_secrets` volume). Changing it later only signs everyone out. |
-| `GRAFITO_ENCRYPTION_KEY` | Optional | Encrypts AI keys and the SMTP password (32+ characters). Empty: Grafito creates one, like the secret above. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
-| `POSTGRES_PASSWORD`, `S3_SECRET_KEY` | **Before the first start** | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md). |
-| `COLLABORA_ADMIN_PASSWORD` | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980. |
-| `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito | See [On a server or a network](#on-a-server-or-a-network). |
-| `GRAFITO_MAX_UPLOAD_MB` | To change the upload limit | 100 MB by default. |
-| `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS` | To change the backup schedule | Daily, keeping 14 days. |
+| Variable                                                    | Set it when                       | Notes                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`                                        | Optional                          | Signs sessions, file links and Office editor tokens. Empty: Grafito creates one for this installation (in the `grafito_secrets` volume). Changing it later only signs everyone out.                                                    |
+| `GRAFITO_ENCRYPTION_KEY`                                    | Optional                          | Encrypts AI keys and the SMTP password (32+ characters). Empty: Grafito creates one, like the secret above. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
+| `POSTGRES_PASSWORD`, `S3_SECRET_KEY`                        | **Before the first start**        | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md).                                                                                                            |
+| `COLLABORA_ADMIN_PASSWORD`                                  | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980.                                                                                                                                   |
+| `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito   | See [On a server or a network](#on-a-server-or-a-network).                                                                                                                                                                             |
+| `GRAFITO_MAX_UPLOAD_MB`                                     | To change the upload limit        | 100 MB by default.                                                                                                                                                                                                                     |
+| `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS`               | To change the backup schedule     | Daily, keeping 14 days.                                                                                                                                                                                                                |
 
 ### Installation options
 
@@ -388,6 +388,7 @@ After that, the start screen is a normal sign-in.
 
   Limits apply when a new file is uploaded: the upload is refused with the
   reason.
+
 - **Workspaces:** an organization (and each of its sub-organizations) can
   have a **workspace**: portfolios of the team rather than of a person. They
   appear under **Espacios de trabajo** in the directory of their members,
@@ -437,7 +438,7 @@ After that, the start screen is a normal sign-in.
     other members don't see it.
   - The graph (**Abrir grafo**) is the one of what is open: the workspace (or
     anything shared with you) or, otherwise, your Carpeta Personal. Saving changes to an existing file (Office, drawings) is never cut
-  off, so no work is lost.
+    off, so no work is lost.
 - **Git (optional):** a portfolio, or the whole vault, can be kept in sync
   with a folder of a GitHub or GitLab repository, both ways. See
   [docs/GIT.md](docs/GIT.md).
@@ -534,14 +535,14 @@ and links as edges. Click a node to open it.
 
 ### Keyboard shortcuts
 
-| Keys | Action |
-| --- | --- |
-| Ctrl+K | Search notes, file contents and tags |
-| Ctrl+N | New note |
-| Ctrl+E | Switch view mode (read → edit → split) |
-| Ctrl+G | Toggle the graph |
+| Keys   | Action                                               |
+| ------ | ---------------------------------------------------- |
+| Ctrl+K | Search notes, file contents and tags                 |
+| Ctrl+N | New note                                             |
+| Ctrl+E | Switch view mode (read → edit → split)               |
+| Ctrl+G | Toggle the graph                                     |
 | Ctrl+B | Open the AI chat (inside the editor, Ctrl+B is bold) |
-| Esc | Close whatever is open |
+| Esc    | Close whatever is open                               |
 
 Your vault is stored on the server and cached in the browser, so it opens
 instantly and syncs every few seconds. Edits made by the AI or through the API
@@ -553,11 +554,11 @@ Everything is **private** by default. To change that, use **Compartir…**
 ("Share…") from a note's "more actions" menu or by right-clicking a note or
 portfolio. Your role needs the share permission.
 
-| Option | Who can see it |
-| --- | --- |
-| **Privada** | Only you |
+| Option         | Who can see it                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Privada**    | Only you                                                                                                                                                                                                                  |
 | **Compartida** | The users and organizations you pick, with **Solo lectura** (read-only), **Puede editar** (can edit) or, for a portfolio, **Administrador** (administrator). Sharing with an organization includes its sub-organizations. |
-| **Pública** | Anyone with the link (`/p/<token>`), without signing in |
+| **Pública**    | Anyone with the link (`/p/<token>`), without signing in                                                                                                                                                                   |
 
 Public links are always read-only.
 
@@ -743,19 +744,19 @@ The last two sections only appear if your role allows them.
 Open the avatar menu → **Administración**. It is only visible to roles with
 admin permissions. The section sidebar collapses to an icon rail.
 
-| Section | What it does |
-| --- | --- |
-| **Usuarios y permisos** | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one. |
-| **Autenticación** | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains. |
-| **Inteligencia artificial** | Which AI providers users may connect |
-| **Correo electrónico** | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md). |
-| **Seguridad** | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission. |
-| **Plugins** | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default) |
-| **Organizaciones** | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization. |
-| **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user. |
-| **Apariencia** | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs. |
-| **Sesión** | Session length. Changing it signs everyone out. |
-| **Monitorización y logs** | System monitor, the short log, **Auditoría** (who did what, with CSV and JSON export and a retention of 7 to 3650 days), indexing, storage usage and backend health checks. **Fuentes → Comprobar** also says whether ClamAV is off, answering, or down. |
+| Section                                      | What it does                                                                                                                                                                                                                                                                                   |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Usuarios y permisos**                      | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one. |
+| **Autenticación**                            | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains.                                                                                    |
+| **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                           |
+| **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                   |
+| **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                |
+| **Plugins**                                  | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default)                                                                                                                                                                                                                  |
+| **Organizaciones**                           | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization.     |
+| **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user.                                                                                                                  |
+| **Apariencia**                               | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs.                          |
+| **Sesión**                                   | Session length. Changing it signs everyone out.                                                                                                                                                                                                                                                |
+| **Monitorización y logs**                    | System monitor, the short log, **Auditoría** (who did what, with CSV and JSON export and a retention of 7 to 3650 days), indexing, storage usage and backend health checks. **Fuentes → Comprobar** also says whether ClamAV is off, answering, or down.                                       |
 
 Role changes take effect within a few seconds, without signing in again. The
 initial administrator always keeps every permission.
@@ -802,6 +803,7 @@ Right-click anywhere in an administration page gives the actions of its buttons:
 
      **General** is the assistant without a profile. The chosen profile is
      remembered in that browser.
+
    - Clicking outside the chat minimizes it to its button. What you were
      typing is still there when you open it again.
 
@@ -834,26 +836,26 @@ bearer token:
 curl -H "Authorization: Bearer gft_..." http://127.0.0.1:8080/api/v1/notes
 ```
 
-| Method and path | What it does |
-| --- | --- |
-| `GET /api/v1/me` | Current user, role and permissions |
-| `GET /api/v1/portfolios` | List portfolios |
-| `POST /api/v1/portfolios` `{ name, parentId? }` | Create a portfolio |
-| `GET /api/v1/notes?portfolio=<id\|root>&q=<text>&limit=<n>` | List notes and files |
-| `POST /api/v1/notes` `{ title, content?, portfolioId? }` | Create a note |
-| `GET /api/v1/notes/:id` | Read a note |
-| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | Update a note. Renaming also updates `[[links]]`. |
-| `DELETE /api/v1/notes/:id` | Delete a note or file |
-| `GET /api/v1/notes/:id/file` | Download a file |
-| `GET /api/v1/tables` | List tables |
-| `POST /api/v1/tables` `{ title, portfolioId? }` | Create an empty table |
-| `GET /api/v1/tables/:id?q=<text>&limit=<n>` | Columns, rows (cells by column name) and calculated formulas |
-| `POST /api/v1/tables/:id/rows` `{ cells }` | Add a row |
-| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }` | Change cells |
-| `DELETE /api/v1/tables/:id/rows/:rowId` | Delete a row |
-| `GET /api/v1/tables/:id/rows/:rowId/history` | Recent changes to that row |
-| `POST /api/v1/tables/:id/fields` `{ name, type?, choices?, formula?, relatedTableId? }` | Add a column |
-| `GET /api/portfolios/:id/download` | Download a portfolio (`all`: the whole vault) as `.zip` |
+| Method and path                                                                         | What it does                                                 |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `GET /api/v1/me`                                                                        | Current user, role and permissions                           |
+| `GET /api/v1/portfolios`                                                                | List portfolios                                              |
+| `POST /api/v1/portfolios` `{ name, parentId? }`                                         | Create a portfolio                                           |
+| `GET /api/v1/notes?portfolio=<id\|root>&q=<text>&limit=<n>`                             | List notes and files                                         |
+| `POST /api/v1/notes` `{ title, content?, portfolioId? }`                                | Create a note                                                |
+| `GET /api/v1/notes/:id`                                                                 | Read a note                                                  |
+| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }`                          | Update a note. Renaming also updates `[[links]]`.            |
+| `DELETE /api/v1/notes/:id`                                                              | Delete a note or file                                        |
+| `GET /api/v1/notes/:id/file`                                                            | Download a file                                              |
+| `GET /api/v1/tables`                                                                    | List tables                                                  |
+| `POST /api/v1/tables` `{ title, portfolioId? }`                                         | Create an empty table                                        |
+| `GET /api/v1/tables/:id?q=<text>&limit=<n>`                                             | Columns, rows (cells by column name) and calculated formulas |
+| `POST /api/v1/tables/:id/rows` `{ cells }`                                              | Add a row                                                    |
+| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }`                                      | Change cells                                                 |
+| `DELETE /api/v1/tables/:id/rows/:rowId`                                                 | Delete a row                                                 |
+| `GET /api/v1/tables/:id/rows/:rowId/history`                                            | Recent changes to that row                                   |
+| `POST /api/v1/tables/:id/fields` `{ name, type?, choices?, formula?, relatedTableId? }` | Add a column                                                 |
+| `GET /api/portfolios/:id/download`                                                      | Download a portfolio (`all`: the whole vault) as `.zip`      |
 
 To upload a file through the API, use the same three steps as the app:
 
@@ -877,24 +879,24 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 `.env` as described in [Configuration with `.env`](#configuration-with-env).
 `.env.example` documents them all.
 
-| Variable | Purpose | If missing |
-| --- | --- | --- |
-| `DATABASE_URL` | Postgres for accounts, vaults and sharing | Embedded PGLite (development only) |
-| `ELASTICSEARCH_URL` | Full-text search | Search index in Postgres |
-| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO or S3 for uploaded files | Files stored in Postgres (20 MB limit by default) |
-| `GRAFITO_MAX_UPLOAD_MB` | Per-file upload limit | 100 with S3, 20 without |
-| `REDIS_URL` | Session deadlines, who is editing a note and the built trees of shared items (shared by all app instances) | Stored in Postgres; editing indicator and trees per instance |
-| `GRAFITO_DB_POOL` | Database connections per app instance (plus 5 for sign-ins) | 15 |
-| `GRAFITO_DB_PREPARE` | `0` turns off prepared statements (only for an old pgbouncer in transaction mode) | On |
-| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` | Session, file link and editor token signing; public URL | A secret created for the installation in `GRAFITO_SECRETS_DIR`; the URL is required in production |
-| `GRAFITO_ENCRYPTION_KEY` | Encrypts users' AI keys and the SMTP password (32+ characters) | A key created for the installation in `GRAFITO_SECRETS_DIR` |
-| `GRAFITO_SECRETS_DIR` | Where those generated secrets are kept | `.data/secrets` (`/app/.data/secrets`, the `grafito_secrets` volume, in Docker) |
-| `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Previous key during a rotation | — |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | Other sites allowed to send sign-ins, comma-separated | The address each request was sent to, `BETTER_AUTH_URL` and localhost |
-| `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md)) | Editor off |
-| `GRAFITO_GIT_HOSTS`, `GRAFITO_GIT_SYNC_MINUTES` | Git servers allowed besides github.com and gitlab.com; minutes between syncs (see [docs/GIT.md](docs/GIT.md)) | Only github.com and gitlab.com; 2 |
-| `NODE_EXTRA_CA_CERTS` | CA file for a Git server with a certificate from your own authority | Public authorities only |
-| `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION` | Only for a `COLLABORA_URL` on an address of its own (see [docs/OFFICE.md](docs/OFFICE.md#servers-and-https)) | `localhost:*`; `false` |
+| Variable                                                      | Purpose                                                                                                       | If missing                                                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                | Postgres for accounts, vaults and sharing                                                                     | Embedded PGLite (development only)                                                                |
+| `ELASTICSEARCH_URL`                                           | Full-text search                                                                                              | Search index in Postgres                                                                          |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`  | MinIO or S3 for uploaded files                                                                                | Files stored in Postgres (20 MB limit by default)                                                 |
+| `GRAFITO_MAX_UPLOAD_MB`                                       | Per-file upload limit                                                                                         | 100 with S3, 20 without                                                                           |
+| `REDIS_URL`                                                   | Session deadlines, who is editing a note and the built trees of shared items (shared by all app instances)    | Stored in Postgres; editing indicator and trees per instance                                      |
+| `GRAFITO_DB_POOL`                                             | Database connections per app instance (plus 5 for sign-ins)                                                   | 15                                                                                                |
+| `GRAFITO_DB_PREPARE`                                          | `0` turns off prepared statements (only for an old pgbouncer in transaction mode)                             | On                                                                                                |
+| `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`                       | Session, file link and editor token signing; public URL                                                       | A secret created for the installation in `GRAFITO_SECRETS_DIR`; the URL is required in production |
+| `GRAFITO_ENCRYPTION_KEY`                                      | Encrypts users' AI keys and the SMTP password (32+ characters)                                                | A key created for the installation in `GRAFITO_SECRETS_DIR`                                       |
+| `GRAFITO_SECRETS_DIR`                                         | Where those generated secrets are kept                                                                        | `.data/secrets` (`/app/.data/secrets`, the `grafito_secrets` volume, in Docker)                   |
+| `GRAFITO_ENCRYPTION_KEY_PREVIOUS`                             | Previous key during a rotation                                                                                | —                                                                                                 |
+| `BETTER_AUTH_TRUSTED_ORIGINS`                                 | Other sites allowed to send sign-ins, comma-separated                                                         | The address each request was sent to, `BETTER_AUTH_URL` and localhost                             |
+| `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md))                                                          | Editor off                                                                                        |
+| `GRAFITO_GIT_HOSTS`, `GRAFITO_GIT_SYNC_MINUTES`               | Git servers allowed besides github.com and gitlab.com; minutes between syncs (see [docs/GIT.md](docs/GIT.md)) | Only github.com and gitlab.com; 2                                                                 |
+| `NODE_EXTRA_CA_CERTS`                                         | CA file for a Git server with a certificate from your own authority                                           | Public authorities only                                                                           |
+| `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION`          | Only for a `COLLABORA_URL` on an address of its own (see [docs/OFFICE.md](docs/OFFICE.md#servers-and-https))  | `localhost:*`; `false`                                                                            |
 
 ### Testing external sign-in locally
 
@@ -926,6 +928,9 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
 ```
 
 ## Further reading
+
+- [docs/MAINTENANCE.md](docs/MAINTENANCE.md): folder conventions, service boundaries and architecture review.
+- [tests/README.md](tests/README.md): test layout and focused execution.
 
 - [docs/SECURITY.md](docs/SECURITY.md): the security model and the last
   security test (XSS, SQL injection, access control, CSRF, uploads, secrets).

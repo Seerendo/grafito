@@ -1,9 +1,8 @@
 import { create } from "zustand";
 
 /**
- * Lo elegido en el directorio con Ctrl, Mayús o «Seleccionar» del clic derecho.
- * Vive fuera del sidebar para que el menú de la página de un portafolio pueda
- * sumar una fila sin abrirla.
+ * Directory selection via Ctrl, Shift or the context menu. State lives outside the sidebar so
+ * portfolio-page menus can select rows without opening them.
  */
 type DirectoryPick = {
   picked: string[];
@@ -22,7 +21,8 @@ export const useDirectoryPick = create<DirectoryPick>((set) => ({
       picked: state.picked.includes(key) ? state.picked : [...state.picked, key],
       anchor: key,
     })),
-  setPicked: (picked) => set((state) => ({ picked: typeof picked === "function" ? picked(state.picked) : picked })),
+  setPicked: (picked) =>
+    set((state) => ({ picked: typeof picked === "function" ? picked(state.picked) : picked })),
   setAnchor: (anchor) => set({ anchor }),
   clear: () => set({ picked: [], anchor: null }),
 }));

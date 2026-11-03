@@ -4,20 +4,24 @@ Grafito is a Markdown notes vault. It has `[[wiki]]` links, tags, portfolios,
 attached files, Mermaid diagrams, a relationship graph and PDF export. On top of
 that it has an administrator, roles and an administration panel.
 
+Contributor folder conventions and the architecture review are in
+[docs/MAINTENANCE.md](docs/MAINTENANCE.md); test execution is documented in
+[tests/README.md](tests/README.md).
+
 ## Stack
 
-| Layer | Technology |
-| --- | --- |
-| Framework | [TanStack Start](https://tanstack.com/start) (React 19, SSR and server functions) |
-| Routing | TanStack Router, file-based routes in `src/routes/` |
-| Styles | Tailwind CSS v4 (`src/styles.css`, themes through `data-theme`) |
-| Client state | zustand (`src/app/vault/store.ts`), cached in `localStorage` |
-| Authentication | Better Auth: local username and password, plus LDAP, OAuth and OIDC |
-| Relational database | Postgres (`DATABASE_URL`), or PGLite embedded in `.data/pglite` |
-| Search | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres |
-| Files | MinIO / S3 (`S3_*`), or the `file_blob` table in Postgres |
-| Sessions | Redis (`REDIS_URL`) holds session deadlines, or Postgres does |
-| Build | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel) |
+| Layer               | Technology                                                                        |
+| ------------------- | --------------------------------------------------------------------------------- |
+| Framework           | [TanStack Start](https://tanstack.com/start) (React 19, SSR and server functions) |
+| Routing             | TanStack Router, file-based routes in `src/routes/`                               |
+| Styles              | Tailwind CSS v4 (`src/styles.css`, themes through `data-theme`)                   |
+| Client state        | zustand (`src/app/vault/store.ts`), cached in `localStorage`                      |
+| Authentication      | Better Auth: local username and password, plus LDAP, OAuth and OIDC               |
+| Relational database | Postgres (`DATABASE_URL`), or PGLite embedded in `.data/pglite`                   |
+| Search              | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres                      |
+| Files               | MinIO / S3 (`S3_*`), or the `file_blob` table in Postgres                         |
+| Sessions            | Redis (`REDIS_URL`) holds session deadlines, or Postgres does                     |
+| Build               | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel)         |
 
 Every external service is optional. When its variable is missing, Grafito falls
 back to the local resource listed above (see `.env.example` and
@@ -38,15 +42,15 @@ back to the local resource listed above (see `.env.example` and
 - `.claude/launch.json` (not versioned) starts Vite directly, without the
   guard, for the editor preview.
 
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Development server on `0.0.0.0:8080` |
-| `npm run build` | `vite build` (output in `.output/`), then `db:migrate` |
-| `npm start` | Runs the production build (`.output/server/index.mjs`) |
-| `npm run db:migrate` | Applies `migrations/*.sql` to `DATABASE_URL`, if set |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | `scripts/*.test.mjs`, then `src/**/*.test.ts` (Node's test runner with type stripping) |
-| `npm run lint` / `format` | ESLint / Prettier |
+| Script                    | What it does                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| `npm run dev`             | Development server on `0.0.0.0:8080`                                                      |
+| `npm run build`           | `vite build` (output in `.output/`), then `db:migrate`                                    |
+| `npm start`               | Runs the production build (`.output/server/index.mjs`)                                    |
+| `npm run db:migrate`      | Applies `migrations/*.sql` to `DATABASE_URL`, if set                                      |
+| `npm run typecheck`       | `tsc --noEmit`                                                                            |
+| `npm test`                | `tests/**/*.test.mjs`, then `tests/**/*.test.ts` (Node's test runner with type stripping) |
+| `npm run lint` / `format` | ESLint / Prettier                                                                         |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs typecheck, lint, tests and the
 build on every push and pull request, then builds the Docker image.
@@ -57,7 +61,8 @@ build on every push and pull request, then builds the Docker image.
 grafito/
 ├── migrations/          Versioned SQL (applied once, by file name)
 ├── public/              Static assets: favicon, icon, PWA manifest, OG image
-├── scripts/             Node utilities: launch guard, migrations and their test
+├── scripts/             Node utilities: launch guard and migrations
+├── tests/               Tests mirroring domain, server and scripts
 ├── dev/                 Test fixtures for external sign-in (Keycloak realm, LDAP users)
 ├── docs/OPERATIONS.md   Runbook: backups, restore, secret rotation, incidents
 ├── src/
@@ -93,37 +98,37 @@ routes ─▶ components ─▶ app ─▶ domain
 
 ### `src/routes/`
 
-| File | URL | Content |
-| --- | --- | --- |
-| `__root.tsx` | — | HTML document, `<head>`, flash-free theme script, `SessionWatch` |
-| `index.tsx` | `/` | `AccessGate` and `VaultApp` |
-| `login.tsx` | `/login` | `AccessGate` and a redirect to `/` |
-| `cuenta.tsx` | `/cuenta` | `AccountScreen` |
-| `admin.tsx` | `/admin` | `AdminScreen` |
-| `api/auth/$.ts` | `/api/auth/*` | Better Auth handler |
-| `compartidos/index.tsx` | `/compartidos` | `AccessGate` and the list of items shared with me (kept for direct links) |
-| `compartidos/$shareId.tsx` | `/compartidos/<id>` | `AccessGate` and the read-only viewer |
-| `p/$token.tsx` | `/p/<token>` | Public viewer by link, **without a session** (skips `AccessGate`) |
-| `api/v1/*.ts` | `/api/v1/…` | Vault REST API (see [REST API](#rest-api)) |
-| `api/ai/chat.ts` | `/api/ai/chat` | AI chat (NDJSON response) |
-| `api/files/$id.ts` | `/api/files/<id>` | A document's file: signed link, public `token`, or API token / session |
-| `api/files/uploads*.ts` | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort). Finish scans with ClamAV when scanning is on (the default). |
-| `dav/index.ts`, `dav/$.ts` | `/dav`, `/dav/…` | WebDAV (`PROPFIND`, `GET`, `PUT`, `DELETE`, `MKCOL`, `MOVE`, `LOCK`, `UNLOCK`). No page. |
+| File                       | URL                                          | Content                                                                                                     |
+| -------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `__root.tsx`               | —                                            | HTML document, `<head>`, flash-free theme script, `SessionWatch`                                            |
+| `index.tsx`                | `/`                                          | `AccessGate` and `VaultApp`                                                                                 |
+| `login.tsx`                | `/login`                                     | `AccessGate` and a redirect to `/`                                                                          |
+| `cuenta.tsx`               | `/cuenta`                                    | `AccountScreen`                                                                                             |
+| `admin.tsx`                | `/admin`                                     | `AdminScreen`                                                                                               |
+| `api/auth/$.ts`            | `/api/auth/*`                                | Better Auth handler                                                                                         |
+| `compartidos/index.tsx`    | `/compartidos`                               | `AccessGate` and the list of items shared with me (kept for direct links)                                   |
+| `compartidos/$shareId.tsx` | `/compartidos/<id>`                          | `AccessGate` and the read-only viewer                                                                       |
+| `p/$token.tsx`             | `/p/<token>`                                 | Public viewer by link, **without a session** (skips `AccessGate`)                                           |
+| `api/v1/*.ts`              | `/api/v1/…`                                  | Vault REST API (see [REST API](#rest-api))                                                                  |
+| `api/ai/chat.ts`           | `/api/ai/chat`                               | AI chat (NDJSON response)                                                                                   |
+| `api/files/$id.ts`         | `/api/files/<id>`                            | A document's file: signed link, public `token`, or API token / session                                      |
+| `api/files/uploads*.ts`    | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort). Finish scans with ClamAV when scanning is on (the default). |
+| `dav/index.ts`, `dav/$.ts` | `/dav`, `/dav/…`                             | WebDAV (`PROPFIND`, `GET`, `PUT`, `DELETE`, `MKCOL`, `MOVE`, `LOCK`, `UNLOCK`). No page.                    |
 
 ### `src/components/`
 
-| Folder | Content |
-| --- | --- |
-| `ui/` | Reusable pieces with no business logic (listed below) |
-| `chrome/` | Shared frame: `ChromeHeader` (search, account menu), `AppFrame` (header and content) and `SettingsNav` (section sidebar that collapses to an icon rail; the state is kept in `localStorage`; used by Administration and Account) |
-| `brand/` | Brand mark (`Mark`) |
-| `access/` | `AccessGate`: first run, sign-in and the forced password change |
-| `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password), `AiSettings` (AI connections, `ai.use`) and `ApiTokens` (API, `api.use`). The last two are hidden without the permission. |
-| `admin/` | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AuditBoard` (exportable audit), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO) |
-| `session/` | `SessionWatch`: watches the session deadline and signs out when it expires |
-| `ai/` | `AiChat`: floating button and chat panel (Ctrl+B) |
-| `share/` | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`, and with no document open shows `SharedBoard`, the page of a shared portfolio or workspace: its portfolios, documents and recent ones), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
-| `vault/` | The vault (listed below) |
+| Folder     | Content                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ui/`      | Reusable pieces with no business logic (listed below)                                                                                                                                                                                                                                                                                                           |
+| `chrome/`  | Shared frame: `ChromeHeader` (search, account menu), `AppFrame` (header and content) and `SettingsNav` (section sidebar that collapses to an icon rail; the state is kept in `localStorage`; used by Administration and Account)                                                                                                                                |
+| `brand/`   | Brand mark (`Mark`)                                                                                                                                                                                                                                                                                                                                             |
+| `access/`  | `AccessGate`: first run, sign-in and the forced password change                                                                                                                                                                                                                                                                                                 |
+| `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password), `AiSettings` (AI connections, `ai.use`) and `ApiTokens` (API, `api.use`). The last two are hidden without the permission.                                                                                                                 |
+| `admin/`   | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AuditBoard` (exportable audit), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO)                                                                                                                                                                       |
+| `session/` | `SessionWatch`: watches the session deadline and signs out when it expires                                                                                                                                                                                                                                                                                      |
+| `ai/`      | `AiChat`: floating button and chat panel (Ctrl+B)                                                                                                                                                                                                                                                                                                               |
+| `share/`   | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`, and with no document open shows `SharedBoard`, the page of a shared portfolio or workspace: its portfolios, documents and recent ones), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
+| `vault/`   | The vault (listed below)                                                                                                                                                                                                                                                                                                                                        |
 
 The `ui/` pieces:
 
@@ -157,100 +162,100 @@ The `vault/` pieces:
 
 ### `src/app/` (client)
 
-| File | Responsibility |
-| --- | --- |
-| `vault/store.ts` | Vault zustand store (notes, portfolios, files), cached in `localStorage` per user (`grafito.v2:<userId>`). `openVaultFor(userId)` opens it and `closeVault()` closes it. |
-| `vault/seed.ts` | Sample notes for the first use, grouped under the «Documentación» portfolio |
-| `vault/sync.ts` | Syncs the vault with the server (revisions and per-document fingerprints) |
-| `theme.ts` | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES` |
-| `account-profile.ts` | Profile of the signed-in account (name, initials, role) |
-| `ai-chat.ts` | AI chat state: open or closed, chosen model, conversation and NDJSON reading |
-| `files.ts` | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile` |
-| `shares.ts` | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`) |
-| `shared-view.ts` | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it. |
-| `trash-view.ts` | Whether the trash fills the main area (`useTrashView`), with the same closing rules |
-| `directory-pick.ts` | Directory selection (`useDirectoryPick`), shared by the sidebar and the portfolio pages. **Seleccionar** on right-click starts it without opening the row, so Ctrl/Shift can extend it while another document stays open. |
-| `permissions.ts` | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them. |
-| `actor.ts` | Name of whoever creates or edits notes |
-| `plugins.ts` | Flags of the enabled plugins |
-| `vault-hold.ts` | Remembers which administrator holds the vault open |
-| `leave.ts` | Sign out: revokes the session, clears local state and signs out of Better Auth |
+| File                 | Responsibility                                                                                                                                                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault/store.ts`     | Vault zustand store (notes, portfolios, files), cached in `localStorage` per user (`grafito.v2:<userId>`). `openVaultFor(userId)` opens it and `closeVault()` closes it.                                                                                                                        |
+| `vault/seed.ts`      | Sample notes for the first use, grouped under the «Documentación» portfolio                                                                                                                                                                                                                     |
+| `vault/sync.ts`      | Syncs the vault with the server (revisions and per-document fingerprints)                                                                                                                                                                                                                       |
+| `theme.ts`           | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES`                                                                                                                                                                                                        |
+| `account-profile.ts` | Profile of the signed-in account (name, initials, role)                                                                                                                                                                                                                                         |
+| `ai-chat.ts`         | AI chat state: open or closed, chosen model, conversation and NDJSON reading                                                                                                                                                                                                                    |
+| `files.ts`           | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile`                                                                                                |
+| `shares.ts`          | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`)                                                                                                                                                                                                                  |
+| `shared-view.ts`     | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it. |
+| `trash-view.ts`      | Whether the trash fills the main area (`useTrashView`), with the same closing rules                                                                                                                                                                                                             |
+| `directory-pick.ts`  | Directory selection (`useDirectoryPick`), shared by the sidebar and the portfolio pages. **Seleccionar** on right-click starts it without opening the row, so Ctrl/Shift can extend it while another document stays open.                                                                       |
+| `permissions.ts`     | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them.                                                                                                                                                          |
+| `actor.ts`           | Name of whoever creates or edits notes                                                                                                                                                                                                                                                          |
+| `plugins.ts`         | Flags of the enabled plugins                                                                                                                                                                                                                                                                    |
+| `vault-hold.ts`      | Remembers which administrator holds the vault open                                                                                                                                                                                                                                              |
+| `leave.ts`           | Sign out: revokes the session, clears local state and signs out of Better Auth                                                                                                                                                                                                                  |
 
 ### `src/domain/` (pure logic)
 
-| File | Responsibility |
-| --- | --- |
-| `vault/types.ts` | Model types (Document, Portfolio, VaultFile, GraphEdge…) |
-| `vault/links.ts` | `[[wiki]]` links, tags, headings, word count |
-| `vault/graph.ts` | Graph edges and click intent |
-| `vault/portfolios.ts` | Portfolio tree |
-| `vault/migrate.ts` | Migrates old vaults: the v1 format and `nestSamplePortfolios` (moves the sample portfolios into «Documentación», once) |
-| `session.ts` | Allowed session lengths |
-| `ai.ts` | Catalog of the 8 AI providers and their protocol |
-| `orgs.ts` | Organizations: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle` |
-| `share.ts` | Sharing: `Visibility`, and `coveredBy` / `coveredByAll` (what a note, or a portfolio with its sub-portfolios, covers) |
-| `permissions.ts` | Vault permission keys (`PERMISSION`), and which one applies to deleting or exporting by document kind |
-| `dav.ts` | WebDAV paths, names and whether a role or a share may do an operation |
-| `audit-export.ts` | Audit rows as CSV (with a BOM) or JSON, and the retention bounds (7–3650 days) |
-| `clamav.ts` | How a clamd reply becomes allow or reject |
-| `diff.ts` | Line diff for the version history (common prefix and suffix, then LCS; very large changes fall back to "all removed, all added") |
+| File                  | Responsibility                                                                                                                   |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `vault/types.ts`      | Model types (Document, Portfolio, VaultFile, GraphEdge…)                                                                         |
+| `vault/links.ts`      | `[[wiki]]` links, tags, headings, word count                                                                                     |
+| `vault/graph.ts`      | Graph edges and click intent                                                                                                     |
+| `vault/portfolios.ts` | Portfolio tree                                                                                                                   |
+| `vault/migrate.ts`    | Migrates old vaults: the v1 format and `nestSamplePortfolios` (moves the sample portfolios into «Documentación», once)           |
+| `session.ts`          | Allowed session lengths                                                                                                          |
+| `ai.ts`               | Catalog of the 8 AI providers and their protocol                                                                                 |
+| `orgs.ts`             | Organizations: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle`                                                                |
+| `share.ts`            | Sharing: `Visibility`, and `coveredBy` / `coveredByAll` (what a note, or a portfolio with its sub-portfolios, covers)            |
+| `permissions.ts`      | Vault permission keys (`PERMISSION`), and which one applies to deleting or exporting by document kind                            |
+| `dav.ts`              | WebDAV paths, names and whether a role or a share may do an operation                                                            |
+| `audit-export.ts`     | Audit rows as CSV (with a BOM) or JSON, and the retention bounds (7–3650 days)                                                   |
+| `clamav.ts`           | How a clamd reply becomes allow or reject                                                                                        |
+| `diff.ts`             | Line diff for the version history (common prefix and suffix, then LCS; very large changes fall back to "all removed, all added") |
 
 ### `src/server/` (server only)
 
-| File | Responsibility |
-| --- | --- |
-| `admin.functions.ts` | Server functions for setup, administration, users, roles, plugins, backends and the index |
-| `session.functions.ts` | Session pulse, session length, own account and storage usage |
-| `lease.ts` | Session "lease" with a deadline (Redis or Postgres). A sign-in after the deadline gets a new lease instead of being kicked out. |
-| `platform.ts` | Administrator constants and backend detection from environment variables |
-| `profile.ts` | A user's profile and permissions (`allows()`) |
-| `share.ts` | Sharing data: items, grants, published copies, and reading by user or by link |
-| `access-trace.ts` | Expiry and revocation: closed windows in `access_grant_log`, openings in `access_event` (at most one per person and channel each hour, kept 180 days) |
-| `vault.ts` / `vault.functions.ts` | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and the AI |
-| `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts` | REST API: authentication (token or session), responses and personal tokens |
-| `crypto.ts` | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`. `open()` also accepts `GRAFITO_ENCRYPTION_KEY_PREVIOUS` during a rotation and reports `stale`, so callers re-encrypt. |
-| `history.ts` / `history.functions.ts` | Version history (`recordVersion`, grouping, retention of 200 versions per note), editing shared notes with conflict detection (`editSharedDoc`), and the trash functions |
-| `ai/` | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools, split into `tools/notes.ts` and `tools/tables.ts`), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses) |
-| `index/` / `index.functions.ts` | Background content index (`run.ts`) and the query used by search and by `search_notes` (`query.ts`). Monitorización → Indexación reads the status and can reindex. |
-| `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
-| `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
-| `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
-| `share.functions.ts` | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `revokeShareGrant`, `revokePublicShare`, `shareTrail`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree` |
-| `redis.ts` / `search.ts` / `storage.ts` | Redis, Elasticsearch and MinIO/S3 clients (health and capacity) |
-| `blobs.ts` | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`. |
-| `audit.ts` / `audit.functions.ts` | Structured audit (`audit_event`): who did what, the retention sweep, and Administración → Auditoría. Administration changes also keep the short `app_log` line. |
-| `clamav.ts` / `clamav.functions.ts` | ClamAV `INSTREAM` scan, on by default at `clamav:3310`. Administración → Seguridad stores the server, port and timeout (`clamav_*` in `app_setting`, permission `security.manage`). Until that screen is saved, the built-in address applies. A hit or a silence deletes the object. |
-| `dav/` | WebDAV at `/dav`: Basic password or API token (or the same-site session), in-memory locks, and the caller's vault plus shares. An administrator does not see another person's private documents. |
-| `files.ts` | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files |
-| `file-links.ts` / `files.functions.ts` | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files |
-| `comments.ts` / `comments.functions.ts` | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`) |
+| File                                                                                  | Responsibility                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin.functions.ts`                                                                  | Server functions for setup, administration, users, roles, plugins, backends and the index                                                                                                                                                                                                                                                                                             |
+| `session.functions.ts`                                                                | Session pulse, session length, own account and storage usage                                                                                                                                                                                                                                                                                                                          |
+| `lease.ts`                                                                            | Session "lease" with a deadline (Redis or Postgres). A sign-in after the deadline gets a new lease instead of being kicked out.                                                                                                                                                                                                                                                       |
+| `platform.ts`                                                                         | Administrator constants and backend detection from environment variables                                                                                                                                                                                                                                                                                                              |
+| `profile.ts`                                                                          | A user's profile and permissions (`allows()`)                                                                                                                                                                                                                                                                                                                                         |
+| `share.ts`                                                                            | Sharing data: items, grants, published copies, and reading by user or by link                                                                                                                                                                                                                                                                                                         |
+| `access-trace.ts`                                                                     | Expiry and revocation: closed windows in `access_grant_log`, openings in `access_event` (at most one per person and channel each hour, kept 180 days)                                                                                                                                                                                                                                 |
+| `vault.ts` / `vault.functions.ts`                                                     | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and the AI                                                                                                                                                                                                                                                                                         |
+| `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts`                                | REST API: authentication (token or session), responses and personal tokens                                                                                                                                                                                                                                                                                                            |
+| `crypto.ts`                                                                           | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`. `open()` also accepts `GRAFITO_ENCRYPTION_KEY_PREVIOUS` during a rotation and reports `stale`, so callers re-encrypt.                                                                                                                                                                                                                      |
+| `history.ts` / `history.functions.ts`                                                 | Version history (`recordVersion`, grouping, retention of 200 versions per note), editing shared notes with conflict detection (`editSharedDoc`), and the trash functions                                                                                                                                                                                                              |
+| `ai/`                                                                                 | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools, split into `tools/notes.ts` and `tools/tables.ts`), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses)                                                                                                                             |
+| `index/` / `index.functions.ts`                                                       | Background content index (`run.ts`) and the query used by search and by `search_notes` (`query.ts`). Monitorización → Indexación reads the status and can reindex.                                                                                                                                                                                                                    |
+| `ai.functions.ts`                                                                     | Administration → AI, Account → AI, and chat state                                                                                                                                                                                                                                                                                                                                     |
+| `orgs.ts` / `orgs.functions.ts`                                                       | Organizations: data and functions (`orgs.manage` permission)                                                                                                                                                                                                                                                                                                                          |
+| `auth.functions.ts`                                                                   | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows)                                                                                                                                                                                                                                |
+| `share.functions.ts`                                                                  | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `revokeShareGrant`, `revokePublicShare`, `shareTrail`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree`                                                                      |
+| `redis.ts` / `search.ts` / `storage.ts`                                               | Redis, Elasticsearch and MinIO/S3 clients (health and capacity)                                                                                                                                                                                                                                                                                                                       |
+| `blobs.ts`                                                                            | File bytes: S3 multipart upload via `aws4fetch` (parts of 8 MiB), get with `Range`, put, delete; or the same operations on `file_blob` in Postgres. `maxUploadBytes()` reads `GRAFITO_MAX_UPLOAD_MB`.                                                                                                                                                                                 |
+| `audit.ts` / `audit.functions.ts`                                                     | Structured audit (`audit_event`): who did what, the retention sweep, and Administración → Auditoría. Administration changes also keep the short `app_log` line.                                                                                                                                                                                                                       |
+| `clamav.ts` / `clamav.functions.ts`                                                   | ClamAV `INSTREAM` scan, on by default at `clamav:3310`. Administración → Seguridad stores the server, port and timeout (`clamav_*` in `app_setting`, permission `security.manage`). Until that screen is saved, the built-in address applies. A hit or a silence deletes the object.                                                                                                  |
+| `dav/`                                                                                | WebDAV at `/dav`: Basic password or API token (or the same-site session), in-memory locks, and the caller's vault plus shares. An administrator does not see another person's private documents.                                                                                                                                                                                      |
+| `files.ts`                                                                            | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files                                                                                                           |
+| `file-links.ts` / `files.functions.ts`                                                | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files                                                                                                                                                                                                                                                          |
+| `comments.ts` / `comments.functions.ts`                                               | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`)                                                                                                                                                                                                                                                                                                   |
 | `signature.ts` / `signature.functions.ts` / `signature-stamp.ts` / `signature-p12.ts` | PDF signature rectangles (`doc_signature`, migrations 0030 and 0033). An image is stamped with pdf-lib, or a `.p12` writes a detached PKCS#7 signature once the owner types its password. The rectangle shows a QR code and the certificate name. Neither the image, the certificate, nor the password is stored. Not a qualified signature. See [Signature trail](#signature-trail). |
-| `zip.ts` / `export.ts` / `export.functions.ts` | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it |
-| `git/` / `git.functions.ts` | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions |
+| `zip.ts` / `export.ts` / `export.functions.ts`                                        | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it                                                                                                                                                                                          |
+| `git/` / `git.functions.ts`                                                           | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions                                                                                                                                                                                                                                       |
 
 ### `src/lib/`
 
-| File | Responsibility |
-| --- | --- |
-| `db.ts` | `getSql()` over Postgres or PGLite, type normalization, and migrations on PGLite |
-| `error-component.tsx` | Default router error screen |
-| `not-found.tsx` | 404 page for unknown routes |
-| `security-headers.ts` | Content Security Policy and the other security headers (`src/start.ts` applies them) |
-| `auth/server.ts` | `getAuth()`: Better Auth with email/password and the enabled external providers. It is cached and rebuilt when the configuration changes (`invalidateAuth`). |
-| `auth/providers.server.ts` | Provider configuration (`auth_provider`): reading, saving, masked secrets, allowed domains |
-| `auth/ldap.server.ts` / `auth/ldap-plugin.server.ts` | LDAP verification (`ldapts`) and the `POST /api/auth/ldap/sign-in` endpoint |
-| `auth/provision.server.ts` | Creates external accounts: default role and a unique username |
-| `auth/external.ts` | Client: `ldapSignIn`, `signInWithProvider` and provider error messages |
-| `auth/client.ts` | Better Auth browser client and `signOut()` |
-| `auth/password.ts` | `signInWithPassword` and `changePassword`, shared by sign-in and account |
-| `auth/bearer.ts` | Session token in `sessionStorage`, as a fallback for the cookie |
-| `auth/cookies.ts` | Session cookie names |
-| `auth/use-current-user.ts` | The `useCurrentUserState` / `useCurrentUser` hooks |
-| `auth/gates.tsx` | `RedirectToSignIn` |
-| `auth/middleware.ts` | `authMiddleware` for server functions (injects `context.userId`) |
-| `auth/verify.server.ts` | Server-side session resolution and `UnauthorizedError` |
-| `auth/isolation.server.ts` | Blocks cross-site requests using Fetch Metadata |
-| `auth/pglite-dialect.ts` | Kysely dialect so Better Auth can use PGLite |
+| File                                                 | Responsibility                                                                                                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `db.ts`                                              | `getSql()` over Postgres or PGLite, type normalization, and migrations on PGLite                                                                             |
+| `error-component.tsx`                                | Default router error screen                                                                                                                                  |
+| `not-found.tsx`                                      | 404 page for unknown routes                                                                                                                                  |
+| `security-headers.ts`                                | Content Security Policy and the other security headers (`src/start.ts` applies them)                                                                         |
+| `auth/server.ts`                                     | `getAuth()`: Better Auth with email/password and the enabled external providers. It is cached and rebuilt when the configuration changes (`invalidateAuth`). |
+| `auth/providers.server.ts`                           | Provider configuration (`auth_provider`): reading, saving, masked secrets, allowed domains                                                                   |
+| `auth/ldap.server.ts` / `auth/ldap-plugin.server.ts` | LDAP verification (`ldapts`) and the `POST /api/auth/ldap/sign-in` endpoint                                                                                  |
+| `auth/provision.server.ts`                           | Creates external accounts: default role and a unique username                                                                                                |
+| `auth/external.ts`                                   | Client: `ldapSignIn`, `signInWithProvider` and provider error messages                                                                                       |
+| `auth/client.ts`                                     | Better Auth browser client and `signOut()`                                                                                                                   |
+| `auth/password.ts`                                   | `signInWithPassword` and `changePassword`, shared by sign-in and account                                                                                     |
+| `auth/bearer.ts`                                     | Session token in `sessionStorage`, as a fallback for the cookie                                                                                              |
+| `auth/cookies.ts`                                    | Session cookie names                                                                                                                                         |
+| `auth/use-current-user.ts`                           | The `useCurrentUserState` / `useCurrentUser` hooks                                                                                                           |
+| `auth/gates.tsx`                                     | `RedirectToSignIn`                                                                                                                                           |
+| `auth/middleware.ts`                                 | `authMiddleware` for server functions (injects `context.userId`)                                                                                             |
+| `auth/verify.server.ts`                              | Server-side session resolution and `UnauthorizedError`                                                                                                       |
+| `auth/isolation.server.ts`                           | Blocks cross-site requests using Fetch Metadata                                                                                                              |
+| `auth/pglite-dialect.ts`                             | Kysely dialect so Better Auth can use PGLite                                                                                                                 |
 
 ### `migrations/`
 
@@ -261,26 +266,26 @@ The `vault/` pieces:
 - Never edit a migration that was already applied. Add the next number instead,
   for example `0010_*.sql`.
 
-| File | Tables |
-| --- | --- |
-| `0001_auth.sql` | Better Auth schema: `user`, `session`, `account`, `verification` |
-| `0002_admin.sql` | `app_admin`, roles, permissions, backends, plugins, `doc_index` |
-| `0003`–`0005` | Settings, session leases, profiles, per-user roles, logs |
-| `0006_share.sql` | `share_item`, `share_grant`, `published_doc`, `published_portfolio` and the `notes.share` permission |
-| `0007_orgs_auth.sql` | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` and the `orgs.manage` / `auth.manage` permissions |
-| `0008_vault_api_ai.sql` | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions |
-| `0009_ai_local_per_user.sql` | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`) |
-| `0013_user_preferences.sql` | `app_profile.locale` (interface language) |
-| `0014_last_seen_autosave.sql` | `app_profile.first_login_at` and `last_seen_at` (Users list), and `vault_doc_version.autosave` (only Office autosaves are grouped) |
-| `0015_ai_conversations.sql` | `ai_conversation`: saved AI chat conversations per user |
-| `0034_ai_memory.sql` | `ai_conversation.memory` and `memory_until`: compressed memory of a chat |
-| `0035_content_index.sql` | `content_index` (which revision of each document is indexed) and `index_run` (what the background pass is doing) |
-| `0036_audit.sql` | `audit_event` (who, what, outcome, target) and `audit_retention_days` (365). Existing `app_log` rows are copied in once. |
-| `0037_clamav.sql` | Permission `security.manage` for Administración → Seguridad |
-| `0016_mail.sql` | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
-| `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
-| `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
-| `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note) |
+| File                          | Tables                                                                                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_auth.sql`               | Better Auth schema: `user`, `session`, `account`, `verification`                                                                                                                                                 |
+| `0002_admin.sql`              | `app_admin`, roles, permissions, backends, plugins, `doc_index`                                                                                                                                                  |
+| `0003`–`0005`                 | Settings, session leases, profiles, per-user roles, logs                                                                                                                                                         |
+| `0006_share.sql`              | `share_item`, `share_grant`, `published_doc`, `published_portfolio` and the `notes.share` permission                                                                                                             |
+| `0007_orgs_auth.sql`          | `app_org`, `app_org_member`, `share_org_grant`, `auth_provider`, `app_user_role.source` and the `orgs.manage` / `auth.manage` permissions                                                                        |
+| `0008_vault_api_ai.sql`       | `vault_state`, `vault_doc`, `vault_portfolio`, `api_token`, `ai_provider`, `ai_credential` and the `ai.use`, `ai.manage`, `api.use` permissions                                                                  |
+| `0009_ai_local_per_user.sql`  | The Ollama / LM Studio address becomes per user (`ai_credential.base_url`)                                                                                                                                       |
+| `0013_user_preferences.sql`   | `app_profile.locale` (interface language)                                                                                                                                                                        |
+| `0014_last_seen_autosave.sql` | `app_profile.first_login_at` and `last_seen_at` (Users list), and `vault_doc_version.autosave` (only Office autosaves are grouped)                                                                               |
+| `0015_ai_conversations.sql`   | `ai_conversation`: saved AI chat conversations per user                                                                                                                                                          |
+| `0034_ai_memory.sql`          | `ai_conversation.memory` and `memory_until`: compressed memory of a chat                                                                                                                                         |
+| `0035_content_index.sql`      | `content_index` (which revision of each document is indexed) and `index_run` (what the background pass is doing)                                                                                                 |
+| `0036_audit.sql`              | `audit_event` (who, what, outcome, target) and `audit_retention_days` (365). Existing `app_log` rows are copied in once.                                                                                         |
+| `0037_clamav.sql`             | Permission `security.manage` for Administración → Seguridad                                                                                                                                                      |
+| `0016_mail.sql`               | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
+| `0012_file_versions.sql`      | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor                                                                                                                       |
+| `0011_file_storage.sql`       | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage)                                                                                                                    |
+| `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note)                                            |
 
 ## Access flow
 
@@ -362,11 +367,11 @@ Every note and portfolio is **private** by default. If their role has
 `notes.share`, the owner can change that with "Compartir…" (Share…), from the
 editor's "more actions" menu or by right-clicking in the directory.
 
-| Visibility | Who sees it | How |
-| --- | --- | --- |
-| Private | Only the owner | No row in `share_item` |
-| Shared | The chosen users and organizations, with `access` = `read` or `edit` | In their directory, under the **Compartidos conmigo** root (`vault/SharedSection`). Items open in the main area. `/compartidos` remains for direct links. |
-| Public | Anyone with the link, without a session | `/p/<token>` (random 192-bit token), always read-only |
+| Visibility | Who sees it                                                          | How                                                                                                                                                       |
+| ---------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Private    | Only the owner                                                       | No row in `share_item`                                                                                                                                    |
+| Shared     | The chosen users and organizations, with `access` = `read` or `edit` | In their directory, under the **Compartidos conmigo** root (`vault/SharedSection`). Items open in the main area. `/compartidos` remains for direct links. |
+| Public     | Anyone with the link, without a session                              | `/p/<token>` (random 192-bit token), always read-only                                                                                                     |
 
 - **Editing:** with `edit` access, `editSharedDoc` writes to the owner's vault
   through `updateNote` (with the editor as author), only if the note is still
@@ -476,11 +481,11 @@ three settings:
 Secrets are stored in `auth_provider` and never go back to the browser. Saving
 with an empty secret keeps the previous one.
 
-| Provider | How people sign in | Details |
-| --- | --- | --- |
-| LDAP / Active Directory | The «Directorio (LDAP)» tab on the sign-in screen | The service account searches with the filter (`{{username}}`, escaped), then binds with the person's DN. Has a «Probar conexión» (test connection) button. |
-| OAuth: Google, GitHub, Microsoft | A «Continuar con…» button | Better Auth social providers. The panel shows the callback URL to register. |
-| SSO (OpenID Connect) | A button with the configured label (for example «Keycloak») | `genericOAuth` with discovery (`<issuer>/.well-known/openid-configuration`) and PKCE. Has a «Probar emisor» (test issuer) button. |
+| Provider                         | How people sign in                                          | Details                                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LDAP / Active Directory          | The «Directorio (LDAP)» tab on the sign-in screen           | The service account searches with the filter (`{{username}}`, escaped), then binds with the person's DN. Has a «Probar conexión» (test connection) button. |
+| OAuth: Google, GitHub, Microsoft | A «Continuar con…» button                                   | Better Auth social providers. The panel shows the callback URL to register.                                                                                |
+| SSO (OpenID Connect)             | A button with the configured label (for example «Keycloak») | `genericOAuth` with discovery (`<issuer>/.well-known/openid-configuration`) and PKCE. Has a «Probar emisor» (test issuer) button.                          |
 
 On first sign-in, `provision.server.ts` creates the account with the default
 role and sets `app_user_role.source` to the provider. The Users list shows it as
@@ -668,7 +673,7 @@ a file (empty: the vault owner), so a file someone added to another person's
 shared portfolio counts for them.
 
 - **Limits** (`server/space.ts`): `space_user` (or `app_setting
-  .space_default_user`), `space_portfolio` (the portfolio and its
+.space_default_user`), `space_portfolio` (the portfolio and its
   subportfolios) and `space_member` (a user inside a portfolio). `checkSpace`
   checks the uploader's total and, for the target portfolio and every one
   above it, the portfolio's and the uploader's share. It runs when an upload
@@ -1246,25 +1251,25 @@ Authentication:
 
 Every operation checks the role's permission.
 
-| Method and path | Permission | What it does |
-| --- | --- | --- |
-| `GET /api/v1/me` | — | User, role and permissions |
-| `GET /api/v1/portfolios` | `notes.read` | Portfolios |
-| `POST /api/v1/portfolios` `{ name, parentId? }` | `portfolios.manage` | Creates a portfolio |
-| `GET /api/v1/notes?portfolio=<id\|root>&q=<text>&limit=<n>` | `notes.read` | Notes and files (without content) |
-| `POST /api/v1/notes` `{ title, content?, portfolioId? }` | `notes.create` | Creates a note |
-| `GET /api/v1/notes/:id` | `notes.read` | The note, or for a file its metadata and its text if it is a text file |
-| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | `notes.edit` | Updates a note. Renaming updates `[[links]]`. |
-| `DELETE /api/v1/notes/:id` | `notes.delete` / `files.delete` | Deletes it |
-| `GET /api/v1/notes/:id/file` | `files.download` | Downloads the file |
-| `GET /api/v1/tables` | `notes.read` | Tables in the vault |
-| `POST /api/v1/tables` `{ title, portfolioId? }` | `files.upload` | Creates an empty table |
-| `GET /api/v1/tables/:id` | `notes.read` | Fields, rows and calculated formulas |
-| `POST /api/v1/tables/:id/rows` `{ cells }` | `notes.edit` | Adds a row (cells by column name) |
-| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }` | `notes.edit` | Changes cells |
-| `DELETE /api/v1/tables/:id/rows/:rowId` | `notes.edit` | Deletes a row |
-| `GET /api/v1/tables/:id/rows/:rowId/history` | `notes.read` | Recent row changes |
-| `POST /api/v1/tables/:id/fields` `{ name, type?, … }` | `notes.edit` | Adds a column |
+| Method and path                                                | Permission                      | What it does                                                           |
+| -------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------- |
+| `GET /api/v1/me`                                               | —                               | User, role and permissions                                             |
+| `GET /api/v1/portfolios`                                       | `notes.read`                    | Portfolios                                                             |
+| `POST /api/v1/portfolios` `{ name, parentId? }`                | `portfolios.manage`             | Creates a portfolio                                                    |
+| `GET /api/v1/notes?portfolio=<id\|root>&q=<text>&limit=<n>`    | `notes.read`                    | Notes and files (without content)                                      |
+| `POST /api/v1/notes` `{ title, content?, portfolioId? }`       | `notes.create`                  | Creates a note                                                         |
+| `GET /api/v1/notes/:id`                                        | `notes.read`                    | The note, or for a file its metadata and its text if it is a text file |
+| `PATCH /api/v1/notes/:id` `{ title?, content?, portfolioId? }` | `notes.edit`                    | Updates a note. Renaming updates `[[links]]`.                          |
+| `DELETE /api/v1/notes/:id`                                     | `notes.delete` / `files.delete` | Deletes it                                                             |
+| `GET /api/v1/notes/:id/file`                                   | `files.download`                | Downloads the file                                                     |
+| `GET /api/v1/tables`                                           | `notes.read`                    | Tables in the vault                                                    |
+| `POST /api/v1/tables` `{ title, portfolioId? }`                | `files.upload`                  | Creates an empty table                                                 |
+| `GET /api/v1/tables/:id`                                       | `notes.read`                    | Fields, rows and calculated formulas                                   |
+| `POST /api/v1/tables/:id/rows` `{ cells }`                     | `notes.edit`                    | Adds a row (cells by column name)                                      |
+| `PATCH /api/v1/tables/:id/rows/:rowId` `{ cells }`             | `notes.edit`                    | Changes cells                                                          |
+| `DELETE /api/v1/tables/:id/rows/:rowId`                        | `notes.edit`                    | Deletes a row                                                          |
+| `GET /api/v1/tables/:id/rows/:rowId/history`                   | `notes.read`                    | Recent row changes                                                     |
+| `POST /api/v1/tables/:id/fields` `{ name, type?, … }`          | `notes.edit`                    | Adds a column                                                          |
 
 Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
 
@@ -1336,17 +1341,17 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
       on top of what the role allows.
     - A deleted profile is ignored, and the chat falls back to **General**.
 
-| Provider | Protocol | Address | Key |
-| --- | --- | --- | --- |
-| ChatGPT (OpenAI) | Chat Completions | `https://api.openai.com/v1` | `Authorization: Bearer` |
-| Claude (Anthropic) | Messages (`tool_use` / `tool_result`) | `https://api.anthropic.com` | `x-api-key` and `anthropic-version` |
-| Grok (xAI) | Chat Completions | `https://api.x.ai/v1` | Bearer |
-| Gemini (Google) | `generateContent` (`functionCall` / `functionResponse`) | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key` |
-| DeepSeek | Chat Completions | `https://api.deepseek.com` | Bearer |
-| Kimi (Moonshot) | Chat Completions | `https://api.moonshot.ai/v1` | Bearer |
-| OpenRouter | Chat Completions | `https://openrouter.ai/api/v1` | Bearer, plus `X-Title: Grafito` |
-| Ollama | Native `/api/chat` | Each user's instance | Optional |
-| LM Studio | Chat Completions | Each user's instance (`…/v1`) | Optional |
+| Provider           | Protocol                                                | Address                                            | Key                                 |
+| ------------------ | ------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- |
+| ChatGPT (OpenAI)   | Chat Completions                                        | `https://api.openai.com/v1`                        | `Authorization: Bearer`             |
+| Claude (Anthropic) | Messages (`tool_use` / `tool_result`)                   | `https://api.anthropic.com`                        | `x-api-key` and `anthropic-version` |
+| Grok (xAI)         | Chat Completions                                        | `https://api.x.ai/v1`                              | Bearer                              |
+| Gemini (Google)    | `generateContent` (`functionCall` / `functionResponse`) | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key`                    |
+| DeepSeek           | Chat Completions                                        | `https://api.deepseek.com`                         | Bearer                              |
+| Kimi (Moonshot)    | Chat Completions                                        | `https://api.moonshot.ai/v1`                       | Bearer                              |
+| OpenRouter         | Chat Completions                                        | `https://openrouter.ai/api/v1`                     | Bearer, plus `X-Title: Grafito`     |
+| Ollama             | Native `/api/chat`                                      | Each user's instance                               | Optional                            |
+| LM Studio          | Chat Completions                                        | Each user's instance (`…/v1`)                      | Optional                            |
 
 The agent (`server/ai/agent.ts`) alternates model calls and tool calls, for up
 to 8 steps.

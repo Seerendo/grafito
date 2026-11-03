@@ -35,10 +35,10 @@ export function SessionWatch() {
       clearMyShares();
       clearHeldAdmin();
       clearAccountProfile();
-      // La sesión venció o la cerraron: todas las pestañas vuelven al ingreso.
+      // Expired or revoked sessions return all tabs to sign-in.
       writeSessionUser("");
       void signOut("/").catch(() => {
-        // El servidor ya no reconoce la sesión: se borra el token igual.
+        // Clear the token even when the server no longer recognizes the session.
         setBearerToken(null);
         window.location.replace("/");
       });

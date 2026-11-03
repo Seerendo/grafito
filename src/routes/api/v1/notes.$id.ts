@@ -11,7 +11,7 @@ const patchBody = z.object({
   portfolioId: z.string().min(1).max(80).nullable().optional(),
 });
 
-/** `GET`, `PATCH` (`{ title?, content?, portfolioId? }`) y `DELETE /api/v1/notes/:id`. */
+/** GET, PATCH with optional title/content/portfolioId, and DELETE for /api/v1/notes/:id. */
 export const Route = createFileRoute("/api/v1/notes/$id")({
   server: {
     handlers: {
@@ -46,7 +46,10 @@ export const Route = createFileRoute("/api/v1/notes/$id")({
           requirePermission(profile, PERMISSION.notesEdit, "Tu rol no puede editar notas.");
           const body = patchBody.safeParse(await readJson(request));
           if (!body.success) return apiError(400, "Se espera { title?, content?, portfolioId? }.");
-          const note = await updateNote(sql, userId, params.id, { ...body.data, actor: profile.displayName });
+          const note = await updateNote(sql, userId, params.id, {
+            ...body.data,
+            actor: profile.displayName,
+          });
           return json({ note });
         } catch (error) {
           return failure(error);

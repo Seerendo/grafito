@@ -7,14 +7,13 @@ export type ManualKind = "referencia" | "llama";
 export type ManualLink = {
   targetId: string;
   kind: ManualKind;
-  /** Desde una frase del archivo (un PDF), no desde todo el archivo. */
+  /** Link originates from a PDF phrase rather than the entire file. */
   anchor?: TextAnchor;
-  /** El destino es un portafolio (por defecto, una nota o un archivo). */
+  /** Destination is a portfolio; defaults to a note or file. */
   target?: "portfolio";
   /**
-   * El destino es de otra persona y llega por lo compartido conmigo (este
-   * elemento). Si pierdo el acceso o deja de estar compartido, el vínculo se
-   * quita (`app/shared-links.ts`).
+   * Target belongs to another user's shared item. Remove the link after access loss or
+   * unsharing; see app/shared-links.ts.
    */
   shareId?: string;
 };
@@ -23,14 +22,13 @@ export type Portfolio = {
   id: string;
   name: string;
   parentId: string | null;
-  /** Sus vínculos, como los de una nota. */
+  /** Portfolio links, like note links. */
   links?: ManualLink[];
 };
 
 /**
- * Un archivo de la bóveda. Los bytes viven en el servidor (MinIO / S3 o
- * Postgres) bajo `key`; `dataUrl` solo lo traen los archivos antiguos o las
- * notas de ejemplo hasta que el servidor los guarda y les da clave.
+ * Vault file bytes live in MinIO/S3 or Postgres under key. Legacy files and samples may retain
+ * dataUrl until uploaded and assigned a key.
  */
 export type VaultFile = {
   name: string;
@@ -41,9 +39,8 @@ export type VaultFile = {
 };
 
 /**
- * La versión del servidor de la que parte una edición hecha en este navegador
- * y aún no subida. Con ella el servidor junta los cambios de otra persona
- * (`domain/vault/merge.ts`) en vez de que gane el último.
+ * Server base for an unuploaded browser edit, enabling concurrent merging through
+ * domain/vault/merge.ts instead of last-writer-wins.
  */
 export type SyncBase = { content: string; title: string; updatedAt: number };
 
@@ -60,7 +57,7 @@ export type Document = {
   createdBy: string;
   updatedBy: string;
   pinned: boolean;
-  /** Solo en el navegador, mientras hay cambios sin subir (ver `SyncBase`). */
+  /** Browser-only metadata while local changes remain unuploaded; see SyncBase. */
   base?: SyncBase;
 };
 
@@ -75,25 +72,24 @@ export type GraphEdge = {
 export type DialogState =
   | { type: "portfolio"; parentId: string | null }
   | { type: "delete-document"; id: string }
-  /** Con `shareId`, uno de lo compartido conmigo (un espacio de trabajo): `name` es su nombre. */
+  /** With shareId, identifies shared/workspace content and its name. */
   | { type: "delete-portfolio"; id: string; shareId?: string; name?: string }
-  /** Varios elegidos con Ctrl o Mayús (`doc:<id>`, `port:<id>`). */
+  /** Ctrl/Shift multiselection keys: doc:<id> and port:<id>. */
   | { type: "delete-many"; keys: string[] }
-  /** Seguimiento de firmas de un documento (propio, o compartido con `shareId`). */
+  /** Signature tracking for owned or shared documents. */
   | { type: "signatures"; docId: string; shareId?: string }
   | { type: "rename-document"; id: string }
   | { type: "rename-portfolio"; id: string }
   | { type: "move-conflict"; id: string; portfolioId: string | null; existingId: string }
-  /** Con `shareId`, el origen es un documento de un espacio o de lo compartido: el vínculo se guarda en la bóveda del dueño. */
+  /** With shareId, the source is a shared/workspace document and links persist in its owner's vault. */
   | { type: "link"; sourceId: string; anchor?: TextAnchor; shareId?: string }
   | { type: "share"; kind: "document" | "portfolio"; id: string }
-  /** `portfolioId` = "all": toda la bóveda. */
+  /** portfolioId=all denotes the entire vault. */
   | { type: "git"; portfolioId: string }
-  /** Espacio y permisos de un portafolio propio o (con `shareId`) compartido conmigo. */
+  /** Storage and permissions for an owned or shareId-scoped portfolio. */
   | { type: "space"; portfolioId: string; shareId?: string }
-  /** Nuevo portafolio dentro de uno compartido conmigo (en `parentId`). */
+  /** Create a portfolio beneath a shared parentId. */
   | { type: "shared-portfolio"; shareId: string; parentId: string | null }
   | { type: "upload-error"; message: string; title?: string }
   | { type: "reset" }
   | null;
-

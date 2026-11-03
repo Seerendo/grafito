@@ -14,7 +14,7 @@ const bodySchema = z.object({
   relatedTableId: z.string().max(80).nullable().optional(),
 });
 
-/** `POST /api/v1/tables/:id/fields` con `{ name, type?, choices?, formula?, relatedTableId? }`. */
+/** POST /api/v1/tables/:id/fields accepts name and optional type, choices, formula and relatedTableId. */
 export const Route = createFileRoute("/api/v1/tables/$id/fields")({
   server: {
     handlers: {
@@ -25,7 +25,8 @@ export const Route = createFileRoute("/api/v1/tables/$id/fields")({
           const doc = await tableDocument(sql, userId, params.id);
           if (!doc) return apiError(404, "Esa tabla no existe.");
           const body = bodySchema.safeParse(await readJson(request));
-          if (!body.success) return apiError(400, "Se espera { name, type?, choices?, formula?, relatedTableId? }.");
+          if (!body.success)
+            return apiError(400, "Se espera { name, type?, choices?, formula?, relatedTableId? }.");
           const id = randomUUID();
           const saved = await saveField(sql, userId, params.id, {
             id,

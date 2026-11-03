@@ -1,3 +1,2 @@
--- Preferencias de cada usuario: por ahora, el idioma de la interfaz
--- ('es' o 'en'; vacío = el del navegador).
+-- Per-user preferences: interface language, es or en; empty means the browser language.
 alter table app_profile add column if not exists locale text;

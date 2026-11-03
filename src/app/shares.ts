@@ -3,10 +3,7 @@ import { coveredBy, type ShareKind, type Visibility } from "@/domain/share";
 import type { Document, Portfolio } from "@/domain/vault/types";
 import { myShares } from "@/server/share.functions";
 
-/**
- * Lo que el usuario actual tiene compartido (solo sus elementos). Lo carga y
- * mantiene `ShareMirror`; lo leen el directorio, el editor y el diálogo.
- */
+/** Current user's own shares, loaded and maintained by ShareMirror for directory, editor and dialogs. */
 export type MyShare = Awaited<ReturnType<typeof myShares>>[number];
 
 let shares: MyShare[] = [];
@@ -29,7 +26,7 @@ export async function loadMyShares(): Promise<void> {
   try {
     setMyShares(await myShares());
   } catch {
-    /* sin sesión o sin conexión: se reintenta en la próxima carga */
+    /* No session or connection; retry on the next load. */
   }
 }
 
@@ -46,13 +43,17 @@ export function useMyShares(): MyShare[] {
   );
 }
 
-export function shareOf(list: readonly MyShare[], kind: ShareKind, targetId: string): MyShare | null {
+export function shareOf(
+  list: readonly MyShare[],
+  kind: ShareKind,
+  targetId: string,
+): MyShare | null {
   return list.find((share) => share.kind === kind && share.targetId === targetId) ?? null;
 }
 
 /**
- * Visibilidad efectiva de cada documento y portafolio: la propia o la heredada
- * de un portafolio compartido. Lo que no aparece es privado.
+ * Effective document and portfolio visibility, explicit or inherited from a shared portfolio.
+ * Missing entries are private.
  */
 export function visibilityMap(
   list: readonly MyShare[],
@@ -71,7 +72,7 @@ export function visibilityMap(
   return result;
 }
 
-/** URL pública absoluta de un elemento compartido por enlace. */
+/** Absolute public URL for a link-shared item. */
 export function publicUrl(token: string): string {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   return `${origin}/p/${token}`;

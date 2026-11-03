@@ -28,15 +28,15 @@ switch: the person was just invited.
 
 **Administración → Correo electrónico** (permission `mail.manage`):
 
-| Field | What to put |
-| --- | --- |
-| Servidor | The SMTP host, e.g. `smtp.example.com`. Empty turns email off. |
-| Seguridad | **STARTTLS** (usually port 587), **SSL/TLS** (usually 465) or **Ninguna** (no encryption; only for a server inside your network). |
-| Puerto | The SMTP port. |
-| Usuario / Contraseña | The SMTP account, if the server asks for one. The password is stored encrypted with `GRAFITO_ENCRYPTION_KEY`. Leave it empty to keep the saved one. |
-| Correo del remitente / Nombre | Who the emails come from. |
-| Dirección de Grafito | The address people use to open Grafito. It goes in the links of the emails, e.g. `https://notes.example.com`. |
-| Validez del acceso de un usuario nuevo | Hours the temporary password and its link last (24 by default, up to 720). |
+| Field                                  | What to put                                                                                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Servidor                               | The SMTP host, e.g. `smtp.example.com`. Empty turns email off.                                                                                      |
+| Seguridad                              | **STARTTLS** (usually port 587), **SSL/TLS** (usually 465) or **Ninguna** (no encryption; only for a server inside your network).                   |
+| Puerto                                 | The SMTP port.                                                                                                                                      |
+| Usuario / Contraseña                   | The SMTP account, if the server asks for one. The password is stored encrypted with `GRAFITO_ENCRYPTION_KEY`. Leave it empty to keep the saved one. |
+| Correo del remitente / Nombre          | Who the emails come from.                                                                                                                           |
+| Dirección de Grafito                   | The address people use to open Grafito. It goes in the links of the emails, e.g. `https://notes.example.com`.                                       |
+| Validez del acceso de un usuario nuevo | Hours the temporary password and its link last (24 by default, up to 720).                                                                          |
 
 **Probar** sends a test email with what is in the form, before saving it.
 
@@ -107,6 +107,7 @@ If Redis restarts, notes not opened yet are lost. The administrator then uses
 
   The person who made the change doesn't get it. **A private document notifies
   nobody.** Public links don't count.
+
 - **Grouping.** So that autosave doesn't send an email per keystroke, each
   change waits in `mail_notice`. Once all of someone's pending documents have
   gone 5 minutes without changes, they get **one email** listing the documents
@@ -130,10 +131,10 @@ http://127.0.0.1:8025.
 
 ## Troubleshooting
 
-| Message | Check |
-| --- | --- |
-| «No se pudo conectar con el servidor de correo» | Server name, port and security. From Docker, `localhost` is the container: use the server's name or IP. |
-| «El servidor de correo rechazó el usuario o la contraseña» | The SMTP account. Gmail and Microsoft 365 need an app password. |
-| «Falló la conexión segura (TLS)» | The port and the security don't match: 587 is STARTTLS, 465 is SSL/TLS. |
-| The link in the email opens the wrong address | **Dirección de Grafito** in the email settings. |
-| «Tu contraseña temporal venció» / «ya se usó» | Use **Reenviar acceso** on that user. |
+| Message                                                    | Check                                                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| «No se pudo conectar con el servidor de correo»            | Server name, port and security. From Docker, `localhost` is the container: use the server's name or IP. |
+| «El servidor de correo rechazó el usuario o la contraseña» | The SMTP account. Gmail and Microsoft 365 need an app password.                                         |
+| «Falló la conexión segura (TLS)»                           | The port and the security don't match: 587 is STARTTLS, 465 is SSL/TLS.                                 |
+| The link in the email opens the wrong address              | **Dirección de Grafito** in the email settings.                                                         |
+| «Tu contraseña temporal venció» / «ya se usó»              | Use **Reenviar acceso** on that user.                                                                   |

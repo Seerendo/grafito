@@ -1,3 +1,4 @@
+import { subtreeIds } from "../hierarchy.ts";
 import type { Document, Portfolio } from "./types";
 
 export type PortfolioNode = {
@@ -12,7 +13,10 @@ export function childPortfolios(portfolios: Portfolio[], parentId: string | null
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
-export function buildForest(portfolios: Portfolio[], documents: Document[]): {
+export function buildForest(
+  portfolios: Portfolio[],
+  documents: Document[],
+): {
   loose: Document[];
   roots: PortfolioNode[];
 } {
@@ -27,36 +31,29 @@ export function buildForest(portfolios: Portfolio[], documents: Document[]): {
     list.sort((a, b) => a.title.localeCompare(b.title, "es"));
   }
 
-  const walk = (portfolio: Portfolio): PortfolioNode => ({
-    portfolio,
-    documents: byParent.get(portfolio.id) ?? [],
-    children: childPortfolios(portfolios, portfolio.id).map(walk),
-  });
-
-  return {
-    loose: byParent.get(null) ?? [],
-    roots: childPortfolios(portfolios, null).map(walk),
-  };
+  // Attach nodes in one pass instead of filtering all portfolios at every level.
+  // Construction is iterative, so deeply nested imports do not exhaust the stack.
+  const nodes = new Map<string, PortfolioNode>(
+    portfolios.map((portfolio) => [
+      portfolio.id,
+      { portfolio, documents: byParent.get(portfolio.id) ?? [], children: [] },
+    ]),
+  );
+  const roots: PortfolioNode[] = [];
+  for (const node of nodes.values()) {
+    if (node.portfolio.parentId === null) roots.push(node);
+    else nodes.get(node.portfolio.parentId)?.children.push(node);
+  }
+  const byName = (a: PortfolioNode, b: PortfolioNode) =>
+    a.portfolio.name.localeCompare(b.portfolio.name, "es");
+  roots.sort(byName);
+  for (const node of nodes.values()) node.children.sort(byName);
+  return { loose: byParent.get(null) ?? [], roots };
 }
 
-export function descendantIds(portfolios: readonly Pick<Portfolio, "id" | "parentId">[], id: string): Set<string> {
-  // Una pasada para saber los hijos de cada uno y otra para recorrer: lineal
-  // aunque haya muchos niveles (antes, una vuelta completa por nivel).
-  const children = new Map<string, string[]>();
-  for (const portfolio of portfolios) {
-    if (!portfolio.parentId) continue;
-    const list = children.get(portfolio.parentId);
-    if (list) list.push(portfolio.id);
-    else children.set(portfolio.parentId, [portfolio.id]);
-  }
-  const ids = new Set<string>([id]);
-  const queue = [id];
-  for (let index = 0; index < queue.length; index += 1) {
-    for (const child of children.get(queue[index]!) ?? []) {
-      if (ids.has(child)) continue;
-      ids.add(child);
-      queue.push(child);
-    }
-  }
-  return ids;
+export function descendantIds(
+  portfolios: readonly Pick<Portfolio, "id" | "parentId">[],
+  id: string,
+): Set<string> {
+  return subtreeIds(portfolios, id);
 }

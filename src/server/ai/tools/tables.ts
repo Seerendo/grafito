@@ -2,7 +2,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { namedCells, text } from "./args.ts";
 import type { Tool } from "./tool.ts";
 
-/** Tablas: leer filas y, si el documento se puede editar, añadir o cambiar celdas. */
+/** Table tools read rows and add/update cells when the document is editable. */
 export const tableTools: Tool[] = [
   {
     permission: PERMISSION.notesRead,

@@ -1,13 +1,11 @@
 import type { Sql } from "@/lib/db";
 
 /**
- * Historial del chat de IA (solo servidor). Ver
- * `migrations/0015_ai_conversations.sql`. Cada conversación guarda sus turnos
- * tal como los muestra el chat. La memoria comprimida (`memory`,
- * `memory_until`, migración 0034) es lo que el modelo recuerda de lo viejo.
+ * Server chat history stores displayed turns in ai_conversation. memory and memory_until hold
+ * compressed older context; see migrations 0015 and 0034.
  */
 
-/** Conversaciones que se conservan por usuario (las más antiguas se descartan). */
+/** Maximum conversations retained per user; discard the oldest beyond this limit. */
 const KEEP = 200;
 
 export type ConversationSummary = { id: string; title: string; updatedAt: number };
@@ -48,7 +46,7 @@ export async function writeConversation(
   const now = Date.now();
   const turns = JSON.stringify(input.turns);
   const memory = input.memory?.text.trim() ?? "";
-  const memoryUntil = memory ? input.memory?.untilId ?? "" : "";
+  const memoryUntil = memory ? (input.memory?.untilId ?? "") : "";
   await sql`
     insert into ai_conversation (id, user_id, title, turns, memory, memory_until, created_at, updated_at)
     values (${input.id}, ${userId}, ${input.title}, ${turns}, ${memory}, ${memoryUntil}, ${now}, ${now})

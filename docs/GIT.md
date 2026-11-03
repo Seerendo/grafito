@@ -27,15 +27,15 @@ Right-click a portfolio, **Sincronizar con Git…** (or the branch button on the
 portfolio's page). For the whole vault: right-click the root, **Sincronizar
 todo con Git…**.
 
-| Field | What to put |
-| --- | --- |
-| GitHub / GitLab | The provider. |
-| Sentido | **En ambos sentidos** (both ways), **Solo subir a Git** (Grafito is the source: changes in the repository are overwritten by the next change in Grafito and nothing is brought back) or **Solo traer de Git** (the repository is the source: Grafito follows it and its own changes are not committed). |
-| Servidor | Empty for github.com or gitlab.com. For your own server, its address, e.g. `https://gitlab.university.edu`. |
-| Repositorio | `owner/repository` on GitHub, `group/project` on GitLab (subgroups too: `faculty/research/notes`). You can also paste the repository's address; the server is taken from it. |
-| Rama | The branch, e.g. `main`. On GitHub it must exist (an empty repository needs a first commit, such as a README). On GitLab, an empty project gets it on the first sync. |
-| Carpeta | The folder inside the repository. Empty is the root. |
-| Token | An access token (see below). It is stored encrypted with `GRAFITO_ENCRYPTION_KEY`. Leave it empty when editing to keep the saved one. |
+| Field           | What to put                                                                                                                                                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub / GitLab | The provider.                                                                                                                                                                                                                                                                                           |
+| Sentido         | **En ambos sentidos** (both ways), **Solo subir a Git** (Grafito is the source: changes in the repository are overwritten by the next change in Grafito and nothing is brought back) or **Solo traer de Git** (the repository is the source: Grafito follows it and its own changes are not committed). |
+| Servidor        | Empty for github.com or gitlab.com. For your own server, its address, e.g. `https://gitlab.university.edu`.                                                                                                                                                                                             |
+| Repositorio     | `owner/repository` on GitHub, `group/project` on GitLab (subgroups too: `faculty/research/notes`). You can also paste the repository's address; the server is taken from it.                                                                                                                            |
+| Rama            | The branch, e.g. `main`. On GitHub it must exist (an empty repository needs a first commit, such as a README). On GitLab, an empty project gets it on the first sync.                                                                                                                                   |
+| Carpeta         | The folder inside the repository. Empty is the root.                                                                                                                                                                                                                                                    |
+| Token           | An access token (see below). It is stored encrypted with `GRAFITO_ENCRYPTION_KEY`. Leave it empty when editing to keep the saved one.                                                                                                                                                                   |
 
 **Conectar** checks the repository, the branch and the token's access before
 saving, then runs the first sync. **Sincronizar ahora** syncs at once.
@@ -48,12 +48,12 @@ that differs.
 
 ### Tokens
 
-| Provider | Token | Access it needs |
-| --- | --- | --- |
-| GitHub | Fine-grained personal access token, limited to the repository | **Contents: Read and write** (read-only for **Solo traer**) |
-| GitHub | Classic personal access token | `repo` (or `public_repo` for a public repository) |
-| GitLab | Project access token (recommended: it isn't tied to a person) | Scope `api`, role **Developer** or higher |
-| GitLab | Personal or group access token | Scope `api` (`read_api` for **Solo traer**), role **Developer** or higher in the project |
+| Provider | Token                                                         | Access it needs                                                                          |
+| -------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| GitHub   | Fine-grained personal access token, limited to the repository | **Contents: Read and write** (read-only for **Solo traer**)                              |
+| GitHub   | Classic personal access token                                 | `repo` (or `public_repo` for a public repository)                                        |
+| GitLab   | Project access token (recommended: it isn't tied to a person) | Scope `api`, role **Developer** or higher                                                |
+| GitLab   | Personal or group access token                                | Scope `api` (`read_api` for **Solo traer**), role **Developer** or higher in the project |
 
 GitLab deploy tokens don't work: they can't use the API. A protected branch
 that Developers can't push to rejects the commits. Use another branch, or
@@ -130,6 +130,7 @@ same way. A few things differ:
 
   This list exists so that users can't make Grafito's server call arbitrary
   internal addresses. A host listed there may also use `http://`.
+
 - **Server address.** Put it in **Servidor** (`https://gitlab.university.edu`),
   or paste the repository's address in **Repositorio**. GitLab under a path
   (`https://example.org/gitlab`) works too. GitHub Enterprise's API is taken

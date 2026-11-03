@@ -3,7 +3,15 @@ import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { removeUserFiles } from "@/server/files";
 import { requireLease, readTtl } from "@/server/lease";
-import { ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD, STRONG_PASSWORD, documentEngine, emailForUsername, fileEngine, relationalEngine } from "@/server/platform";
+import {
+  ADMIN_EMAIL,
+  ADMIN_INITIAL_PASSWORD,
+  STRONG_PASSWORD,
+  documentEngine,
+  emailForUsername,
+  fileEngine,
+  relationalEngine,
+} from "@/server/platform";
 import { allows, forgetRoleGrants, readUserProfile } from "@/server/profile";
 import { probeElastic } from "@/server/search";
 import { canSearchOwner, queryContent } from "@/server/index/query";
@@ -19,14 +27,16 @@ const docSchema = z.object({
   kind: z.enum(["markdown", "file"]),
   portfolioId: z.string().max(80).nullable(),
   body: z.string().max(4000),
-  links: z.array(z.object({ targetId: z.string().max(80), kind: z.enum(["referencia", "llama"]) })).max(80),
+  links: z
+    .array(z.object({ targetId: z.string().max(80), kind: z.enum(["referencia", "llama"]) }))
+    .max(80),
 });
 
 function flag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
 }
 
-/** Fecha de la base en milisegundos, o `null` si no hay. */
+/** Database timestamp in milliseconds, or null. */
 function epoch(value: unknown): number | null {
   if (value == null) return null;
   const ms = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
@@ -39,7 +49,9 @@ async function sqlClient(): Promise<Sql> {
 }
 
 async function isAdmin(sql: Sql, userId: string): Promise<boolean> {
-  const rows = await sql<{ user_id: string }>`select user_id from app_admin where user_id = ${userId} limit 1`;
+  const rows = await sql<{
+    user_id: string;
+  }>`select user_id from app_admin where user_id = ${userId} limit 1`;
   return rows.length > 0;
 }
 
@@ -51,7 +63,13 @@ async function ensureAdminGrants(sql: Sql): Promise<void> {
   `;
 }
 
-async function writeLog(sql: Sql, actor: string, area: string, message: string, actorId: string): Promise<void> {
+async function writeLog(
+  sql: Sql,
+  actor: string,
+  area: string,
+  message: string,
+  actorId: string,
+): Promise<void> {
   await logActivity(sql, { actorId, actorName: actor, area, message });
 }
 
@@ -122,13 +140,19 @@ export const createInitialAdmin = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const email = emailForUsername(data.username);
     if (!email) {
-      return { ok: false as const, error: "El usuario solo admite letras, números, punto, guion y guion bajo." };
+      return {
+        ok: false as const,
+        error: "El usuario solo admite letras, números, punto, guion y guion bajo.",
+      };
     }
     const sql = await sqlClient();
     await discardUnchosenAdmin(sql);
     const existing = await sql<{ user_id: string }>`select user_id from app_admin limit 1`;
     if (existing.length > 0) {
-      return { ok: false as const, error: "El administrador ya está creado. Entra con ese usuario." };
+      return {
+        ok: false as const,
+        error: "El administrador ya está creado. Entra con ese usuario.",
+      };
     }
     const auth = await (await import("@/lib/auth/server")).getAuth();
     try {
@@ -143,8 +167,9 @@ export const createInitialAdmin = createServerFn({ method: "POST" })
     const id = created[0]?.id;
     if (!id) return { ok: false as const, error: "No se pudo crear el administrador." };
     const login = data.username.trim().toLowerCase();
-    // Solo se obliga a cambiarla si quien instala eligió la de ejemplo o una corta.
-    const mustChange = data.password === ADMIN_INITIAL_PASSWORD || data.password.length < STRONG_PASSWORD;
+    // Require password change only when setup chose the example or a short password.
+    const mustChange =
+      data.password === ADMIN_INITIAL_PASSWORD || data.password.length < STRONG_PASSWORD;
     await sql`
       insert into app_admin (user_id, must_change_password, login_name, chosen)
       values (${id}, ${mustChange}, ${login}, true)
@@ -189,8 +214,18 @@ export const adminState = createServerFn({ method: "GET" })
     };
     if (!profile.canAdmin) return { isAdmin: false as const, ...empty };
     await ensureAdminGrants(sql);
-    const roles = await sql<{ id: string; name: string; fixed: unknown }>`select id, name, fixed from app_role order by name`;
-    const permissions = await sql<{ key: string; label: string; description: string; area: string; sort: number }>`
+    const roles = await sql<{
+      id: string;
+      name: string;
+      fixed: unknown;
+    }>`select id, name, fixed from app_role order by name`;
+    const permissions = await sql<{
+      key: string;
+      label: string;
+      description: string;
+      area: string;
+      sort: number;
+    }>`
       select key, label, description, area, sort from app_permission order by sort, label
     `;
     const grants = await sql<{ role_id: string; permission_key: string }>`
@@ -199,10 +234,18 @@ export const adminState = createServerFn({ method: "GET" })
     const sources = await sql<{ id: string; kind: string; label: string; enabled: unknown }>`
       select id, kind, label, enabled from app_source order by label
     `;
-    const plugins = await sql<{ id: string; name: string; description: string; enabled: unknown; built_in: unknown }>`
+    const plugins = await sql<{
+      id: string;
+      name: string;
+      description: string;
+      enabled: unknown;
+      built_in: unknown;
+    }>`
       select id, name, description, enabled, built_in from app_plugin order by name
     `;
-    const count = await sql<{ n: number }>`select count(*)::int as n from doc_index where user_id = ${context.userId}`;
+    const count = await sql<{
+      n: number;
+    }>`select count(*)::int as n from doc_index where user_id = ${context.userId}`;
     const people = await sql<{
       id: string;
       name: string;
@@ -250,7 +293,8 @@ export const adminState = createServerFn({ method: "GET" })
         name: role.name,
         fixed: flag(role.fixed),
         locked: role.id === "admin",
-        permissions: role.id === "admin" ? permissions.map((item) => item.key) : (byRole.get(role.id) ?? []),
+        permissions:
+          role.id === "admin" ? permissions.map((item) => item.key) : (byRole.get(role.id) ?? []),
       })),
       permissions,
       users: people.map((person) => ({
@@ -264,7 +308,7 @@ export const adminState = createServerFn({ method: "GET" })
         firstLoginAt: epoch(person.first_login_at),
         lastSeenAt: epoch(person.last_seen_at),
         email: person.contact_email ?? "",
-        // Acceso temporal por correo: pendiente de usar, ya usado (falta cambiar la contraseña) o vencido.
+        // Temporary email access: unused, used but awaiting password change, or expired.
         access:
           person.access_expires == null
             ? null
@@ -300,7 +344,7 @@ export const markPasswordChanged = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
-    // Un usuario que entró con la contraseña temporal del correo.
+    // User signed in with a temporary emailed password.
     const { clearTempAccess } = await import("@/server/temp-access");
     if (!(await clearTempAccess(sql, context.userId))) return { ok: false as const };
     if (await isAdmin(sql, context.userId)) {
@@ -312,14 +356,22 @@ export const markPasswordChanged = createServerFn({ method: "POST" })
 export const setRolePermission = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ roleId: z.string().min(1).max(48), key: z.string().min(1).max(40), granted: z.boolean() }).parse(input),
+    z
+      .object({
+        roleId: z.string().min(1).max(48),
+        key: z.string().min(1).max(40),
+        granted: z.boolean(),
+      })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
     if (!allows(actor, "roles.manage")) return { ok: false as const };
     if (data.roleId === "admin") return { ok: false as const };
-    const roles = await sql<{ id: string }>`select id from app_role where id = ${data.roleId} limit 1`;
+    const roles = await sql<{
+      id: string;
+    }>`select id from app_role where id = ${data.roleId} limit 1`;
     if (!roles[0]) return { ok: false as const };
     if (data.granted) {
       await sql`
@@ -343,7 +395,9 @@ export const setRolePermission = createServerFn({ method: "POST" })
 
 export const setPluginEnabled = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => z.object({ id: z.string().min(1).max(40), enabled: z.boolean() }).parse(input))
+  .validator((input: unknown) =>
+    z.object({ id: z.string().min(1).max(40), enabled: z.boolean() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
@@ -354,7 +408,9 @@ export const setPluginEnabled = createServerFn({ method: "POST" })
 
 export const setSourceEnabled = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => z.object({ id: z.string().min(1).max(40), enabled: z.boolean() }).parse(input))
+  .validator((input: unknown) =>
+    z.object({ id: z.string().min(1).max(40), enabled: z.boolean() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
@@ -379,7 +435,11 @@ export const probeSources = createServerFn({ method: "GET" })
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
     if (!allows(profile, "sources.manage")) return { elastic: null, bucket: null, antivirus: null };
-    const [elastic, bucket, antivirus] = await Promise.all([probeElastic(), probeBucket(), probeClamd(sql)]);
+    const [elastic, bucket, antivirus] = await Promise.all([
+      probeElastic(),
+      probeBucket(),
+      probeClamd(sql),
+    ]);
     return { elastic, bucket, antivirus };
   });
 
@@ -388,10 +448,11 @@ export const syncDocuments = createServerFn({ method: "POST" })
   .validator((input: unknown) => z.object({ docs: z.array(docSchema).max(300) }).parse(input))
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
-    const sources = await sql<{ enabled: unknown }>`select enabled from app_source where id = 'documents' limit 1`;
+    const sources = await sql<{
+      enabled: unknown;
+    }>`select enabled from app_source where id = 'documents' limit 1`;
     if (sources[0] && !flag(sources[0].enabled)) return { indexed: 0, elastic: false };
-    // No borra el índice: el cuerpo lo escribe el proceso de fondo. Aquí solo
-    // se adelanta el título, para que un renombre se vea antes de esa vuelta.
+    // Keep the content index intact; background indexing writes bodies. Update the title early so renames appear immediately.
     for (const doc of data.docs) {
       await sql`
         insert into doc_index (user_id, doc_id, title, kind, portfolio_id, body, links_json, updated_at)
@@ -462,13 +523,16 @@ const userInput = z.object({
 });
 
 /**
- * Resultado de crear un usuario o reenviarle el acceso: si el correo salió, o
- * el enlace de un solo uso para entregárselo a mano (sin correo configurado,
- * o si el envío falló). Ver `server/temp-access.ts`.
+ * Account creation/resend outcome: email delivery or a one-time link for manual delivery when
+ * mail is unavailable or fails; see temp-access.ts.
  */
-type AccessOutcome = { mailed: true; expiresAt: number } | { mailed: false; link: string; expiresAt: number; reason: string };
+type AccessOutcome =
+  | { mailed: true; expiresAt: number }
+  | { mailed: false; link: string; expiresAt: number; reason: string };
 
-function outcome(result: Awaited<ReturnType<typeof import("@/server/temp-access").issueAccess>>): AccessOutcome {
+function outcome(
+  result: Awaited<ReturnType<typeof import("@/server/temp-access").issueAccess>>,
+): AccessOutcome {
   return result.mailed
     ? { mailed: true, expiresAt: result.expiresAt }
     : { mailed: false, link: result.link, expiresAt: result.expiresAt, reason: result.reason };
@@ -480,21 +544,35 @@ export const createVaultUser = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "users.create")) return { ok: false as const, error: "Sin permiso para crear usuarios." };
+    if (!allows(actor, "users.create"))
+      return { ok: false as const, error: "Sin permiso para crear usuarios." };
     const email = emailForUsername(data.username);
-    if (!email) return { ok: false as const, error: "El usuario solo admite letras, números, punto, guion y guion bajo." };
-    if (!emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
-    const role = await sql<{ id: string }>`select id from app_role where id = ${data.roleId} limit 1`;
+    if (!email)
+      return {
+        ok: false as const,
+        error: "El usuario solo admite letras, números, punto, guion y guion bajo.",
+      };
+    if (!emailPattern.test(data.email))
+      return { ok: false as const, error: "El correo no es válido." };
+    const role = await sql<{
+      id: string;
+    }>`select id from app_role where id = ${data.roleId} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     const login = data.username.trim().toLowerCase();
-    const taken = await sql<{ user_id: string }>`select user_id from app_user_role where login_name = ${login} limit 1`;
+    const taken = await sql<{
+      user_id: string;
+    }>`select user_id from app_user_role where login_name = ${login} limit 1`;
     if (taken[0]) return { ok: false as const, error: "Ese usuario ya existe." };
     const auth = await (await import("@/lib/auth/server")).getAuth();
     const { issueAccess, temporaryPassword } = await import("@/server/temp-access");
     try {
-      // Una contraseña que nadie conoce; la de verdad la pone `issueAccess`.
+      // Generate an unknown password; issueAccess installs the actual temporary credential.
       await auth.api.signUpEmail({
-        body: { name: data.name.trim(), email, password: `${temporaryPassword()}${temporaryPassword()}` },
+        body: {
+          name: data.name.trim(),
+          email,
+          password: `${temporaryPassword()}${temporaryPassword()}`,
+        },
         headers: await authHeaders(),
       });
     } catch {
@@ -512,20 +590,32 @@ export const createVaultUser = createServerFn({ method: "POST" })
       insert into app_profile (user_id, contact_email) values (${id}, ${data.email})
       on conflict (user_id) do update set contact_email = excluded.contact_email
     `;
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Crea a ${login}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Usuarios",
+      `Crea a ${login}`,
+      context.userId,
+    );
     const access = await issueAccess(sql, id, { resent: false });
     return { ok: true as const, access: outcome(access) };
   });
 
-/** Nueva contraseña temporal y correo de acceso, p. ej. si el anterior venció o no llegó. */
+/** Issue a fresh temporary password and access email after expiry or delivery failure. */
 export const resendVaultAccess = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ userId: z.string().min(1).max(80) }).parse(input))
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "users.update")) return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
-    const rows = await sql<{ login_name: string | null; source: string | null; owner: unknown; credential: unknown }>`
+    if (!allows(actor, "users.update"))
+      return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
+    const rows = await sql<{
+      login_name: string | null;
+      source: string | null;
+      owner: unknown;
+      credential: unknown;
+    }>`
       select m.login_name, m.source,
         exists(select 1 from app_admin a where a.user_id = u.id) as owner,
         exists(select 1 from "account" c where c."userId" = u.id and c."providerId" = 'credential') as credential
@@ -534,13 +624,26 @@ export const resendVaultAccess = createServerFn({ method: "POST" })
     `;
     const row = rows[0];
     if (!row) return { ok: false as const, error: "Ese usuario no está." };
-    if (flag(row.owner)) return { ok: false as const, error: "El administrador inicial cambia su contraseña desde su cuenta." };
+    if (flag(row.owner))
+      return {
+        ok: false as const,
+        error: "El administrador inicial cambia su contraseña desde su cuenta.",
+      };
     if ((row.source && row.source !== "local") || !flag(row.credential)) {
-      return { ok: false as const, error: "Esa cuenta entra con un proveedor externo: no tiene contraseña de Grafito." };
+      return {
+        ok: false as const,
+        error: "Esa cuenta entra con un proveedor externo: no tiene contraseña de Grafito.",
+      };
     }
     const { issueAccess } = await import("@/server/temp-access");
     const access = await issueAccess(sql, data.userId, { resent: true });
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Reenvía el acceso a ${row.login_name ?? data.userId}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Usuarios",
+      `Reenvía el acceso a ${row.login_name ?? data.userId}`,
+      context.userId,
+    );
     return { ok: true as const, access: outcome(access) };
   });
 
@@ -559,8 +662,10 @@ export const updateVaultUser = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "users.update")) return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
-    if (data.email && !emailPattern.test(data.email)) return { ok: false as const, error: "El correo no es válido." };
+    if (!allows(actor, "users.update"))
+      return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
+    if (data.email && !emailPattern.test(data.email))
+      return { ok: false as const, error: "El correo no es válido." };
     const current = await sql<{ role_id: string | null; owner: unknown }>`
       select m.role_id, exists(select 1 from app_admin a where a.user_id = u.id) as owner
       from "user" u
@@ -574,16 +679,20 @@ export const updateVaultUser = createServerFn({ method: "POST" })
       return { ok: false as const, error: "El administrador inicial conserva ese rol." };
     }
     if (row.role_id === "admin" && data.roleId !== "admin") {
-      const count = await sql<{ n: number }>`select count(*)::int as n from app_user_role where role_id = 'admin'`;
+      const count = await sql<{
+        n: number;
+      }>`select count(*)::int as n from app_user_role where role_id = 'admin'`;
       if (Number(count[0]?.n ?? 0) <= 1) {
         return { ok: false as const, error: "Tiene que quedar al menos un administrador." };
       }
     }
-    const role = await sql<{ id: string }>`select id from app_role where id = ${data.roleId} limit 1`;
+    const role = await sql<{
+      id: string;
+    }>`select id from app_role where id = ${data.roleId} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
     await sql`update "user" set name = ${data.name.trim()}, "updatedAt" = now() where id = ${data.userId}`;
     await sql`update app_user_role set role_id = ${data.roleId} where user_id = ${data.userId}`;
-    // Con LDAP, OAuth o SSO el correo lo fija el proveedor (`syncExternalEmail`).
+    // External providers control email through syncExternalEmail.
     const { externalEmail } = await import("@/lib/auth/provision.server");
     if (!(await externalEmail(sql, data.userId))) {
       const contact = data.email || null;
@@ -592,7 +701,13 @@ export const updateVaultUser = createServerFn({ method: "POST" })
         on conflict (user_id) do update set contact_email = excluded.contact_email
       `;
     }
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Actualiza a ${data.name.trim()}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Usuarios",
+      `Actualiza a ${data.name.trim()}`,
+      context.userId,
+    );
     return { ok: true as const };
   });
 
@@ -602,8 +717,10 @@ export const deleteVaultUser = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "users.delete")) return { ok: false as const, error: "Sin permiso para eliminar usuarios." };
-    if (data.userId === context.userId) return { ok: false as const, error: "No puedes eliminarte a ti mismo." };
+    if (!allows(actor, "users.delete"))
+      return { ok: false as const, error: "Sin permiso para eliminar usuarios." };
+    if (data.userId === context.userId)
+      return { ok: false as const, error: "No puedes eliminarte a ti mismo." };
     const current = await sql<{ role_id: string | null; owner: unknown; name: string }>`
       select u.name, m.role_id, exists(select 1 from app_admin a where a.user_id = u.id) as owner
       from "user" u
@@ -613,16 +730,25 @@ export const deleteVaultUser = createServerFn({ method: "POST" })
     `;
     const row = current[0];
     if (!row) return { ok: false as const, error: "Ese usuario no está." };
-    if (flag(row.owner)) return { ok: false as const, error: "El administrador inicial no se elimina." };
+    if (flag(row.owner))
+      return { ok: false as const, error: "El administrador inicial no se elimina." };
     if (row.role_id === "admin") {
-      const count = await sql<{ n: number }>`select count(*)::int as n from app_user_role where role_id = 'admin'`;
+      const count = await sql<{
+        n: number;
+      }>`select count(*)::int as n from app_user_role where role_id = 'admin'`;
       if (Number(count[0]?.n ?? 0) <= 1) {
         return { ok: false as const, error: "Tiene que quedar al menos un administrador." };
       }
     }
     await removeUserFiles(sql, data.userId);
     await sql`delete from "user" where id = ${data.userId}`;
-    await writeLog(sql, actor.loginName || actor.displayName, "Usuarios", `Elimina a ${row.name}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Usuarios",
+      `Elimina a ${row.name}`,
+      context.userId,
+    );
     return { ok: true as const };
   });
 
@@ -632,9 +758,12 @@ export const createRole = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "roles.manage")) return { ok: false as const, error: "Sin permiso para crear roles." };
+    if (!allows(actor, "roles.manage"))
+      return { ok: false as const, error: "Sin permiso para crear roles." };
     const name = data.name.trim();
-    const clash = await sql<{ id: string }>`select id from app_role where lower(name) = lower(${name}) limit 1`;
+    const clash = await sql<{
+      id: string;
+    }>`select id from app_role where lower(name) = lower(${name}) limit 1`;
     if (clash[0]) return { ok: false as const, error: "Ya hay un rol con ese nombre." };
     const id = roleSlug(name);
     await sql`insert into app_role (id, name, fixed) values (${id}, ${name}, false)`;
@@ -643,29 +772,47 @@ export const createRole = createServerFn({ method: "POST" })
       values (${id}, 'notes.read')
       on conflict do nothing
     `;
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Crea el rol ${name}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Roles",
+      `Crea el rol ${name}`,
+      context.userId,
+    );
     return { ok: true as const, id };
   });
 
 export const renameRole = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ id: z.string().min(1).max(48), name: z.string().trim().min(2).max(40) }).parse(input),
+    z
+      .object({ id: z.string().min(1).max(48), name: z.string().trim().min(2).max(40) })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "roles.manage")) return { ok: false as const, error: "Sin permiso para renombrar roles." };
-    const role = await sql<{ fixed: unknown }>`select fixed from app_role where id = ${data.id} limit 1`;
+    if (!allows(actor, "roles.manage"))
+      return { ok: false as const, error: "Sin permiso para renombrar roles." };
+    const role = await sql<{
+      fixed: unknown;
+    }>`select fixed from app_role where id = ${data.id} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no está." };
-    if (flag(role[0].fixed)) return { ok: false as const, error: "Los roles predeterminados no se renombran." };
+    if (flag(role[0].fixed))
+      return { ok: false as const, error: "Los roles predeterminados no se renombran." };
     const name = data.name.trim();
     const clash = await sql<{ id: string }>`
       select id from app_role where lower(name) = lower(${name}) and id <> ${data.id} limit 1
     `;
     if (clash[0]) return { ok: false as const, error: "Ya hay un rol con ese nombre." };
     await sql`update app_role set name = ${name} where id = ${data.id}`;
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Renombra un rol a ${name}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Roles",
+      `Renombra un rol a ${name}`,
+      context.userId,
+    );
     return { ok: true as const };
   });
 
@@ -675,17 +822,30 @@ export const deleteRole = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
-    if (!allows(actor, "roles.manage")) return { ok: false as const, error: "Sin permiso para eliminar roles." };
-    const role = await sql<{ fixed: unknown; name: string }>`select fixed, name from app_role where id = ${data.id} limit 1`;
+    if (!allows(actor, "roles.manage"))
+      return { ok: false as const, error: "Sin permiso para eliminar roles." };
+    const role = await sql<{
+      fixed: unknown;
+      name: string;
+    }>`select fixed, name from app_role where id = ${data.id} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no está." };
-    if (flag(role[0].fixed)) return { ok: false as const, error: "Los roles predeterminados no se eliminan." };
-    const used = await sql<{ n: number }>`select count(*)::int as n from app_user_role where role_id = ${data.id}`;
+    if (flag(role[0].fixed))
+      return { ok: false as const, error: "Los roles predeterminados no se eliminan." };
+    const used = await sql<{
+      n: number;
+    }>`select count(*)::int as n from app_user_role where role_id = ${data.id}`;
     if (Number(used[0]?.n ?? 0) > 0) {
       return { ok: false as const, error: "Hay usuarios con este rol. Cámbiales el rol antes." };
     }
     await sql`delete from app_role where id = ${data.id}`;
     forgetRoleGrants();
-    await writeLog(sql, actor.loginName || actor.displayName, "Roles", `Elimina el rol ${role[0].name}`, context.userId);
+    await writeLog(
+      sql,
+      actor.loginName || actor.displayName,
+      "Roles",
+      `Elimina el rol ${role[0].name}`,
+      context.userId,
+    );
     return { ok: true as const };
   });
 
@@ -733,9 +893,18 @@ export const systemLogs = createServerFn({ method: "GET" })
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
     if (!allows(actor, "monitor.view")) {
-      return { ok: false as const, rows: [] as { id: string; at: string; actor: string; area: string; message: string }[] };
+      return {
+        ok: false as const,
+        rows: [] as { id: string; at: string; actor: string; area: string; message: string }[],
+      };
     }
-    const rows = await sql<{ id: string; at: string; actor: string; area: string; message: string }>`
+    const rows = await sql<{
+      id: string;
+      at: string;
+      actor: string;
+      area: string;
+      message: string;
+    }>`
       select id, at::text as at, actor, area, message
       from app_log
       order by at desc

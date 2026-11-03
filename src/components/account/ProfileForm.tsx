@@ -4,7 +4,7 @@ import { TextField } from "@/components/ui/TextField";
 import { updateAccount } from "@/server/session.functions";
 import { t } from "@/app/i18n";
 
-/** Cuenta → Datos de la cuenta: el nombre. El correo va en Cuenta → Correo. */
+/** Account display name; email is managed in the email section. */
 export function ProfileForm({
   userId,
   initial,
@@ -50,13 +50,17 @@ export function ProfileForm({
     <form onSubmit={submit} className="max-w-lg space-y-3">
       {identity.loginName ? (
         <p className="text-sm text-muted">
-          {t("Usuario:")}{" "}<span className="text-fg">{identity.loginName}</span>
+          {t("Usuario:")} <span className="text-fg">{identity.loginName}</span>
         </p>
       ) : null}
       <TextField label={t("Nombre")} value={name} onChange={setName} autoComplete="name" />
       {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
       <div className="flex items-center gap-3">
-        <button type="submit" disabled={busy} className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={busy}
+          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
+        >
           {busy ? t("Guardando…") : t("Guardar")}
         </button>
         {saved ? <span className="text-sm text-muted">{t("Guardado")}</span> : null}

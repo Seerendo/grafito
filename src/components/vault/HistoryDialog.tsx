@@ -8,13 +8,12 @@ import { intl, t } from "@/app/i18n";
 type Version = Extract<Awaited<ReturnType<typeof docHistory>>, { ok: true }>["versions"][number];
 type Restored = Extract<Awaited<ReturnType<typeof restoreDocVersion>>, { ok: true }>;
 
-/** Líneas sin cambios que se muestran alrededor de cada cambio. */
+/** Unchanged context lines around each diff. */
 const CONTEXT = 2;
 
 /**
- * Historial de una nota: quién la cambió y cuándo, qué cambió en cada versión
- * respecto a la anterior, y restaurar cualquiera. Sirve para notas propias y,
- * con `shareId`, para notas compartidas conmigo con permiso de edición.
+ * Note history shows authors, timestamps and diffs and restores versions. Supports owned notes
+ * and editable shared notes through shareId.
  */
 export function HistoryDialog({
   docId,
@@ -95,7 +94,9 @@ export function HistoryDialog({
     <Modal title={t("Historial")} onClose={onClose} wide>
       {error ? <p className="mb-3 text-sm text-danger">{t(error)}</p> : null}
       {!versions && !error ? <p className="text-sm text-muted">{t("Cargando…")}</p> : null}
-      {versions && versions.length === 0 ? <p className="text-sm text-muted">{t("Sin versiones.")}</p> : null}
+      {versions && versions.length === 0 ? (
+        <p className="text-sm text-muted">{t("Sin versiones.")}</p>
+      ) : null}
       {versions && versions.length > 0 ? (
         <div className="flex max-h-[70vh] min-h-0 flex-col gap-3 md:flex-row">
           <ul className="max-h-48 shrink-0 overflow-y-auto rounded-md border border-line md:max-h-none md:w-60">
@@ -106,7 +107,9 @@ export function HistoryDialog({
                   onClick={() => setSelected(version.id)}
                   aria-current={version.id === selected ? "true" : undefined}
                   className={`w-full px-3 py-2 text-left text-sm ${
-                    version.id === selected ? "bg-inset text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                    version.id === selected
+                      ? "bg-inset text-fg"
+                      : "text-muted hover:bg-elevated hover:text-fg"
                   }`}
                 >
                   <span className="block truncate">{formatWhen(version.createdAt)}</span>
@@ -152,7 +155,11 @@ export function HistoryDialog({
         </div>
       ) : null}
       <div className="mt-4 flex justify-end">
-        <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
+        >
           {t("Cerrar")}
         </button>
       </div>
@@ -169,7 +176,7 @@ function Stats({ lines }: { lines: DiffLine[] }) {
   );
 }
 
-/** Cambios con unas líneas de contexto; los tramos largos sin cambios se pliegan. */
+/** Diff with context lines; collapse long unchanged regions. */
 function DiffView({ lines }: { lines: DiffLine[] }) {
   const keep = new Set<number>();
   lines.forEach((line, position) => {
@@ -177,7 +184,9 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
     for (let offset = -CONTEXT; offset <= CONTEXT; offset += 1) keep.add(position + offset);
   });
   if (keep.size === 0) return <p className="p-3 text-muted">{t("Sin cambios de texto.")}</p>;
-  const rows: ({ type: "line"; line: DiffLine; key: number } | { type: "gap"; count: number; key: number })[] = [];
+  const rows: (
+    { type: "line"; line: DiffLine; key: number } | { type: "gap"; count: number; key: number }
+  )[] = [];
   let gap = 0;
   lines.forEach((line, position) => {
     if (keep.has(position)) {
@@ -194,7 +203,7 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
       {rows.map((row) =>
         row.type === "gap" ? (
           <p key={row.key} className="px-3 py-0.5 text-faint">
-            ··· {row.count} {row.count === 1 ? t("línea") : t("líneas")}{" "}{t("sin cambios")}
+            ··· {row.count} {row.count === 1 ? t("línea") : t("líneas")} {t("sin cambios")}
           </p>
         ) : (
           <p
@@ -224,7 +233,11 @@ function formatSize(bytes: number): string {
 }
 
 function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(
-    new Date(ms),
-  );
+  return new Intl.DateTimeFormat(intl(), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(ms));
 }

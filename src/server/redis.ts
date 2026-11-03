@@ -68,7 +68,11 @@ export async function redisMemoryBytes(): Promise<number | null> {
   return space?.used ?? null;
 }
 
-export async function redisSpace(): Promise<{ total: number; available: number; used: number } | null> {
+export async function redisSpace(): Promise<{
+  total: number;
+  available: number;
+  used: number;
+} | null> {
   if (!redisConfigured()) return null;
   try {
     const redis = await client();
@@ -89,11 +93,11 @@ export async function redisSpace(): Promise<{ total: number; available: number; 
   }
 }
 
-// --- Notas secretas (`server/secret-note.ts`) -----------------------------------
+// Secret notes; see server/secret-note.ts.
 
 const NOTE_PREFIX = "grafito:note:";
 
-/** Guarda una nota que caduca sola. Devuelve si quedó en Redis. */
+/** Store an expiring note; report whether Redis accepted it. */
 export async function redisPutNote(id: string, sealed: string, seconds: number): Promise<boolean> {
   const redis = await client();
   if (!redis) return false;
@@ -101,8 +105,10 @@ export async function redisPutNote(id: string, sealed: string, seconds: number):
   return true;
 }
 
-/** Lee y borra la nota en un solo paso: nadie puede leerla dos veces. `null` si no hay Redis. */
-export async function redisTakeNote(id: string): Promise<{ found: boolean; sealed: string | null } | null> {
+/** Atomically read and delete a note to guarantee one-time access; null without Redis. */
+export async function redisTakeNote(
+  id: string,
+): Promise<{ found: boolean; sealed: string | null } | null> {
   const redis = await client();
   if (!redis) return null;
   const sealed = await redis.getDel(NOTE_PREFIX + id);
@@ -117,9 +123,8 @@ export async function redisDropNote(id: string): Promise<void> {
 const PRESENCE = "grafito:presence:";
 
 /**
- * Quién edita una nota, compartido entre todas las instancias de Grafito (ver
- * `presence.ts`, que hace lo mismo en memoria cuando no hay Redis). Un hash por
- * nota: cada editor con su nombre y la hora de su último aviso. `null` sin Redis.
+ * Cross-replica editing presence in one hash per note, storing editor names and heartbeat
+ * timestamps. Return null without Redis; presence.ts provides the local fallback.
  */
 export async function redisTouchPresence(
   input: { ownerId: string; docId: string; userId: string; name: string; editing: boolean },
@@ -129,7 +134,8 @@ export async function redisTouchPresence(
   const redis = await client();
   if (!redis) return null;
   const key = `${PRESENCE}${input.ownerId}:${input.docId}`;
-  if (input.editing) await redis.hSet(key, input.userId, JSON.stringify({ name: input.name, at: now }));
+  if (input.editing)
+    await redis.hSet(key, input.userId, JSON.stringify({ name: input.name, at: now }));
   else await redis.hDel(key, input.userId);
   await redis.pExpire(key, ttlMs * 2);
   const all = await redis.hGetAll(key);
@@ -151,33 +157,45 @@ export async function redisTouchPresence(
 const TREE = "grafito:tree:";
 
 /**
- * Árboles de lo compartido ya armados (ver `share.ts`), compartidos entre
- * instancias: así todas sirven la misma versión (y la misma ETag) y solo una
- * la rehace tras cada cambio. Un hash por elemento y variante con la versión
- * (`meta`: revisión y hora en que se armó) y el cuerpo comprimido (`gz`, en
- * base64), escritos juntos; y aparte cuándo se comprobó por última vez que
- * seguía al día. `null` sin Redis.
+ * Shared-tree cache across replicas stores revision/build metadata and compressed base64 body
+ * atomically per item/variant. Separate freshness timestamps avoid redundant rebuilding and
+ * preserve consistent ETags. Return null without Redis.
  */
 export type SharedTreeMeta = { revision: number; at: number };
 
-export async function redisTreeState(key: string): Promise<{ meta: SharedTreeMeta | null; checkedAt: number | null } | null> {
+export async function redisTreeState(
+  key: string,
+): Promise<{ meta: SharedTreeMeta | null; checkedAt: number | null } | null> {
   const redis = await client();
   if (!redis) return null;
-  const [meta, checked] = await Promise.all([redis.hGet(`${TREE}${key}`, "meta"), redis.get(`${TREE}${key}:checked`)]);
-  return { meta: meta ? (JSON.parse(meta) as SharedTreeMeta) : null, checkedAt: checked ? Number(checked) : null };
+  const [meta, checked] = await Promise.all([
+    redis.hGet(`${TREE}${key}`, "meta"),
+    redis.get(`${TREE}${key}:checked`),
+  ]);
+  return {
+    meta: meta ? (JSON.parse(meta) as SharedTreeMeta) : null,
+    checkedAt: checked ? Number(checked) : null,
+  };
 }
 
-/** El cuerpo comprimido de esa versión, si sigue siendo la guardada. */
+/** Return the compressed body only if the requested version is still current. */
 export async function redisTreeBody(key: string, want: SharedTreeMeta): Promise<Buffer | null> {
   const redis = await client();
   if (!redis) return null;
   const [meta, gz] = await redis.hmGet(`${TREE}${key}`, ["meta", "gz"]);
   if (!meta || !gz) return null;
   const found = JSON.parse(meta) as SharedTreeMeta;
-  return found.revision === want.revision && found.at === want.at ? Buffer.from(gz, "base64") : null;
+  return found.revision === want.revision && found.at === want.at
+    ? Buffer.from(gz, "base64")
+    : null;
 }
 
-export async function redisPutTree(key: string, meta: SharedTreeMeta, gzip: Buffer, ttlMs: number): Promise<void> {
+export async function redisPutTree(
+  key: string,
+  meta: SharedTreeMeta,
+  gzip: Buffer,
+  ttlMs: number,
+): Promise<void> {
   const redis = await client();
   if (!redis) return;
   await redis.hSet(`${TREE}${key}`, { meta: JSON.stringify(meta), gz: gzip.toString("base64") });

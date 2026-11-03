@@ -1,18 +1,17 @@
 import { extractWikiLinks, findByTitle } from "./links.ts";
 import type { Document, GraphEdge } from "./types.ts";
 
-/**
- * Un nodo del grafo: una nota o archivo, o también un portafolio vinculado o
- * algo compartido conmigo (`shared`) al que apunta un vínculo.
- */
+/** Graph node representing a document, linked portfolio or referenced shared target. */
 export type GraphNode = Pick<Document, "id" | "title" | "content" | "links" | "pinned"> & {
   kind: "markdown" | "file" | "portfolio";
   shared?: boolean;
 };
 
 export function graphEdges(documents: GraphNode[]): GraphEdge[] {
-  // Los [[enlaces]] solo van a notas y archivos propios.
-  const own = documents.filter((item): item is Document => item.kind !== "portfolio" && !item.shared);
+  // Wiki links resolve only to owned notes and files.
+  const own = documents.filter(
+    (item): item is Document => item.kind !== "portfolio" && !item.shared,
+  );
   const edges: GraphEdge[] = [];
   const seen = new Set<string>();
   const add = (from: string, to: string, kind: GraphEdge["kind"]) => {
@@ -47,6 +46,7 @@ export function graphClickIntent(
   windowMs = 450,
 ): "drag" | "inspect" | "open" {
   if (moved) return "drag";
-  if (previous && previous.id === id && at - previous.at <= windowMs && at >= previous.at) return "open";
+  if (previous && previous.id === id && at - previous.at <= windowMs && at >= previous.at)
+    return "open";
   return "inspect";
 }

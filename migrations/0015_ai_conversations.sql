@@ -1,5 +1,4 @@
--- Conversaciones del chat de IA de cada usuario (historial del chat). Los
--- turnos se guardan como JSON en texto: solo los lee y escribe el propio chat.
+-- Per-user AI chat history. Turns are stored as JSON text, read and written only by chat.
 create table if not exists ai_conversation (
   id text primary key,
   user_id text not null references "user" ("id") on delete cascade,

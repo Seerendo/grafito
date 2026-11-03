@@ -2,7 +2,7 @@ import { Maximize2, Minimize2 } from "lucide-react";
 import { useFullscreen } from "@/app/fullscreen";
 import { t } from "@/app/i18n";
 
-/** Botón de pantalla completa de una nota o un archivo (ver `app/fullscreen.ts`). */
+/** Document fullscreen toggle; see app/fullscreen.ts. */
 export function FullscreenButton({ className = "" }: { className?: string }) {
   const on = useFullscreen((state) => state.on);
   const toggle = useFullscreen((state) => state.toggle);

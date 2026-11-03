@@ -4,10 +4,8 @@ import { apiError } from "@/server/api";
 import { gitEnabled, readLink, runLink, startGitSync } from "@/server/git/sync";
 
 /**
- * `POST /api/git/hook/:id`: webhook opcional del repositorio enlazado, para
- * traer los cambios en cuanto se suben en vez de esperar a la siguiente vuelta.
- * GitHub firma el cuerpo con el secreto (`X-Hub-Signature-256`); GitLab lo
- * manda tal cual (`X-Gitlab-Token`). Ver `docs/GIT.md`.
+ * POST /api/git/hook/:id triggers immediate optional repository synchronization. GitHub signs
+ * the body using X-Hub-Signature-256; GitLab sends X-Gitlab-Token. See docs/GIT.md.
  */
 
 function same(a: string, b: string): boolean {
@@ -28,7 +26,8 @@ export const Route = createFileRoute("/api/git/hook/$id")({
         const github = request.headers.get("x-hub-signature-256") ?? "";
         const gitlab = request.headers.get("x-gitlab-token") ?? "";
         const expected = `sha256=${createHmac("sha256", link.hook_secret).update(body).digest("hex")}`;
-        const valid = (github && same(github, expected)) || (gitlab && same(gitlab, link.hook_secret));
+        const valid =
+          (github && same(github, expected)) || (gitlab && same(gitlab, link.hook_secret));
         if (!valid) return apiError(401, "Firma no válida.");
         await sql`update git_link set pending = true where id = ${link.id}`;
         startGitSync();

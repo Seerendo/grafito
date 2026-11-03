@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { authClient } from "./client";
 
-/** Forma normalizada del usuario que usa toda la app. */
+/** Normalized user shape used throughout the application. */
 export type AppUser = {
   id: string;
   displayName: string | null;
@@ -10,17 +10,15 @@ export type AppUser = {
 };
 
 export type CurrentUserState = {
-  /** `null` tanto mientras carga la sesión como sin sesión. */
+  /** null while loading or when signed out. */
   user: AppUser | null;
-  /** Verdadero mientras la sesión se resuelve: `user: null` aún no es "fuera". */
+  /** Session resolution is pending; a null user does not yet mean signed out. */
   isPending: boolean;
 };
 
 /**
- * Usuario actual y estado de carga, desde `useSession()` de Better Auth.
- *
- * Para proteger una pantalla, espera a que `isPending` sea falso antes de
- * redirigir; si no, cada recarga manda al ingreso a quien sí tenía sesión.
+ * Current Better Auth user and loading state. Protected screens must wait until isPending=false
+ * before redirecting, avoiding false sign-in redirects on reload.
  */
 export function useCurrentUserState(): CurrentUserState {
   const { data, isPending } = authClient.useSession();
@@ -35,7 +33,7 @@ export function useCurrentUserState(): CurrentUserState {
   return useMemo(() => ({ user, isPending }), [user, isPending]);
 }
 
-/** `useCurrentUserState().user`; `null` significa "cargando o sin sesión". */
+/** Current user shortcut; null means loading or signed out. */
 export function useCurrentUser(): AppUser | null {
   return useCurrentUserState().user;
 }

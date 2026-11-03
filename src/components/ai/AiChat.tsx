@@ -31,26 +31,30 @@ import { intl, t } from "@/app/i18n";
 import { uuid } from "@/lib/uuid";
 
 /**
- * Chat de IA de la bóveda: botón flotante (o Ctrl+B) que abre un panel para
- * hablar con el modelo elegido sobre las notas, portafolios y archivos. Guarda
- * cada conversación en el historial; un clic fuera del panel lo minimiza.
- * Cada persona puede crear perfiles («Documentación», «Análisis»…) con sus
- * propias indicaciones y elegirlos junto al modelo.
+ * Vault AI chat opens from the floating button or Ctrl+B. Conversations are saved; clicking
+ * outside minimizes the panel. Users select a model and an optional custom persona with their
+ * own instructions.
  */
 
 type ChatInfo = Awaited<ReturnType<typeof aiChatState>>;
 type Provider = { id: AiProviderId; label: string };
 
-/** Duración de la animación al abrir y minimizar (igual que en el CSS). */
+/** Open/minimize animation duration, matching CSS. */
 const MOTION_MS = 200;
 
-export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (id: string) => void }) {
+export function AiChat({
+  mobile,
+  onOpenNote,
+}: {
+  mobile: boolean;
+  onOpenNote: (id: string) => void;
+}) {
   const userId = useCurrentUser()?.id;
   const open = useAiChat((state) => state.open);
   const bind = useAiChat((state) => state.bind);
   const setOpen = useAiChat((state) => state.setOpen);
   const [info, setInfo] = useState<ChatInfo | null>(null);
-  // El panel se queda montado mientras se anima al minimizarse.
+  // Keep the panel mounted during its minimize animation.
   const [mounted, setMounted] = useState(open);
   const [shown, setShown] = useState(false);
 
@@ -58,7 +62,7 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
     if (userId) bind(userId);
   }, [userId, bind]);
 
-  // Se consulta al abrir: si la persona acaba de conectar un proveedor, ya aparece.
+  // Refresh on opening so newly connected providers appear immediately.
   useEffect(() => {
     if (!open) return;
     void aiChatState()
@@ -75,8 +79,7 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
   useEffect(() => {
     if (open) {
       setMounted(true);
-      // Un instante después de montarlo, para que el navegador pinte primero el
-      // estado cerrado y la apertura se anime.
+      // Wait briefly after mounting so the browser paints the closed state before animating open.
       const timer = window.setTimeout(() => setShown(true), 20);
       return () => window.clearTimeout(timer);
     }
@@ -104,7 +107,13 @@ export function AiChat({ mobile, onOpenNote }: { mobile: boolean; onOpenNote: (i
         <MessageCircle className="size-5" />
       </button>
       {mounted ? (
-        <ChatPanel mobile={mobile} shown={shown} info={info} onOpenNote={onOpenNote} onClose={() => setOpen(false)} />
+        <ChatPanel
+          mobile={mobile}
+          shown={shown}
+          info={info}
+          onOpenNote={onOpenNote}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </>
   );
@@ -137,7 +146,11 @@ function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const providers: Provider[] = info?.ok ? info.providers : [];
   const modelReady = Boolean(model && providers.some((provider) => provider.id === model.provider));
-  const title = turns.find((turn) => turn.role === "user")?.content.replace(/\s+/g, " ").trim() || t("Nueva conversación");
+  const title =
+    turns
+      .find((turn) => turn.role === "user")
+      ?.content.replace(/\s+/g, " ")
+      .trim() || t("Nueva conversación");
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -147,7 +160,7 @@ function ChatPanel({
     if (modelReady && view === "chat") inputRef.current?.focus();
   }, [modelReady, view]);
 
-  // Un clic fuera del panel lo minimiza al botón del chat (no en móvil, donde ocupa la pantalla).
+  // Outside clicks minimize desktop chat; mobile chat fills the screen.
   useEffect(() => {
     if (mobile) return;
     const onPointer = (event: PointerEvent) => {
@@ -159,7 +172,7 @@ function ChatPanel({
     return () => document.removeEventListener("pointerdown", onPointer);
   }, [mobile, onClose]);
 
-  // La caja de texto crece con lo escrito, hasta un tope.
+  // Grow the composer with its content up to a height limit.
   useEffect(() => {
     const area = inputRef.current;
     if (!area) return;
@@ -171,7 +184,7 @@ function ChatPanel({
     if (!draft.trim() || busy || !modelReady) return;
     void send(draft);
     setDraft("");
-    // La respuesta se ve en la conversación, no detrás del historial.
+    // Show responses in the conversation instead of behind the history panel.
     setView("chat");
   };
 
@@ -183,12 +196,17 @@ function ChatPanel({
       role="dialog"
       aria-label={t("Chat de IA")}
       className={`ai-panel fixed z-40 flex flex-col border border-line bg-surface shadow-2xl ${
-        mobile ? "inset-0" : "right-4 bottom-4 h-[min(640px,calc(100dvh-6rem))] w-[min(420px,calc(100vw-2rem))] rounded-lg"
+        mobile
+          ? "inset-0"
+          : "right-4 bottom-4 h-[min(640px,calc(100dvh-6rem))] w-[min(420px,calc(100vw-2rem))] rounded-lg"
       }`}
     >
       <header className="flex items-center gap-2 border-b border-line py-1.5 pr-1.5 pl-3">
         <Bot className="size-4 shrink-0 text-accent" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={view === "chat" ? title : undefined}>
+        <span
+          className="min-w-0 flex-1 truncate text-sm font-medium"
+          title={view === "chat" ? title : undefined}
+        >
           {view === "history" ? t("Historial") : view === "profiles" ? t("Perfiles") : title}
         </span>
         <HeaderButton
@@ -215,11 +233,11 @@ function ChatPanel({
 
       {info === null ? (
         <Centered>
-          <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
+          <Loader2 className="size-4 animate-spin" /> {t("Cargando…")}
         </Centered>
       ) : (
         <>
-          {/* El historial ocupa la zona de los mensajes; la caja de texto sigue debajo. */}
+          {/* History occupies the message area; the composer remains below. */}
           {view === "history" ? (
             <HistoryList onPick={() => setView("chat")} />
           ) : view === "profiles" ? (
@@ -243,7 +261,9 @@ function ChatPanel({
                 <Hint>{t("Elige un modelo abajo para empezar.")}</Hint>
               ) : turns.length === 0 ? (
                 <Hint>
-                  {t("Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el portafolio Atlas?»")}
+                  {t(
+                    "Pregunta sobre tus notas, pide un resumen de un portafolio o que cree una nota. Ej.: «¿Qué hay en el portafolio Atlas?»",
+                  )}
                 </Hint>
               ) : null}
               {turns.map((turn) => (
@@ -252,7 +272,7 @@ function ChatPanel({
             </div>
           )}
           {providers.length > 0 && view !== "profiles" ? (
-            // Una sola caja: el texto arriba y, en la misma, el perfil, el modelo y enviar.
+            // One composer contains text, persona, model selection and send action.
             <form
               data-ui="composer"
               className="m-2 flex shrink-0 flex-col rounded-lg border border-line bg-inset"
@@ -338,7 +358,7 @@ function HeaderButton({
   );
 }
 
-/** Historial: las conversaciones guardadas, de la más reciente a la más antigua. */
+/** Saved conversations, newest first. */
 function HistoryList({ onPick }: { onPick: () => void }) {
   const conversations = useAiChat((state) => state.conversations);
   const current = useAiChat((state) => state.conversationId);
@@ -354,13 +374,18 @@ function HistoryList({ onPick }: { onPick: () => void }) {
   if (conversations === null) {
     return (
       <Centered>
-        <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
+        <Loader2 className="size-4 animate-spin" /> {t("Cargando…")}
       </Centered>
     );
   }
   if (conversations.length === 0) return <Centered>{t("Todavía no hay conversaciones.")}</Centered>;
   const when = (ms: number) =>
-    new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+    new Intl.DateTimeFormat(intl(), {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
   return (
     <ul className="min-h-0 flex-1 overflow-y-auto p-1.5">
       {conversations.map((item) => (
@@ -380,10 +405,18 @@ function HistoryList({ onPick }: { onPick: () => void }) {
           </button>
           {confirming === item.id ? (
             <span className="flex shrink-0 items-center gap-2 pr-2 text-xs">
-              <button type="button" onClick={() => void deleteChat(item.id)} className="text-danger">
+              <button
+                type="button"
+                onClick={() => void deleteChat(item.id)}
+                className="text-danger"
+              >
                 {t("Eliminar")}
               </button>
-              <button type="button" onClick={() => setConfirming(null)} className="text-muted hover:text-fg">
+              <button
+                type="button"
+                onClick={() => setConfirming(null)}
+                className="text-muted hover:text-fg"
+              >
                 {t("No")}
               </button>
             </span>
@@ -407,10 +440,8 @@ function HistoryList({ onPick }: { onPick: () => void }) {
 type ModelEntry = { list: string[]; error: string };
 
 /**
- * Bajo la caja de texto: primero el proveedor conectado en la cuenta y, al
- * elegirlo, sus modelos con un buscador. No se listan a la vez los de todos.
- * Una conexión se guardó porque respondió. Al abrir el selector se vuelve a
- * comprobar; si alguna dejó de responder, se avisa ahí.
+ * The composer first lists connected providers, then searchable models for the chosen provider.
+ * Recheck connections when opening the selector and report those that stopped responding.
  */
 function ModelPicker({ providers }: { providers: Provider[] }) {
   const model = useAiChat((state) => state.model);
@@ -423,14 +454,16 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
   const started = useRef(new Set<AiProviderId>());
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const savedId = model && providers.some((provider) => provider.id === model.provider) ? model.provider : null;
-  const activeId = picked && providers.some((provider) => provider.id === picked) ? picked : savedId;
+  const savedId =
+    model && providers.some((provider) => provider.id === model.provider) ? model.provider : null;
+  const activeId =
+    picked && providers.some((provider) => provider.id === picked) ? picked : savedId;
   const active = providers.find((provider) => provider.id === activeId) ?? null;
   const entry = activeId ? models[activeId] : undefined;
   const activeError = entry?.error ?? "";
   const modelReady = Boolean(model && model.provider === activeId);
 
-  // Una lista ya pedida no se repite. Si falló, retry la vuelve a pedir.
+  // Reuse fetched lists; retry explicitly after failure.
   const load = useCallback((id: AiProviderId) => {
     if (started.current.has(id)) return;
     started.current.add(id);
@@ -459,8 +492,7 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
     if (activeId) load(activeId);
   }, [activeId, load]);
 
-  // Al abrir el menú se comprueba cada conexión, para avisar si dejó de responder.
-  // Los modelos de esa respuesta no se pintan: la lista es solo la del proveedor elegido.
+  // Check each connection when opening the menu, but display models only for the selected provider.
   useEffect(() => {
     if (!providerOpen) return;
     for (const provider of providers) load(provider.id);
@@ -498,7 +530,8 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
   };
 
   const needle = query.trim().toLowerCase();
-  const visible = !entry || entry.error ? [] : entry.list.filter((name) => name.toLowerCase().includes(needle));
+  const visible =
+    !entry || entry.error ? [] : entry.list.filter((name) => name.toLowerCase().includes(needle));
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -518,7 +551,11 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
             aria-haspopup="menu"
             aria-expanded={providerOpen}
             aria-label={t("Proveedor")}
-            title={activeError ? `${active?.label ?? ""}: ${activeError}` : (active?.label ?? t("Elegir proveedor"))}
+            title={
+              activeError
+                ? `${active?.label ?? ""}: ${activeError}`
+                : (active?.label ?? t("Elegir proveedor"))
+            }
             className={`flex h-7 max-w-32 min-w-0 items-center gap-1 rounded-md px-2 text-xs hover:bg-elevated ${
               activeError ? "text-danger" : active ? "text-muted hover:text-fg" : "text-accent"
             }`}
@@ -553,7 +590,9 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
                           {t("Cargando…")}
                         </span>
                       ) : row.error ? (
-                        <span className="mt-0.5 block text-[11px] leading-snug text-danger">{t(row.error)}</span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-danger">
+                          {t(row.error)}
+                        </span>
                       ) : null}
                     </span>
                     {on ? <Check className="mt-0.5 size-3.5 shrink-0 text-accent" /> : null}
@@ -579,7 +618,9 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
               modelReady ? "text-muted hover:text-fg" : "text-accent"
             }`}
           >
-            <span className="truncate">{modelReady && model ? model.model : t("Elegir modelo")}</span>
+            <span className="truncate">
+              {modelReady && model ? model.model : t("Elegir modelo")}
+            </span>
             <ChevronDown className="size-3 shrink-0" />
           </button>
           {modelOpen ? (
@@ -619,7 +660,9 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
                     ) : entry.list.length === 0 ? (
                       <p className="px-2 py-1.5 text-xs text-muted">{t("Sin modelos")}</p>
                     ) : visible.length === 0 ? (
-                      <p className="px-2 py-1.5 text-xs text-muted">{t("Ningún modelo coincide")}</p>
+                      <p className="px-2 py-1.5 text-xs text-muted">
+                        {t("Ningún modelo coincide")}
+                      </p>
                     ) : (
                       visible.map((name) => {
                         const on = model?.provider === active.id && model.model === name;
@@ -653,10 +696,7 @@ function ModelPicker({ providers }: { providers: Provider[] }) {
   );
 }
 
-/**
- * Perfil del chat, junto al modelo: el asistente general o uno de los perfiles
- * de la persona, y el acceso a crearlos y editarlos.
- */
+/** Persona selector beside the model: general assistant or a custom persona, with management actions. */
 function ProfilePicker({ onManage }: { onManage: () => void }) {
   const profiles = useAiChat((state) => state.profiles);
   const profileId = useAiChat((state) => state.profileId);
@@ -720,7 +760,11 @@ function ProfilePicker({ onManage }: { onManage: () => void }) {
             {t("General")}
           </ProfileOption>
           {(profiles ?? []).map((profile) => (
-            <ProfileOption key={profile.id} on={profile.id === current?.id} onClick={() => pick(profile.id)}>
+            <ProfileOption
+              key={profile.id}
+              on={profile.id === current?.id}
+              onClick={() => pick(profile.id)}
+            >
               {profile.name}
             </ProfileOption>
           ))}
@@ -743,7 +787,15 @@ function ProfilePicker({ onManage }: { onManage: () => void }) {
   );
 }
 
-function ProfileOption({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+function ProfileOption({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
@@ -758,7 +810,7 @@ function ProfileOption({ on, onClick, children }: { on: boolean; onClick: () => 
   );
 }
 
-/** Perfiles: la lista (un clic lo usa), y crear, editar o borrar uno. */
+/** Persona list supports selection, creation, editing and deletion. */
 function ProfilesView({ onDone }: { onDone: () => void }) {
   const profiles = useAiChat((state) => state.profiles);
   const profileId = useAiChat((state) => state.profileId);
@@ -776,7 +828,7 @@ function ProfilesView({ onDone }: { onDone: () => void }) {
   if (profiles === null) {
     return (
       <Centered>
-        <Loader2 className="size-4 animate-spin" />{" "}{t("Cargando…")}
+        <Loader2 className="size-4 animate-spin" /> {t("Cargando…")}
       </Centered>
     );
   }
@@ -786,7 +838,10 @@ function ProfilesView({ onDone }: { onDone: () => void }) {
         {profiles.length === 0 ? <Centered>{t("Todavía no tienes perfiles.")}</Centered> : null}
         <ul>
           {profiles.map((profile) => (
-            <li key={profile.id} className="group flex items-center gap-1 rounded-md hover:bg-elevated">
+            <li
+              key={profile.id}
+              className="group flex items-center gap-1 rounded-md hover:bg-elevated"
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -795,14 +850,20 @@ function ProfilesView({ onDone }: { onDone: () => void }) {
                 }}
                 className="flex min-w-0 flex-1 flex-col px-2.5 py-2 text-left"
               >
-                <span className={`flex items-center gap-2 text-sm ${profile.id === profileId ? "text-accent" : "text-fg"}`}>
+                <span
+                  className={`flex items-center gap-2 text-sm ${profile.id === profileId ? "text-accent" : "text-fg"}`}
+                >
                   <span className="truncate">{profile.name}</span>
                   {profile.readOnly ? (
-                    <span className="shrink-0 rounded-full border border-line px-1.5 text-[10px] text-muted">{t("Solo lectura")}</span>
+                    <span className="shrink-0 rounded-full border border-line px-1.5 text-[10px] text-muted">
+                      {t("Solo lectura")}
+                    </span>
                   ) : null}
                 </span>
                 {profile.instructions ? (
-                  <span className="truncate text-[11px] text-faint">{profile.instructions.replace(/\s+/g, " ")}</span>
+                  <span className="truncate text-[11px] text-faint">
+                    {profile.instructions.replace(/\s+/g, " ")}
+                  </span>
                 ) : null}
               </button>
               {confirming === profile.id ? (
@@ -817,7 +878,11 @@ function ProfilesView({ onDone }: { onDone: () => void }) {
                   >
                     {t("Eliminar")}
                   </button>
-                  <button type="button" onClick={() => setConfirming(null)} className="text-muted hover:text-fg">
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    className="text-muted hover:text-fg"
+                  >
                     {t("No")}
                   </button>
                 </span>
@@ -881,7 +946,12 @@ function ProfileForm({ profile, onDone }: { profile: AiProfile; onDone: () => vo
     setSaving(true);
     setError("");
     try {
-      const problem = await save({ id: profile.id, name: name.trim(), instructions: instructions.trim(), readOnly });
+      const problem = await save({
+        id: profile.id,
+        name: name.trim(),
+        instructions: instructions.trim(),
+        readOnly,
+      });
       if (problem) setError(problem);
       else onDone();
     } catch {
@@ -926,7 +996,11 @@ function ProfileForm({ profile, onDone }: { profile: AiProfile; onDone: () => vo
         {error ? <p className="text-xs text-danger">{t(error)}</p> : null}
       </div>
       <div className="flex shrink-0 justify-end gap-2 border-t border-line p-2">
-        <button type="button" onClick={onDone} className="h-8 rounded-md px-3 text-sm text-muted hover:text-fg">
+        <button
+          type="button"
+          onClick={onDone}
+          className="h-8 rounded-md px-3 text-sm text-muted hover:text-fg"
+        >
           {t("Cancelar")}
         </button>
         <button
@@ -945,7 +1019,9 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
   const documents = useVault((state) => state.documents);
   if (turn.role === "user") {
     return (
-      <div className="ml-8 rounded-lg bg-elevated px-3 py-2 text-sm whitespace-pre-wrap text-fg">{turn.content}</div>
+      <div className="ml-8 rounded-lg bg-elevated px-3 py-2 text-sm whitespace-pre-wrap text-fg">
+        {turn.content}
+      </div>
     );
   }
   return (
@@ -953,17 +1029,23 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
       {turn.tools && turn.tools.length > 0 ? (
         <ul className="flex flex-wrap gap-1.5">
           {turn.tools.map((tool, index) => (
-            // Un rótulo largo pasa a otra línea dentro de su etiqueta, sin salirse del chat.
+            // Wrap long labels within their chip instead of overflowing the chat.
             <li key={index} className="max-w-full min-w-0">
               <button
                 type="button"
                 disabled={!tool.docId}
                 onClick={() => tool.docId && onOpenNote(tool.docId)}
                 className={`inline-flex max-w-full items-start gap-1 rounded-xl border px-2 py-0.5 text-left text-[11px] ${
-                  tool.ok ? "border-line text-muted enabled:hover:text-fg" : "border-danger/40 text-danger"
+                  tool.ok
+                    ? "border-line text-muted enabled:hover:text-fg"
+                    : "border-danger/40 text-danger"
                 }`}
               >
-                {tool.ok ? <CheckCircle2 className="mt-px size-3 shrink-0" /> : <CircleAlert className="mt-px size-3 shrink-0" />}
+                {tool.ok ? (
+                  <CheckCircle2 className="mt-px size-3 shrink-0" />
+                ) : (
+                  <CircleAlert className="mt-px size-3 shrink-0" />
+                )}
                 <span className="min-w-0 [overflow-wrap:anywhere]">{t(tool.label)}</span>
               </button>
             </li>
@@ -986,7 +1068,7 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
       ) : null}
       {turn.pending && !turn.content ? (
         <p className="flex items-center gap-2 text-xs text-muted">
-          <Loader2 className="size-3.5 animate-spin" />{" "}{t("Pensando…")}
+          <Loader2 className="size-3.5 animate-spin" /> {t("Pensando…")}
         </p>
       ) : null}
       {turn.error ? <p className="text-xs text-danger">{t(turn.error)}</p> : null}
@@ -995,9 +1077,17 @@ function Turn({ turn, onOpenNote }: { turn: ChatTurn; onOpenNote: (id: string) =
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted">{children}</div>;
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted">
+      {children}
+    </div>
+  );
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-dashed border-line px-3 py-3 text-center text-sm text-muted">{children}</p>;
+  return (
+    <p className="rounded-md border border-dashed border-line px-3 py-3 text-center text-sm text-muted">
+      {children}
+    </p>
+  );
 }

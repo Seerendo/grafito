@@ -59,7 +59,8 @@ export function CommandPalette({
     }
     close();
   };
-  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
+  const portfolioName = (id: string | null) =>
+    portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
   const known = new Set(documents.map((document) => document.id));
   const localPassages = new Map(
     documents.flatMap((document) => {
@@ -95,63 +96,88 @@ export function CommandPalette({
           />
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
-          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
+          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">
+            {t("Sin resultados")}
+          </Command.Empty>
           <Command.Group heading={t("Acciones")}>
             {can(PERMISSION.notesCreate) ? (
-            <Command.Item
-              value="crear nota nueva"
-              onSelect={() => {
-                const id = createDocument(selectedPortfolioId);
-                onOpenNote(id);
-                close();
-              }}
-            >
-              <Row icon={<FilePlus className="size-4" />} label={t("Nueva nota")} hint="Ctrl N" />
-            </Command.Item>
+              <Command.Item
+                value="crear nota nueva"
+                onSelect={() => {
+                  const id = createDocument(selectedPortfolioId);
+                  onOpenNote(id);
+                  close();
+                }}
+              >
+                <Row icon={<FilePlus className="size-4" />} label={t("Nueva nota")} hint="Ctrl N" />
+              </Command.Item>
             ) : null}
             {can(PERMISSION.linksManage) ? (
-            <Command.Item
-              value="vincular documento a mano"
-              onSelect={() => {
-                if (!activeId) return;
-                setDialog({ type: "link", sourceId: activeId });
-                close();
-              }}
-            >
-              <Row icon={<Link2 className="size-4" />} label={t("Vincular")} />
-            </Command.Item>
+              <Command.Item
+                value="vincular documento a mano"
+                onSelect={() => {
+                  if (!activeId) return;
+                  setDialog({ type: "link", sourceId: activeId });
+                  close();
+                }}
+              >
+                <Row icon={<Link2 className="size-4" />} label={t("Vincular")} />
+              </Command.Item>
             ) : null}
             {can(PERMISSION.graphView) ? (
-            <Command.Item value="abrir grafo" onSelect={() => { toggleGraph(); close(); }}>
-              <Row icon={<Network className="size-4" />} label={t("Mostrar u ocultar grafo")} hint="Ctrl G" />
-            </Command.Item>
+              <Command.Item
+                value="abrir grafo"
+                onSelect={() => {
+                  toggleGraph();
+                  close();
+                }}
+              >
+                <Row
+                  icon={<Network className="size-4" />}
+                  label={t("Mostrar u ocultar grafo")}
+                  hint="Ctrl G"
+                />
+              </Command.Item>
             ) : null}
             {can(PERMISSION.notesEdit) ? (
-            <Command.Item
-              value="cambiar modo lectura edicion"
-              onSelect={() => {
-                setMode(mode === "read" ? "edit" : mode === "edit" ? "split" : "read");
-                close();
-              }}
-            >
-              <Row icon={<Search className="size-4" />} label={t("Cambiar modo de la nota")} hint="Ctrl E" />
-            </Command.Item>
+              <Command.Item
+                value="cambiar modo lectura edicion"
+                onSelect={() => {
+                  setMode(mode === "read" ? "edit" : mode === "edit" ? "split" : "read");
+                  close();
+                }}
+              >
+                <Row
+                  icon={<Search className="size-4" />}
+                  label={t("Cambiar modo de la nota")}
+                  hint="Ctrl E"
+                />
+              </Command.Item>
             ) : null}
             {can(PERMISSION.notesCreate) && can(PERMISSION.notesDelete) ? (
               <Command.Item value="restaurar ejemplo" onSelect={() => setDialog({ type: "reset" })}>
-                <Row icon={<RotateCcw className="size-4" />} label={t("Restaurar notas de ejemplo")} />
+                <Row
+                  icon={<RotateCcw className="size-4" />}
+                  label={t("Restaurar notas de ejemplo")}
+                />
               </Command.Item>
             ) : null}
           </Command.Group>
           <Command.Group heading={t("Documentos")}>
             {documents.map((document) => {
               const found = localPassages.get(document.id);
-              const around = found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ?? "";
+              const around =
+                found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ??
+                "";
               return (
                 <Command.Item
                   key={document.id}
                   value={`${document.title} ${portfolioName(document.portfolioId)} ${document.kind} ${tableText[document.id] ?? ""} ${around}`}
-                  keywords={[portfolioName(document.portfolioId), document.kind, tableText[document.id] ?? ""]}
+                  keywords={[
+                    portfolioName(document.portfolioId),
+                    document.kind,
+                    tableText[document.id] ?? "",
+                  ]}
                   onSelect={() => go(document.id)}
                 >
                   <span className="flex flex-col px-2 py-1.5 text-sm">
@@ -161,7 +187,9 @@ export function CommandPalette({
                         <Marked text={document.title} query={query} />
                       </span>
                       <span className="ml-auto shrink-0 text-xs text-faint">
-                        {document.kind === "file" ? t("archivo") : portfolioName(document.portfolioId)}
+                        {document.kind === "file"
+                          ? t("archivo")
+                          : portfolioName(document.portfolioId)}
                       </span>
                     </span>
                     {found ? (

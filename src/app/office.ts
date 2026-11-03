@@ -2,10 +2,7 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { officeStatus } from "@/server/office.functions";
 
-/**
- * Editor de Office en el cliente: si el servidor lo tiene activado (perfil
- * `office`) y qué archivos abre. Ver `server/office.ts`.
- */
+/** Client Office editor availability and supported files; see server/office.ts. */
 
 const OFFICE = /\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf|csv)$/i;
 
@@ -39,16 +36,19 @@ export function useOfficeEnabled(): boolean {
   return enabled;
 }
 
-/**
- * Al restaurar una versión de un archivo, el editor abierto aún tiene el
- * contenido anterior: subir el contador lo vuelve a abrir con el restaurado.
- */
-export const useOfficeReload = create<{ generation: Record<string, number>; reload: (docId: string) => void }>((set) => ({
+/** Incrementing this counter reopens an editor with restored content after a file-version restore. */
+export const useOfficeReload = create<{
+  generation: Record<string, number>;
+  reload: (docId: string) => void;
+}>((set) => ({
   generation: {},
-  reload: (docId) => set((state) => ({ generation: { ...state.generation, [docId]: (state.generation[docId] ?? 0) + 1 } })),
+  reload: (docId) =>
+    set((state) => ({
+      generation: { ...state.generation, [docId]: (state.generation[docId] ?? 0) + 1 },
+    })),
 }));
 
-/** Lo que hace el editor abierto de un documento antes de restaurar una versión. */
+/** Action performed by an open document editor before restoring a version. */
 const beforeRestore = new Map<string, () => Promise<void>>();
 
 export function onBeforeRestore(docId: string, run: () => Promise<void>): () => void {
@@ -59,9 +59,8 @@ export function onBeforeRestore(docId: string, run: () => Promise<void>): () => 
 }
 
 /**
- * Antes de restaurar una versión de un archivo abierto en el editor, este
- * guarda lo pendiente y cierra el documento (`Host_VersionRestore`); así no
- * sigue con el contenido anterior ni lo vuelve a guardar encima.
+ * Before restoration, flush pending changes and close the editor through Host_VersionRestore so
+ * stale content cannot overwrite the restored version.
  */
 export async function prepareRestore(docId: string): Promise<void> {
   await beforeRestore.get(docId)?.();

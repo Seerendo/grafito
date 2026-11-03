@@ -1,13 +1,9 @@
 /**
- * Arreglo de los diagramas de flujo de Mermaid que fallan por algo muy común:
- * una etiqueta con paréntesis, llaves u otros signos sin comillas
- * (`A[Inicio (paso 1)] --> B`). Mermaid pide `A["Inicio (paso 1)"]`; aquí se
- * ponen esas comillas en las etiquetas de nodos (`[…]`, `{…}`) y de flechas
- * (`|…|`) que las necesitan. Solo se usa si el diagrama original no se pudo
- * leer, así que un diagrama correcto nunca cambia.
+ * Fallback repair for Mermaid flowchart labels with unquoted punctuation. Quote node and edge
+ * labels only after the original diagram fails parsing, leaving valid diagrams untouched.
  */
 
-/** Signos que Mermaid no acepta en una etiqueta sin comillas. */
+/** Punctuation requiring quoted Mermaid labels. */
 const SPECIAL = /[(){}[\]<>;#&]/;
 
 const quote = (text: string) => `"${text.replace(/"/g, "#quot;")}"`;
@@ -28,16 +24,20 @@ export function quoteFlowchartLabels(chart: string): string {
       if (/^\s*(%%|classDef|class|style|linkStyle|click)\b/.test(line)) return line;
       return (
         line
-          // Nodo rectangular: id[texto] (no [[…]], [(…)], [/…/], ni ya entre comillas).
-          .replace(/(\b[\w-]+)\[(?![[(/\\"])([^\]\n"]*?)\](?!\])/g, (match, id: string, text: string) =>
-            SPECIAL.test(text) ? `${id}[${quote(text)}]` : match,
+          // Rectangular node labels, excluding nested brackets, special shapes and already quoted labels.
+          .replace(
+            /(\b[\w-]+)\[(?![[(/\\"])([^\]\n"]*?)\](?!\])/g,
+            (match, id: string, text: string) =>
+              SPECIAL.test(text) ? `${id}[${quote(text)}]` : match,
           )
-          // Rombo: id{texto} (no {{…}}).
+          // Diamond labels, excluding double-brace shapes.
           .replace(/(\b[\w-]+)\{(?![{"])([^}\n"]*?)\}(?!\})/g, (match, id: string, text: string) =>
             SPECIAL.test(text) ? `${id}{${quote(text)}}` : match,
           )
-          // Etiqueta de flecha: -->|texto|.
-          .replace(/\|(?!")([^|\n"]+)\|/g, (match, text: string) => (SPECIAL.test(text) ? `|${quote(text)}|` : match))
+          // Arrow labels between vertical bars.
+          .replace(/\|(?!")([^|\n"]+)\|/g, (match, text: string) =>
+            SPECIAL.test(text) ? `|${quote(text)}|` : match,
+          )
       );
     })
     .join("\n");

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-/** Texto de las celdas, para que la barra y la paleta encuentren una tabla sin abrirla. */
+/** Indexed cell text lets search and the command palette find unopened tables. */
 export const useTableIndex = create<{ text: Record<string, string> }>(() => ({ text: {} }));
 
 export function rememberTableText(docId: string, text: string): void {

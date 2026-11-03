@@ -1,7 +1,6 @@
--- Caducidad, revocación y rastro de permisos y de enlaces públicos.
--- Un permiso vigente está en share_grant / share_org_grant (o el token del
--- enlace). Al revocarlo o al caducar pasa a access_grant_log, que conserva
--- desde cuándo valía y hasta cuándo. access_event anota las aperturas.
+-- Grant and public-link expiry, revocation and access history. Active grants live in
+-- share_grant/share_org_grant or the link token. Revoked or expired grants move to
+-- access_grant_log with their validity interval. access_event records openings.
 
 alter table share_grant add column if not exists granted_at bigint not null default 0;
 alter table share_grant add column if not exists expires_at bigint;

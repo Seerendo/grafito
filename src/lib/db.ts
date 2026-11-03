@@ -16,10 +16,8 @@ if (typeof process !== "undefined" && typeof process.loadEnvFile === "function")
 
 // An empty/whitespace DATABASE_URL (an easy misconfig in deploy UIs) must mean
 // "unset" — otherwise production would silently run on the PGLite fallback.
-const rawDatabaseUrl =
-  typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
-const databaseUrl =
-  rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
+const rawDatabaseUrl = typeof process !== "undefined" ? process.env.DATABASE_URL : undefined;
+const databaseUrl = rawDatabaseUrl && rawDatabaseUrl.trim() ? rawDatabaseUrl : undefined;
 
 /**
  * Active backend: real **Neon** when `DATABASE_URL` is set (deployed / configured
@@ -38,14 +36,8 @@ export const dbSource: DbSource = databaseUrl ? "neon" : "pglite";
  *   const rows2 = await sql.query("select * from todos where id = $1", [id]);
  */
 export interface Sql {
-  <T = Record<string, unknown>>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T[]>;
-  query<T = Record<string, unknown>>(
-    text: string,
-    params?: unknown[],
-  ): Promise<T[]>;
+  <T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+  query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 }
 
 /**
@@ -89,7 +81,7 @@ function toSql(run: Run): Sql {
     // Rebuild with $1, $2, … placeholders so values stay parameterized.
     let text = strings[0];
     for (let i = 0; i < values.length; i += 1) text += `$${i + 1}${strings[i + 1]}`;
-    // Plantillas del código: texto fijo, se pueden preparar (ver `createNeonSql`).
+    // Fixed SQL template text can use prepared statements; see createNeonSql.
     return run<T>(text, values, true);
   }) as unknown as Sql;
   sql.query = <T = Record<string, unknown>>(text: string, params: unknown[] = []) =>
@@ -113,8 +105,7 @@ function createNeonSql(): Promise<Sql> {
     types.setTypeParser(OID_INT8, Number);
     types.setTypeParser(OID_DATE, identity);
     types.setTypeParser(OID_INTERVAL, identity);
-    // Conexiones por proceso (15 por defecto, más 5 de Better Auth). Con varias
-    // instancias, la suma tiene que caber en `max_connections` de Postgres (100).
+    // Per-process connections default to fifteen plus five for Better Auth. All replicas must fit within Postgres max_connections.
     const poolSize = Number(process.env.GRAFITO_DB_POOL);
     const pool = new Pool({
       connectionString: databaseUrl,
@@ -122,11 +113,7 @@ function createNeonSql(): Promise<Sql> {
       max: Number.isInteger(poolSize) && poolSize > 0 ? poolSize : 15,
     });
     await applyPostgresMigrations(pool);
-    // Sentencias preparadas con nombre: Postgres guarda el plan en cada
-    // conexión y deja de planificar la consulta en cada petición (con las de
-    // permisos y organizaciones, planificar costaba más que ejecutar). Solo las
-    // plantillas sql`…`, de texto fijo. GRAFITO_DB_PREPARE=0 las apaga (un
-    // pgbouncer antiguo en modo transacción no las admite).
+    // Named prepared statements reuse plans per connection for fixed SQL templates. GRAFITO_DB_PREPARE=0 disables them for older transaction-mode poolers.
     const prepare = process.env.GRAFITO_DB_PREPARE !== "0";
     const { createHash } = await import("node:crypto");
     const names = new Map<string, string>();
@@ -155,8 +142,7 @@ function createNeonSql(): Promise<Sql> {
 /** Same files as PGLite and `scripts/migrate.mjs`, applied before the first query. */
 async function applyPostgresMigrations(pool: import("pg").Pool): Promise<void> {
   const client = await pool.connect();
-  // Varias instancias arrancando a la vez: una aplica y las demás esperan (el
-  // bloqueo es de esta conexión, que se suelta al final o al cerrarse).
+  // Serialize migration startup across replicas with a connection-scoped lock released on completion or disconnect.
   await client.query("select pg_advisory_lock(hashtext('grafito:migrations'))");
   try {
     await client.query(
@@ -182,7 +168,9 @@ async function applyPostgresMigrations(pool: import("pg").Pool): Promise<void> {
       }
     }
   } finally {
-    await client.query("select pg_advisory_unlock(hashtext('grafito:migrations'))").catch(() => undefined);
+    await client
+      .query("select pg_advisory_unlock(hashtext('grafito:migrations'))")
+      .catch(() => undefined);
     client.release();
   }
 }
@@ -195,7 +183,7 @@ async function createPgliteSql(): Promise<Sql> {
   // serverless disks are not a database.
   globalRef.__pgliteInstance__ ??= (async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    // Índices de trigramas para buscar (migrations/0019_vault_indexes.sql).
+    // Trigram search indexes from migrations/0019_vault_indexes.sql.
     const { pg_trgm } = await import("@electric-sql/pglite/contrib/pg_trgm");
     const dataDir = process.env.NODE_ENV === "production" ? undefined : ".data/pglite";
     if (dataDir) {
@@ -231,9 +219,7 @@ async function createPgliteSql(): Promise<Sql> {
   // double-apply.
   const migrate = async (): Promise<void> => {
     const migrations = migrationSources();
-    const doneRows = await pg.query<{ name: string }>(
-      "select name from _migrations",
-    );
+    const doneRows = await pg.query<{ name: string }>("select name from _migrations");
     const done = doneRows.rows.map((r) => r.name);
     for (const { name, path } of pendingMigrations(Object.keys(migrations), done)) {
       // Apply + record atomically (parity with scripts/migrate.mjs) so a failed

@@ -23,15 +23,20 @@ type Link = {
   hookSecret: string;
 };
 
-const DEFAULT_URL: Record<Provider, string> = { github: "https://github.com", gitlab: "https://gitlab.com" };
+const DEFAULT_URL: Record<Provider, string> = {
+  github: "https://github.com",
+  gitlab: "https://gitlab.com",
+};
 
 /**
- * Enlace de un portafolio (o de toda la bóveda, `all`) con una carpeta de un
- * repositorio de GitHub o GitLab. Ver `server/git/sync.ts` y `docs/GIT.md`.
+ * Link a portfolio or the entire vault (all) to a GitHub/GitLab repository folder; see
+ * server/git/sync.ts and docs/GIT.md.
  */
 export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClose: () => void }) {
   const name = useVault((state) =>
-    portfolioId === "all" ? t("Toda la bóveda") : (state.portfolios.find((item) => item.id === portfolioId)?.name ?? ""),
+    portfolioId === "all"
+      ? t("Toda la bóveda")
+      : (state.portfolios.find((item) => item.id === portfolioId)?.name ?? ""),
   );
   const [loaded, setLoaded] = useState(false);
   const [available, setAvailable] = useState(true);
@@ -69,7 +74,7 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
       .finally(() => setLoaded(true));
   }, [portfolioId]);
 
-  // Lo traído del repositorio baja a la bóveda del navegador.
+  // Pull repository changes into the browser vault.
   const pull = () => {
     const owner = useVault.getState().owner;
     if (owner) void syncVault(owner);
@@ -81,7 +86,16 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
     setMessage("");
     try {
       const result = await saveGitLink({
-        data: { portfolioId, provider, baseUrl: baseUrl.trim() || DEFAULT_URL[provider], repo, branch, folder, direction, token },
+        data: {
+          portfolioId,
+          provider,
+          baseUrl: baseUrl.trim() || DEFAULT_URL[provider],
+          repo,
+          branch,
+          folder,
+          direction,
+          token,
+        },
       });
       if (!result.ok) setError(result.error);
       else {
@@ -139,9 +153,16 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
   };
 
   const when = (ms: number) =>
-    new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
-  const field = "h-11 w-full rounded-md border border-line bg-inset px-3 text-sm text-fg placeholder:text-faint";
-  const hookUrl = link && typeof window !== "undefined" ? `${window.location.origin}${link.hookPath}` : "";
+    new Intl.DateTimeFormat(intl(), {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
+  const field =
+    "h-11 w-full rounded-md border border-line bg-inset px-3 text-sm text-fg placeholder:text-faint";
+  const hookUrl =
+    link && typeof window !== "undefined" ? `${window.location.origin}${link.hookPath}` : "";
 
   return (
     <Modal title={t("Sincronizar con Git")} onClose={onClose}>
@@ -183,7 +204,11 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
             value={repo}
             onChange={(event) => setRepo(event.target.value)}
             aria-label={t("Repositorio")}
-            placeholder={provider === "gitlab" ? t("grupo/proyecto o su dirección") : t("dueño/repositorio o su dirección")}
+            placeholder={
+              provider === "gitlab"
+                ? t("grupo/proyecto o su dirección")
+                : t("dueño/repositorio o su dirección")
+            }
             spellCheck={false}
             required
             className={field}
@@ -231,7 +256,9 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
               )}
             </div>
           ) : null}
-          {message && !error && message !== link?.lastSummary ? <p className="text-xs text-muted">{t(message)}</p> : null}
+          {message && !error && message !== link?.lastSummary ? (
+            <p className="text-xs text-muted">{t(message)}</p>
+          ) : null}
           {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
 
           {link ? (
@@ -244,7 +271,9 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
                 ].map((item) => (
                   <div key={item.key} className="flex items-center gap-2">
                     <span className="w-20 shrink-0 text-faint">{item.label}</span>
-                    <code className="min-w-0 flex-1 truncate rounded bg-inset px-2 py-1 text-fg">{item.value}</code>
+                    <code className="min-w-0 flex-1 truncate rounded bg-inset px-2 py-1 text-fg">
+                      {item.value}
+                    </code>
                     <button
                       type="button"
                       aria-label={t("Copiar")}
@@ -252,7 +281,11 @@ export function GitDialog({ portfolioId, onClose }: { portfolioId: string; onClo
                       onClick={() => copy(item.key, item.value)}
                       className="grid size-7 shrink-0 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
                     >
-                      {copied === item.key ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied === item.key ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
                     </button>
                   </div>
                 ))}

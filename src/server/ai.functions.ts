@@ -16,12 +16,17 @@ import {
   writePolicy,
 } from "@/server/ai/config";
 import { checkLocalUrl, localhostAlias } from "@/server/ai/local-url";
-import { deleteConversation, listConversations, readConversation, writeConversation } from "@/server/ai/conversations";
+import {
+  deleteConversation,
+  listConversations,
+  readConversation,
+  writeConversation,
+} from "@/server/ai/conversations";
 import { deleteProfile, listProfiles, MAX_PROFILES, writeProfile } from "@/server/ai/profiles";
 import { listModels } from "@/server/ai/providers";
 import { ProviderError } from "@/server/ai/types";
 
-/** Administración → IA, Cuenta → IA y lo que el chat necesita saber. */
+/** Server functions for AI administration, account connections and chat metadata. */
 
 const providerId = z.enum(AI_PROVIDER_IDS);
 
@@ -32,15 +37,25 @@ async function caller(userId: string) {
 }
 
 function problem(error: unknown): string {
-  if (error instanceof AiUnavailable || error instanceof ProviderError || error instanceof EncryptionUnavailable) return error.message;
-  if (error instanceof Error && /fetch failed|ECONNREFUSED|ENOTFOUND|timeout/i.test(`${error.message} ${String(error.cause ?? "")}`)) {
+  if (
+    error instanceof AiUnavailable ||
+    error instanceof ProviderError ||
+    error instanceof EncryptionUnavailable
+  )
+    return error.message;
+  if (
+    error instanceof Error &&
+    /fetch failed|ECONNREFUSED|ENOTFOUND|timeout/i.test(
+      `${error.message} ${String(error.cause ?? "")}`,
+    )
+  ) {
     return "No se pudo conectar con el proveedor. Revisa la dirección o que el servicio esté encendido.";
   }
   console.error("[ai]", error);
   return "No se pudo hablar con el proveedor.";
 }
 
-// --- Administración ---------------------------------------------------------
+// Administration.
 
 export const aiAdminState = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -67,7 +82,7 @@ export const saveAiPolicy = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-// --- Cuenta -----------------------------------------------------------------
+// Account.
 
 export const aiAccountState = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
@@ -95,28 +110,39 @@ export const aiAccountState = createServerFn({ method: "GET" })
 export const saveAiKey = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ provider: providerId, apiKey: z.string().max(500), baseUrl: z.string().max(300).default("") }).parse(input),
+    z
+      .object({
+        provider: providerId,
+        apiKey: z.string().max(500),
+        baseUrl: z.string().max(300).default(""),
+      })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const { sql, profile } = await caller(context.userId);
-    if (!allows(profile, "ai.use")) return { ok: false as const, error: "Tu rol no puede usar la IA." };
+    if (!allows(profile, "ai.use"))
+      return { ok: false as const, error: "Tu rol no puede usar la IA." };
     const policy = (await readPolicies(sql)).find((item) => item.id === data.provider);
-    if (!policy?.enabled) return { ok: false as const, error: "El administrador no permite ese proveedor." };
+    if (!policy?.enabled)
+      return { ok: false as const, error: "El administrador no permite ese proveedor." };
     const key = data.apiKey.trim();
     if (!policy.local && !key) return { ok: false as const, error: "Pega tu clave." };
     let baseUrl = policy.baseUrl;
     let target = policy.baseUrl;
     if (policy.local) {
-      // Instancia propia: se valida para que no apunte al servidor ni a sus servicios internos.
+      // Validate local-instance URLs against the app and internal service addresses.
       const checked = checkLocalUrl(data.baseUrl, localhostAlias());
       if (!checked.ok) return { ok: false as const, error: checked.error };
       baseUrl = checked.url;
       target = checked.target;
     }
     try {
-      // Se prueba antes de guardar: una conexión que no funciona no se guarda.
+      // Test before persisting; never save a connection that fails validation.
       const models = await listModels(policy.protocol, { baseUrl: target, apiKey: key });
-      await writeCredential(sql, context.userId, data.provider, { apiKey: key, baseUrl: policy.local ? baseUrl : "" });
+      await writeCredential(sql, context.userId, data.provider, {
+        apiKey: key,
+        baseUrl: policy.local ? baseUrl : "",
+      });
       return { ok: true as const, models };
     } catch (error) {
       return { ok: false as const, error: problem(error) };
@@ -134,14 +160,16 @@ export const removeAiKey = createServerFn({ method: "POST" })
 
 // --- Chat -------------------------------------------------------------------
 
-/** Proveedores listos para chatear (permitidos y conectados). */
+/** Providers enabled and connected for chat. */
 export const aiChatState = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const { sql, profile } = await caller(context.userId);
     if (!allows(profile, "ai.use")) return { ok: false as const, providers: [] };
     const policies = (await readPolicies(sql)).filter((policy) => policy.enabled);
-    const connected = new Set((await readCredentials(sql, context.userId)).map((item) => item.provider));
+    const connected = new Set(
+      (await readCredentials(sql, context.userId)).map((item) => item.provider),
+    );
     return {
       ok: true as const,
       anyAllowed: policies.length > 0,
@@ -156,7 +184,8 @@ export const aiModels = createServerFn({ method: "GET" })
   .validator((input: unknown) => z.object({ provider: providerId }).parse(input))
   .handler(async ({ context, data }) => {
     const { sql, profile } = await caller(context.userId);
-    if (!allows(profile, "ai.use")) return { ok: false as const, error: "Sin permiso.", models: [] };
+    if (!allows(profile, "ai.use"))
+      return { ok: false as const, error: "Sin permiso.", models: [] };
     try {
       const { policy, endpoint } = await endpointFor(sql, context.userId, data.provider);
       return { ok: true as const, models: await listModels(policy.protocol, endpoint) };
@@ -165,7 +194,7 @@ export const aiModels = createServerFn({ method: "GET" })
     }
   });
 
-// --- Historial del chat -------------------------------------------------------
+// Chat history.
 
 const conversationId = z.string().uuid();
 
@@ -173,7 +202,16 @@ const turn = z.object({
   id: z.string().max(64),
   role: z.enum(["user", "assistant"]),
   content: z.string().max(200_000),
-  tools: z.array(z.object({ label: z.string().max(300), ok: z.boolean(), docId: z.string().max(64).optional() })).max(40).optional(),
+  tools: z
+    .array(
+      z.object({
+        label: z.string().max(300),
+        ok: z.boolean(),
+        docId: z.string().max(64).optional(),
+      }),
+    )
+    .max(40)
+    .optional(),
   error: z.string().max(2000).optional(),
 });
 
@@ -210,7 +248,9 @@ export const saveAiConversation = createServerFn({ method: "POST" })
         id: conversationId,
         title: z.string().max(200),
         turns: z.array(turn).max(500),
-        memory: z.object({ text: z.string().min(1).max(2_000), untilId: z.string().min(1).max(64) }).nullable(),
+        memory: z
+          .object({ text: z.string().min(1).max(2_000), untilId: z.string().min(1).max(64) })
+          .nullable(),
       })
       .parse(input),
   )
@@ -230,7 +270,7 @@ export const removeAiConversation = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-// --- Perfiles del chat --------------------------------------------------------------
+// Chat personas.
 
 export const aiProfiles = createServerFn({ method: "GET" })
   .middleware([authMiddleware])

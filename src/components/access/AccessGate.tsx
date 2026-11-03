@@ -1,5 +1,16 @@
-import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { changePassword, signInDetailed, signInWithPassword as passwordSignIn } from "@/lib/auth/password";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  changePassword,
+  signInDetailed,
+  signInWithPassword as passwordSignIn,
+} from "@/lib/auth/password";
 import { ldapSignIn, providerErrorMessage, signInWithProvider } from "@/lib/auth/external";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { authMethods } from "@/server/auth.functions";
@@ -8,7 +19,12 @@ import { clearHeldAdmin, heldAdminId, rememberAdmin } from "@/app/vault-hold";
 import { clearAccountProfile, setAccountProfile } from "@/app/account-profile";
 import { clearPermissions, setPermissions } from "@/app/permissions";
 import { STRONG_PASSWORD, emailForUsername } from "@/server/platform";
-import { accessState, createInitialAdmin, markPasswordChanged, sessionProfile } from "@/server/admin.functions";
+import {
+  accessState,
+  createInitialAdmin,
+  markPasswordChanged,
+  sessionProfile,
+} from "@/server/admin.functions";
 import { getLocale, setLocale, t } from "@/app/i18n";
 
 const AppAdminContext = createContext(false);
@@ -30,10 +46,12 @@ async function signInWithPassword(email: string, password: string): Promise<void
   if (!(await passwordSignIn(email, password))) throw new Error("rejected");
 }
 
-/** Por qué no se pudo entrar con una contraseña temporal del correo (`server/temp-access.ts`). */
+/** Reason temporary-email-password sign-in failed; see server/temp-access.ts. */
 const TEMP_ACCESS_ERRORS: Record<string, string> = {
-  TEMP_ACCESS_EXPIRED: "Tu contraseña temporal venció. Pide al administrador que te envíe un acceso nuevo.",
-  TEMP_ACCESS_USED: "Esa contraseña temporal ya se usó. Pide al administrador que te envíe un acceso nuevo.",
+  TEMP_ACCESS_EXPIRED:
+    "Tu contraseña temporal venció. Pide al administrador que te envíe un acceso nuevo.",
+  TEMP_ACCESS_USED:
+    "Esa contraseña temporal ya se usó. Pide al administrador que te envíe un acceso nuevo.",
 };
 
 export function AccessGate({ children }: { children: ReactNode }) {
@@ -81,7 +99,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
       .then((next) => {
         if (cancelled) return;
         setPermissions(next);
-        // El idioma elegido en otra sesión sigue al usuario.
+        // Language selected in another session follows the user.
         if (next.locale && next.locale !== getLocale()) setLocale(next.locale);
         if (!next.isAdmin) {
           if (held && held !== userId && account?.userId === held) return;
@@ -98,7 +116,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
             userId,
             isAdmin: false,
             canAdmin: next.canAdmin,
-            // Entró con la contraseña temporal del correo: primero elige la suya.
+            // Temporary-password sign-in requires choosing a new password first.
             mustChangePassword: next.mustChangePassword,
             loginName: next.loginName,
           });
@@ -124,7 +142,13 @@ export function AccessGate({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (cancelled || heldAdminId()) return;
-        setAccount({ userId, isAdmin: false, canAdmin: false, mustChangePassword: false, loginName: "" });
+        setAccount({
+          userId,
+          isAdmin: false,
+          canAdmin: false,
+          mustChangePassword: false,
+          loginName: "",
+        });
       });
     return () => {
       cancelled = true;
@@ -226,8 +250,20 @@ function SetupForm({
       <p className="text-xs font-medium tracking-widest text-faint uppercase">{t("Grafito")}</p>
       <h1 className="mt-2 font-serif text-3xl">{t("Primera vez")}</h1>
       <form onSubmit={submit} className="mt-5 space-y-3">
-        <TextField label={t("Usuario")} value={username} onChange={setUsername} autoComplete="off" autoFocus />
-        <TextField label={t("Contraseña")} value={password} onChange={setPassword} autoComplete="new-password" secret />
+        <TextField
+          label={t("Usuario")}
+          value={username}
+          onChange={setUsername}
+          autoComplete="off"
+          autoFocus
+        />
+        <TextField
+          label={t("Contraseña")}
+          value={password}
+          onChange={setPassword}
+          autoComplete="new-password"
+          secret
+        />
         {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
         <button
           type="submit"
@@ -255,7 +291,7 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
     void authMethods()
       .then(setMethods)
       .catch(() => setMethods(null));
-    // Better Auth vuelve aquí con `?error=` si falla un proveedor externo.
+    // Better Auth redirects here with ?error= when an external provider fails.
     const code = new URLSearchParams(window.location.search).get("error");
     if (code) setError(providerErrorMessage(code));
   }, []);
@@ -277,9 +313,14 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
       }
       const result = await signInDetailed(email, password);
       if (!result.ok) {
-        // El servidor no acepta ingresos desde esta dirección: no es la contraseña.
+        // The server rejected the sign-in origin, not the password.
         if (result.code === "Invalid origin") {
-          setError(t("Grafito no acepta ingresos desde {0}. En el servidor, pon BETTER_AUTH_URL={0} (o añádela a BETTER_AUTH_TRUSTED_ORIGINS) en el .env y reinicia.", { 0: window.location.origin }));
+          setError(
+            t(
+              "Grafito no acepta ingresos desde {0}. En el servidor, pon BETTER_AUTH_URL={0} (o añádela a BETTER_AUTH_TRUSTED_ORIGINS) en el .env y reinicia.",
+              { 0: window.location.origin },
+            ),
+          );
           return;
         }
         setError(TEMP_ACCESS_ERRORS[result.code] ?? "Usuario o contraseña incorrectos.");
@@ -303,7 +344,11 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
       <p className="text-xs font-medium tracking-widest text-faint uppercase">{t("Grafito")}</p>
       <h1 className="mt-2 font-serif text-3xl">{t("Entrar")}</h1>
       {methods?.ldap ? (
-        <div role="tablist" aria-label={t("Tipo de cuenta")} className="mt-5 grid grid-cols-2 rounded-md border border-line p-0.5 text-sm">
+        <div
+          role="tablist"
+          aria-label={t("Tipo de cuenta")}
+          className="mt-5 grid grid-cols-2 rounded-md border border-line p-0.5 text-sm"
+        >
           {(
             [
               ["local", t("Cuenta de Grafito")],
@@ -334,7 +379,13 @@ function LoginForm({ onSignedIn }: { onSignedIn: (password: string) => void }) {
           autoComplete="username"
           autoFocus
         />
-        <TextField label={t("Contraseña")} value={password} onChange={setPassword} autoComplete="current-password" secret />
+        <TextField
+          label={t("Contraseña")}
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          secret
+        />
         {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
         <button
           type="submit"
@@ -425,7 +476,7 @@ function ChangePassword({
       try {
         await signInWithPassword(email, nextPassword);
       } catch {
-        /* la sesión del cambio puede seguir valiendo */
+        /* The session created by the password change may still be valid. */
       }
       if (isAdmin) rememberAdmin(userId);
       onChanged();
@@ -473,7 +524,9 @@ function ChangePassword({
 function Shell({ children }: { children: ReactNode }) {
   return (
     <main data-ui="auth" className="grid min-h-dvh place-items-center bg-bg px-4 py-8 text-fg">
-      <div data-ui="auth-card" className="w-full max-w-sm border border-line bg-surface p-6">{children}</div>
+      <div data-ui="auth-card" className="w-full max-w-sm border border-line bg-surface p-6">
+        {children}
+      </div>
     </main>
   );
 }

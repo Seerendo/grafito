@@ -3,13 +3,12 @@ import { securityHeaders } from "@/lib/security-headers";
 import { editorOrigin, isSameOrigin } from "@/server/office-reach";
 
 /**
- * Origen del editor de Office para esta página (ver `server/office-reach.ts`):
- * si `COLLABORA_URL` quedó en 127.0.0.1 y se entra por la dirección del
- * servidor, el editor está en esa dirección.
+ * Resolve Office origin for the current page, replacing loopback with the server address where
+ * appropriate; see office-reach.ts.
  */
 function officeOrigin(requestUrl: string): string | null {
   const url = process.env.COLLABORA_URL?.trim();
-  // En la misma dirección que Grafito ya lo cubre 'self'.
+  // Same-origin editor hosting is already covered by self.
   if (!url || isSameOrigin(url)) return null;
   try {
     return editorOrigin(url, new URL(requestUrl).origin);
@@ -19,9 +18,8 @@ function officeOrigin(requestUrl: string): string | null {
 }
 
 /**
- * Middleware global de peticiones: antes de nada, los secretos propios de la
- * instalación si faltan o son los de ejemplo (`server/install-secrets.ts`);
- * después, cabeceras de seguridad en cada respuesta.
+ * Global request middleware initializes installation secrets before applying security headers
+ * to every response.
  */
 const withSecurityHeaders = createMiddleware().server(async ({ next, request }) => {
   const { ensureInstallSecrets } = await import("@/server/install-secrets");

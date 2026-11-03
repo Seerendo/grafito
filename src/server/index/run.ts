@@ -6,11 +6,9 @@ import { deleteElasticDoc, upsertElasticDoc } from "@/server/search";
 import { getDoc } from "@/server/vault";
 
 /**
- * Indexación de contenido en segundo plano. Cada vuelta toma un documento
- * (nota, tabla o archivo) y guarda su texto en Postgres y, si hay, en
- * Elasticsearch. No usa modelos: el texto sale del Markdown, de las celdas
- * o del propio archivo (PDF, Office, OpenDocument). Una sola instancia lo
- * hace a la vez, y suelta el turno al terminar para no frenar el resto.
+ * Background indexing processes one note/table/file per pass into Postgres and optional
+ * Elasticsearch. Extract text directly without models. One replica runs at a time and yields
+ * between documents.
  */
 
 const TICK_MS = 800;
@@ -33,7 +31,9 @@ function flag(value: unknown): boolean {
 }
 
 async function documentsEnabled(sql: Sql): Promise<boolean> {
-  const rows = await sql<{ enabled: unknown }>`select enabled from app_source where id = 'documents' limit 1`;
+  const rows = await sql<{
+    enabled: unknown;
+  }>`select enabled from app_source where id = 'documents' limit 1`;
   return !rows[0] || flag(rows[0].enabled);
 }
 
@@ -53,7 +53,7 @@ async function touch(sql: Sql, title: string, error = ""): Promise<void> {
   `;
 }
 
-/** Quita del índice lo que ya no está en la bóveda. Unos pocos por vuelta. */
+/** Remove a small batch of index entries no longer present in the vault. */
 async function forgetRemoved(sql: Sql): Promise<boolean> {
   const rows = await sql<{ user_id: string; doc_id: string }>`
     select c.user_id, c.doc_id from content_index c
@@ -126,7 +126,7 @@ async function indexOne(sql: Sql, row: Pending): Promise<void> {
   }
 }
 
-/** Una vuelta: olvida lo borrado o indexa el documento más atrasado. */
+/** One pass removes stale entries or indexes the most outdated document. */
 export async function indexStep(sql: Sql): Promise<void> {
   if (!(await documentsEnabled(sql))) {
     await touch(sql, "");
@@ -190,7 +190,7 @@ export async function readIndexStatus(sql: Sql): Promise<IndexStatus> {
   };
 }
 
-/** Olvida las marcas. La búsqueda sigue con el texto ya guardado hasta que se reescribe. */
+/** Clear indexing markers while search continues using existing text until refreshed. */
 export async function requestReindex(sql: Sql): Promise<void> {
   await sql`delete from content_index`;
   const now = Date.now();
@@ -201,10 +201,12 @@ export async function requestReindex(sql: Sql): Promise<void> {
   `;
 }
 
-const globalRef = globalThis as typeof globalThis & { __grafitoIndexer__?: ReturnType<typeof setInterval> };
+const globalRef = globalThis as typeof globalThis & {
+  __grafitoIndexer__?: ReturnType<typeof setInterval>;
+};
 let busy = false;
 
-/** Arranca el barrido (una vez por proceso). */
+/** Start the indexing loop once per process. */
 export function startContentIndex(): void {
   if (globalRef.__grafitoIndexer__) return;
   globalRef.__grafitoIndexer__ = setInterval(() => {

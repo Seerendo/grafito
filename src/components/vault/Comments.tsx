@@ -1,17 +1,31 @@
 import { FileText, Send, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { deleteComment, sendComment, useComments, useDocComments, type DocComment, type PdfNote } from "@/app/comments";
+import {
+  deleteComment,
+  sendComment,
+  useComments,
+  useDocComments,
+  type DocComment,
+  type PdfNote,
+} from "@/app/comments";
 import { intl, t } from "@/app/i18n";
 
 const NO_NOTES: PdfNote[] = [];
 
 /**
- * Comentarios de una nota o un archivo, propio o compartido conmigo (`shareId`).
- * Comentar no edita el documento: sirve aunque se tenga solo lectura. En un
- * PDF también están las notas sobre una frase (se dejan desde el visor) y las
- * que ya traía el archivo; al pulsarlas, el visor va a su sitio.
+ * Comments on owned or shared documents do not edit content and work with read-only access. PDF
+ * comments include anchored phrases and embedded annotations; clicking navigates to their
+ * location.
  */
-export function Comments({ docId, shareId, onCount }: { docId: string; shareId?: string; onCount?: (count: number) => void }) {
+export function Comments({
+  docId,
+  shareId,
+  onCount,
+}: {
+  docId: string;
+  shareId?: string;
+  onCount?: (count: number) => void;
+}) {
   const { comments, isOwner } = useDocComments(docId, shareId);
   const pdfNotes = useComments((state) => state.pdfNotes[docId] ?? NO_NOTES);
   const focusPdf = useComments((state) => state.focusPdf);
@@ -40,7 +54,12 @@ export function Comments({ docId, shareId, onCount }: { docId: string; shareId?:
   };
 
   const when = (ms: number) =>
-    new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+    new Intl.DateTimeFormat(intl(), {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(ms));
 
   return (
     <div data-ui="comments" className="space-y-2">
@@ -57,7 +76,11 @@ export function Comments({ docId, shareId, onCount }: { docId: string; shareId?:
               when={when(comment.at)}
               canDelete={comment.mine || isOwner}
               onDelete={() => void deleteComment(docId, shareId, comment.id)}
-              onFocus={comment.anchor ? () => focusPdf(docId, comment.anchor!.page, comment.anchor!.exact) : undefined}
+              onFocus={
+                comment.anchor
+                  ? () => focusPdf(docId, comment.anchor!.page, comment.anchor!.exact)
+                  : undefined
+              }
             />
           ))}
         </ul>
@@ -74,10 +97,14 @@ export function Comments({ docId, shareId, onCount }: { docId: string; shareId?:
                   className="block w-full rounded-md bg-inset px-2.5 py-2 text-left hover:bg-elevated"
                 >
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="min-w-0 flex-1 truncate font-medium text-fg">{note.author || t("Sin autor")}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-fg">
+                      {note.author || t("Sin autor")}
+                    </span>
                     <span className="shrink-0 text-faint">{t("Pág. {n}", { n: note.page })}</span>
                   </span>
-                  <span className="mt-1 block text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{note.body}</span>
+                  <span className="mt-1 block text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+                    {note.body}
+                  </span>
                 </button>
               </li>
             ))}
@@ -162,7 +189,9 @@ function CommentItem({
           <span className="shrink-0 text-faint">{t("Pág. {n}", { n: comment.anchor.page })}</span>
         </button>
       ) : null}
-      <p className="mt-1 text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">{comment.body}</p>
+      <p className="mt-1 text-sm whitespace-pre-wrap text-fg [overflow-wrap:anywhere]">
+        {comment.body}
+      </p>
     </li>
   );
 }

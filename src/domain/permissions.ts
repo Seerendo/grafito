@@ -1,7 +1,4 @@
-/**
- * Claves de permiso que usa la bóveda. Deben coincidir con `app_permission`
- * (migraciones); los roles se configuran en Administración → Roles.
- */
+/** Vault permission keys must match app_permission migrations. Roles are configured in administration. */
 export const PERMISSION = {
   notesRead: "notes.read",
   notesCreate: "notes.create",
@@ -22,12 +19,12 @@ export const PERMISSION = {
 
 export type PermissionKey = (typeof PERMISSION)[keyof typeof PERMISSION];
 
-/** Permiso para borrar un documento según su tipo. */
+/** Required deletion permission by document kind. */
 export function deletePermission(kind: "markdown" | "file"): PermissionKey {
   return kind === "file" ? PERMISSION.filesDelete : PERMISSION.notesDelete;
 }
 
-/** Permiso para descargar o exportar un documento según su tipo. */
+/** Required download/export permission by document kind. */
 export function exportPermission(kind: "markdown" | "file"): PermissionKey {
   return kind === "file" ? PERMISSION.filesDownload : PERMISSION.notesExport;
 }

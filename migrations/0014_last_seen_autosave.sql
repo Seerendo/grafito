@@ -1,8 +1,8 @@
--- Primer ingreso y última conexión de cada usuario (Administración → Usuarios).
+-- First sign-in and last activity for the administration user list.
 alter table app_profile add column if not exists first_login_at timestamptz;
 alter table app_profile add column if not exists last_seen_at timestamptz;
 
--- Con los datos que ya hay: las sesiones que siguen guardadas.
+-- Backfill from sessions that still exist.
 insert into app_profile (user_id)
 select distinct "userId" from "session"
 on conflict (user_id) do nothing;
@@ -15,6 +15,5 @@ from (
 ) as s
 where s.user_id = p.user_id and p.first_login_at is null;
 
--- Versiones de archivos guardadas por el autoguardado del editor de Office:
--- solo esas se agrupan; un guardado de la persona siempre queda aparte.
+-- Only Office autosave versions are grouped; explicit user saves always remain separate.
 alter table vault_doc_version add column if not exists autosave boolean not null default false;

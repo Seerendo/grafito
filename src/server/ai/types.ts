@@ -1,7 +1,6 @@
 /**
- * Formato común de la conversación con cualquier proveedor. Cada adaptador
- * (`openai.ts`, `anthropic.ts`, `gemini.ts`, `ollama.ts`) lo traduce a su API.
- * Sin imports con alias: se prueban con `node --test` directamente.
+ * Common conversation representation translated by provider adapters. Relative imports allow
+ * direct Node tests.
  */
 
 export type ToolCall = { id: string; name: string; arguments: Record<string, unknown> };
@@ -12,7 +11,7 @@ export type ChatMessage =
   | { role: "assistant"; content: string; toolCalls?: ToolCall[] }
   | { role: "tool"; toolCallId: string; name: string; content: string };
 
-/** Esquema JSON sencillo (objeto con propiedades string/number/boolean). */
+/** Simple JSON object schema with string, number and boolean properties. */
 export type ToolSpec = {
   name: string;
   description: string;
@@ -28,7 +27,7 @@ export type Completion = { text: string; toolCalls: ToolCall[] };
 export type Endpoint = {
   baseUrl: string;
   apiKey: string;
-  /** Cabeceras extra del proveedor. No pisan `Authorization`. */
+  /** Additional provider headers must not override Authorization. */
   headers?: Record<string, string>;
 };
 
@@ -38,7 +37,7 @@ export type CompleteInput = {
   messages: ChatMessage[];
   tools: ToolSpec[];
   signal?: AbortSignal;
-  /** Para pruebas: sustituye a `fetch`. */
+  /** Inject a fetch replacement for tests. */
   fetcher?: typeof fetch;
 };
 
@@ -50,15 +49,19 @@ export class ProviderError extends Error {
   }
 }
 
-/** Lanza un error legible con lo que respondió el proveedor. */
+/** Throw a readable error derived from the provider response. */
 export async function ensureOk(response: Response, label: string): Promise<void> {
   if (response.ok) return;
   let detail = "";
   try {
-    const body = (await response.json()) as { error?: { message?: string } | string; message?: string };
-    detail = typeof body.error === "string" ? body.error : body.error?.message || body.message || "";
+    const body = (await response.json()) as {
+      error?: { message?: string } | string;
+      message?: string;
+    };
+    detail =
+      typeof body.error === "string" ? body.error : body.error?.message || body.message || "";
   } catch {
-    /* sin cuerpo JSON */
+    /* No JSON response body. */
   }
   const hint =
     response.status === 401 || response.status === 403
@@ -68,7 +71,10 @@ export async function ensureOk(response: Response, label: string): Promise<void>
         : response.status === 429
           ? "El proveedor limitó las peticiones o la cuenta no tiene saldo."
           : "";
-  throw new ProviderError(`${label} respondió ${response.status}. ${hint} ${detail}`.trim(), response.status);
+  throw new ProviderError(
+    `${label} respondió ${response.status}. ${hint} ${detail}`.trim(),
+    response.status,
+  );
 }
 
 export function parseArguments(raw: unknown): Record<string, unknown> {

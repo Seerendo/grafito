@@ -7,8 +7,8 @@ import { Modal } from "@/components/ui/Modal";
 import { myPendingSignatures, signatureState } from "@/server/signature.functions";
 
 /**
- * Quién tiene un recuadro en el PDF y si ya estampó su firma. La imagen no se
- * guarda. No es un certificado.
+ * PDF signature rectangles and stamping status. Signature images are not stored; this is not
+ * certificate signing.
  */
 
 type Row = {
@@ -28,7 +28,15 @@ type Row = {
   h: number | null;
 };
 
-export function SignatureDialog({ docId, shareId, onClose }: { docId: string; shareId?: string; onClose: () => void }) {
+export function SignatureDialog({
+  docId,
+  shareId,
+  onClose,
+}: {
+  docId: string;
+  shareId?: string;
+  onClose: () => void;
+}) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [canRequest, setCanRequest] = useState(false);
   const [error, setError] = useState("");
@@ -44,14 +52,23 @@ export function SignatureDialog({ docId, shareId, onClose }: { docId: string; sh
 
   return (
     <Modal title={t("Firmas")} onClose={onClose}>
-      <p className="text-sm text-muted">{t("La imagen se usa una sola vez para estampar el PDF y no se guarda. No es un certificado.")}</p>
+      <p className="text-sm text-muted">
+        {t(
+          "La imagen se usa una sola vez para estampar el PDF y no se guarda. No es un certificado.",
+        )}
+      </p>
       <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto">
         {rows === null ? <li className="text-sm text-muted">{t("Cargando…")}</li> : null}
-        {rows && rows.length === 0 ? <li className="text-sm text-muted">{t("Nadie ha firmado todavía.")}</li> : null}
+        {rows && rows.length === 0 ? (
+          <li className="text-sm text-muted">{t("Nadie ha firmado todavía.")}</li>
+        ) : null}
         {rows?.map((row) => (
           <li key={row.id} className="rounded-md border border-line px-3 py-2 text-sm">
             <span className="font-medium">{row.signerName}</span>
-            <span className="text-muted">{" · "}{statusLabel(row.status, row.stale)}</span>
+            <span className="text-muted">
+              {" · "}
+              {statusLabel(row.status, row.stale)}
+            </span>
             <span className="mt-0.5 block text-xs text-faint">
               {t("Pedida por {0}", { 0: row.requestedByName })}
               {" · "}
@@ -61,10 +78,18 @@ export function SignatureDialog({ docId, shareId, onClose }: { docId: string; sh
           </li>
         ))}
       </ul>
-      {canRequest ? <p className="mt-3 text-sm text-muted">{t("Dibuja el recuadro en la página. Luego elige a quién corresponde.")}</p> : null}
+      {canRequest ? (
+        <p className="mt-3 text-sm text-muted">
+          {t("Dibuja el recuadro en la página. Luego elige a quién corresponde.")}
+        </p>
+      ) : null}
       {error ? <p className="mt-3 text-sm text-danger">{t(error)}</p> : null}
       <div className="mt-4 flex justify-end">
-        <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
+        >
           {t("Cerrar")}
         </button>
       </div>
@@ -72,7 +97,7 @@ export function SignatureDialog({ docId, shareId, onClose }: { docId: string; sh
   );
 }
 
-/** En el PDF: quién firmó y, si puedes editarlo, el botón para marcar un recuadro. */
+/** PDF signature status and, for editors, rectangle placement controls. */
 export function SignatureBar({
   docId,
   shareId,
@@ -105,13 +130,13 @@ export function SignatureBar({
         .catch(() => undefined);
     };
     load();
-    // Quien abre el PDF ve las firmas que otros acaban de estampar.
+    // Refresh signatures stamped by other viewers.
     const timer = window.setInterval(load, 20_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-    // `onState` es del padre y cambia en cada render.
+    // The parent's onState callback changes on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, shareId, version]);
 
@@ -133,7 +158,11 @@ export function SignatureBar({
         {signed > 0 ? t("{n} firmadas", { n: signed }) : t("Sin firmas")}
         {pending > 0 ? ` · ${t("{n} pendientes", { n: pending })}` : ""}
       </span>
-      {mine ? <span className="text-muted">{t("Sube una imagen o un certificado .p12 en el recuadro.")}</span> : null}
+      {mine ? (
+        <span className="text-muted">
+          {t("Sube una imagen o un certificado .p12 en el recuadro.")}
+        </span>
+      ) : null}
       {canRequest && onPlace ? (
         <button
           type="button"
@@ -147,7 +176,7 @@ export function SignatureBar({
   );
 }
 
-/** En la Carpeta Personal: documentos que te pidieron firmar. */
+/** Personal-root list of documents awaiting the user's signature. */
 export function PendingSignatures({ onOpenNote }: { onOpenNote: (id: string) => void }) {
   const [items, setItems] = useState<Awaited<ReturnType<typeof myPendingSignatures>>>([]);
   useEffect(() => {
@@ -166,13 +195,21 @@ export function PendingSignatures({ onOpenNote }: { onOpenNote: (id: string) => 
   };
   return (
     <section className="mb-8">
-      <h2 className="text-xs font-semibold tracking-wider text-muted uppercase">{t("Firmas pendientes")}</h2>
+      <h2 className="text-xs font-semibold tracking-wider text-muted uppercase">
+        {t("Firmas pendientes")}
+      </h2>
       <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
         {items.map((item) => (
           <li key={item.id} className="border-b border-line last:border-b-0">
-            <button type="button" onClick={() => void open(item)} className="flex min-h-12 w-full items-center gap-3 px-4 text-left hover:bg-elevated">
+            <button
+              type="button"
+              onClick={() => void open(item)}
+              className="flex min-h-12 w-full items-center gap-3 px-4 text-left hover:bg-elevated"
+            >
               <span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>
-              <span className="shrink-0 text-xs text-faint">{t("{0} te pidió firmar", { 0: item.requester })}</span>
+              <span className="shrink-0 text-xs text-faint">
+                {t("{0} te pidió firmar", { 0: item.requester })}
+              </span>
             </button>
           </li>
         ))}
@@ -188,5 +225,10 @@ function statusLabel(status: string, stale: boolean): string {
 }
 
 function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intl(), {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(ms));
 }

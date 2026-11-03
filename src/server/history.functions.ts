@@ -12,14 +12,20 @@ import { TTL_MS as PRESENCE_TTL_MS, touchPresence } from "@/server/presence";
 import { redisTouchPresence } from "@/server/redis";
 import { putBlob, readBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
-import { getDoc, listTrash, MAX_CONTENT, purgeTrash, replaceFile, restoreTrashItem, updateNote, VaultError } from "@/server/vault";
+import {
+  getDoc,
+  listTrash,
+  MAX_CONTENT,
+  purgeTrash,
+  replaceFile,
+  restoreTrashItem,
+  updateNote,
+  VaultError,
+} from "@/server/vault";
 
 /**
- * Historial de versiones, edición de lo compartido y papelera.
- *
- * Una nota propia se gestiona con el propio usuario como dueño. Con `shareId`,
- * se actúa sobre la nota de otro usuario que la compartió con permiso de
- * edición (`server/share.ts` → `editableTarget`).
+ * Version history, shared editing and trash. Owned notes use the caller as owner; shared edits
+ * resolve authorized ownership through editableTarget.
  */
 
 const id = z.string().min(1).max(80);
@@ -29,8 +35,13 @@ async function actorFor(sql: Sql, userId: string) {
   return { profile, actor: profile.displayName || "Alguien" };
 }
 
-/** Dueño de la nota sobre la que se actúa, o null si no hay acceso. */
-async function ownerOf(sql: Sql, userId: string, docId: string, shareId?: string): Promise<string | null> {
+/** Authorized document owner, or null. */
+async function ownerOf(
+  sql: Sql,
+  userId: string,
+  docId: string,
+  shareId?: string,
+): Promise<string | null> {
   if (!shareId) return userId;
   return (await editableTarget(sql, userId, shareId, docId))?.ownerId ?? null;
 }
@@ -56,7 +67,10 @@ export const docVersion = createServerFn({ method: "GET" })
     if (!ownerId) return { ok: false as const, error: "No tienes acceso a esta nota." };
     const version = await readVersion(sql, ownerId, data.docId, data.versionId);
     if (!version) return { ok: false as const, error: "Esa versión ya no existe." };
-    return { ok: true as const, version: { title: version.title, content: version.content, fileSize: version.fileSize } };
+    return {
+      ok: true as const,
+      version: { title: version.title, content: version.content, fileSize: version.fileSize },
+    };
   });
 
 export const restoreDocVersion = createServerFn({ method: "POST" })
@@ -65,20 +79,28 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const { profile, actor } = await actorFor(sql, context.userId);
-    if (!allows(profile, PERMISSION.notesEdit)) return { ok: false as const, error: "Tu rol no puede editar notas." };
+    if (!allows(profile, PERMISSION.notesEdit))
+      return { ok: false as const, error: "Tu rol no puede editar notas." };
     const ownerId = await ownerOf(sql, context.userId, data.docId, data.shareId);
     if (!ownerId) return { ok: false as const, error: "No tienes acceso a esta nota." };
     const version = await readVersion(sql, ownerId, data.docId, data.versionId);
     if (!version) return { ok: false as const, error: "Esa versión ya no existe." };
     try {
       if (version.fileKey) {
-        // Se copia el objeto: cada versión conserva el suyo.
+        // Copy the object so each version retains its own bytes.
         const bytes = await readBlob(sql, version.fileKey);
         const current = await getDoc(sql, ownerId, data.docId);
-        if (!bytes || !current?.file) return { ok: false as const, error: "Esa versión ya no existe." };
+        if (!bytes || !current?.file)
+          return { ok: false as const, error: "Esa versión ya no existe." };
         const key = newFileKey(ownerId);
         await putBlob(sql, key, bytes, current.file.mime);
-        const doc = await replaceFile(sql, ownerId, data.docId, { key, size: bytes.byteLength, actor, actorId: context.userId, separateVersion: true });
+        const doc = await replaceFile(sql, ownerId, data.docId, {
+          key,
+          size: bytes.byteLength,
+          actor,
+          actorId: context.userId,
+          separateVersion: true,
+        });
         return { ok: true as const, updatedAt: doc.updatedAt, title: doc.title, content: "" };
       }
       const doc = await updateNote(sql, ownerId, data.docId, {
@@ -88,7 +110,12 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
         actorId: context.userId,
         separateVersion: true,
       });
-      return { ok: true as const, updatedAt: doc.updatedAt, title: doc.title, content: doc.content };
+      return {
+        ok: true as const,
+        updatedAt: doc.updatedAt,
+        title: doc.title,
+        content: doc.content,
+      };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
       throw error;
@@ -96,10 +123,8 @@ export const restoreDocVersion = createServerFn({ method: "POST" })
   });
 
 /**
- * Guarda una nota compartida conmigo con permiso de edición. Si cambió desde
- * que se abrió (`baseUpdatedAt`), se mezcla con lo de la otra persona a partir
- * de lo que había al abrirla (`baseContent`, ver `domain/vault/merge.ts`). Si
- * las dos tocaron lo mismo, no se pisa: se devuelve la versión actual.
+ * Save an editable shared note. If baseUpdatedAt is stale, merge from baseContent; return the
+ * current version rather than overwrite conflicting edits.
  */
 export const editSharedDoc = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -118,15 +143,20 @@ export const editSharedDoc = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const { profile, actor } = await actorFor(sql, context.userId);
-    if (!allows(profile, PERMISSION.notesEdit)) return { ok: false as const, error: "Tu rol no puede editar notas." };
+    if (!allows(profile, PERMISSION.notesEdit))
+      return { ok: false as const, error: "Tu rol no puede editar notas." };
     const ownerId = await ownerOf(sql, context.userId, data.docId, data.shareId);
     if (!ownerId) return { ok: false as const, error: "Ya no puedes editar esta nota." };
     const current = await getDoc(sql, ownerId, data.docId);
-    if (!current || current.kind !== "markdown") return { ok: false as const, error: "Esta nota ya no existe." };
+    if (!current || current.kind !== "markdown")
+      return { ok: false as const, error: "Esta nota ya no existe." };
     let content = data.content;
     let merged = false;
     if (current.updatedAt !== data.baseUpdatedAt) {
-      const result = data.baseContent === undefined ? null : merge3(data.baseContent, data.content, current.content);
+      const result =
+        data.baseContent === undefined
+          ? null
+          : merge3(data.baseContent, data.content, current.content);
       if (result?.ok) {
         content = result.text;
         merged = true;
@@ -137,12 +167,29 @@ export const editSharedDoc = createServerFn({ method: "POST" })
         ok: false as const,
         conflict: true as const,
         error: "La nota cambió mientras la editabas.",
-        current: { title: current.title, content: current.content, updatedAt: current.updatedAt, updatedBy: current.updatedBy },
+        current: {
+          title: current.title,
+          content: current.content,
+          updatedAt: current.updatedAt,
+          updatedBy: current.updatedBy,
+        },
       };
     }
     try {
-      const doc = await updateNote(sql, ownerId, data.docId, { title: data.title, content, actor, actorId: context.userId });
-      return { ok: true as const, merged, title: doc.title, content: doc.content, updatedAt: doc.updatedAt, updatedBy: doc.updatedBy };
+      const doc = await updateNote(sql, ownerId, data.docId, {
+        title: data.title,
+        content,
+        actor,
+        actorId: context.userId,
+      });
+      return {
+        ok: true as const,
+        merged,
+        title: doc.title,
+        content: doc.content,
+        updatedAt: doc.updatedAt,
+        updatedBy: doc.updatedBy,
+      };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
       throw error;
@@ -150,9 +197,8 @@ export const editSharedDoc = createServerFn({ method: "POST" })
   });
 
 /**
- * Quién más está editando una nota (la propia o una compartida conmigo), y
- * aviso de que yo la edito (`editing`) o ya no. El editor lo llama cada pocos
- * segundos mientras está abierto (ver `app/presence.ts`).
+ * Read other editors and publish or withdraw local editing presence while the editor polls; see
+ * app/presence.ts.
  */
 export const notePresence = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -165,14 +211,20 @@ export const notePresence = createServerFn({ method: "POST" })
       : context.userId;
     if (!ownerId) return { ok: false as const, editors: [] };
     const { actor } = await actorFor(sql, context.userId);
-    const input = { ownerId, docId: data.docId, userId: context.userId, name: actor, editing: data.editing };
-    // Con Redis, la ven todas las instancias de Grafito; sin él, la de este proceso.
-    const editors = (await redisTouchPresence(input, PRESENCE_TTL_MS).catch(() => null)) ?? touchPresence(input);
+    const input = {
+      ownerId,
+      docId: data.docId,
+      userId: context.userId,
+      name: actor,
+      editing: data.editing,
+    };
+    // Redis shares presence across replicas; otherwise it is process-local.
+    const editors =
+      (await redisTouchPresence(input, PRESENCE_TTL_MS).catch(() => null)) ?? touchPresence(input);
     return { ok: true as const, editors };
   });
 
-// ---------------------------------------------------------------------------
-// Papelera
+// Trash.
 
 export const trashList = createServerFn({ method: "GET" })
   .middleware([authMiddleware])

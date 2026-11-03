@@ -1,6 +1,6 @@
 /**
- * Exportación y plazo de la auditoría. Sin base de datos: el servidor arma
- * las filas y esto las convierte a CSV o JSON.
+ * Pure audit export and retention logic. The server supplies rows; this module converts them to
+ * CSV or JSON.
  */
 
 export type AuditExportRow = {
@@ -16,7 +16,7 @@ export type AuditExportRow = {
 
 const COLUMNS = ["at", "actor", "action", "outcome", "area", "target", "detail", "ip"] as const;
 
-/** Entre 7 días y 10 años. Otro valor no se guarda. */
+/** Accept retention from seven days to ten years; reject other values. */
 export function clampRetentionDays(value: number): number | null {
   if (!Number.isInteger(value) || value < 7 || value > 3650) return null;
   return value;
@@ -27,7 +27,7 @@ function csvCell(value: string): string {
   return value;
 }
 
-/** CSV con BOM para que una hoja de cálculo abra los acentos. */
+/** CSV with a BOM so spreadsheet applications decode accented text correctly. */
 export function auditToCsv(rows: readonly AuditExportRow[]): string {
   const lines = [COLUMNS.join(",")];
   for (const row of rows) lines.push(COLUMNS.map((key) => csvCell(row[key])).join(","));

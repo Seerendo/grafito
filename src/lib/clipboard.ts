@@ -1,7 +1,6 @@
 /**
- * Copia texto al portapapeles. En páginas servidas por http fuera de localhost
- * el navegador no ofrece `navigator.clipboard` (solo en contextos seguros):
- * entonces se copia con una caja de texto temporal y `execCommand("copy")`.
+ * Copy text through navigator.clipboard in secure contexts; otherwise use a temporary textarea
+ * and execCommand copy for non-localhost HTTP.
  */
 export async function copyText(value: string): Promise<boolean> {
   try {
@@ -10,7 +9,7 @@ export async function copyText(value: string): Promise<boolean> {
       return true;
     }
   } catch {
-    /* sin permiso: se prueba la otra vía */
+    /* Permission unavailable; try the fallback. */
   }
   const area = document.createElement("textarea");
   area.value = value;

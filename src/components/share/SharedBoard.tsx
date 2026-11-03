@@ -4,7 +4,13 @@ import { useMemo } from "react";
 import type { PublishedDoc, SharedTree } from "@/server/share";
 import type { ContextItem } from "@/components/ui/ContextMenu";
 import { useContextMenu } from "@/components/ui/use-context-menu";
-import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report } from "@/app/shared-actions";
+import {
+  deleteFromShared,
+  newSharedNote,
+  newSharedTable,
+  pickAndUpload,
+  report,
+} from "@/app/shared-actions";
 import { useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
@@ -15,11 +21,8 @@ import { intl, t } from "@/app/i18n";
 const RECENT = 12;
 
 /**
- * Página de un portafolio compartido (o de un espacio de trabajo) dentro de la
- * bóveda, como la de la Carpeta Personal: sus portafolios, sus documentos y
- * lo último que se cambió dentro. Encima, la ruta hasta el compartido. Con
- * permiso de edición, el clic derecho añade aquí (o en un portafolio) como en
- * la Carpeta Personal, y en un documento lo vincula o lo elimina.
+ * Shared portfolio/workspace page with children, documents, recent changes and breadcrumbs.
+ * Edit access enables context-menu creation within writable portfolios, linking and deletion.
  */
 export function SharedBoard({
   tree,
@@ -45,7 +48,8 @@ export function SharedBoard({
           { label: t("Nueva tabla"), onClick: () => void newSharedTable(shareId, id).then(report) },
           {
             label: t("Nuevo portafolio"),
-            onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId, parentId: id }),
+            onClick: () =>
+              useVault.getState().setDialog({ type: "shared-portfolio", shareId, parentId: id }),
           },
           { label: t("Subir archivo"), onClick: () => pickAndUpload(shareId, id) },
           { label: t("Subir carpeta"), onClick: () => pickAndUpload(shareId, id, true) },
@@ -55,17 +59,21 @@ export function SharedBoard({
       ? [
           {
             label: t("Espacio y permisos…"),
-            onClick: () => useVault.getState().setDialog({ type: "space", portfolioId: id, shareId }),
+            onClick: () =>
+              useVault.getState().setDialog({ type: "space", portfolioId: id, shareId }),
           },
         ]
       : []),
   ];
-  const byId = useMemo(() => new Map(tree.portfolios.map((portfolio) => [portfolio.id, portfolio])), [tree]);
+  const byId = useMemo(
+    () => new Map(tree.portfolios.map((portfolio) => [portfolio.id, portfolio])),
+    [tree],
+  );
   const here = byId.get(portfolioId);
   const children = childrenOf(tree, portfolioId);
   const docs = docsIn(tree, portfolioId);
 
-  // Lo que hay dentro (a cualquier profundidad), para contar y para los recientes.
+  // All descendants used for counts and recent items.
   const inside = useMemo(() => descendantIds(tree.portfolios, portfolioId), [tree, portfolioId]);
   const recent = useMemo(
     () =>
@@ -75,11 +83,12 @@ export function SharedBoard({
         .slice(0, RECENT),
     [tree, inside],
   );
-  // Documentos de cada portafolio con lo de dentro, contados en una pasada.
+  // Count each portfolio's descendant documents in one pass.
   const totals = useMemo(() => {
     const own = new Map<string, number>();
     for (const document of tree.documents) {
-      if (document.portfolioId) own.set(document.portfolioId, (own.get(document.portfolioId) ?? 0) + 1);
+      if (document.portfolioId)
+        own.set(document.portfolioId, (own.get(document.portfolioId) ?? 0) + 1);
     }
     const kids = new Map<string, string[]>();
     for (const portfolio of tree.portfolios) {
@@ -94,7 +103,9 @@ export function SharedBoard({
       if (known !== undefined) return known;
       if (seen.has(id)) return 0;
       seen.add(id);
-      const sum = (own.get(id) ?? 0) + (kids.get(id) ?? []).reduce((acc, child) => acc + total(child, seen), 0);
+      const sum =
+        (own.get(id) ?? 0) +
+        (kids.get(id) ?? []).reduce((acc, child) => acc + total(child, seen), 0);
       memo.set(id, sum);
       return sum;
     };
@@ -102,7 +113,7 @@ export function SharedBoard({
   }, [tree]);
   const countIn = (id: string) => totals(id);
 
-  // Del compartido hasta aquí.
+  // Breadcrumb path from the shared root.
   const trail: { id: string; name: string }[] = [];
   for (let at = here; at; at = at.parentId ? byId.get(at.parentId) : undefined) {
     trail.unshift({ id: at.id, name: at.name });
@@ -110,7 +121,8 @@ export function SharedBoard({
   }
 
   const docRow = (document: PublishedDoc, place: boolean) => {
-    const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
+    const Icon =
+      document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
     return (
       <li key={document.id} className="border-b border-line last:border-b-0">
         <button
@@ -123,11 +135,18 @@ export function SharedBoard({
                 ? [
                     {
                       label: t("Vincular"),
-                      onClick: () => useVault.getState().setDialog({ type: "link", sourceId: document.id, shareId }),
+                      onClick: () =>
+                        useVault
+                          .getState()
+                          .setDialog({ type: "link", sourceId: document.id, shareId }),
                     },
                   ]
                 : []),
-              { label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(shareId, document.id).then(report) },
+              {
+                label: t("Eliminar"),
+                danger: true,
+                onClick: () => void deleteFromShared(shareId, document.id).then(report),
+              },
             ]);
           }}
           className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
@@ -146,19 +165,30 @@ export function SharedBoard({
   };
 
   return (
-    <div data-ui="shared-board" className="min-h-0 flex-1 overflow-y-auto bg-bg px-4 py-8 sm:px-8" onContextMenu={(event) => {
+    <div
+      data-ui="shared-board"
+      className="min-h-0 flex-1 overflow-y-auto bg-bg px-4 py-8 sm:px-8"
+      onContextMenu={(event) => {
         if ((event.target as HTMLElement).closest("button")) return;
         const items = addHere(portfolioId);
         if (items.length > 0) menu.open(event, items);
       }}
     >
       {trail.length > 1 ? (
-        <nav aria-label={t("Ruta")} data-menu-skip className="mb-2 flex flex-wrap items-center gap-1 text-xs text-faint">
+        <nav
+          aria-label={t("Ruta")}
+          data-menu-skip
+          className="mb-2 flex flex-wrap items-center gap-1 text-xs text-faint"
+        >
           {trail.map((step, index) => (
             <span key={step.id} className="flex items-center gap-1">
               {index > 0 ? <ChevronRight className="size-3 shrink-0" /> : null}
               {index < trail.length - 1 ? (
-                <button type="button" onClick={() => onOpenPortfolio(step.id)} className="hover:text-fg">
+                <button
+                  type="button"
+                  onClick={() => onOpenPortfolio(step.id)}
+                  className="hover:text-fg"
+                >
                   {step.name}
                 </button>
               ) : (
@@ -170,10 +200,14 @@ export function SharedBoard({
           ))}
         </nav>
       ) : null}
-      <h1 className="font-serif text-4xl font-semibold tracking-tight">{here?.name ?? tree.share.title}</h1>
+      <h1 className="font-serif text-4xl font-semibold tracking-tight">
+        {here?.name ?? tree.share.title}
+      </h1>
       {children.length > 0 ? (
         <section className="mt-6">
-          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Portafolios")}</h2>
+          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+            {t("Portafolios")}
+          </h2>
           <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
             {children.map((portfolio) => (
               <li key={portfolio.id} className="border-b border-line last:border-b-0">
@@ -189,7 +223,12 @@ export function SharedBoard({
                               label: t("Eliminar"),
                               danger: true,
                               onClick: () =>
-                                useVault.getState().setDialog({ type: "delete-portfolio", id: portfolio.id, shareId, name: portfolio.name }),
+                                useVault.getState().setDialog({
+                                  type: "delete-portfolio",
+                                  id: portfolio.id,
+                                  shareId,
+                                  name: portfolio.name,
+                                }),
                             },
                           ]
                         : []),
@@ -209,17 +248,27 @@ export function SharedBoard({
       ) : null}
       {docs.length > 0 ? (
         <section className="mt-6">
-          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Documentos")}</h2>
-          <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">{docs.map((document) => docRow(document, false))}</ul>
+          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+            {t("Documentos")}
+          </h2>
+          <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+            {docs.map((document) => docRow(document, false))}
+          </ul>
         </section>
       ) : null}
       {recent.length > 0 && children.length > 0 ? (
         <section className="mt-6">
-          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Recientes")}</h2>
-          <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">{recent.map((document) => docRow(document, true))}</ul>
+          <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+            {t("Recientes")}
+          </h2>
+          <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
+            {recent.map((document) => docRow(document, true))}
+          </ul>
         </section>
       ) : null}
-      {children.length === 0 && docs.length === 0 ? <p className="mt-6 text-sm text-muted">{t("Este portafolio está vacío.")}</p> : null}
+      {children.length === 0 && docs.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">{t("Este portafolio está vacío.")}</p>
+      ) : null}
       {menu.element}
     </div>
   );
@@ -228,5 +277,10 @@ export function SharedBoard({
 function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat(intl(), {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }

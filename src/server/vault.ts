@@ -10,18 +10,14 @@ import { purgeComments } from "./comments";
 import { purgeSignatures } from "./signature";
 
 /**
- * La bóveda de cada usuario en el servidor (solo servidor). Fuente de verdad
- * para la sincronización del navegador, la API REST (`/api/v1`) y las
- * herramientas de la IA. Ver `migrations/0008_vault_api_ai.sql`.
- *
- * Cada cambio recibe la siguiente revisión del usuario; las bajas quedan como
- * lápidas para que los demás navegadores las reciban. Una baja conserva el
- * contenido en la papelera durante `TRASH_DAYS` días.
+ * Authoritative per-user server vault for browser synchronization, REST API and AI. Each
+ * mutation advances the user revision. Tombstones propagate deletions; trash retains content
+ * for TRASH_DAYS. See migration 0008.
  */
 
 export const TRASH_DAYS = 30;
 
-/** Límite del texto de una nota (~400 KB). */
+/** Note-text limit, approximately four hundred KB. */
 export const MAX_CONTENT = 400_000;
 
 type DocRow = {
@@ -51,7 +47,9 @@ function flag(value: unknown): boolean {
 function parseLinks(raw: string): ManualLink[] {
   try {
     const links = JSON.parse(raw) as ManualLink[];
-    return Array.isArray(links) ? links.filter((link) => link && typeof link.targetId === "string") : [];
+    return Array.isArray(links)
+      ? links.filter((link) => link && typeof link.targetId === "string")
+      : [];
   } catch {
     return [];
   }
@@ -81,7 +79,7 @@ function toDocument(row: DocRow): Document {
   };
 }
 
-/** Reserva la siguiente revisión del usuario. */
+/** Reserve the user's next revision. */
 export async function nextRevision(sql: Sql, userId: string): Promise<number> {
   const rows = await sql<{ revision: number }>`
     insert into vault_state (user_id, revision) values (${userId}, 1)
@@ -92,7 +90,9 @@ export async function nextRevision(sql: Sql, userId: string): Promise<number> {
 }
 
 export async function currentRevision(sql: Sql, userId: string): Promise<number> {
-  const rows = await sql<{ revision: number }>`select revision from vault_state where user_id = ${userId}`;
+  const rows = await sql<{
+    revision: number;
+  }>`select revision from vault_state where user_id = ${userId}`;
   return Number(rows[0]?.revision ?? 0);
 }
 
@@ -103,10 +103,15 @@ async function writeDoc(
   rev: number,
   onlyIfNewer: boolean,
   separateVersion = false,
-  /** Quién hizo el cambio, si no es el dueño (alguien con quien se compartió). */
+  /** Change actor when different from the owner, such as a shared editor. */
   actorId = userId,
 ): Promise<void> {
-  const before = await sql<{ title: string; content: string; deleted: unknown; updated_at: unknown }>`
+  const before = await sql<{
+    title: string;
+    content: string;
+    deleted: unknown;
+    updated_at: unknown;
+  }>`
     select title, content, deleted, updated_at from vault_doc where user_id = ${userId} and id = ${doc.id} limit 1
   `;
   const prior = before[0] && !flag(before[0].deleted) ? before[0] : null;
@@ -125,11 +130,17 @@ async function writeDoc(
   await noteChange(sql, { ownerId: userId, docId: doc.id, actorId, actorName: doc.updatedBy });
 }
 
-async function upsertDoc(sql: Sql, userId: string, doc: Document, rev: number, onlyIfNewer: boolean): Promise<void> {
+async function upsertDoc(
+  sql: Sql,
+  userId: string,
+  doc: Document,
+  rev: number,
+  onlyIfNewer: boolean,
+): Promise<void> {
   const file = doc.file;
   const links = JSON.stringify(doc.links ?? []);
   if (onlyIfNewer) {
-    // Gana el cambio más reciente: un navegador atrasado no pisa lo que hizo la IA.
+    // Newest changes win so stale browsers cannot overwrite AI changes.
     await sql`
       insert into vault_doc (user_id, id, title, kind, portfolio_id, content, file_name, file_mime, file_data,
         file_key, file_size, links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
@@ -163,8 +174,7 @@ async function upsertDoc(sql: Sql, userId: string, doc: Document, rev: number, o
   `;
 }
 
-// ---------------------------------------------------------------------------
-// Sincronización con el navegador
+// Browser synchronization.
 
 export type VaultChanges = {
   docs: Document[];
@@ -175,27 +185,32 @@ export type VaultChanges = {
 
 export type PushResult = {
   revision: number;
-  /** Notas que se juntaron con un cambio de otra persona: hay que volver a bajarlas. */
+  /** Merged notes that clients must fetch again. */
   merged: string[];
-  /** Notas que no se pudieron juntar: la versión del servidor, que se queda como estaba. */
+  /** Conflicting notes retain the server version and return it for resolution. */
   conflicts: Document[];
 };
 
 /**
- * Aplica lo que manda un navegador. Una nota que trae `base` y que otra
- * persona cambió desde esa versión (un invitado, la IA, otra pestaña) se junta
- * con ese cambio (`merge3`); si las dos tocaron lo mismo, no se escribe y se
- * devuelve como conflicto. Sin `base` (archivos, cachés antiguas), gana la más
- * reciente.
+ * Apply browser changes. With a base, merge concurrent note edits through merge3 or return
+ * conflicts without overwriting. Files and legacy caches without bases use newest-wins.
  */
-export async function pushChanges(sql: Sql, userId: string, changes: VaultChanges): Promise<PushResult> {
+export async function pushChanges(
+  sql: Sql,
+  userId: string,
+  changes: VaultChanges,
+): Promise<PushResult> {
   const empty =
-    changes.docs.length + changes.deletedDocs.length + changes.portfolios.length + changes.deletedPortfolios.length === 0;
+    changes.docs.length +
+      changes.deletedDocs.length +
+      changes.portfolios.length +
+      changes.deletedPortfolios.length ===
+    0;
   if (empty) return { revision: await currentRevision(sql, userId), merged: [], conflicts: [] };
   const rev = await nextRevision(sql, userId);
   const now = Date.now();
   for (const portfolio of changes.portfolios) {
-    // Los vínculos solo cambian si llegan (la API y Git no los mandan).
+    // Update links only when supplied; API and Git callers omit them.
     const links = portfolio.links ? JSON.stringify(portfolio.links) : null;
     await sql`
       insert into vault_portfolio (user_id, id, name, parent_id, rev, deleted, links_json)
@@ -216,7 +231,12 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
   const conflicts: Document[] = [];
   for (const { base, ...incoming } of changes.docs) {
     if (incoming.kind === "markdown" && base) {
-      const rows = await sql<{ title: string; content: string; updated_at: unknown; deleted: unknown }>`
+      const rows = await sql<{
+        title: string;
+        content: string;
+        updated_at: unknown;
+        deleted: unknown;
+      }>`
         select title, content, updated_at, deleted from vault_doc where user_id = ${userId} and id = ${incoming.id} limit 1
       `;
       const current = rows[0] && !flag(rows[0].deleted) ? rows[0] : null;
@@ -237,30 +257,43 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
         merged.push(doc.id);
         continue;
       }
-      // Parte de lo que hay: se escribe aunque su fecha sea anterior (al elegir
-      // «Guardar la mía» en un conflicto, la otra versión es más reciente).
+      // An edit based on current server state may write despite an older timestamp, as when explicitly keeping a local conflict version.
       if (current && incoming.updatedAt <= Number(current.updated_at)) {
-        await writeDoc(sql, userId, { ...incoming, updatedAt: Number(current.updated_at) + 1 }, rev, false);
+        await writeDoc(
+          sql,
+          userId,
+          { ...incoming, updatedAt: Number(current.updated_at) + 1 },
+          rev,
+          false,
+        );
         merged.push(incoming.id);
         continue;
       }
     }
-    const stored = incoming.kind === "file" ? await storeIncomingFile(sql, userId, incoming.file) : null;
+    const stored =
+      incoming.kind === "file" ? await storeIncomingFile(sql, userId, incoming.file) : null;
     let doc = stored ? { ...incoming, file: stored.file } : incoming;
-    // El contenido de un archivo solo cambia en el servidor (editor de Office):
-    // un navegador que renombra o mueve un archivo no puede volver a una clave vieja.
+    // File content changes only server-side; browser renames/moves must not restore an obsolete storage key.
     if (doc.kind === "file" && doc.file) {
       const current = await sql<{ file_key: string | null; file_size: unknown }>`
         select file_key, file_size from vault_doc where user_id = ${userId} and id = ${doc.id} and not deleted limit 1
       `;
       if (current[0]?.file_key) {
-        doc = { ...doc, file: { ...doc.file, key: current[0].file_key, size: Number(current[0].file_size ?? 0), dataUrl: undefined } };
+        doc = {
+          ...doc,
+          file: {
+            ...doc.file,
+            key: current[0].file_key,
+            size: Number(current[0].file_size ?? 0),
+            dataUrl: undefined,
+          },
+        };
       }
     }
     if (stored?.converted) converted.push(doc.id);
     await writeDoc(sql, userId, doc, rev, true);
   }
-  // A la papelera: el contenido se conserva hasta vaciarla o que venza.
+  // Trash retains content until purge or expiry.
   for (const id of changes.deletedDocs) {
     await sql`
       update vault_doc set deleted = true, deleted_at = ${now}, rev = ${rev}
@@ -269,15 +302,19 @@ export async function pushChanges(sql: Sql, userId: string, changes: VaultChange
   }
   if (changes.deletedDocs.length > 0) await purgeExpired(sql, userId);
   if (converted.length === 0) return { revision: rev, merged, conflicts };
-  // El navegador mandó contenido y el servidor lo guardó aparte: una revisión
-  // más para que baje la versión con clave y suelte el contenido de su caché.
+  // When inline file bytes move to storage, advance revision again so clients fetch the key and discard cached bytes.
   const after = await nextRevision(sql, userId);
-  for (const id of converted) await sql`update vault_doc set rev = ${after} where user_id = ${userId} and id = ${id}`;
+  for (const id of converted)
+    await sql`update vault_doc set rev = ${after} where user_id = ${userId} and id = ${id}`;
   return { revision: after, merged, conflicts };
 }
 
-/** Cambios posteriores a `since` (incluidas las bajas). */
-export async function pullChanges(sql: Sql, userId: string, since: number): Promise<VaultChanges & { revision: number }> {
+/** Changes after since, including deletions. */
+export async function pullChanges(
+  sql: Sql,
+  userId: string,
+  since: number,
+): Promise<VaultChanges & { revision: number }> {
   await migrateLegacyFiles(sql, userId, () => nextRevision(sql, userId));
   const revision = await currentRevision(sql, userId);
   const docs = await sql<DocRow>`
@@ -310,8 +347,7 @@ export async function pullChanges(sql: Sql, userId: string, since: number): Prom
   };
 }
 
-// ---------------------------------------------------------------------------
-// Lectura y escritura para la API y la IA
+// Read/write operations for API and AI.
 
 export type DocSummary = {
   id: string;
@@ -390,8 +426,13 @@ async function portfolioExists(sql: Sql, userId: string, id: string): Promise<bo
   return rows.length > 0;
 }
 
-/** Título libre: las notas se enlazan por título, así que no puede repetirse. */
-async function freeTitle(sql: Sql, userId: string, base: string, exceptId?: string): Promise<string> {
+/** Choose an unused title because wiki links resolve by title. */
+async function freeTitle(
+  sql: Sql,
+  userId: string,
+  base: string,
+  exceptId?: string,
+): Promise<string> {
   const clean = base.trim().replace(/\s+/g, " ").slice(0, 200) || "Sin título";
   const rows = await sql<{ title: string }>`
     select title from vault_doc
@@ -453,15 +494,17 @@ export async function updateNote(
     content?: string;
     portfolioId?: string | null;
     actor: string;
-    /** Usuario que hace el cambio, si no es el dueño (para los avisos por correo). */
+    /** Non-owner mutation actor for email notifications. */
     actorId?: string;
     separateVersion?: boolean;
   },
 ): Promise<Document> {
   const current = await getDoc(sql, userId, id);
   if (!current) throw new VaultError("Esa nota no existe.", 404);
-  if (input.content !== undefined && current.kind !== "markdown") throw new VaultError("Un archivo no tiene texto que editar.");
-  if (input.content !== undefined && input.content.length > MAX_CONTENT) throw new VaultError("La nota es demasiado larga.");
+  if (input.content !== undefined && current.kind !== "markdown")
+    throw new VaultError("Un archivo no tiene texto que editar.");
+  if (input.content !== undefined && input.content.length > MAX_CONTENT)
+    throw new VaultError("La nota es demasiado larga.");
   if (input.portfolioId && !(await portfolioExists(sql, userId, input.portfolioId))) {
     throw new VaultError("Ese portafolio no existe.", 404);
   }
@@ -470,7 +513,7 @@ export async function updateNote(
   let title = current.title;
   if (input.title !== undefined && input.title.trim() && input.title.trim() !== current.title) {
     title = await freeTitle(sql, userId, input.title, id);
-    // Como en el navegador: renombrar actualiza los [[enlaces]] que apuntaban al título viejo.
+    // Renaming updates wiki links referencing the previous title, matching browser behavior.
     const others = await sql<{ id: string; content: string }>`
       select id, content from vault_doc
       where user_id = ${userId} and not deleted and kind = 'markdown' and id <> ${id} and content ilike ${likeTerm(current.title)}
@@ -499,7 +542,12 @@ export async function updateNote(
 export async function deleteDoc(sql: Sql, userId: string, id: string): Promise<void> {
   const current = await getDoc(sql, userId, id);
   if (!current) throw new VaultError("Ese documento no existe.", 404);
-  await pushChanges(sql, userId, { docs: [], deletedDocs: [id], portfolios: [], deletedPortfolios: [] });
+  await pushChanges(sql, userId, {
+    docs: [],
+    deletedDocs: [id],
+    portfolios: [],
+    deletedPortfolios: [],
+  });
 }
 
 export async function createPortfolio(
@@ -520,19 +568,31 @@ export async function createPortfolio(
   `;
   if (taken[0]) throw new VaultError("Ya hay un portafolio con ese nombre ahí.", 409);
   const portfolio: Portfolio = { id: crypto.randomUUID(), name, parentId: input.parentId };
-  await pushChanges(sql, userId, { docs: [], deletedDocs: [], portfolios: [portfolio], deletedPortfolios: [] });
+  await pushChanges(sql, userId, {
+    docs: [],
+    deletedDocs: [],
+    portfolios: [portfolio],
+    deletedPortfolios: [],
+  });
   return portfolio;
 }
 
 /**
- * Nuevo contenido de un archivo (editor de Office, o restaurar una versión):
- * el objeto nuevo ya está en el almacén; el anterior queda en el historial.
+ * Replace file content after Office saves or restores. The new object already exists; retain
+ * the old one in history.
  */
 export async function replaceFile(
   sql: Sql,
   userId: string,
   id: string,
-  input: { key: string; size: number; actor: string; actorId?: string; separateVersion?: boolean; autosave?: boolean },
+  input: {
+    key: string;
+    size: number;
+    actor: string;
+    actorId?: string;
+    separateVersion?: boolean;
+    autosave?: boolean;
+  },
 ): Promise<Document> {
   const current = await getDoc(sql, userId, id);
   if (!current?.file?.key) throw new VaultError("Ese archivo no existe.", 404);
@@ -561,14 +621,18 @@ export async function replaceFile(
     separate: input.separateVersion,
     autosave: input.autosave,
   });
-  await noteChange(sql, { ownerId: userId, docId: id, actorId: input.actorId ?? userId, actorName: input.actor });
+  await noteChange(sql, {
+    ownerId: userId,
+    docId: id,
+    actorId: input.actorId ?? userId,
+    actorName: input.actor,
+  });
   const doc = await getDoc(sql, userId, id);
   if (!doc) throw new VaultError("Ese archivo no existe.", 404);
   return doc;
 }
 
-// ---------------------------------------------------------------------------
-// Papelera
+// Trash.
 
 export type TrashItem = {
   id: string;
@@ -576,13 +640,13 @@ export type TrashItem = {
   kind: "markdown" | "file" | "portfolio";
   portfolioName: string | null;
   deletedAt: number;
-  /** En un portafolio: cuántos documentos vuelven con él. */
+  /** Number of documents restored with a portfolio. */
   count?: number;
 };
 
 type TrashedPortfolio = { id: string; name: string; parent_id: string | null; deleted_at: unknown };
 
-/** Portafolios en la papelera (borrados y todavía recuperables). */
+/** Deleted portfolios still recoverable from trash. */
 async function trashedPortfolios(sql: Sql, userId: string): Promise<TrashedPortfolio[]> {
   return sql<TrashedPortfolio>`
     select id, name, parent_id, deleted_at from vault_portfolio
@@ -590,7 +654,7 @@ async function trashedPortfolios(sql: Sql, userId: string): Promise<TrashedPortf
   `;
 }
 
-/** `id` y los portafolios de la papelera que cuelgan de él. */
+/** ID and its trashed descendant portfolios. */
 function trashedSubtree(trashed: TrashedPortfolio[], id: string): Set<string> {
   return descendantIds(
     trashed.map((portfolio) => ({ id: portfolio.id, parentId: portfolio.parent_id })),
@@ -599,21 +663,32 @@ function trashedSubtree(trashed: TrashedPortfolio[], id: string): Set<string> {
 }
 
 /**
- * La papelera: un portafolio borrado sale una vez (con lo que contiene dentro,
- * que vuelve con él); un documento, si se borró solo (su portafolio sigue).
+ * List deleted portfolios once with their contents; list individually deleted documents only
+ * when their portfolio survives.
  */
 export async function listTrash(sql: Sql, userId: string): Promise<TrashItem[]> {
   await purgeExpired(sql, userId);
   const trashed = await trashedPortfolios(sql, userId);
   const trashedIds = new Set(trashed.map((portfolio) => portfolio.id));
-  const rows = await sql<{ id: string; title: string; kind: "markdown" | "file"; portfolio_id: string | null; portfolio_name: string | null; deleted_at: unknown }>`
+  const rows = await sql<{
+    id: string;
+    title: string;
+    kind: "markdown" | "file";
+    portfolio_id: string | null;
+    portfolio_name: string | null;
+    deleted_at: unknown;
+  }>`
     select d.id, d.title, d.kind, d.portfolio_id, p.name as portfolio_name, d.deleted_at
     from vault_doc d
     left join vault_portfolio p on p.user_id = d.user_id and p.id = d.portfolio_id
     where d.user_id = ${userId} and d.deleted and d.deleted_at is not null
   `;
-  const names = await sql<{ id: string; name: string }>`select id, name from vault_portfolio where user_id = ${userId}`;
-  const nameOf = (id: string | null) => (id ? (names.find((row) => row.id === id)?.name ?? null) : null);
+  const names = await sql<{
+    id: string;
+    name: string;
+  }>`select id, name from vault_portfolio where user_id = ${userId}`;
+  const nameOf = (id: string | null) =>
+    id ? (names.find((row) => row.id === id)?.name ?? null) : null;
   const docs: TrashItem[] = rows
     .filter((row) => !row.portfolio_id || !trashedIds.has(row.portfolio_id))
     .map((row) => ({
@@ -640,11 +715,15 @@ export async function listTrash(sql: Sql, userId: string): Promise<TrashItem[]> 
 }
 
 /**
- * Vuelve a poner en su sitio los portafolios borrados por encima de
- * `portfolioId` (para recuperar algo que estaba dentro). Devuelve dónde queda:
- * el mismo, o la raíz si alguno de ellos ya se borró para siempre.
+ * Restore deleted portfolio ancestors. Return the original destination or root if an ancestor
+ * was permanently removed.
  */
-async function reviveParents(sql: Sql, userId: string, portfolioId: string | null, rev: number): Promise<string | null> {
+async function reviveParents(
+  sql: Sql,
+  userId: string,
+  portfolioId: string | null,
+  rev: number,
+): Promise<string | null> {
   let cursor = portfolioId;
   const seen = new Set<string>();
   while (cursor && !seen.has(cursor)) {
@@ -665,11 +744,13 @@ async function reviveParents(sql: Sql, userId: string, portfolioId: string | nul
   return portfolioId;
 }
 
-/**
- * Saca un documento de la papelera. Si su portafolio también se borró, se
- * recupera (con sus padres); si ya no existe, el documento vuelve a la raíz.
- */
-export async function restoreFromTrash(sql: Sql, userId: string, id: string, actor: string): Promise<Document> {
+/** Restore a document and any trashed ancestors; fall back to root when its portfolio no longer exists. */
+export async function restoreFromTrash(
+  sql: Sql,
+  userId: string,
+  id: string,
+  actor: string,
+): Promise<Document> {
   const rows = await sql<{ title: string; kind: string; portfolio_id: string | null }>`
     select title, kind, portfolio_id from vault_doc
     where user_id = ${userId} and id = ${id} and deleted and deleted_at is not null limit 1
@@ -702,11 +783,15 @@ async function reviveDoc(
 }
 
 /**
- * Saca de la papelera un portafolio con todo lo que tenía dentro (sus
- * portafolios y documentos borrados), y los portafolios de encima si también
- * se borraron. Si alguno de encima ya no existe, vuelve a la raíz.
+ * Restore a portfolio subtree and trashed ancestors, falling back to root if an ancestor was
+ * permanently removed.
  */
-async function restorePortfolio(sql: Sql, userId: string, id: string, actor: string): Promise<void> {
+async function restorePortfolio(
+  sql: Sql,
+  userId: string,
+  id: string,
+  actor: string,
+): Promise<void> {
   const trashed = await trashedPortfolios(sql, userId);
   const portfolio = trashed.find((item) => item.id === id);
   if (!portfolio) throw new VaultError("Ese portafolio ya no está en la papelera.", 404);
@@ -726,7 +811,7 @@ async function restorePortfolio(sql: Sql, userId: string, id: string, actor: str
   await sql`update vault_portfolio set parent_id = ${parentId} where user_id = ${userId} and id = ${id}`;
 }
 
-/** Saca de la papelera un documento o un portafolio (ver `listTrash`). */
+/** Restore one trashed document or portfolio; see listTrash. */
 export async function restoreTrashItem(
   sql: Sql,
   userId: string,
@@ -756,7 +841,7 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
   await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
   await purgeComments(sql, userId, id);
   await purgeSignatures(sql, userId, id);
-  // Si era una tabla de datos, sus columnas y filas (ver `table.ts`).
+  // Also remove table columns and rows; see table.ts.
   await sql`delete from data_meta where owner_id = ${userId} and doc_id = ${id}`;
   await sql`delete from data_form where owner_id = ${userId} and doc_id = ${id}`;
   await sql`delete from data_row where owner_id = ${userId} and doc_id = ${id}`;
@@ -764,7 +849,10 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
   await sql`delete from data_field where owner_id = ${userId} and doc_id = ${id}`;
 }
 
-/** Borra para siempre lo indicado de la papelera (o todo, sin ids); un portafolio, con lo que tenía dentro. */
+/**
+ * Permanently purge selected trash or all entries when IDs are omitted, including portfolio
+ * descendants.
+ */
 export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Promise<void> {
   const targets = ids ?? (await listTrash(sql, userId)).map((item) => item.id);
   const trashed = await trashedPortfolios(sql, userId);
@@ -784,13 +872,18 @@ export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Prom
   }
 }
 
-/** Vacía lo que lleva más de `TRASH_DAYS` días en la papelera. */
+/** Purge content older than TRASH_DAYS. */
 async function purgeExpired(sql: Sql, userId: string): Promise<void> {
   const cutoff = Date.now() - TRASH_DAYS * 86_400_000;
   const expired = await sql<{ id: string }>`
     select id from vault_doc where user_id = ${userId} and deleted and deleted_at is not null and deleted_at < ${cutoff}
   `;
-  if (expired.length > 0) await purgeTrash(sql, userId, expired.map((row) => row.id));
+  if (expired.length > 0)
+    await purgeTrash(
+      sql,
+      userId,
+      expired.map((row) => row.id),
+    );
   await sql`
     update vault_portfolio set deleted_at = null
     where user_id = ${userId} and deleted and deleted_at is not null and deleted_at < ${cutoff}

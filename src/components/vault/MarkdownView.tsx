@@ -24,7 +24,12 @@ type Block =
   | { type: "ol"; items: ListItem[] };
 
 function splitRow(line: string) {
-  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
 }
 
 function parseBlocks(source: string): Block[] {
@@ -97,7 +102,11 @@ function parseBlocks(source: string): Block[] {
       }
       continue;
     }
-    if (/^\s*\|/.test(line) && index + 1 < lines.length && /^\s*\|?\s*:?-+:?\s*\|/.test(lines[index + 1] ?? "")) {
+    if (
+      /^\s*\|/.test(line) &&
+      index + 1 < lines.length &&
+      /^\s*\|?\s*:?-+:?\s*\|/.test(lines[index + 1] ?? "")
+    ) {
       const header = splitRow(line);
       index += 2;
       const rows: string[][] = [];
@@ -181,7 +190,10 @@ function renderInline(text: string, ctx: InlineCtx, key: string): ReactNode[] {
       const end = text.indexOf("`", index + 1);
       if (end > index + 1) {
         push(
-          <code key={`${key}-c${serial++}`} className="rounded-sm bg-inset px-1.5 py-0.5 font-mono text-sm text-accent">
+          <code
+            key={`${key}-c${serial++}`}
+            className="rounded-sm bg-inset px-1.5 py-0.5 font-mono text-sm text-accent"
+          >
             {text.slice(index + 1, end)}
           </code>,
         );
@@ -228,7 +240,11 @@ function renderInline(text: string, ctx: InlineCtx, key: string): ReactNode[] {
     if (rest.startsWith("*") && !rest.startsWith("**")) {
       const end = text.indexOf("*", index + 1);
       if (end > index + 1) {
-        push(<em key={`${key}-i${serial++}`}>{renderInline(text.slice(index + 1, end), ctx, `${key}i${serial}`)}</em>);
+        push(
+          <em key={`${key}-i${serial++}`}>
+            {renderInline(text.slice(index + 1, end), ctx, `${key}i${serial}`)}
+          </em>,
+        );
         index = end + 1;
         continue;
       }
@@ -285,7 +301,12 @@ function renderInline(text: string, ctx: InlineCtx, key: string): ReactNode[] {
       if (tag?.[1]) {
         const name = tag[1];
         push(
-          <button key={`${key}-g${serial++}`} type="button" onClick={() => ctx.onTag(name)} className="text-accent hover:text-fg">
+          <button
+            key={`${key}-g${serial++}`}
+            type="button"
+            onClick={() => ctx.onTag(name)}
+            className="text-accent hover:text-fg"
+          >
             #{name}
           </button>,
         );
@@ -328,7 +349,7 @@ export function MarkdownView({
   onWiki: (title: string) => void;
   onTag: (tag: string) => void;
   noteExists: (title: string) => boolean;
-  /** Sin él, las casillas se muestran pero no se pueden marcar. */
+  /** Without this callback, checkboxes render but cannot be toggled. */
   onToggleTask?: (line: number) => void;
   variant?: "app" | "print";
 }) {
@@ -337,7 +358,10 @@ export function MarkdownView({
   const blocks = parseBlocks(source);
   let hidTitle = false;
   return (
-    <article id="note-top" className="w-full px-4 py-3 font-serif text-sm leading-normal text-fg sm:px-5">
+    <article
+      id="note-top"
+      className="w-full px-4 py-3 font-serif text-sm leading-normal text-fg sm:px-5"
+    >
       {blocks.map((block, index) => {
         if (block.type === "fm") {
           const pairs = block.lines
@@ -351,7 +375,10 @@ export function MarkdownView({
           return (
             <div key={`fm-${index}`} className="mb-3 flex flex-wrap gap-2 font-sans">
               {pairs.map((pair) => (
-                <span key={pair.key} className="rounded-full bg-elevated px-3 py-1 text-xs text-muted">
+                <span
+                  key={pair.key}
+                  className="rounded-full bg-elevated px-3 py-1 text-xs text-muted"
+                >
                   <span className="text-faint">{pair.key}</span> {pair.value}
                 </span>
               ))}
@@ -360,12 +387,20 @@ export function MarkdownView({
         }
         if (block.type === "h") {
           const Tag = block.level === 1 ? "h2" : block.level === 2 ? "h3" : "h4";
-          if (!hidTitle && block.level === 1 && block.text.toLowerCase() === title.trim().toLowerCase()) {
+          if (
+            !hidTitle &&
+            block.level === 1 &&
+            block.text.toLowerCase() === title.trim().toLowerCase()
+          ) {
             hidTitle = true;
             return <span key={block.id} id={block.id} className="block h-0 overflow-hidden" />;
           }
           return (
-            <Tag key={block.id} id={block.id} className={headingClass[block.level] ?? headingClass[3]}>
+            <Tag
+              key={block.id}
+              id={block.id}
+              className={headingClass[block.level] ?? headingClass[3]}
+            >
               {renderInline(block.text, ctx, block.id)}
             </Tag>
           );
@@ -383,8 +418,15 @@ export function MarkdownView({
             return <MermaidDiagram key={`code-${index}`} chart={block.text} variant={variant} />;
           }
           return (
-            <figure key={`code-${index}`} className="mt-3 overflow-hidden rounded-lg bg-inset font-sans">
-              {block.lang ? <figcaption className="border-b border-line px-3 py-1.5 text-xs text-faint">{block.lang}</figcaption> : null}
+            <figure
+              key={`code-${index}`}
+              className="mt-3 overflow-hidden rounded-lg bg-inset font-sans"
+            >
+              {block.lang ? (
+                <figcaption className="border-b border-line px-3 py-1.5 text-xs text-faint">
+                  {block.lang}
+                </figcaption>
+              ) : null}
               <pre className="overflow-x-auto p-3 font-mono text-xs leading-normal">
                 <code>{block.text}</code>
               </pre>
@@ -395,7 +437,10 @@ export function MarkdownView({
           if (block.callout) {
             const tone = block.callout.kind === "warning" ? "border-danger" : "border-accent";
             return (
-              <aside key={`q-${index}`} className={`mt-3 rounded-lg border border-line border-l-4 ${tone} bg-elevated px-3 py-2 font-sans`}>
+              <aside
+                key={`q-${index}`}
+                className={`mt-3 rounded-lg border border-line border-l-4 ${tone} bg-elevated px-3 py-2 font-sans`}
+              >
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <CalloutIcon kind={block.callout.kind} />
                   <span>{block.callout.title || block.callout.kind}</span>
@@ -413,7 +458,10 @@ export function MarkdownView({
             );
           }
           return (
-            <blockquote key={`q-${index}`} className="mt-3 border-l-2 border-line pl-3 text-muted italic">
+            <blockquote
+              key={`q-${index}`}
+              className="mt-3 border-l-2 border-line pl-3 text-muted italic"
+            >
               {block.lines.map((line, lineIndex) => (
                 <p key={lineIndex} className={lineIndex > 0 ? "mt-2" : undefined}>
                   {renderInline(line, ctx, `bq${index}-${lineIndex}`)}
@@ -429,7 +477,10 @@ export function MarkdownView({
                 <thead>
                   <tr>
                     {block.header.map((cell, cellIndex) => (
-                      <th key={cellIndex} className="border-b border-line px-2 py-1.5 font-medium text-muted">
+                      <th
+                        key={cellIndex}
+                        className="border-b border-line px-2 py-1.5 font-medium text-muted"
+                      >
                         {renderInline(cell, ctx, `th${index}-${cellIndex}`)}
                       </th>
                     ))}
@@ -477,7 +528,13 @@ export function MarkdownView({
                       className={`grid size-5 place-items-center rounded-sm border ${item.checked ? "border-accent bg-accent text-accent-fg" : "border-line"}`}
                     >
                       {item.checked ? (
-                        <svg viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          viewBox="0 0 16 16"
+                          className="size-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <path d="M3 8.5 6.2 12 13 4" />
                         </svg>
                       ) : null}

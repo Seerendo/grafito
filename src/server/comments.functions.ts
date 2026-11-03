@@ -11,26 +11,33 @@ import { isTextAnchor, type TextAnchor } from "@/domain/vault/anchor";
 import { addComment, deleteComment, listComments, MAX_COMMENT } from "@/server/comments";
 
 /**
- * Comentarios de una nota o un archivo: los ve y los deja su dueño y
- * cualquiera con quien esté compartido, aunque sea en solo lectura. Comentar
- * no cambia el documento. Borra un comentario quien lo escribió o el dueño.
+ * Owners and shared readers may view/add comments without editing the document. Only the author
+ * or document owner may delete a comment.
  */
 
 const id = z.string().min(1).max(80);
 const target = z.object({ docId: id, shareId: id.optional() });
 
-/** Dueño del documento si `userId` lo puede ver (propio o compartido), o `null`. */
-async function ownerFor(sql: Sql, userId: string, docId: string, shareId?: string): Promise<string | null> {
+/** Document owner when userId may read it, otherwise null. */
+async function ownerFor(
+  sql: Sql,
+  userId: string,
+  docId: string,
+  shareId?: string,
+): Promise<string | null> {
   if (!shareId) return (await getDoc(sql, userId, docId)) ? userId : null;
   return (
-    (await editableTarget(sql, userId, shareId, docId))?.ownerId ?? (await grantedDocOwner(sql, userId, shareId, docId))
+    (await editableTarget(sql, userId, shareId, docId))?.ownerId ??
+    (await grantedDocOwner(sql, userId, shareId, docId))
   );
 }
 
 async function context(userId: string, docId: string, shareId?: string) {
   const sql = await requireLease(userId);
   const profile = await readUserProfile(sql, userId);
-  const ownerId = allows(profile, PERMISSION.notesRead) ? await ownerFor(sql, userId, docId, shareId) : null;
+  const ownerId = allows(profile, PERMISSION.notesRead)
+    ? await ownerFor(sql, userId, docId, shareId)
+    : null;
   return { sql, profile, ownerId };
 }
 
@@ -44,7 +51,10 @@ export const docComments = createServerFn({ method: "GET" })
     return {
       ok: true as const,
       isOwner: ownerId === auth.userId,
-      comments: comments.map(({ authorId, ...comment }) => ({ ...comment, mine: authorId === auth.userId })),
+      comments: comments.map(({ authorId, ...comment }) => ({
+        ...comment,
+        mine: authorId === auth.userId,
+      })),
     };
   });
 
@@ -54,7 +64,7 @@ export const addDocComment = createServerFn({ method: "POST" })
     target
       .extend({
         body: z.string().trim().min(1).max(MAX_COMMENT),
-        // Una nota sobre una frase de un PDF.
+        // Comment anchored to a PDF phrase.
         anchor: z.custom<TextAnchor>(isTextAnchor).optional(),
       })
       .parse(input),

@@ -6,7 +6,7 @@ import { requireLease } from "@/server/lease";
 import { createOrg, deleteOrg, listOrgs, moveOrg, renameOrg, setOrgMembers } from "@/server/orgs";
 import { allows, readUserProfile } from "@/server/profile";
 
-/** Funciones de servidor de organizaciones (Administración → Usuarios y permisos). */
+/** Organization administration server functions. */
 
 const id = z.string().min(1).max(80);
 
@@ -16,7 +16,12 @@ async function manager(userId: string) {
   return { sql, actor, ok: allows(actor, "orgs.manage") };
 }
 
-async function log(sql: Awaited<ReturnType<typeof requireLease>>, actor: string, message: string, actorId: string) {
+async function log(
+  sql: Awaited<ReturnType<typeof requireLease>>,
+  actor: string,
+  message: string,
+  actorId: string,
+) {
   await logActivity(sql, { actorId, actorName: actor, area: "Organizaciones", message });
 }
 
@@ -32,12 +37,20 @@ export const orgsState = createServerFn({ method: "GET" })
 
 export const createOrgFn = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => z.object({ name: z.string().max(80), parentId: id.nullable() }).parse(input))
+  .validator((input: unknown) =>
+    z.object({ name: z.string().max(80), parentId: id.nullable() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const { sql, actor, ok } = await manager(context.userId);
     if (!ok) return DENIED;
     const result = await createOrg(sql, data.name, data.parentId);
-    if (result.ok) await log(sql, actor.loginName || actor.displayName, `Crea ${data.name.trim()}`, context.userId);
+    if (result.ok)
+      await log(
+        sql,
+        actor.loginName || actor.displayName,
+        `Crea ${data.name.trim()}`,
+        context.userId,
+      );
     return result;
   });
 

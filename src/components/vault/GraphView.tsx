@@ -47,12 +47,9 @@ function readColor(name: string, fallback: string): string {
   return value || fallback;
 }
 
-/**
- * Lo que dibuja el grafo. Sin `source`, la bóveda propia; lo compartido pasa
- * sus documentos (solo lectura).
- */
+/** Graph source defaults to the owned vault; shared views supply read-only documents. */
 export type GraphSource = {
-  /** Qué se dibuja (un espacio de trabajo, lo compartido), junto al título. */
+  /** Source label displayed beside the graph title, such as workspace or shared content. */
   name?: string;
   documents: Document[];
   portfolios: Portfolio[];
@@ -60,15 +57,26 @@ export type GraphSource = {
   onSelect: (id: string) => void;
 };
 
-export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => void; source?: GraphSource }) {
+export function GraphView({
+  onOpenNote,
+  source,
+}: {
+  onOpenNote: (id: string) => void;
+  source?: GraphSource;
+}) {
   const ownDocuments = useVault((state) => state.documents);
   const ownPortfolios = useVault((state) => state.portfolios);
   const ownActiveId = useVault((state) => state.activeId);
   const ownSelect = useVault((state) => state.selectInGraph);
   const trees = useSharedTrees((state) => state.trees);
-  // En la bóveda propia, también los portafolios vinculados y lo compartido conmigo al que apuntan vínculos.
-  const extras = source ? new Map<string, Extra>() : graphExtras(ownDocuments, ownPortfolios, trees);
-  const documents: GraphNode[] = source?.documents ?? [...ownDocuments, ...[...extras.values()].map((extra) => extra.node)];
+  // Owned-vault graphs also include linked portfolios and linked shared targets.
+  const extras = source
+    ? new Map<string, Extra>()
+    : graphExtras(ownDocuments, ownPortfolios, trees);
+  const documents: GraphNode[] = source?.documents ?? [
+    ...ownDocuments,
+    ...[...extras.values()].map((extra) => extra.node),
+  ];
   const activeId = source ? source.activeId : ownActiveId;
   const extrasRef = useRef(extras);
   extrasRef.current = extras;
@@ -79,7 +87,7 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeRef = useRef(activeId);
-  // Un portafolio se abre en su página; lo compartido, en su visor.
+  // Open portfolios on their page and shared targets in their viewer.
   const openNode = (id: string) => {
     const extra = extrasRef.current.get(id);
     if (!extra) return onOpenNote(id);
@@ -374,7 +382,11 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
         context.globalAlpha = hot ? 0.9 : 0.7;
         context.lineWidth = (hot ? 1.6 : 1) / cam.k;
         context.setLineDash(
-          edge.kind === "referencia" ? [6 / cam.k, 4 / cam.k] : edge.kind === "llama" ? [2 / cam.k, 3 / cam.k] : [],
+          edge.kind === "referencia"
+            ? [6 / cam.k, 4 / cam.k]
+            : edge.kind === "llama"
+              ? [2 / cam.k, 3 / cam.k]
+              : [],
         );
         context.stroke();
         context.setLineDash([]);
@@ -388,7 +400,7 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
         if (node.kind === "file") {
           roundRect(context, node.x - radius, node.y - radius, radius * 2, radius * 2, 3 / cam.k);
         } else if (node.kind === "portfolio") {
-          // Rombo: un portafolio entero.
+          // A diamond represents an entire portfolio.
           const r = radius * 1.35;
           context.moveTo(node.x, node.y - r);
           context.lineTo(node.x + r, node.y);
@@ -402,12 +414,13 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
         context.fill();
         context.lineWidth = 1.5 / cam.k;
         context.strokeStyle = active || node.id === hoverId.current ? accent : faint;
-        // Lo compartido conmigo, con borde discontinuo.
+        // Shared targets use a dashed border.
         if (node.shared) context.setLineDash([3 / cam.k, 2 / cam.k]);
         context.stroke();
         context.setLineDash([]);
         if (!active && !showQuietLabels) continue;
-        const label = node.title.length > 28 ? t("{0}…", { 0: node.title.slice(0, 26) }) : node.title;
+        const label =
+          node.title.length > 28 ? t("{0}…", { 0: node.title.slice(0, 26) }) : node.title;
         context.font = `${12 / cam.k}px Outfit, sans-serif`;
         context.textAlign = "center";
         context.textBaseline = "top";
@@ -443,7 +456,9 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
       cam.x += (target.x - cam.x) * 0.16;
       cam.y += (target.y - cam.y) * 0.16;
       cam.k += (target.k - cam.k) * 0.16;
-      return Math.hypot(target.x - cam.x, target.y - cam.y) < 0.8 && Math.abs(target.k - cam.k) < 0.01;
+      return (
+        Math.hypot(target.x - cam.x, target.y - cam.y) < 0.8 && Math.abs(target.k - cam.k) < 0.01
+      );
     };
 
     const tick = () => {
@@ -486,7 +501,9 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
       const world = toWorld(sx, sy);
       const cam = cameraRef.current;
       const reach = 18 / cam.k;
-      return nodes.find((node) => (node.x - world.x) ** 2 + (node.y - world.y) ** 2 < reach ** 2) ?? null;
+      return (
+        nodes.find((node) => (node.x - world.x) ** 2 + (node.y - world.y) ** 2 < reach ** 2) ?? null
+      );
     };
 
     const pinchOf = () => {
@@ -622,7 +639,8 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
       fly = null;
       const at = point(event);
       const pinchZoom = event.ctrlKey || event.metaKey;
-      const coarse = event.deltaMode !== 0 || (Math.abs(event.deltaY) >= 40 && Math.abs(event.deltaX) < 8);
+      const coarse =
+        event.deltaMode !== 0 || (Math.abs(event.deltaY) >= 40 && Math.abs(event.deltaX) < 8);
       if (pinchZoom || coarse) {
         const factor = Math.exp(-event.deltaY * (pinchZoom ? 0.012 : 0.0016));
         zoomAt(at.x, at.y, cameraRef.current.k * factor);
@@ -732,7 +750,7 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
             {source?.name ? <span className="text-muted"> · {source.name}</span> : null}
           </h2>
           <p className="text-xs text-faint">
-            {visibleNotes.length}{" "}{t("documentos ·")}{" "}{visibleEdges.length}{" "}{t("vínculos")}
+            {visibleNotes.length} {t("documentos ·")} {visibleEdges.length} {t("vínculos")}
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -801,7 +819,11 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
           onKeyDown={onStageKey}
           className="relative min-h-0 flex-1 outline-none select-none"
         >
-          <canvas ref={canvasRef} aria-label={t("Grafo de documentos")} className="h-full w-full cursor-grab touch-none" />
+          <canvas
+            ref={canvasRef}
+            aria-label={t("Grafo de documentos")}
+            className="h-full w-full cursor-grab touch-none"
+          />
         </div>
       </div>
     </div>
@@ -811,9 +833,8 @@ export function GraphView({ onOpenNote, source }: { onOpenNote: (id: string) => 
 type Extra = { node: GraphNode; open?: () => void };
 
 /**
- * Nodos de más en el grafo de la bóveda propia: los portafolios que tienen
- * vínculos o a los que apunta uno, y lo compartido conmigo al que apunta un
- * vínculo (si ya no se ve, no aparece).
+ * Extra owned-vault graph nodes: portfolios with incoming/outgoing links and visible shared
+ * targets referenced by links.
  */
 function graphExtras(
   documents: Document[],
@@ -821,9 +842,19 @@ function graphExtras(
   trees: ReturnType<typeof useSharedTrees.getState>["trees"],
 ): Map<string, Extra> {
   const out = new Map<string, Extra>();
-  const links = [...documents.flatMap((document) => document.links), ...portfolios.flatMap((portfolio) => portfolio.links ?? [])];
+  const links = [
+    ...documents.flatMap((document) => document.links),
+    ...portfolios.flatMap((portfolio) => portfolio.links ?? []),
+  ];
   const portfolioNode = (portfolio: Portfolio): Extra => ({
-    node: { id: portfolio.id, title: portfolio.name, kind: "portfolio", content: "", links: portfolio.links ?? [], pinned: false },
+    node: {
+      id: portfolio.id,
+      title: portfolio.name,
+      kind: "portfolio",
+      content: "",
+      links: portfolio.links ?? [],
+      pinned: false,
+    },
     open: () => useVault.getState().openPortfolio(portfolio.id),
   });
   for (const portfolio of portfolios) {
@@ -846,7 +877,9 @@ function graphExtras(
         },
         open: () => {
           useVault.getState().setGraph(false);
-          useSharedView.getState().openShared(found.tree, found.kind === "portfolio" ? null : link.targetId);
+          useSharedView
+            .getState()
+            .openShared(found.tree, found.kind === "portfolio" ? null : link.targetId);
         },
       });
     } else if (link.target === "portfolio") {
@@ -866,7 +899,8 @@ function NodeCard({ source }: { source?: GraphSource }) {
   const activeId = source ? source.activeId : ownActiveId;
   const document = documents.find((item) => item.id === activeId) ?? null;
   if (!document) return null;
-  const portfolio = portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
+  const portfolio =
+    portfolios.find((item) => item.id === document.portfolioId)?.name ?? t("Carpeta Personal");
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const wikis = document.kind === "markdown" ? extractWikiLinks(document.content) : [];
   return (
@@ -879,16 +913,26 @@ function NodeCard({ source }: { source?: GraphSource }) {
         {document.kind === "file" ? t("Archivo") : t("Nota")} · {portfolio}
       </p>
       <h3 className="mt-1 font-serif text-xl leading-tight">{document.title}</h3>
-      <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">{t("Esquema")}</h4>
+      <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">
+        {t("Esquema")}
+      </h4>
       {headings.length === 0 ? (
-        document.kind === "file" ? null : <p className="mt-1 text-sm text-muted">{t("Sin encabezados")}</p>
+        document.kind === "file" ? null : (
+          <p className="mt-1 text-sm text-muted">{t("Sin encabezados")}</p>
+        )
       ) : (
         <ul className="mt-1">
           {headings.map((heading) => (
             <li
               key={heading.id}
               className={`truncate py-1 text-sm text-fg ${
-                heading.level <= 1 ? "" : heading.level === 2 ? "pl-3" : heading.level === 3 ? "pl-6" : "pl-9"
+                heading.level <= 1
+                  ? ""
+                  : heading.level === 2
+                    ? "pl-3"
+                    : heading.level === 3
+                      ? "pl-6"
+                      : "pl-9"
               }`}
             >
               {heading.text}
@@ -898,11 +942,13 @@ function NodeCard({ source }: { source?: GraphSource }) {
       )}
       {wikis.length > 0 || document.links.length > 0 ? (
         <>
-          <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">{t("Vínculos")}</h4>
+          <h4 className="mt-3 text-xs font-medium tracking-widest text-faint uppercase">
+            {t("Vínculos")}
+          </h4>
           <ul className="mt-1 text-sm text-muted">
             {wikis.map((title) => (
               <li key={`w-${title}`} className="truncate py-0.5">
-                {t("Wiki ·")}{" "}{title}
+                {t("Wiki ·")} {title}
               </li>
             ))}
             {document.links.map((link) => {

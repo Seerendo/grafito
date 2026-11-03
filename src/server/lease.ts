@@ -6,7 +6,9 @@ import { redisDropAllLeases, redisDropLease, redisHasLease, redisSetLease } from
 const MAX_TTL = 30 * 24 * 60 * 60;
 
 export async function readTtl(sql: Sql): Promise<number> {
-  const rows = await sql<{ value: string }>`select value from app_setting where key = 'session_ttl_seconds' limit 1`;
+  const rows = await sql<{
+    value: string;
+  }>`select value from app_setting where key = 'session_ttl_seconds' limit 1`;
   const parsed = Number(rows[0]?.value);
   if (!Number.isFinite(parsed)) return DEFAULT_SESSION_TTL;
   return Math.min(MAX_TTL, Math.max(60, Math.floor(parsed)));
@@ -49,7 +51,7 @@ function asDate(value: unknown): Date | null {
   return null;
 }
 
-/** Sesión iniciada después de `since`: un ingreso nuevo tras vencer el plazo anterior. */
+/** Session created after since represents a fresh sign-in following prior lease expiry. */
 async function sessionSince(sql: Sql, userId: string, since: Date): Promise<boolean> {
   const rows = await sql<{ id: string }>`
     select id from "session"
@@ -59,7 +61,11 @@ async function sessionSince(sql: Sql, userId: string, since: Date): Promise<bool
   return rows.length > 0;
 }
 
-async function grantLease(sql: Sql, userId: string, ttl: number): Promise<{ ok: true; expiresAt: string }> {
+async function grantLease(
+  sql: Sql,
+  userId: string,
+  ttl: number,
+): Promise<{ ok: true; expiresAt: string }> {
   const expires = new Date(Date.now() + ttl * 1000);
   await sql`
     insert into app_lease (user_id, expires_at)
@@ -70,7 +76,10 @@ async function grantLease(sql: Sql, userId: string, ttl: number): Promise<{ ok: 
   return { ok: true, expiresAt: expires.toISOString() };
 }
 
-export async function assertLease(sql: Sql, userId: string): Promise<{ ok: true; expiresAt: string } | { ok: false }> {
+export async function assertLease(
+  sql: Sql,
+  userId: string,
+): Promise<{ ok: true; expiresAt: string } | { ok: false }> {
   const ttl = await readTtl(sql);
   const rows = await sql<{ expires_at: unknown }>`
     select expires_at from app_lease where user_id = ${userId} limit 1
@@ -81,9 +90,7 @@ export async function assertLease(sql: Sql, userId: string): Promise<{ ok: true;
     return grantLease(sql, userId, ttl);
   }
   if (expiresAt.getTime() <= Date.now()) {
-    // Un plazo vencido no debe tumbar un ingreso posterior (p. ej. cerró el
-    // navegador sin salir y volvió más tarde): se cierran solo las sesiones
-    // anteriores al vencimiento y el ingreso nuevo recibe su propio plazo.
+    // An expired lease must not invalidate a later sign-in. Close only sessions preceding expiry and assign the new session a fresh deadline.
     if (await sessionSince(sql, userId, expiresAt)) {
       await sql`delete from "session" where "userId" = ${userId} and "createdAt" <= ${expiresAt.toISOString()}`;
       return grantLease(sql, userId, ttl);
@@ -97,13 +104,13 @@ export async function assertLease(sql: Sql, userId: string): Promise<{ ok: true;
   return { ok: true, expiresAt: expiresAt.toISOString() };
 }
 
-/** Cada cuánto se guarda la última conexión (no en cada petición). */
+/** Throttle last-seen writes rather than writing on every request. */
 const SEEN_EVERY_MS = 60_000;
 const seenAt = new Map<string, number>();
 
 /**
- * Primer ingreso y última conexión (Administración → Usuarios). En memoria se
- * recuerda cuándo se escribió por última vez, para no escribir en cada petición.
+ * First sign-in and last activity for administration. Cache write timestamps to reduce database
+ * updates.
  */
 export async function markSeen(sql: Sql, userId: string): Promise<void> {
   const now = Date.now();
@@ -124,10 +131,10 @@ export async function requireLease(userId: string): Promise<Sql> {
   const lease = await assertLease(sql, userId);
   if (!lease.ok) throw new UnauthorizedError();
   await markSeen(sql, userId).catch(() => undefined);
-  // Envío periódico de avisos por correo (una vez por proceso).
+  // Start periodic email notifications once per process.
   const { startNotifier } = await import("@/server/notify");
   startNotifier();
-  // Sincronización con Git de los portafolios enlazados (si hay).
+  // Synchronize linked Git portfolios when configured.
   const { startGitSync } = await import("@/server/git/sync");
   startGitSync();
   const { startContentIndex } = await import("@/server/index/run");

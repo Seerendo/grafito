@@ -16,8 +16,8 @@ const APP_DESCRIPTION = "Bóveda de notas en Markdown con enlaces, menciones y g
 const THEME_BOOT = themeBootScript();
 
 /**
- * Idioma de la petición: la cookie que guarda `setLocale` (en el servidor, de
- * la cabecera; en el navegador, de `document.cookie`). Sin cookie, español.
+ * Request language from the locale cookie, read through headers on the server or
+ * document.cookie in the browser; default Spanish.
  */
 const requestLocale = createIsomorphicFn()
   .server(async (): Promise<Locale> => {
@@ -27,9 +27,8 @@ const requestLocale = createIsomorphicFn()
   .client(async (): Promise<Locale> => localeFromCookie(document.cookie) ?? getLocale());
 
 /**
- * Diseño de la instalación (Moderno o Clásico, `server/design.ts`). El
- * servidor lo lee de la base y lo pinta en `<html data-design>`; en el
- * navegador se conserva el de la página.
+ * Installation design from server/design.ts. SSR renders html data-design from the database;
+ * the browser preserves that value.
  */
 const requestDesign = createIsomorphicFn()
   .server(async (): Promise<Design> => {
@@ -70,12 +69,15 @@ const noop = () => () => undefined;
 
 function RootDocument() {
   const { locale: initial, design } = Route.useRouteContext();
-  // El idioma de la petición se fija antes de pintar, para que el servidor y
-  // el navegador hidraten el mismo texto.
-  const hydrated = useSyncExternalStore(noop, () => true, () => false);
+  // Set request language before rendering so SSR and hydration produce identical text.
+  const hydrated = useSyncExternalStore(
+    noop,
+    () => true,
+    () => false,
+  );
   if (!hydrated) applyLocale(initial);
   const locale = useLocale();
-  // Clics en huecos y etiquetas: sin barra de texto suelta (ver `app/blank-click.ts`).
+  // Prevent stray carets on blank-space and label clicks; see app/blank-click.ts.
   useEffect(() => installBlankClickGuard(), []);
   useEffect(() => installInputModality(), []);
 
@@ -88,7 +90,7 @@ function RootDocument() {
       <body>
         <SessionSync />
         <SessionWatch />
-        {/* Cambiar de idioma vuelve a montar la aplicación con los textos nuevos. */}
+        {/* Changing language remounts the app with translated text. */}
         <Outlet key={locale} />
         <Scripts />
       </body>

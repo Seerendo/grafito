@@ -2,11 +2,8 @@ import type { LucideIcon } from "lucide-react";
 import { t } from "@/app/i18n";
 
 /**
- * Mosaico de iconos para elegir una sección o subsección (ajustes,
- * administración), como los iconos medianos de un explorador de archivos:
- * cada opción en su propio recuadro, con el icono en el centro y el nombre
- * centrado debajo. La rejilla llena cada fila desde la izquierda con
- * recuadros del mismo tamaño.
+ * Section/subsection icon grid. Equal-size cards fill rows from the left, with centered icons
+ * and names below.
  */
 export function OptionGrid<T extends string>({
   items,
@@ -27,8 +24,10 @@ export function OptionGrid<T extends string>({
             className="flex min-h-32 flex-col items-center gap-3 rounded-lg border border-line bg-surface px-3 pt-6 pb-4 text-center transition-colors hover:bg-elevated"
           >
             <Icon className="size-8 shrink-0 text-accent" strokeWidth={1.5} aria-hidden="true" />
-            {/* Sitio para dos líneas: los iconos de una fila quedan a la misma altura. */}
-            <span className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 font-medium text-fg">{t(item.label)}</span>
+            {/* Reserve two text lines to align icons across each row. */}
+            <span className="line-clamp-2 min-h-[2.5rem] text-sm leading-5 font-medium text-fg">
+              {t(item.label)}
+            </span>
           </button>
         );
       })}

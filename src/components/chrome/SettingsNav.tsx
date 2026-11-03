@@ -1,13 +1,16 @@
-import { ChevronRight, ChevronsLeft, ChevronsRight, LayoutGrid, type LucideIcon } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  LayoutGrid,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { t } from "@/app/i18n";
 
 /**
- * Barra lateral de secciones para pantallas de ajustes (Administración,
- * Cuenta). Se pliega a un riel estrecho, como el directorio de notas: el riel
- * conserva los iconos de las secciones y una flecha para volver a desplegarla.
- * Al volver a la pantalla aparece desplegada otra vez. En móvil no se muestra: la pantalla
- * usa un mosaico de iconos (`OptionGrid`) y un «Atrás».
+ * Settings sidebar collapses to an icon rail and reopens expanded on reentry. Mobile uses
+ * OptionGrid cards and back navigation instead.
  */
 
 export type SettingsItem<T extends string> = { id: T; label: string; icon: LucideIcon };
@@ -27,17 +30,16 @@ export function SettingsNav<T extends string, S extends string = string>({
   items: SettingsItem<T>[];
   active: T | null;
   onSelect: (id: T | null) => void;
-  /** Si se da, una primera entrada que vuelve a la vista general (`null`). */
+  /** Optional first entry returns to the overview using null. */
   allLabel?: string;
   footer?: ReactNode;
-  /** Los subapartados de la sección abierta: se despliegan debajo de ella. */
+  /** Expand the active section's subsections beneath it. */
   subItems?: SettingsItem<S>[];
   activeSub?: S | null;
   onSelectSub?: (id: S) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  // Los subapartados de la sección abierta: se pliegan pulsándola otra vez y
-  // se despliegan solos al abrir otra sección o elegir un subapartado.
+  // Click the active section to collapse its subsections; changing section or selecting a subsection expands them.
   const [subOpen, setSubOpen] = useState(true);
   useEffect(() => setSubOpen(true), [active, activeSub]);
   const toggle = () => setCollapsed((value) => !value);
@@ -49,7 +51,11 @@ export function SettingsNav<T extends string, S extends string = string>({
 
   if (collapsed) {
     return (
-      <nav data-ui="rail" aria-label={title} className="hidden w-12 shrink-0 flex-col items-center gap-0.5 border-r border-line bg-surface pt-2 md:flex">
+      <nav
+        data-ui="rail"
+        aria-label={title}
+        className="hidden w-12 shrink-0 flex-col items-center gap-0.5 border-r border-line bg-surface pt-2 md:flex"
+      >
         <button
           type="button"
           onClick={toggle}
@@ -81,7 +87,11 @@ export function SettingsNav<T extends string, S extends string = string>({
   }
 
   return (
-    <nav data-ui="sidebar" aria-label={title} className="hidden min-h-0 w-56 shrink-0 flex-col border-r border-line bg-surface md:flex">
+    <nav
+      data-ui="sidebar"
+      aria-label={title}
+      className="hidden min-h-0 w-56 shrink-0 flex-col border-r border-line bg-surface md:flex"
+    >
       <div className="flex items-center gap-2 pt-3 pr-2 pb-2 pl-4">
         <p className="flex-1 text-xs font-medium tracking-widest text-faint uppercase">{title}</p>
         <button
@@ -94,7 +104,10 @@ export function SettingsNav<T extends string, S extends string = string>({
           <ChevronsLeft className="size-4" />
         </button>
       </div>
-      <div data-ui="settings-entries" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+      <div
+        data-ui="settings-entries"
+        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2"
+      >
         {entries.map((entry) => {
           const Icon = entry.icon;
           const on = entry.id === active;
@@ -114,11 +127,16 @@ export function SettingsNav<T extends string, S extends string = string>({
                 <Icon className={`size-4 shrink-0 ${on ? "text-accent" : ""}`} />
                 <span className="min-w-0 flex-1 truncate">{t(entry.label)}</span>
                 {expandable ? (
-                  <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${subOpen ? "rotate-90" : ""}`} />
+                  <ChevronRight
+                    className={`size-3.5 shrink-0 text-faint transition-transform ${subOpen ? "rotate-90" : ""}`}
+                  />
                 ) : null}
               </button>
               {subs.length > 0 ? (
-                <div data-ui="settings-subnav" className="ml-5 flex flex-col gap-0.5 border-l border-line pl-2">
+                <div
+                  data-ui="settings-subnav"
+                  className="ml-5 flex flex-col gap-0.5 border-l border-line pl-2"
+                >
                   {subs.map((sub) => {
                     const SubIcon = sub.icon;
                     const here = sub.id === activeSub;
@@ -143,7 +161,11 @@ export function SettingsNav<T extends string, S extends string = string>({
           );
         })}
       </div>
-      {footer ? <div className="shrink-0 truncate border-t border-line px-4 py-3 text-xs text-faint">{footer}</div> : null}
+      {footer ? (
+        <div className="shrink-0 truncate border-t border-line px-4 py-3 text-xs text-faint">
+          {footer}
+        </div>
+      ) : null}
     </nav>
   );
 }

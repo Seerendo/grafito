@@ -3,10 +3,7 @@ import { boxToPdf, type SignatureBox } from "../domain/signature-box.ts";
 
 const MAX_IMAGE = 500_000;
 
-/**
- * La imagen llega en base64 y solo se decodifica en memoria.
- * `"big"` si pesa demasiado; `null` si no es una imagen usable.
- */
+/** Decode base64 signature images only in memory. Return big when oversized or null when unusable. */
 export function decodeSignatureImage(raw: string): Uint8Array | "big" | null {
   const data = raw.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
   if (!data) return null;
@@ -25,18 +22,26 @@ export async function pdfPageCount(pdfBytes: Uint8Array): Promise<number> {
   }
 }
 
-/** PNG o JPEG, por los bytes, no por el nombre que diga el navegador. */
+/** Detect PNG/JPEG from bytes rather than browser-provided names. */
 export function imageKind(bytes: Uint8Array): "png" | "jpg" | null {
-  if (bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "png";
+  if (
+    bytes.length > 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  )
+    return "png";
   if (bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
   return null;
 }
 
-/**
- * Estampa la imagen en el recuadro y devuelve el PDF nuevo.
- * Quien llama no debe guardar `image`: aquí solo se lee.
- */
-export async function stampSignature(pdfBytes: Uint8Array, image: Uint8Array, box: SignatureBox): Promise<Uint8Array> {
+/** Stamp the image and return a new PDF. Callers must not persist the source image. */
+export async function stampSignature(
+  pdfBytes: Uint8Array,
+  image: Uint8Array,
+  box: SignatureBox,
+): Promise<Uint8Array> {
   const kind = imageKind(image);
   if (!kind) throw new Error("La firma tiene que ser una imagen PNG o JPEG.");
   let pdf: PDFDocument;
@@ -45,7 +50,8 @@ export async function stampSignature(pdfBytes: Uint8Array, image: Uint8Array, bo
   } catch {
     throw new Error("No se pudo estampar la firma en el PDF.");
   }
-  if (box.page < 1 || box.page > pdf.getPageCount()) throw new Error("El recuadro no cabe en la página.");
+  if (box.page < 1 || box.page > pdf.getPageCount())
+    throw new Error("El recuadro no cabe en la página.");
   const page = pdf.getPage(box.page - 1);
   if (!page) throw new Error("El recuadro no cabe en la página.");
   const crop = page.getCropBox();

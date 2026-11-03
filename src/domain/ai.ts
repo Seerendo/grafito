@@ -1,17 +1,8 @@
 /**
- * Catálogo de proveedores de IA. Cada uno habla uno de cuatro protocolos:
- *
- *  - `openai`: Chat Completions (`POST /chat/completions`, `GET /models`,
- *    `Authorization: Bearer`). ChatGPT, Grok (xAI), DeepSeek, Kimi (Moonshot),
- *    OpenRouter y LM Studio lo implementan.
- *  - `anthropic`: Messages API de Claude (`POST /v1/messages`, `x-api-key`,
- *    `anthropic-version`, bloques `tool_use` / `tool_result`).
- *  - `gemini`: Generative Language API (`:generateContent`, `x-goog-api-key`,
- *    `functionDeclarations`, partes `functionCall` / `functionResponse`).
- *  - `ollama`: API nativa de Ollama (`POST /api/chat`, `GET /api/tags`).
- *
- * Los proveedores locales (Ollama, LM Studio) no piden clave y su dirección la
- * fija el administrador; los de la nube usan siempre su URL oficial.
+ * AI provider catalog. openai uses Chat Completions and Bearer authentication; anthropic uses
+ * Messages with x-api-key and tool_use/tool_result; gemini uses generateContent with
+ * functionCall/functionResponse; ollama uses native /api/chat and /api/tags. Cloud providers
+ * use official URLs; local instances use configured addresses and optional keys.
  */
 
 export type AiProviderId =
@@ -28,14 +19,14 @@ export type AiProtocol = "openai" | "anthropic" | "gemini" | "ollama";
 
 export type AiProviderInfo = {
   id: AiProviderId;
-  /** Nombre que ve la persona. */
+  /** User-visible provider name. */
   label: string;
   vendor: string;
   protocol: AiProtocol;
-  /** URL oficial; en los locales, la que se sugiere al administrador. */
+  /** Official cloud URL or suggested local-instance address. */
   baseUrl: string;
   local: boolean;
-  /** Dónde se consigue la clave. */
+  /** Where users obtain credentials. */
   keyUrl: string;
   keyPlaceholder: string;
 };
@@ -133,13 +124,16 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
   },
 ];
 
-export const AI_PROVIDER_IDS = AI_PROVIDERS.map((provider) => provider.id) as [AiProviderId, ...AiProviderId[]];
+export const AI_PROVIDER_IDS = AI_PROVIDERS.map((provider) => provider.id) as [
+  AiProviderId,
+  ...AiProviderId[],
+];
 
 export function aiProvider(id: string): AiProviderInfo | undefined {
   return AI_PROVIDERS.find((provider) => provider.id === id);
 }
 
-/** `ollama:llama3.2` → proveedor y modelo. */
+/** Split ollama:llama3.2 into provider and model. */
 export function splitModelRef(ref: string): { provider: AiProviderId; model: string } | null {
   const index = ref.indexOf(":");
   if (index <= 0) return null;

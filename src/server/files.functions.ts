@@ -7,10 +7,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { getDoc } from "@/server/vault";
 
-/**
- * Enlaces para ver y descargar un archivo propio. Caducan en una hora; el
- * cliente los pide de nuevo antes (`app/files.ts`).
- */
+/** Owned file view/download links last an hour; app/files.ts refreshes them before expiry. */
 export const fileLink = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ docId: z.string().min(1).max(80) }).parse(input))
@@ -22,6 +19,8 @@ export const fileLink = createServerFn({ method: "GET" })
     if (!doc?.file || (!doc.file.key && !doc.file.dataUrl)) return null;
     return {
       url: signedFileUrl(doc.id, context.userId),
-      downloadUrl: allows(profile, PERMISSION.filesDownload) ? signedFileUrl(doc.id, context.userId, true) : null,
+      downloadUrl: allows(profile, PERMISSION.filesDownload)
+        ? signedFileUrl(doc.id, context.userId, true)
+        : null,
     };
   });

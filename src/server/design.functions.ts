@@ -6,13 +6,13 @@ import { readDesign, writeDesign } from "@/server/design";
 import { requireLease } from "@/server/lease";
 import { readUserProfile } from "@/server/profile";
 
-/** Diseño actual de la instalación (no necesita sesión: lo usa también el ingreso). */
+/** Public installation design used by sign-in as well as authenticated pages. */
 export const currentDesign = createServerFn({ method: "GET" }).handler(async () => {
   const { getSql } = await import("@/lib/db");
   return readDesign(await getSql());
 });
 
-/** Administración → Apariencia → Diseño: cambia el diseño de toda la instalación. */
+/** Change the installation-wide appearance design. */
 export const setDesign = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ design: z.enum(DESIGN_IDS) }).parse(input))

@@ -4,7 +4,7 @@ import * as ollama from "./ollama.ts";
 import * as openai from "./openai.ts";
 import type { CompleteInput, Completion, Endpoint } from "./types.ts";
 
-/** Elige el adaptador según el protocolo del proveedor (ver `domain/ai.ts`). */
+/** Select the adapter by provider protocol; see domain/ai.ts. */
 
 export type Protocol = "openai" | "anthropic" | "gemini" | "ollama";
 
@@ -20,14 +20,18 @@ export function complete(protocol: Protocol, input: CompleteInput): Promise<Comp
   return ADAPTERS[protocol].complete(input);
 }
 
-/** Modelos de embeddings (`text-embedding-…`, `nomic-embed-text`…): no conversan. */
+/** Embedding models do not support chat. */
 const EMBEDDING = /embed/i;
 
-export async function listModels(protocol: Protocol, endpoint: Endpoint, fetcher?: typeof fetch): Promise<string[]> {
+export async function listModels(
+  protocol: Protocol,
+  endpoint: Endpoint,
+  fetcher?: typeof fetch,
+): Promise<string[]> {
   return chatModels(await ADAPTERS[protocol].listModels(endpoint, fetcher));
 }
 
-/** Solo los modelos que sirven para el chat. */
+/** Filter to chat-capable models. */
 export function chatModels(names: string[]): string[] {
   return names.filter((name) => !EMBEDDING.test(name));
 }

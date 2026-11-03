@@ -280,14 +280,7 @@ html[data-theme="folleto"] body {
     height: 100%;
   }
 
-  /*
-   * Texto y cursores (ambos diseños):
-   *  - Todo el texto de lectura se puede seleccionar y copiar.
-   *  - El puntero es la flecha salvo donde se escribe (cursor de texto) o se
-   *    pulsa (mano). Nunca aparece el cursor de edición fuera de un campo.
-   *  - Los controles (botones, menús, filas que se arrastran) no se
-   *    seleccionan al hacer clic.
-   */
+  /* Text and cursors in both layouts: reading text remains selectable; use arrow by default, text caret in inputs and pointer for actions. Buttons, menus and draggable controls do not select text on click. */
   body {
     margin: 0;
     background: var(--color-bg);
@@ -547,7 +540,12 @@ html[data-tone="dark"] .theme-moon {
 
 .theme-stage[data-preview="manuscrito"] {
   background-color: #fbf6ec;
-  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 15px, rgba(140, 90, 70, 0.2) 16px);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 15px,
+    rgba(140, 90, 70, 0.2) 16px
+  );
   color: #7a2438;
   font-family: Literata, serif;
 }
@@ -578,7 +576,7 @@ html[data-tone="dark"] .theme-moon {
   font-family: Outfit, sans-serif;
 }
 
-/* Miniaturas de Administración → Apariencia → Diseño (con los colores del tema). */
+/* Theme-colored administration layout previews. */
 .design-preview {
   position: relative;
   display: grid;
@@ -637,7 +635,11 @@ html[data-tone="dark"] .theme-moon {
   gap: 6px;
   padding: 6px;
   background:
-    radial-gradient(140px 80px at 10% 0%, color-mix(in srgb, var(--color-accent) 22%, transparent), transparent 70%),
+    radial-gradient(
+      140px 80px at 10% 0%,
+      color-mix(in srgb, var(--color-accent) 22%, transparent),
+      transparent 70%
+    ),
     var(--color-bg);
 }
 
@@ -660,7 +662,11 @@ html[data-tone="dark"] .theme-moon {
 
 .design-preview[data-preview="modern"] [data-part="button"] {
   border-radius: 999px;
-  background-image: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 72%, var(--color-fg)));
+  background-image: linear-gradient(
+    135deg,
+    var(--color-accent),
+    color-mix(in srgb, var(--color-accent) 72%, var(--color-fg))
+  );
 }
 
 .pdf-host {
@@ -728,11 +734,7 @@ html[data-tone="dark"] .theme-moon {
   animation: grafito-in 180ms ease;
 }
 
-/*
- * Chat de IA: al minimizarse, el panel se encoge hacia su botón (abajo a la
- * derecha) y el botón reaparece; al abrirse, al revés. 200 ms, como
- * `MOTION_MS` en `AiChat.tsx`.
- */
+/* AI chat minimizes toward its bottom-right button and reverses on opening. Duration is two hundred milliseconds, matching MOTION_MS. */
 .ai-panel {
   transform-origin: calc(100% - 1.5rem) calc(100% - 1.5rem);
   transition:
@@ -774,15 +776,17 @@ html[data-tone="dark"] .theme-moon {
   }
 }
 
-/*
- * Donde se escribe (buscadores, filtros, títulos, el cuerpo de la nota, los
- * campos de los formularios), el foco no dibuja anillo ni resalta el borde:
- * basta el cursor de texto. Los botones, interruptores y demás controles
- * conservan su anillo al llegar con el teclado. Fuera de capas, para ganar al
- * anillo general de los dos diseños (`:is(html, html[data-design])` iguala su
- * especificidad con o sin diseño).
- */
-:is(html, html[data-design]) input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="submit"], [type="button"]):is(:focus, :focus-visible),
+/* Text inputs use the caret without focus rings or highlighted borders. Other controls retain keyboard focus rings. Unlayered selectors override both design variants with matching specificity. */
+:is(html, html[data-design])
+  input:not(
+    [type="checkbox"],
+    [type="radio"],
+    [type="range"],
+    [type="color"],
+    [type="file"],
+    [type="submit"],
+    [type="button"]
+  ):is(:focus, :focus-visible),
 :is(html, html[data-design]) textarea:is(:focus, :focus-visible),
 :is(html, html[data-design]) [contenteditable]:is(:focus, :focus-visible),
 :is(html, html[data-design]) select:is(:focus, :focus-visible) {
@@ -790,19 +794,12 @@ html[data-tone="dark"] .theme-moon {
   box-shadow: none;
 }
 
-/*
- * Con el ratón, sin anillo de foco aunque luego se pulse una tecla: vuelve con
- * Tab (`app/input-modality.ts`). Gana al anillo de los diseños.
- */
+/* Pointer modality suppresses rings until Tab navigation resumes; see app/input-modality.ts. */
 :is(html, html[data-design])[data-modality="pointer"] :focus-visible {
   outline: none;
 }
 
-/*
- * Selectores: la lista desplegable con esquinas redondeadas, del color del
- * tema, donde el navegador deja darle estilo (`appearance: base-select`,
- * Chrome y Edge 135+). En los demás queda la lista nativa.
- */
+/* Style native dropdowns with theme colors and rounded corners where base-select is supported; retain native fallback elsewhere. */
 @supports (appearance: base-select) {
   select,
   ::picker(select) {
@@ -814,7 +811,7 @@ html[data-tone="dark"] .theme-moon {
     align-items: center;
   }
 
-  /* La flecha la dibuja el componente `Select`. */
+  /* Select renders its own arrow. */
   select::picker-icon {
     display: none;
   }
@@ -836,8 +833,7 @@ html[data-tone="dark"] .theme-moon {
     cursor: pointer;
   }
 
-  /* La opción bajo el ratón toma el foco: solo fondo, sin el anillo de los
-     diseños (`:is(html, html[data-design])` gana a su `:focus-visible`). */
+  /* Hovered options receive background focus without the design's focus ring. */
   :is(html, html[data-design]) select option:is(:hover, :focus, :focus-visible) {
     background: var(--color-elevated);
     outline: none;
@@ -857,11 +853,7 @@ html[data-tone="dark"] .theme-moon {
   }
 }
 
-/*
- * Capa de texto del visor de PDF (`components/vault/PdfView.tsx`): el texto
- * invisible sobre la página, para seleccionarlo. Reglas de PDF.js
- * (web/pdf_viewer.css, `.textLayer`); `--total-scale-factor` lo pone el visor.
- */
+/* PDF.js invisible selectable text layer, adapted from web/pdf_viewer.css. The viewer supplies total-scale-factor. */
 .textLayer {
   position: absolute;
   text-align: initial;
@@ -914,27 +906,19 @@ html[data-tone="dark"] .theme-moon {
   background: transparent;
 }
 
-/* Sobre una frase vinculada: la mano, para abrir su destino. */
+/* Linked phrases use pointer cursors for navigation. */
 .pdf-link-hover .textLayer :is(span, br) {
   cursor: pointer;
 }
 
-/*
- * Dibujos (`components/vault/DrawingView.tsx`): con poco ancho (el centro entre
- * los dos paneles) Excalidraw pasa a su diseño de móvil, donde su menú ocupaba
- * todo el lienzo. Aquí se queda abajo, con un alto máximo y su propio scroll.
- */
+/* Constrain Excalidraw's narrow/mobile menu to the canvas bottom with bounded height and independent scrolling. */
 [data-ui="drawing"] .dropdown-menu--mobile {
   top: auto !important;
   max-height: min(26rem, 55dvh);
   overflow-y: auto;
 }
 
-/*
- * Colores de sintaxis del editor de notas (`HighlightLayer`). Cada tono se
- * mezcla con el color del texto del tema, así se lee bien en temas claros y
- * oscuros. Solo color y fondo: nada que cambie el ancho de las letras.
- */
+/* Editor syntax colors mix with theme foreground for light/dark readability. Change only colors/backgrounds, never character widths. */
 :root {
   --md-heading: var(--color-accent);
   --md-mark: color-mix(in oklab, var(--color-accent) 60%, var(--color-faint));
@@ -1000,7 +984,7 @@ html[data-tone="light"] {
   border-radius: 2px;
 }
 
-/* Cambio de idioma (Cuenta → Preferencias): un fundido corto en vez de un salto. */
+/* Use a short crossfade for interface-language changes. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: 220ms;

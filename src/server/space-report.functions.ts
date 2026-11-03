@@ -7,14 +7,16 @@ import { defaultUserLimit, portfolioUsage } from "@/server/space";
 import { workspaceChildren, workspaces } from "@/server/workspace";
 
 /**
- * Monitorización → Espacio asignado (permiso `space.manage`): el disco del
- * entorno donde se guardan los archivos, cuánto de él está asignado (espacios
- * de trabajo de primer nivel y espacio personal de cada usuario con tope) y
- * cuánto se usa de lo asignado, con el detalle de cada uno.
+ * Allocated-storage monitoring requires space.manage. Report environment disk, top-level
+ * workspace and personal quota allocations, and usage with per-allocation details.
  */
 
-/** El disco donde viven los archivos: MinIO / S3 si lo hay, si no el volumen local. */
-async function environmentDisk(): Promise<{ total: number; available: number; source: string } | null> {
+/** File-storage disk: MinIO/S3 when configured, otherwise local volume. */
+async function environmentDisk(): Promise<{
+  total: number;
+  available: number;
+  source: string;
+} | null> {
   const minio = await minioSpace();
   if (minio) return { total: minio.total, available: minio.available, source: "MinIO" };
   try {
@@ -34,7 +36,7 @@ export type WorkspaceNode = {
   name: string;
   bytes: number | null;
   used: number;
-  /** Lo asignado a sus organizaciones (sale de `bytes`). */
+  /** Child organization allocations deducted from bytes. */
   given: number;
   children: WorkspaceNode[];
 };
@@ -47,7 +49,11 @@ export const assignedSpaceReport = createServerFn({ method: "GET" })
     if (!allows(profile, "space.manage")) return { ok: false as const };
 
     const disk = await environmentDisk();
-    const orgs = await sql<{ id: string; name: string; parent_id: string | null }>`select id, name, parent_id from app_org`;
+    const orgs = await sql<{
+      id: string;
+      name: string;
+      parent_id: string | null;
+    }>`select id, name, parent_id from app_org`;
     const rows = await workspaces(sql);
     const children = workspaceChildren(orgs, rows);
     const nested = new Set([...children.values()].flat().map((row) => row.org_id));
@@ -62,14 +68,21 @@ export const assignedSpaceReport = createServerFn({ method: "GET" })
         children: below.sort((a, b) => a.name.localeCompare(b.name)),
       };
     };
-    // Los de primer nivel: los de debajo ya salen de su espacio.
+    // Count only top-level workspaces; descendants consume their allocation.
     const tree = await Promise.all(rows.filter((row) => !nested.has(row.org_id)).map(build));
     tree.sort((a, b) => a.name.localeCompare(b.name));
-    // Lo usado en un espacio de trabajo de primer nivel incluye lo de los de debajo.
-    const totalUsed = (node: WorkspaceNode): number => node.used + node.children.reduce((sum, child) => sum + totalUsed(child), 0);
+    // Top-level workspace usage includes descendants.
+    const totalUsed = (node: WorkspaceNode): number =>
+      node.used + node.children.reduce((sum, child) => sum + totalUsed(child), 0);
 
     const fallback = await defaultUserLimit(sql);
-    const users = await sql<{ id: string; name: string; login: string | null; limit: unknown; used: unknown }>`
+    const users = await sql<{
+      id: string;
+      name: string;
+      login: string | null;
+      limit: unknown;
+      used: unknown;
+    }>`
       select u.id, u.name, coalesce(r.login_name, a.login_name) as login, s.bytes as limit,
         (select coalesce(sum(d.file_size), 0)::bigint from vault_doc d
           where d.kind = 'file' and coalesce(d.uploaded_by, d.user_id) = u.id
@@ -94,15 +107,27 @@ export const assignedSpaceReport = createServerFn({ method: "GET" })
     });
 
     const workspaceAssigned = tree.reduce((sum, node) => sum + (node.bytes ?? 0), 0);
-    const workspaceUsed = tree.filter((node) => node.bytes !== null).reduce((sum, node) => sum + totalUsed(node), 0);
+    const workspaceUsed = tree
+      .filter((node) => node.bytes !== null)
+      .reduce((sum, node) => sum + totalUsed(node), 0);
     const usersAssigned = people.reduce((sum, person) => sum + (person.limit ?? 0), 0);
-    const usersUsed = people.filter((person) => person.limit !== null).reduce((sum, person) => sum + person.used, 0);
+    const usersUsed = people
+      .filter((person) => person.limit !== null)
+      .reduce((sum, person) => sum + person.used, 0);
     return {
       ok: true as const,
       disk,
       assigned: workspaceAssigned + usersAssigned,
       usedOfAssigned: workspaceUsed + usersUsed,
-      workspaces: { assigned: workspaceAssigned, used: tree.reduce((sum, node) => sum + totalUsed(node), 0), tree },
-      users: { assigned: usersAssigned, used: people.reduce((sum, person) => sum + person.used, 0), people },
+      workspaces: {
+        assigned: workspaceAssigned,
+        used: tree.reduce((sum, node) => sum + totalUsed(node), 0),
+        tree,
+      },
+      users: {
+        assigned: usersAssigned,
+        used: people.reduce((sum, person) => sum + person.used, 0),
+        people,
+      },
     };
   });

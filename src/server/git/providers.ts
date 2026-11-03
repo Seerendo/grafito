@@ -1,43 +1,48 @@
 import { createHash } from "node:crypto";
 
 /**
- * Repositorios de GitHub y GitLab por su API REST (solo servidor), sin el
- * programa `git`: leer la rama, el árbol y los blobs, y hacer un commit con
- * varios cambios. Sirve para github.com, gitlab.com e instalaciones propias
- * (GitHub Enterprise Server, un GitLab institucional), siempre que su
- * servidor esté permitido (`allowedHost`, `GRAFITO_GIT_HOSTS`).
+ * GitHub/GitLab REST adapters read branches, trees and blobs and create multi-file commits
+ * without the git executable. Self-hosted servers require GRAFITO_GIT_HOSTS authorization.
  */
 
 export type Provider = "github" | "gitlab";
 
-export type RepoConfig = { provider: Provider; baseUrl: string; repo: string; branch: string; token: string };
+export type RepoConfig = {
+  provider: Provider;
+  baseUrl: string;
+  repo: string;
+  branch: string;
+  token: string;
+};
 
 export type RemoteFile = { path: string; sha: string };
 
-/** Un cambio de un commit: el contenido nuevo de una ruta, o `null` para borrarla. */
+/** Commit change: new path content or null for deletion. */
 export type Change = { path: string; bytes: Uint8Array | null; exists: boolean };
 
 export class GitError extends Error {
   constructor(
     message: string,
-    /** La rama avanzó mientras tanto: se reintenta en la siguiente vuelta. */
+    /** Branch advanced concurrently; retry on the next sync pass. */
     readonly retry = false,
   ) {
     super(message);
   }
 }
 
-export const DEFAULT_URL: Record<Provider, string> = { github: "https://github.com", gitlab: "https://gitlab.com" };
+export const DEFAULT_URL: Record<Provider, string> = {
+  github: "https://github.com",
+  gitlab: "https://gitlab.com",
+};
 
-/** El id que Git le da a un contenido (`git hash-object`). */
+/** Git object content hash, equivalent to git hash-object. */
 export function gitBlobSha(bytes: Uint8Array): string {
   return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 }
 
 /**
- * Servidores a los que se puede conectar: github.com y gitlab.com, más los que
- * el administrador añada en `GRAFITO_GIT_HOSTS` (separados por comas). Así un
- * usuario no puede hacer que el servidor llame a cualquier dirección interna.
+ * Allow github.com, gitlab.com and administrator-listed GRAFITO_GIT_HOSTS to prevent arbitrary
+ * internal requests.
  */
 export function allowedHost(baseUrl: string): boolean {
   let url: URL;
@@ -56,14 +61,14 @@ export function allowedHost(baseUrl: string): boolean {
   return url.protocol === "https:" && (host === "github.com" || host === "gitlab.com");
 }
 
-/** La dirección del servidor sin barra final ni ruta de más. */
+/** Normalize server URL without trailing slash or extra path. */
 export function normalizeBaseUrl(provider: Provider, raw: string): string {
   const value = raw.trim() || DEFAULT_URL[provider];
   const url = new URL(value.includes("://") ? value : `https://${value}`);
   return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
 }
 
-/** Explica un fallo de red, en especial el certificado de un servidor propio. */
+/** Explain network failures, especially self-hosted certificate errors. */
 function networkError(error: unknown, baseUrl: string): GitError {
   const cause = (error as { cause?: { code?: string; message?: string } })?.cause;
   const code = cause?.code ?? "";
@@ -73,7 +78,8 @@ function networkError(error: unknown, baseUrl: string): GitError {
       `El certificado de ${host} no es de confianza para el servidor de Grafito. Añade su autoridad con NODE_EXTRA_CA_CERTS (ver docs/GIT.md).`,
     );
   }
-  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return new GitError(`No se encuentra ${host} desde el servidor de Grafito.`);
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN")
+    return new GitError(`No se encuentra ${host} desde el servidor de Grafito.`);
   return new GitError(`No se pudo conectar con ${host}${code ? ` (${code})` : ""}.`);
 }
 
@@ -83,17 +89,25 @@ async function call(
   init: RequestInit & { headers: Record<string, string> },
 ): Promise<Response> {
   if (!allowedHost(config.baseUrl)) {
-    throw new GitError(`${new URL(config.baseUrl).host} no está permitido. El administrador puede añadirlo en GRAFITO_GIT_HOSTS.`);
+    throw new GitError(
+      `${new URL(config.baseUrl).host} no está permitido. El administrador puede añadirlo en GRAFITO_GIT_HOSTS.`,
+    );
   }
   let response: Response;
   try {
-    // Sin seguir redirecciones: podrían llevar el token a otra dirección.
-    response = await fetch(url, { ...init, redirect: "manual", signal: AbortSignal.timeout(60_000) });
+    // Do not follow redirects that could expose credentials to another host.
+    response = await fetch(url, {
+      ...init,
+      redirect: "manual",
+      signal: AbortSignal.timeout(60_000),
+    });
   } catch (error) {
     throw networkError(error, config.baseUrl);
   }
   if (response.status >= 300 && response.status < 400) {
-    throw new GitError("El servidor respondió con una redirección: revisa la dirección del servidor o si el repositorio cambió de nombre.");
+    throw new GitError(
+      "El servidor respondió con una redirección: revisa la dirección del servidor o si el repositorio cambió de nombre.",
+    );
   }
   return response;
 }
@@ -109,9 +123,14 @@ async function failure(response: Response, what: string): Promise<GitError> {
   }
   const extra = detail ? ` (${detail.slice(0, 200)})` : "";
   if (response.status === 401) return new GitError(`El token no es válido o caducó${extra}.`);
-  if (response.status === 403) return new GitError(`El token no tiene permiso para ${what}${extra}.`);
-  if (response.status === 404) return new GitError(`No se encuentra el repositorio o la rama, o el token no tiene acceso${extra}.`);
-  if (response.status === 409 || response.status === 422) return new GitError(`La rama cambió mientras tanto${extra}.`, true);
+  if (response.status === 403)
+    return new GitError(`El token no tiene permiso para ${what}${extra}.`);
+  if (response.status === 404)
+    return new GitError(
+      `No se encuentra el repositorio o la rama, o el token no tiene acceso${extra}.`,
+    );
+  if (response.status === 409 || response.status === 422)
+    return new GitError(`La rama cambió mientras tanto${extra}.`, true);
   return new GitError(`Error ${response.status} al ${what}${extra}.`);
 }
 
@@ -120,17 +139,14 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 export interface GitRepo {
-  /** Comprueba el acceso; `canWrite` si el token puede hacer commits. */
+  /** Verify access and whether the token can create commits. */
   check(): Promise<{ canWrite: boolean; defaultBranch: string | null }>;
-  /** El último commit de la rama, o `null` si la rama no existe. */
+  /** Latest branch commit, or null when the branch is absent. */
   head(): Promise<string | null>;
-  /** Los archivos (no carpetas) de un commit. */
+  /** Files only from a commit tree. */
   tree(commit: string): Promise<RemoteFile[]>;
   readBlob(sha: string): Promise<Uint8Array>;
-  /**
-   * Un commit con todos los cambios sobre `parent` (`null`: la rama aún no
-   * existe; solo GitLab la crea así). Devuelve el nuevo commit.
-   */
+  /** Commit all changes over parent. A null parent creates a branch only on GitLab. Return the new commit. */
   commit(parent: string | null, message: string, changes: Change[]): Promise<string>;
 }
 
@@ -138,8 +154,7 @@ export function openRepo(config: RepoConfig): GitRepo {
   return config.provider === "github" ? github(config) : gitlab(config);
 }
 
-// ---------------------------------------------------------------------------
-// GitHub (github.com y GitHub Enterprise Server)
+// GitHub and GitHub Enterprise Server.
 
 function github(config: RepoConfig): GitRepo {
   const host = new URL(config.baseUrl).host;
@@ -170,13 +185,23 @@ function github(config: RepoConfig): GitRepo {
   };
   return {
     async check() {
-      const info = await get<{ permissions?: { push?: boolean }; default_branch?: string }>("", "leer el repositorio");
-      return { canWrite: Boolean(info.permissions?.push), defaultBranch: info.default_branch ?? null };
+      const info = await get<{ permissions?: { push?: boolean }; default_branch?: string }>(
+        "",
+        "leer el repositorio",
+      );
+      return {
+        canWrite: Boolean(info.permissions?.push),
+        defaultBranch: info.default_branch ?? null,
+      };
     },
     async head() {
-      const response = await call(config, `${api}/repos/${repo}/branches/${encodeURIComponent(config.branch)}`, { headers });
+      const response = await call(
+        config,
+        `${api}/repos/${repo}/branches/${encodeURIComponent(config.branch)}`,
+        { headers },
+      );
       if (response.status === 404) {
-        // ¿No existe la rama, o el repositorio? Lo segundo es un error.
+        // Distinguish a missing branch from a missing repository; the latter is an error.
         await get("", "leer el repositorio");
         return null;
       }
@@ -185,16 +210,24 @@ function github(config: RepoConfig): GitRepo {
     },
     async tree(commit) {
       const info = await get<{ tree: { sha: string } }>(`/git/commits/${commit}`, "leer el commit");
-      const tree = await get<{ tree: Array<{ path: string; type: string; sha: string }>; truncated?: boolean }>(
-        `/git/trees/${info.tree.sha}?recursive=1`,
-        "leer los archivos",
-      );
-      if (tree.truncated) throw new GitError("El repositorio tiene demasiados archivos para leerlos de una vez.");
-      return tree.tree.filter((item) => item.type === "blob").map((item) => ({ path: item.path, sha: item.sha }));
+      const tree = await get<{
+        tree: Array<{ path: string; type: string; sha: string }>;
+        truncated?: boolean;
+      }>(`/git/trees/${info.tree.sha}?recursive=1`, "leer los archivos");
+      if (tree.truncated)
+        throw new GitError("El repositorio tiene demasiados archivos para leerlos de una vez.");
+      return tree.tree
+        .filter((item) => item.type === "blob")
+        .map((item) => ({ path: item.path, sha: item.sha }));
     },
     async readBlob(sha) {
-      const blob = await get<{ content: string; encoding: string }>(`/git/blobs/${sha}`, "leer un archivo");
-      return new Uint8Array(Buffer.from(blob.content, blob.encoding === "base64" ? "base64" : "utf8"));
+      const blob = await get<{ content: string; encoding: string }>(
+        `/git/blobs/${sha}`,
+        "leer un archivo",
+      );
+      return new Uint8Array(
+        Buffer.from(blob.content, blob.encoding === "base64" ? "base64" : "utf8"),
+      );
     },
     async commit(parent, message, changes) {
       if (!parent) {
@@ -206,7 +239,8 @@ function github(config: RepoConfig): GitRepo {
       const entries: Array<{ path: string; mode: string; type: string; sha: string | null }> = [];
       for (const change of changes) {
         if (!change.bytes) {
-          if (change.exists) entries.push({ path: change.path, mode: "100644", type: "blob", sha: null });
+          if (change.exists)
+            entries.push({ path: change.path, mode: "100644", type: "blob", sha: null });
           continue;
         }
         const blob = await send<{ sha: string }>(
@@ -217,20 +251,34 @@ function github(config: RepoConfig): GitRepo {
         );
         entries.push({ path: change.path, mode: "100644", type: "blob", sha: blob.sha });
       }
-      const tree = await send<{ sha: string }>("POST", "/git/trees", { base_tree: base.tree.sha, tree: entries }, "preparar el commit");
-      const commit = await send<{ sha: string }>("POST", "/git/commits", { message, tree: tree.sha, parents: [parent] }, "hacer el commit");
-      await send("PATCH", `/git/refs/heads/${encodeURIComponent(config.branch)}`, { sha: commit.sha, force: false }, "actualizar la rama");
+      const tree = await send<{ sha: string }>(
+        "POST",
+        "/git/trees",
+        { base_tree: base.tree.sha, tree: entries },
+        "preparar el commit",
+      );
+      const commit = await send<{ sha: string }>(
+        "POST",
+        "/git/commits",
+        { message, tree: tree.sha, parents: [parent] },
+        "hacer el commit",
+      );
+      await send(
+        "PATCH",
+        `/git/refs/heads/${encodeURIComponent(config.branch)}`,
+        { sha: commit.sha, force: false },
+        "actualizar la rama",
+      );
       return commit.sha;
     },
   };
 }
 
-// ---------------------------------------------------------------------------
-// GitLab (gitlab.com e instalaciones propias, con subgrupos)
+// GitLab cloud and self-hosted instances, including subgroups.
 
 function gitlab(config: RepoConfig): GitRepo {
   const api = `${config.baseUrl}/api/v4/projects/${encodeURIComponent(config.repo)}`;
-  // Vale para tokens personales, de proyecto y de grupo.
+  // Supports personal, project and group tokens.
   const headers = { "private-token": config.token, "user-agent": "Grafito" };
   const get = async <T>(path: string, what: string): Promise<{ body: T; response: Response }> => {
     const response = await call(config, `${api}${path}`, { headers });
@@ -241,17 +289,27 @@ function gitlab(config: RepoConfig): GitRepo {
     async check() {
       const { body } = await get<{
         default_branch?: string;
-        permissions?: { project_access?: { access_level?: number } | null; group_access?: { access_level?: number } | null };
+        permissions?: {
+          project_access?: { access_level?: number } | null;
+          group_access?: { access_level?: number } | null;
+        };
       }>("", "leer el proyecto");
       const level = Math.max(
         body.permissions?.project_access?.access_level ?? 0,
         body.permissions?.group_access?.access_level ?? 0,
       );
-      // 30 = Developer. Un token de proyecto puede no traer `permissions`: se prueba al hacer el commit.
-      return { canWrite: level >= 30 || !body.permissions, defaultBranch: body.default_branch ?? null };
+      // Developer access is level thirty. Project tokens may omit permissions; commit execution verifies them.
+      return {
+        canWrite: level >= 30 || !body.permissions,
+        defaultBranch: body.default_branch ?? null,
+      };
     },
     async head() {
-      const response = await call(config, `${api}/repository/branches/${encodeURIComponent(config.branch)}`, { headers });
+      const response = await call(
+        config,
+        `${api}/repository/branches/${encodeURIComponent(config.branch)}`,
+        { headers },
+      );
       if (response.status === 404) {
         await get("", "leer el proyecto");
         return null;
@@ -266,7 +324,8 @@ function gitlab(config: RepoConfig): GitRepo {
           `/repository/tree?ref=${commit}&recursive=true&per_page=100&page=${page}`,
           "leer los archivos",
         );
-        for (const item of body) if (item.type === "blob") out.push({ path: item.path, sha: item.id });
+        for (const item of body)
+          if (item.type === "blob") out.push({ path: item.path, sha: item.id });
         if (!response.headers.get("x-next-page")) break;
       }
       return out;
@@ -277,8 +336,9 @@ function gitlab(config: RepoConfig): GitRepo {
       return new Uint8Array(await response.arrayBuffer());
     },
     async commit(parent, message, changes) {
-      // GitLab no comprueba el commit de partida: si la rama avanzó, se deja para la siguiente vuelta.
-      if ((await this.head()) !== parent) throw new GitError("La rama cambió mientras tanto.", true);
+      // GitLab does not enforce the starting commit; defer if the branch advanced.
+      if ((await this.head()) !== parent)
+        throw new GitError("La rama cambió mientras tanto.", true);
       const actions = changes
         .filter((change) => change.bytes || change.exists)
         .map((change) =>

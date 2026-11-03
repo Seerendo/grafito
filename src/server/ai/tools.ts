@@ -10,12 +10,8 @@ import type { Tool } from "./tools/tool.ts";
 import type { ToolCall } from "./types.ts";
 
 /**
- * Herramientas del asistente, agrupadas para que cada área crezca aparte:
- * notas y portafolios (`tools/notes.ts`), tablas (`tools/tables.ts`). Cuáles
- * se ofrecen lo decide el rol (y el perfil de solo lectura). Qué documento
- * alcanza cada llamada lo decide `corpus.ts`: solo lo que esta persona puede
- * abrir, y escribir solo donde puede editar. La búsqueda usa el índice de
- * contenido (`server/index`).
+ * Tools are grouped by notes/portfolios and tables. Roles and personas filter available tools;
+ * corpus.ts enforces document access and write authorization. Search uses server/index.
  */
 
 export type ToolEvent = ToolResult["event"];

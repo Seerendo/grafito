@@ -1,19 +1,17 @@
 /**
- * Archivo .zip escrito sobre la marcha (solo servidor): cada entrada se manda
- * según se lee, sin comprimir (método «stored») y sin tenerla entera en
- * memoria. Los tamaños y el CRC de cada una van después de sus datos
- * (descriptor de datos, bit 3), y los nombres en UTF-8 (bit 11). Sin ZIP64:
- * hasta 4 GB y 65.535 entradas (`ZIP_LIMIT`, `ZIP_MAX_ENTRIES`).
+ * Stream stored/uncompressed ZIP entries without buffering whole files. Data descriptors carry
+ * CRC/sizes after content, using bit three; UTF-8 names use bit eleven. No ZIP64: limits are
+ * four GB and 65,535 entries.
  */
 
 export const ZIP_LIMIT = 0xffff_ffff;
 export const ZIP_MAX_ENTRIES = 0xffff;
 
 export type ZipEntry = {
-  /** Ruta dentro del zip, con `/`. */
+  /** ZIP-relative path using forward slashes. */
   path: string;
   modified: number;
-  /** El contenido; `null` si ya no está (se omite la entrada). */
+  /** Entry content; null skips a missing file. */
   read: () => Promise<ReadableStream<Uint8Array> | Uint8Array | null>;
 };
 
@@ -29,11 +27,12 @@ const CRC_TABLE = (() => {
 
 export function crc32(bytes: Uint8Array, previous = 0): number {
   let crc = ~previous >>> 0;
-  for (let i = 0; i < bytes.length; i += 1) crc = CRC_TABLE[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8);
+  for (let i = 0; i < bytes.length; i += 1)
+    crc = CRC_TABLE[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8);
   return ~crc >>> 0;
 }
 
-/** Fecha y hora en el formato de MS-DOS que usa el zip (hora local, de 2 en 2 s). */
+/** ZIP MS-DOS local timestamp with two-second resolution. */
 function dosTime(ms: number): { time: number; date: number } {
   const at = new Date(ms);
   const year = Math.min(Math.max(at.getFullYear(), 1980), 2107);
@@ -54,7 +53,7 @@ function localHeader(name: Uint8Array, when: { time: number; date: number }): Ui
   view.setUint16(8, 0, true);
   view.setUint16(10, when.time, true);
   view.setUint16(12, when.date, true);
-  // CRC y tamaños: en el descriptor de datos.
+  // CRC and sizes are written in the data descriptor.
   view.setUint16(26, name.length, true);
   out.set(name, 30);
   return out;
@@ -70,7 +69,13 @@ function dataDescriptor(crc: number, size: number): Uint8Array {
   return out;
 }
 
-type Written = { name: Uint8Array; when: { time: number; date: number }; crc: number; size: number; offset: number };
+type Written = {
+  name: Uint8Array;
+  when: { time: number; date: number };
+  crc: number;
+  size: number;
+  offset: number;
+};
 
 function centralEntry(entry: Written): Uint8Array {
   const out = new Uint8Array(46 + entry.name.length);
@@ -102,7 +107,7 @@ function endOfCentral(count: number, size: number, offset: number): Uint8Array {
   return out;
 }
 
-/** El zip de `entries`, en orden. Falla (corta la descarga) si pasa de 4 GB. */
+/** Stream entries in order; exceeding four GB aborts the download. */
 export function zipStream(entries: ZipEntry[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const written: Written[] = [];
@@ -115,7 +120,7 @@ export function zipStream(entries: ZipEntry[]): ReadableStream<Uint8Array> {
 
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      // Las que ya no están se saltan aquí: un `pull` que no encola nada no se repite.
+      // Skip missing entries inside the same pull because a pull that enqueues nothing is not automatically repeated.
       let content: Awaited<ReturnType<ZipEntry["read"]>> = null;
       let entry: ZipEntry | undefined;
       while (!content && index < entries.length) {
@@ -165,10 +170,10 @@ export function zipStream(entries: ZipEntry[]): ReadableStream<Uint8Array> {
   });
 }
 
-/** Nombre válido para un archivo o carpeta en cualquier sistema. */
+/** Portable file/folder name. */
 export function safeName(name: string, fallback: string): string {
   const clean = name
-    // Los caracteres de control tampoco valen en un nombre de archivo.
+    // Control characters are invalid in filenames too.
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f<>:"/\\|?*]/g, " ")
     .replace(/\s+/g, " ")
@@ -178,7 +183,7 @@ export function safeName(name: string, fallback: string): string {
   return clean || fallback;
 }
 
-/** `name` sin repetir dentro de `taken` (sin distinguir mayúsculas): «Acta (2).pdf». */
+/** Allocate a case-insensitively unique name in taken, adding a numeric suffix before the extension. */
 export function uniqueName(name: string, taken: Set<string>): string {
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;

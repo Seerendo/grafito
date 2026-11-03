@@ -1,27 +1,17 @@
 import { createMiddleware } from "@tanstack/react-start";
 
 /**
- * Middleware de auth para funciones de servidor: la forma estándar de obtener
- * el id verificado del usuario.
- *
- *   export const listar = createServerFn({ method: "GET" })
- *     .middleware([authMiddleware])
- *     .handler(async ({ context }) => {
- *       const sql = await getSql();
- *       return sql`select * from notas where user_id = ${context.userId}`;
- *     });
- *
- * Sin sesión lanza `UnauthorizedError` (ver `verify.server.ts`).
+ * Standard server-function authentication middleware supplies a verified context.userId. Scope
+ * SQL queries to that ID. Missing sessions throw UnauthorizedError from verify.server.ts.
  */
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
-    // Si el cliente se autentica con token bearer, lo reenvía al servidor.
+    // Forward the client's bearer token to the server when present.
     const { getBearerToken } = await import("./bearer");
     return next({ sendContext: { bearerToken: getBearerToken() ?? undefined } });
   })
   .server(async ({ next, context }) => {
-    // Solo módulos `*.server` aquí: este archivo se empaqueta también para el
-    // navegador y Vite no debe mandarle `@tanstack/react-start/server`.
+    // Import server APIs only through .server modules here; this middleware is also bundled for browsers.
     const { assertSameSiteRequest } = await import("./isolation.server");
     const { requireUserId } = await import("./verify.server");
     assertSameSiteRequest();

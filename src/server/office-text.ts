@@ -1,14 +1,11 @@
 import { inflateRawSync } from "node:zlib";
 
 /**
- * Texto de los documentos de Office (solo servidor), para que la IA pueda
- * leerlos: Word, Excel y PowerPoint (OOXML) y OpenDocument son archivos ZIP
- * con XML dentro. Sin dependencias: un lector ZIP mínimo y el XML de cada
- * formato pasado a texto plano. Sin `@/` en los imports: se prueba con
- * `node --test`.
+ * Dependency-free Office/OpenDocument text extraction from ZIP/XML using a minimal reader.
+ * Supports Word, Excel and PowerPoint; relative imports permit Node tests.
  */
 
-/** Tope de lo que se descomprime de una entrada (contra bombas ZIP). */
+/** Decompressed-entry size limit guards against ZIP bombs. */
 const MAX_ENTRY = 24 * 1024 * 1024;
 
 type Entry = { name: string; method: number; size: number; compressed: number; offset: number };
@@ -16,7 +13,7 @@ type Entry = { name: string; method: number; size: number; compressed: number; o
 function entries(zip: Uint8Array): Map<string, Entry> {
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   const found = new Map<string, Entry>();
-  // Fin del directorio central: firma 0x06054b50, en los últimos 64 KB.
+  // Locate end-of-central-directory signature 0x06054b50 within the final 64 KB.
   let end = -1;
   for (let index = zip.byteLength - 22; index >= Math.max(0, zip.byteLength - 65_557); index -= 1) {
     if (view.getUint32(index, true) === 0x06054b50) {
@@ -46,12 +43,22 @@ function entries(zip: Uint8Array): Map<string, Entry> {
 
 function read(zip: Uint8Array, entry: Entry): string | null {
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-  if (entry.offset + 30 > zip.byteLength || view.getUint32(entry.offset, true) !== 0x04034b50) return null;
-  const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true) + view.getUint16(entry.offset + 28, true);
+  if (entry.offset + 30 > zip.byteLength || view.getUint32(entry.offset, true) !== 0x04034b50)
+    return null;
+  const start =
+    entry.offset +
+    30 +
+    view.getUint16(entry.offset + 26, true) +
+    view.getUint16(entry.offset + 28, true);
   const data = zip.subarray(start, start + entry.compressed);
   if (entry.size > MAX_ENTRY) return null;
   try {
-    const bytes = entry.method === 0 ? data : entry.method === 8 ? inflateRawSync(data, { maxOutputLength: MAX_ENTRY }) : null;
+    const bytes =
+      entry.method === 0
+        ? data
+        : entry.method === 8
+          ? inflateRawSync(data, { maxOutputLength: MAX_ENTRY })
+          : null;
     return bytes ? new TextDecoder().decode(bytes) : null;
   } catch {
     return null;
@@ -69,12 +76,15 @@ function decode(xml: string): string {
     .replace(/&amp;/g, "&");
 }
 
-/** El texto de un XML: los saltos donde terminan párrafos o filas, sin etiquetas. */
+/** Strip XML tags while retaining paragraph/row line breaks. */
 function plain(xml: string, breaks: RegExp, tabs?: RegExp): string {
   let text = xml.replace(breaks, "\n");
   if (tabs) text = text.replace(tabs, "\t");
   text = decode(text.replace(/<[^>]+>/g, ""));
-  return text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function numbered(names: string[], pattern: RegExp): string[] {
@@ -108,12 +118,20 @@ function sheets(zip: Uint8Array, files: Map<string, Entry>): string | null {
   const stringsXml = strings ? read(zip, strings) : null;
   if (stringsXml) {
     for (const item of stringsXml.match(/<si>[\s\S]*?<\/si>/g) ?? []) {
-      shared.push(decode((item.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, "")).join("")));
+      shared.push(
+        decode(
+          (item.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? [])
+            .map((t) => t.replace(/<[^>]+>/g, ""))
+            .join(""),
+        ),
+      );
     }
   }
   const workbook = files.get("xl/workbook.xml");
   const workbookXml = workbook ? read(zip, workbook) : null;
-  const titles = [...(workbookXml?.matchAll(/<sheet[^>]*name="([^"]*)"/g) ?? [])].map((match) => decode(match[1] ?? ""));
+  const titles = [...(workbookXml?.matchAll(/<sheet[^>]*name="([^"]*)"/g) ?? [])].map((match) =>
+    decode(match[1] ?? ""),
+  );
   const names = numbered([...files.keys()], /^xl\/worksheets\/sheet(\d+)\.xml$/);
   if (names.length === 0) return null;
   return names
@@ -125,7 +143,8 @@ function sheets(zip: Uint8Array, files: Map<string, Entry>): string | null {
             const type = /\bt="([^"]+)"/.exec(cell)?.[1];
             const value = /<v>([\s\S]*?)<\/v>/.exec(cell)?.[1];
             if (type === "s" && value !== undefined) return shared[Number(value)] ?? "";
-            if (type === "inlineStr") return decode((cell.match(/<t[^>]*>([\s\S]*?)<\/t>/) ?? [])[1] ?? "");
+            if (type === "inlineStr")
+              return decode((cell.match(/<t[^>]*>([\s\S]*?)<\/t>/) ?? [])[1] ?? "");
             return value === undefined ? "" : decode(value);
           })
           .join("\t")
@@ -139,13 +158,20 @@ function sheets(zip: Uint8Array, files: Map<string, Entry>): string | null {
 function openDocument(zip: Uint8Array, files: Map<string, Entry>): string | null {
   const content = files.get("content.xml");
   const xml = content ? read(zip, content) : null;
-  return xml ? plain(xml, /<\/text:p>|<\/text:h>|<\/table:table-row>|<text:line-break\/>/g, /<\/table:table-cell>|<text:tab\/>/g) : null;
+  return xml
+    ? plain(
+        xml,
+        /<\/text:p>|<\/text:h>|<\/table:table-row>|<text:line-break\/>/g,
+        /<\/table:table-cell>|<text:tab\/>/g,
+      )
+    : null;
 }
 
-/** Texto de un documento de Office u OpenDocument, o `null` si no lo es o no se puede leer. */
+/** Extract Office/OpenDocument text, or null for unsupported/unreadable content. */
 export function officeText(name: string, bytes: Uint8Array): string | null {
   const extension = /\.([^.]+)$/.exec(name)?.[1]?.toLowerCase() ?? "";
-  if (!["docx", "docm", "pptx", "xlsx", "xlsm", "odt", "ods", "odp"].includes(extension)) return null;
+  if (!["docx", "docm", "pptx", "xlsx", "xlsm", "odt", "ods", "odp"].includes(extension))
+    return null;
   const files = entries(bytes);
   if (files.size === 0) return null;
   if (extension.startsWith("doc")) return word(bytes, files);

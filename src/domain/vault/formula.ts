@@ -1,13 +1,8 @@
 /**
- * Fórmulas de una fila (fase 3). Solo leen otras columnas de la misma fila.
- * No es JavaScript: un puñado de operaciones y funciones, para que el servidor
- * pueda calcularlas sin `eval`. Sin `@/` en los imports: se prueba con
- * `node --test`.
- *
- *   {Precio} * {Cantidad}
- *   si({Hecho}, "sí", "pendiente")
- *   redondear({Precio} * 1.21, 2)
- *   dias({Inicio}, hoy())
+ * Row formulas read only columns in the same row. A restricted evaluator supports arithmetic
+ * and functions without eval. Relative imports allow direct Node tests. Examples: {Precio} *
+ * {Cantidad}; si({Hecho}, "sí", "pendiente"); redondear({Precio} * 1.21, 2); dias({Inicio},
+ * hoy()).
  */
 
 import type { CellValue, TableField } from "./table.ts";
@@ -166,7 +161,12 @@ function parse(input: string): Expr {
   };
   const parseAdd = (): Expr => {
     let left = parseMul();
-    while (peek().k === "op" && (peek() as { s: string }).s && "+-&".includes((peek() as { s: string }).s) && (peek() as { s: string }).s !== "") {
+    while (
+      peek().k === "op" &&
+      (peek() as { s: string }).s &&
+      "+-&".includes((peek() as { s: string }).s) &&
+      (peek() as { s: string }).s !== ""
+    ) {
       const op = (take() as { s: string }).s;
       if (!"+-&".includes(op)) break;
       left = { k: "bin", op, a: left, b: parseMul() };
@@ -293,11 +293,12 @@ function explain(error: unknown): string {
   return "La fórmula no se entiende.";
 }
 
-/**
- * Calcula las columnas fórmula de una fila. `today` es `YYYY-MM-DD` (para
- * `hoy()`); si no se pasa, es la fecha UTC de este momento.
- */
-export function computeFormulas(fields: TableField[], cells: Record<string, CellValue>, today?: string): FormulaRun {
+/** Evaluate formula columns. today uses YYYY-MM-DD for hoy(), defaulting to the current UTC date. */
+export function computeFormulas(
+  fields: TableField[],
+  cells: Record<string, CellValue>,
+  today?: string,
+): FormulaRun {
   const values: Record<string, FormulaValue> = {};
   const errors: Record<string, string> = {};
   if (!fields.some((field) => field.type === "formula")) return { values, errors };
@@ -321,11 +322,14 @@ export function computeFormulas(fields: TableField[], cells: Record<string, Cell
         return { t: "n", n: -asNumber(inner) };
       }
       case "bin": {
-        if (expr.op === "y") return { t: "b", b: truthy(evalAst(expr.a)) && truthy(evalAst(expr.b)) };
-        if (expr.op === "o") return { t: "b", b: truthy(evalAst(expr.a)) || truthy(evalAst(expr.b)) };
+        if (expr.op === "y")
+          return { t: "b", b: truthy(evalAst(expr.a)) && truthy(evalAst(expr.b)) };
+        if (expr.op === "o")
+          return { t: "b", b: truthy(evalAst(expr.a)) || truthy(evalAst(expr.b)) };
         const left = evalAst(expr.a);
         const right = evalAst(expr.b);
-        if (expr.op === "&" || (expr.op === "+" && (left.t === "s" || right.t === "s"))) return { t: "s", s: asString(left) + asString(right) };
+        if (expr.op === "&" || (expr.op === "+" && (left.t === "s" || right.t === "s")))
+          return { t: "s", s: asString(left) + asString(right) };
         if (expr.op === "+") return { t: "n", n: asNumber(left) + asNumber(right) };
         if (expr.op === "-") return { t: "n", n: asNumber(left) - asNumber(right) };
         if (expr.op === "*") return { t: "n", n: asNumber(left) * asNumber(right) };
@@ -336,7 +340,17 @@ export function computeFormulas(fields: TableField[], cells: Record<string, Cell
         }
         const order = compare(left, right);
         const ok =
-          expr.op === "=" ? order === 0 : expr.op === "!=" ? order !== 0 : expr.op === "<" ? order < 0 : expr.op === ">" ? order > 0 : expr.op === "<=" ? order <= 0 : order >= 0;
+          expr.op === "="
+            ? order === 0
+            : expr.op === "!="
+              ? order !== 0
+              : expr.op === "<"
+                ? order < 0
+                : expr.op === ">"
+                  ? order > 0
+                  : expr.op === "<="
+                    ? order <= 0
+                    : order >= 0;
         return { t: "b", b: ok };
       }
       case "call":
@@ -345,7 +359,9 @@ export function computeFormulas(fields: TableField[], cells: Record<string, Cell
   };
 
   const column = (name: string): Val => {
-    const field = fields.find((item) => item.id === name || item.name.trim().toLowerCase() === name.trim().toLowerCase());
+    const field = fields.find(
+      (item) => item.id === name || item.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
     if (!field) fail(`col:${name}`);
     return valueOf(field);
   };
@@ -372,7 +388,10 @@ export function computeFormulas(fields: TableField[], cells: Record<string, Cell
     }
     if (name === "dias") {
       if (args.length !== 2) fail("arity");
-      return { t: "n", n: Math.round((dayNumber(evalAst(args[1]!)) - dayNumber(evalAst(args[0]!))) / 86_400_000) };
+      return {
+        t: "n",
+        n: Math.round((dayNumber(evalAst(args[1]!)) - dayNumber(evalAst(args[0]!))) / 86_400_000),
+      };
     }
     if (name === "largo") {
       if (args.length !== 1) fail("arity");
@@ -380,7 +399,12 @@ export function computeFormulas(fields: TableField[], cells: Record<string, Cell
     }
     if (name === "contiene") {
       if (args.length !== 2) fail("arity");
-      return { t: "b", b: asString(evalAst(args[0]!)).toLowerCase().includes(asString(evalAst(args[1]!)).toLowerCase()) };
+      return {
+        t: "b",
+        b: asString(evalAst(args[0]!))
+          .toLowerCase()
+          .includes(asString(evalAst(args[1]!)).toLowerCase()),
+      };
     }
     fail("syntax");
   };

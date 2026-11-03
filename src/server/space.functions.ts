@@ -26,36 +26,40 @@ import {
   userLimit,
 } from "@/server/space";
 import { mayUpload, uploadTarget } from "@/server/upload-target";
-import { checkWorkspaceBytes, grantWorkspaceFolders, workspaceAudience, workspaceByOwner } from "@/server/workspace";
+import {
+  checkWorkspaceBytes,
+  grantWorkspaceFolders,
+  workspaceAudience,
+  workspaceByOwner,
+} from "@/server/workspace";
 import { createNote, createPortfolio, getDoc, pushChanges, VaultError } from "@/server/vault";
 
 /**
- * Espacio y permisos de un portafolio (ver `server/space.ts`):
- *  - el dueño, quien lo administra (acceso `admin`) y el administrador del
- *    sistema (`space.manage`) reparten su espacio entre los usuarios y
- *    cambian sus permisos;
- *  - el tope del portafolio y el de cada usuario en total los pone solo el
- *    administrador del sistema (Administración → Espacio).
- * Y añadir notas y archivos a un portafolio compartido con permiso de edición.
+ * Portfolio owners/admins and space.manage administrators allocate member storage and
+ * permissions. Only system administrators set portfolio/global user limits. Also supports
+ * creation within editable shared portfolios.
  */
 
 const SPACE_MANAGE = "space.manage";
 const id = z.string().min(1).max(80);
 const bytes = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable();
-/** Un portafolio propio, o uno compartido conmigo (`shareId`). */
+/** Owned portfolio or shareId-scoped shared portfolio. */
 const where = z.object({ portfolioId: id, shareId: id.optional() });
 
 type Context = {
   sql: Sql;
   ownerId: string;
   portfolioId: string;
-  /** Puede repartir el espacio y cambiar permisos. */
+  /** May allocate member storage and change access. */
   canManage: boolean;
-  /** Puede poner el tope del portafolio y los de cada usuario. */
+  /** May set portfolio and user quota limits. */
   sysadmin: boolean;
 };
 
-async function portfolioContext(userId: string, input: { portfolioId: string; shareId?: string }): Promise<Context | null> {
+async function portfolioContext(
+  userId: string,
+  input: { portfolioId: string; shareId?: string },
+): Promise<Context | null> {
   const sql = await requireLease(userId);
   const profile = await readUserProfile(sql, userId);
   const sysadmin = allows(profile, SPACE_MANAGE);
@@ -63,14 +67,22 @@ async function portfolioContext(userId: string, input: { portfolioId: string; sh
     const rows = await sql<{ id: string }>`
       select id from vault_portfolio where user_id = ${userId} and id = ${input.portfolioId} and not deleted limit 1
     `;
-    return rows[0] ? { sql, ownerId: userId, portfolioId: input.portfolioId, canManage: true, sysadmin } : null;
+    return rows[0]
+      ? { sql, ownerId: userId, portfolioId: input.portfolioId, canManage: true, sysadmin }
+      : null;
   }
   const share = await shareForUser(sql, userId, input.shareId);
   if (!share || share.kind !== "portfolio") return null;
   if (!(await subtree(sql, share.ownerId, share.targetId)).includes(input.portfolioId)) return null;
   const access = await portfolioAccess(sql, share.ownerId, input.portfolioId, userId);
   if (!access) return null;
-  return { sql, ownerId: share.ownerId, portfolioId: input.portfolioId, canManage: access === "admin" || sysadmin, sysadmin };
+  return {
+    sql,
+    ownerId: share.ownerId,
+    portfolioId: input.portfolioId,
+    canManage: access === "admin" || sysadmin,
+    sysadmin,
+  };
 }
 
 export type SpaceMember = {
@@ -79,7 +91,7 @@ export type SpaceMember = {
   loginName: string;
   access: ShareAccess | "owner" | "none";
   orgName: string | null;
-  /** Se le puede cambiar el nivel (invitado directo, no el dueño). */
+  /** Recipient access is editable for direct invitees, not the owner. */
   accessEditable: boolean;
   shareId: string | null;
   used: number;
@@ -88,7 +100,9 @@ export type SpaceMember = {
 
 async function describePortfolio(context: Context, userId: string) {
   const { sql, ownerId, portfolioId } = context;
-  const names = await sql<{ name: string }>`select name from vault_portfolio where user_id = ${ownerId} and id = ${portfolioId} limit 1`;
+  const names = await sql<{
+    name: string;
+  }>`select name from vault_portfolio where user_id = ${ownerId} and id = ${portfolioId} limit 1`;
   const usage = await portfolioUsage(sql, ownerId, portfolioId);
   const limits = await memberLimits(sql, ownerId, portfolioId);
   const limit = await portfolioLimit(sql, ownerId, portfolioId);
@@ -101,7 +115,7 @@ async function describePortfolio(context: Context, userId: string) {
     canSetLimit: context.sysadmin,
     workspace: Boolean(workspace),
   };
-  // En un espacio, quien no lo administra no ve quién tiene acceso.
+  // Non-admin workspace members cannot inspect the access roster.
   if (workspace && !context.canManage) return { ...base, members: [] as SpaceMember[] };
   if (workspace && context.canManage) {
     const audience = await workspaceAudience(sql, workspace.org_id, ownerId, portfolioId);
@@ -118,7 +132,9 @@ async function describePortfolio(context: Context, userId: string) {
     }));
     for (const [uploader, used] of usage.byUser) {
       if (members.some((member) => member.userId === uploader) || uploader === ownerId) continue;
-      const row = await sql<{ name: string }>`select name from "user" where id = ${uploader} limit 1`;
+      const row = await sql<{
+        name: string;
+      }>`select name from "user" where id = ${uploader} limit 1`;
       members.push({
         userId: uploader,
         name: row[0]?.name?.trim() || "",
@@ -153,14 +169,14 @@ async function describePortfolio(context: Context, userId: string) {
       loginName: member.loginName,
       access: member.access,
       orgName: member.orgName,
-      // También a quien llega por su organización: queda con su propio nivel.
+      // Organization-derived recipients may receive direct overrides.
       accessEditable: true,
       shareId: member.shareId,
       used: usage.byUser.get(member.userId) ?? 0,
       limit: limits.get(member.userId) ?? null,
     })),
   ];
-  // Quien subió algo aquí pero ya no tiene acceso: su espacio sigue ocupado.
+  // Former recipients' uploads still consume storage after access is removed.
   for (const [uploader, used] of usage.byUser) {
     if (members.some((member) => member.userId === uploader) || uploader === ownerId) continue;
     const row = await sql<{ name: string }>`select name from "user" where id = ${uploader} limit 1`;
@@ -179,7 +195,7 @@ async function describePortfolio(context: Context, userId: string) {
   const mine = members.find((member) => member.userId === userId);
   return {
     ...base,
-    // Sin permiso para administrar, solo se ve lo propio.
+    // Without administration permission, expose only the caller's allocation.
     members: context.canManage ? members : mine ? [mine] : [],
   };
 }
@@ -202,7 +218,10 @@ export const setMemberSpace = createServerFn({ method: "POST" })
     const limits = await memberLimits(ctx.sql, ctx.ownerId, ctx.portfolioId);
     if (data.bytes === null) limits.delete(data.userId);
     else limits.set(data.userId, data.bytes);
-    const problem = checkShares(await portfolioLimit(ctx.sql, ctx.ownerId, ctx.portfolioId), limits);
+    const problem = checkShares(
+      await portfolioLimit(ctx.sql, ctx.ownerId, ctx.portfolioId),
+      limits,
+    );
     if (problem) return { ok: false as const, error: problem };
     if (data.bytes === null) {
       await ctx.sql`
@@ -221,16 +240,18 @@ export const setMemberSpace = createServerFn({ method: "POST" })
 export const setMemberAccess = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    where.extend({ userId: id, memberShareId: id, access: z.enum(["read", "edit", "admin"]) }).parse(input),
+    where
+      .extend({ userId: id, memberShareId: id, access: z.enum(["read", "edit", "admin"]) })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const ctx = await portfolioContext(context.userId, data);
     if (!ctx?.canManage) return { ok: false as const, error: "No administras este portafolio." };
-    // En un espacio el acceso es por carpeta (`setWorkspaceAccess`), no del elemento entero.
+    // Workspace access is per folder through setWorkspaceAccess, not whole-share access.
     if (await workspaceByOwner(ctx.sql, ctx.ownerId)) {
       return { ok: false as const, error: "En un espacio de trabajo el acceso se da por carpeta." };
     }
-    // Solo en los elementos compartidos que cubren este portafolio.
+    // Restrict changes to shares covering this portfolio.
     const member = (await portfolioMembers(ctx.sql, ctx.ownerId, ctx.portfolioId)).find(
       (item) => item.userId === data.userId && item.shareId === data.memberShareId,
     );
@@ -239,7 +260,7 @@ export const setMemberAccess = createServerFn({ method: "POST" })
     return { ok: true as const, ...(await describePortfolio(ctx, context.userId)) };
   });
 
-/** Acceso de una persona a un portafolio de un espacio de trabajo, y opcionalmente a los de dentro. */
+/** Set a user's workspace portfolio access, optionally propagating to descendants. */
 export const setWorkspaceAccess = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -255,12 +276,21 @@ export const setWorkspaceAccess = createServerFn({ method: "POST" })
     const ctx = await portfolioContext(context.userId, data);
     if (!ctx?.canManage) return { ok: false as const, error: "No administras este portafolio." };
     const workspace = await workspaceByOwner(ctx.sql, ctx.ownerId);
-    if (!workspace) return { ok: false as const, error: "Este portafolio no es de un espacio de trabajo." };
-    const audience = await workspaceAudience(ctx.sql, workspace.org_id, ctx.ownerId, ctx.portfolioId);
+    if (!workspace)
+      return { ok: false as const, error: "Este portafolio no es de un espacio de trabajo." };
+    const audience = await workspaceAudience(
+      ctx.sql,
+      workspace.org_id,
+      ctx.ownerId,
+      ctx.portfolioId,
+    );
     const person = audience.find((item) => item.userId === data.userId);
     if (!person) return { ok: false as const, error: "Esa persona no es de la organización." };
-    if (person.admin) return { ok: false as const, error: "Los administradores ya ven todo el espacio." };
-    const ids = data.replicate ? await subtree(ctx.sql, ctx.ownerId, ctx.portfolioId) : [ctx.portfolioId];
+    if (person.admin)
+      return { ok: false as const, error: "Los administradores ya ven todo el espacio." };
+    const ids = data.replicate
+      ? await subtree(ctx.sql, ctx.ownerId, ctx.portfolioId)
+      : [ctx.portfolioId];
     await grantWorkspaceFolders(ctx.sql, ctx.ownerId, ids, data.userId, data.access);
     return { ok: true as const, ...(await describePortfolio(ctx, context.userId)) };
   });
@@ -271,13 +301,20 @@ export const setPortfolioSpace = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    if (!allows(profile, SPACE_MANAGE)) return { ok: false as const, error: "Solo el administrador del sistema pone este espacio." };
-    // Desde Administración → Espacio llega el dueño; desde el portafolio, el elemento compartido.
+    if (!allows(profile, SPACE_MANAGE))
+      return { ok: false as const, error: "Solo el administrador del sistema pone este espacio." };
+    // Administration supplies owner identity; portfolio views supply the share.
     const ctx = data.ownerId
-      ? { sql, ownerId: data.ownerId, portfolioId: data.portfolioId, canManage: true, sysadmin: true }
+      ? {
+          sql,
+          ownerId: data.ownerId,
+          portfolioId: data.portfolioId,
+          canManage: true,
+          sysadmin: true,
+        }
       : await portfolioContext(context.userId, data);
     if (!ctx) return { ok: false as const, error: "Ese portafolio no existe." };
-    // La raíz de un espacio de trabajo: su espacio es el del espacio de trabajo.
+    // Workspace root quota comes from the workspace allocation.
     const workspace = await workspaceByOwner(sql, ctx.ownerId);
     if (workspace && workspace.root_portfolio_id === ctx.portfolioId) {
       const problem = await checkWorkspaceBytes(sql, workspace.org_id, data.bytes);
@@ -298,8 +335,7 @@ export const setPortfolioSpace = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-// ---------------------------------------------------------------------------
-// Administración → Espacio
+// Storage administration.
 
 async function sysadmin(userId: string): Promise<Sql | null> {
   const sql = await requireLease(userId);
@@ -312,7 +348,13 @@ export const spaceOverview = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const sql = await sysadmin(context.userId);
     if (!sql) return { ok: false as const };
-    const users = await sql<{ id: string; name: string; login: string | null; limit: unknown; used: unknown }>`
+    const users = await sql<{
+      id: string;
+      name: string;
+      login: string | null;
+      limit: unknown;
+      used: unknown;
+    }>`
       select u.id, u.name, coalesce(r.login_name, a.login_name) as login, s.bytes as limit,
         (select coalesce(sum(d.file_size), 0)::bigint from vault_doc d
           where d.kind = 'file' and coalesce(d.uploaded_by, d.user_id) = u.id) as used
@@ -323,8 +365,14 @@ export const spaceOverview = createServerFn({ method: "GET" })
       where u.id not in (select owner_id from workspace)
       order by u.name
     `;
-    // Los de los espacios de trabajo se administran en «Espacios de trabajo».
-    const portfolios = await sql<{ owner_id: string; id: string; name: string; parent_id: string | null; owner_name: string }>`
+    // Manage workspace quotas in workspace administration.
+    const portfolios = await sql<{
+      owner_id: string;
+      id: string;
+      name: string;
+      parent_id: string | null;
+      owner_name: string;
+    }>`
       select p.user_id as owner_id, p.id, p.name, p.parent_id, u.name as owner_name
       from vault_portfolio p join "user" u on u.id = p.user_id
       where not p.deleted and p.user_id not in (select owner_id from workspace)
@@ -337,14 +385,16 @@ export const spaceOverview = createServerFn({ method: "GET" })
       select owner_id, portfolio_id, bytes from space_portfolio
     `;
     const key = (owner: string, portfolio: string) => `${owner}/${portfolio}`;
-    const own = new Map(direct.map((row) => [key(row.owner_id, row.portfolio_id), Number(row.bytes)]));
+    const own = new Map(
+      direct.map((row) => [key(row.owner_id, row.portfolio_id), Number(row.bytes)]),
+    );
     const byKey = new Map(portfolios.map((row) => [key(row.owner_id, row.id), row]));
-    // Lo de cada portafolio sube a todos los que lo contienen.
+    // Roll portfolio usage up through all ancestors.
     const total = new Map<string, number>();
     for (const row of portfolios) {
       const bytes = own.get(key(row.owner_id, row.id)) ?? 0;
       const seen = new Set<string>();
-      for (let at: (typeof portfolios)[number] | undefined = row; at && !seen.has(at.id); ) {
+      for (let at: (typeof portfolios)[number] | undefined = row; at && !seen.has(at.id);) {
         seen.add(at.id);
         total.set(key(row.owner_id, at.id), (total.get(key(row.owner_id, at.id)) ?? 0) + bytes);
         at = at.parent_id ? byKey.get(key(row.owner_id, at.parent_id)) : undefined;
@@ -353,7 +403,7 @@ export const spaceOverview = createServerFn({ method: "GET" })
     const pathOf = (row: (typeof portfolios)[number]) => {
       const parts: string[] = [];
       const seen = new Set<string>();
-      for (let at: (typeof portfolios)[number] | undefined = row; at && !seen.has(at.id); ) {
+      for (let at: (typeof portfolios)[number] | undefined = row; at && !seen.has(at.id);) {
         seen.add(at.id);
         parts.unshift(at.name);
         at = at.parent_id ? byKey.get(key(row.owner_id, at.parent_id)) : undefined;
@@ -378,7 +428,9 @@ export const spaceOverview = createServerFn({ method: "GET" })
           path: pathOf(row),
           used: total.get(key(row.owner_id, row.id)) ?? 0,
           limit: (() => {
-            const hit = limits.find((item) => item.owner_id === row.owner_id && item.portfolio_id === row.id);
+            const hit = limits.find(
+              (item) => item.owner_id === row.owner_id && item.portfolio_id === row.id,
+            );
             return hit ? Number(hit.bytes) : null;
           })(),
         }))
@@ -418,17 +470,19 @@ export const setDefaultUserSpace = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
-/** El espacio propio (Cuenta y avisos de subida). */
+/** Personal storage usage for account screens and upload notices. */
 export const mySpace = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
     const { userUsage } = await import("@/server/space");
-    return { used: await userUsage(sql, context.userId), limit: (await userLimit(sql, context.userId)).bytes };
+    return {
+      used: await userUsage(sql, context.userId),
+      limit: (await userLimit(sql, context.userId)).bytes,
+    };
   });
 
-// ---------------------------------------------------------------------------
-// Añadir a un portafolio compartido conmigo (edición del elemento, o de esa carpeta en un espacio)
+// Create content in editable shared portfolios or granted workspace folders.
 
 async function writer(userId: string, shareId: string, portfolioId: string | null) {
   const sql = await requireLease(userId);
@@ -443,11 +497,14 @@ async function writer(userId: string, shareId: string, portfolioId: string | nul
 export const createSharedNote = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ shareId: id, portfolioId: id.nullable(), title: z.string().trim().max(200) }).parse(input),
+    z
+      .object({ shareId: id, portfolioId: id.nullable(), title: z.string().trim().max(200) })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const ctx = await writer(context.userId, data.shareId, data.portfolioId);
-    if (!ctx || !allows(ctx.profile, PERMISSION.notesCreate)) return { ok: false as const, error: "No puedes crear notas aquí." };
+    if (!ctx || !allows(ctx.profile, PERMISSION.notesCreate))
+      return { ok: false as const, error: "No puedes crear notas aquí." };
     try {
       const doc = await createNote(ctx.sql, ctx.target.ownerId, {
         title: data.title || "Sin título",
@@ -457,7 +514,10 @@ export const createSharedNote = createServerFn({ method: "POST" })
       });
       return { ok: true as const, id: doc.id };
     } catch (error) {
-      return { ok: false as const, error: error instanceof VaultError ? error.message : "No se pudo crear la nota." };
+      return {
+        ok: false as const,
+        error: error instanceof VaultError ? error.message : "No se pudo crear la nota.",
+      };
     }
   });
 
@@ -476,11 +536,17 @@ export const addSharedFile = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     const ctx = await writer(context.userId, data.shareId, data.portfolioId);
-    if (!ctx || !allows(ctx.profile, PERMISSION.filesUpload)) return { ok: false as const, error: "No puedes subir archivos aquí." };
-    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId))) return { ok: false as const, error: "Esa subida no es tuya." };
+    if (!ctx || !allows(ctx.profile, PERMISSION.filesUpload))
+      return { ok: false as const, error: "No puedes subir archivos aquí." };
+    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId)))
+      return { ok: false as const, error: "Esa subida no es tuya." };
     const size = await blobSize(ctx.sql, data.key);
     if (size === null) return { ok: false as const, error: "El archivo no llegó al servidor." };
-    const full = await checkSpace(ctx.sql, { ...ctx.target, uploaderId: context.userId, bytes: size });
+    const full = await checkSpace(ctx.sql, {
+      ...ctx.target,
+      uploaderId: context.userId,
+      bytes: size,
+    });
     if (full) return { ok: false as const, error: full };
     const actor = ctx.profile.displayName || ctx.profile.loginName;
     const now = Date.now();
@@ -498,16 +564,25 @@ export const addSharedFile = createServerFn({ method: "POST" })
       createdBy: actor,
       updatedBy: actor,
     };
-    await pushChanges(ctx.sql, ctx.target.ownerId, { docs: [doc], deletedDocs: [], portfolios: [], deletedPortfolios: [] });
-    // Se le cuenta a quien lo subió, no al dueño del portafolio.
+    await pushChanges(ctx.sql, ctx.target.ownerId, {
+      docs: [doc],
+      deletedDocs: [],
+      portfolios: [],
+      deletedPortfolios: [],
+    });
+    // Charge storage to the uploader rather than the portfolio owner.
     await ctx.sql`update vault_doc set uploaded_by = ${context.userId} where user_id = ${ctx.target.ownerId} and id = ${doc.id}`;
-    return (await getDoc(ctx.sql, ctx.target.ownerId, doc.id)) ? { ok: true as const, id: doc.id } : { ok: false as const, error: "No se pudo guardar el archivo." };
+    return (await getDoc(ctx.sql, ctx.target.ownerId, doc.id))
+      ? { ok: true as const, id: doc.id }
+      : { ok: false as const, error: "No se pudo guardar el archivo." };
   });
 
 export const createSharedPortfolio = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ shareId: id, parentId: id.nullable(), name: z.string().trim().min(1).max(120) }).parse(input),
+    z
+      .object({ shareId: id, parentId: id.nullable(), name: z.string().trim().min(1).max(120) })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const ctx = await writer(context.userId, data.shareId, data.parentId);
@@ -515,15 +590,27 @@ export const createSharedPortfolio = createServerFn({ method: "POST" })
       return { ok: false as const, error: "No puedes crear portafolios aquí." };
     }
     try {
-      const portfolio = await createPortfolio(ctx.sql, ctx.target.ownerId, { name: data.name, parentId: ctx.target.portfolioId });
-      // Quien no ve el espacio entero tiene que poder ver lo que acaba de crear.
+      const portfolio = await createPortfolio(ctx.sql, ctx.target.ownerId, {
+        name: data.name,
+        parentId: ctx.target.portfolioId,
+      });
+      // Users without full workspace visibility must receive access to newly created content.
       if (ctx.share.access !== "admin" && ctx.share.access !== "edit") {
         const workspace = await workspaceByOwner(ctx.sql, ctx.target.ownerId);
-        if (workspace) await grantWorkspaceFolders(ctx.sql, ctx.target.ownerId, [portfolio.id], context.userId, "edit");
+        if (workspace)
+          await grantWorkspaceFolders(
+            ctx.sql,
+            ctx.target.ownerId,
+            [portfolio.id],
+            context.userId,
+            "edit",
+          );
       }
       return { ok: true as const, id: portfolio.id };
     } catch (error) {
-      return { ok: false as const, error: error instanceof VaultError ? error.message : "No se pudo crear el portafolio." };
+      return {
+        ok: false as const,
+        error: error instanceof VaultError ? error.message : "No se pudo crear el portafolio.",
+      };
     }
   });
-

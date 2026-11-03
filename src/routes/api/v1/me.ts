@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { apiCaller, failure, json } from "@/server/api";
 
-/** `GET /api/v1/me`: quién llama y qué puede hacer. */
+/** GET /api/v1/me returns caller identity and permissions. */
 export const Route = createFileRoute("/api/v1/me")({
   server: {
     handlers: {

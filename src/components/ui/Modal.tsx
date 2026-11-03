@@ -2,10 +2,8 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * Diálogo modal: abajo en móvil, centrado en escritorio. Clic fuera lo cierra.
- * Se dibuja en el `body`: dentro de un panel con `backdrop-filter` (diseño
- * Cristal) un `position: fixed` queda encerrado en el panel y el diálogo salía
- * centrado en él, no en la ventana.
+ * Modal is bottom-aligned on mobile and centered on desktop; outside clicks close it. Portal
+ * into body so backdrop-filter panels cannot capture fixed positioning.
  */
 export function Modal({
   title,
@@ -19,7 +17,11 @@ export function Modal({
   wide?: boolean;
 }) {
   const dialog = (
-    <div data-ui="overlay" className="fixed inset-0 z-50 flex items-end justify-center bg-inset/80 p-4 sm:items-center" onMouseDown={onClose}>
+    <div
+      data-ui="overlay"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-inset/80 p-4 sm:items-center"
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         data-ui="dialog"

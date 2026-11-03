@@ -1,19 +1,23 @@
 /**
- * Ancla de texto dentro de un archivo (un PDF): la frase exacta que se
- * seleccionó, en qué página, y unas letras de antes y de después para
- * distinguirla si se repite (como `TextQuoteSelector` de las anotaciones web).
- * Así un vínculo apunta a «EXP-7781» en la página 3 y no a todo el archivo.
+ * PDF text anchor with exact phrase, page and surrounding context to distinguish repeated
+ * phrases, similar to TextQuoteSelector. Links target a specific phrase rather than the whole
+ * file.
  */
 
 export type TextAnchor = { page: number; exact: string; prefix: string; suffix: string };
 
-/** Letras de contexto que se guardan a cada lado. */
+/** Context characters retained on each side. */
 const CONTEXT = 32;
-/** Tope de la frase vinculada. */
+/** Maximum linked phrase length. */
 export const MAX_EXACT = 300;
 
-/** El ancla del tramo `[start, end)` del texto de una página; `null` si está vacío. */
-export function anchorAt(pageText: string, page: number, start: number, end: number): TextAnchor | null {
+/** Build an anchor for a page's half-open text interval; null for an empty selection. */
+export function anchorAt(
+  pageText: string,
+  page: number,
+  start: number,
+  end: number,
+): TextAnchor | null {
   const from = Math.max(0, Math.min(start, end));
   const to = Math.min(pageText.length, Math.max(start, end));
   let a = from;
@@ -42,30 +46,38 @@ function commonPrefix(x: string, y: string): number {
   return n;
 }
 
-/**
- * Dónde está el ancla en el texto de su página: de las apariciones de la
- * frase, la que mejor coincide con lo de antes y lo de después. `null` si la
- * frase ya no está (el archivo cambió).
- */
-export function locate(pageText: string, anchor: TextAnchor): { start: number; end: number } | null {
+/** Find the phrase occurrence with the best surrounding-context match; null if file changes removed it. */
+export function locate(
+  pageText: string,
+  anchor: TextAnchor,
+): { start: number; end: number } | null {
   if (!anchor.exact) return null;
   let best: { start: number; score: number } | null = null;
-  for (let at = pageText.indexOf(anchor.exact); at >= 0; at = pageText.indexOf(anchor.exact, at + 1)) {
+  for (
+    let at = pageText.indexOf(anchor.exact);
+    at >= 0;
+    at = pageText.indexOf(anchor.exact, at + 1)
+  ) {
     const before = pageText.slice(Math.max(0, at - anchor.prefix.length), at);
-    const after = pageText.slice(at + anchor.exact.length, at + anchor.exact.length + anchor.suffix.length);
+    const after = pageText.slice(
+      at + anchor.exact.length,
+      at + anchor.exact.length + anchor.suffix.length,
+    );
     const score = commonSuffix(before, anchor.prefix) + commonPrefix(after, anchor.suffix);
     if (!best || score > best.score) best = { start: at, score };
   }
   return best ? { start: best.start, end: best.start + anchor.exact.length } : null;
 }
 
-/** Clave de un vínculo: el destino y, si lo tiene, su ancla. */
+/** Link identity combines destination and optional anchor. */
 export function linkKey(link: { targetId: string; anchor?: TextAnchor }): string {
   const anchor = link.anchor;
-  return anchor ? `${link.targetId}#${anchor.page}:${anchor.prefix}\u0000${anchor.exact}\u0000${anchor.suffix}` : link.targetId;
+  return anchor
+    ? `${link.targetId}#${anchor.page}:${anchor.prefix}\u0000${anchor.exact}\u0000${anchor.suffix}`
+    : link.targetId;
 }
 
-/** Si un valor guardado es un ancla válida (al leer cachés y lo que llega al servidor). */
+/** Validate persisted anchors from caches and server requests. */
 export function isTextAnchor(value: unknown): value is TextAnchor {
   if (!value || typeof value !== "object") return false;
   const anchor = value as Partial<TextAnchor>;

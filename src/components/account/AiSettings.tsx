@@ -5,9 +5,8 @@ import { aiAccountState, removeAiKey, saveAiKey } from "@/server/ai.functions";
 import { t } from "@/app/i18n";
 
 /**
- * Cuenta → IA: cada persona conecta los proveedores que el administrador
- * permite con su propia clave. La clave se prueba antes de guardarse y se
- * guarda cifrada; aquí solo se ven sus 4 últimos caracteres.
+ * Account AI settings connect administrator-enabled providers with the user's key. Validate
+ * before saving, encrypt at rest and display only the final four characters.
  */
 
 type State = Extract<Awaited<ReturnType<typeof aiAccountState>>, { ok: true }>;
@@ -34,17 +33,26 @@ export function AiSettings() {
     <section>
       {!state ? <p className="mt-4 text-sm text-muted">{t("Cargando…")}</p> : null}
       {state && state.providers.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">{t("El administrador todavía no ha activado ningún proveedor de IA.")}</p>
+        <p className="mt-4 text-sm text-muted">
+          {t("El administrador todavía no ha activado ningún proveedor de IA.")}
+        </p>
       ) : null}
       {state && !state.encryption && state.providers.some((provider) => !provider.local) ? (
         <p className="mt-4 text-sm text-danger">
-          {t("El servidor no tiene configurada la clave de cifrado: por ahora no se pueden guardar claves de la nube.")}
+          {t(
+            "El servidor no tiene configurada la clave de cifrado: por ahora no se pueden guardar claves de la nube.",
+          )}
         </p>
       ) : null}
       {state ? (
         <ul className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
           {state.providers.map((provider) => (
-            <ProviderRow key={provider.id} provider={provider} canSave={state.encryption} reload={load} />
+            <ProviderRow
+              key={provider.id}
+              provider={provider}
+              canSave={state.encryption}
+              reload={load}
+            />
           ))}
         </ul>
       ) : null}
@@ -52,7 +60,15 @@ export function AiSettings() {
   );
 }
 
-function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSave: boolean; reload: () => Promise<void> }) {
+function ProviderRow({
+  provider,
+  canSave,
+  reload,
+}: {
+  provider: Provider;
+  canSave: boolean;
+  reload: () => Promise<void>;
+}) {
   const [editing, setEditing] = useState(false);
   const [key, setKey] = useState("");
   const [url, setUrl] = useState(provider.credential?.baseUrl || provider.suggestedUrl);
@@ -64,7 +80,9 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
     setBusy(true);
     setNote(null);
     try {
-      const result = await saveAiKey({ data: { provider: provider.id, apiKey: key, baseUrl: url } });
+      const result = await saveAiKey({
+        data: { provider: provider.id, apiKey: key, baseUrl: url },
+      });
       if (!result.ok) {
         setNote({ ok: false, text: result.error });
         return;
@@ -74,7 +92,10 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
       const count = result.models.length;
       setNote({
         ok: true,
-        text: count === 1 ? t("Conectado. 1 modelo disponible.") : t("Conectado. {0} modelos disponibles.", { 0: count }),
+        text:
+          count === 1
+            ? t("Conectado. 1 modelo disponible.")
+            : t("Conectado. {0} modelos disponibles.", { 0: count }),
       });
       await reload();
     } catch {
@@ -90,7 +111,9 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 text-sm">
             {provider.label}
-            {connected ? <CheckCircle2 className="size-3.5 text-accent" aria-label={t("Conectado")} /> : null}
+            {connected ? (
+              <CheckCircle2 className="size-3.5 text-accent" aria-label={t("Conectado")} />
+            ) : null}
           </span>
           <span className="block truncate text-xs text-muted">
             {connected
@@ -103,7 +126,13 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
         {!editing ? (
           <span className="flex items-center gap-4">
             <TextAction onClick={() => setEditing(true)}>
-              {provider.local ? (connected ? t("Cambiar dirección") : t("Conectar")) : connected ? t("Cambiar clave") : t("Añadir clave")}
+              {provider.local
+                ? connected
+                  ? t("Cambiar dirección")
+                  : t("Conectar")
+                : connected
+                  ? t("Cambiar clave")
+                  : t("Añadir clave")}
             </TextAction>
             {connected ? (
               <TextAction
@@ -144,7 +173,11 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             value={key}
             onChange={(event) => setKey(event.target.value)}
             aria-label={t("Clave de {0}", { 0: provider.label })}
-            placeholder={provider.local ? t("Clave (opcional, si tu servidor la pide)") : provider.keyPlaceholder}
+            placeholder={
+              provider.local
+                ? t("Clave (opcional, si tu servidor la pide)")
+                : provider.keyPlaceholder
+            }
             autoComplete="off"
             autoFocus={!provider.local}
             spellCheck={false}
@@ -155,7 +188,11 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             disabled={busy || (!canSave && Boolean(key))}
             className="h-10 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
           >
-            {busy ? t("Probando…") : provider.local ? t("Probar y conectar") : t("Probar y guardar")}
+            {busy
+              ? t("Probando…")
+              : provider.local
+                ? t("Probar y conectar")
+                : t("Probar y guardar")}
           </button>
           <button
             type="button"
@@ -168,18 +205,20 @@ function ProviderRow({ provider, canSave, reload }: { provider: Provider; canSav
             {t("Cancelar")}
           </button>
           {provider.local ? null : (
-          <a
-            href={provider.keyUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex w-full items-center gap-1 text-xs text-muted hover:text-fg"
-          >
-            {t("¿Dónde consigo la clave?")}{" "}<ExternalLink className="size-3" />
-          </a>
+            <a
+              href={provider.keyUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-full items-center gap-1 text-xs text-muted hover:text-fg"
+            >
+              {t("¿Dónde consigo la clave?")} <ExternalLink className="size-3" />
+            </a>
           )}
         </form>
       ) : null}
-      {note ? <p className={`mt-2 text-xs ${note.ok ? "text-muted" : "text-danger"}`}>{note.text}</p> : null}
+      {note ? (
+        <p className={`mt-2 text-xs ${note.ok ? "text-muted" : "text-danger"}`}>{note.text}</p>
+      ) : null}
     </li>
   );
 }

@@ -13,7 +13,7 @@ export async function leaveApp(): Promise<void> {
   try {
     await revokeOwnLease();
   } catch {
-    /* la sesión ya no estaba */
+    /* The session was already absent. */
   }
   useVault.getState().closeVault();
   useDirectoryPick.getState().clear();

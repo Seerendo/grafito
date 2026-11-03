@@ -9,12 +9,9 @@ import {
 } from "./types.ts";
 
 /**
- * Generative Language API de Google (Gemini):
- * `POST {base}/models/{modelo}:generateContent` con `x-goog-api-key`. Los
- * turnos son `contents` con rol `user` o `model`; el sistema va en
- * `systemInstruction`; las herramientas son `functionDeclarations`; las
- * llamadas llegan como partes `functionCall` y los resultados vuelven como
- * partes `functionResponse` en un turno `user`.
+ * Gemini adapter posts generateContent using x-goog-api-key. contents uses user/model roles,
+ * systemInstruction carries system text, and functionDeclarations/functionCall/functionResponse
+ * represent tools.
  */
 
 type Part =
@@ -51,11 +48,19 @@ export function toRequest(messages: ChatMessage[], tools: ToolSpec[]) {
     if (message.role === "system") continue;
     if (message.role === "user") push("user", [{ text: message.content }]);
     else if (message.role === "tool") {
-      push("user", [{ functionResponse: { name: message.name, response: { content: parseContent(message.content) } } }]);
+      push("user", [
+        {
+          functionResponse: {
+            name: message.name,
+            response: { content: parseContent(message.content) },
+          },
+        },
+      ]);
     } else {
       const parts: Part[] = [];
       if (message.content) parts.push({ text: message.content });
-      for (const call of message.toolCalls ?? []) parts.push({ functionCall: { name: call.name, args: call.arguments } });
+      for (const call of message.toolCalls ?? [])
+        parts.push({ functionCall: { name: call.name, args: call.arguments } });
       if (parts.length) push("model", parts);
     }
   }
@@ -79,8 +84,11 @@ export function toRequest(messages: ChatMessage[], tools: ToolSpec[]) {
 }
 
 export function fromResponse(body: unknown): Completion {
-  const parts = ((body as { candidates?: { content?: { parts?: unknown[] } }[] }).candidates?.[0]?.content?.parts ??
-    []) as { text?: string; functionCall?: { id?: string; name?: string; args?: Record<string, unknown> } }[];
+  const parts = ((body as { candidates?: { content?: { parts?: unknown[] } }[] }).candidates?.[0]
+    ?.content?.parts ?? []) as {
+    text?: string;
+    functionCall?: { id?: string; name?: string; args?: Record<string, unknown> };
+  }[];
   return {
     text: parts.map((part) => part.text ?? "").join(""),
     toolCalls: parts
@@ -99,21 +107,32 @@ function headers(endpoint: Endpoint): Record<string, string> {
 
 export async function complete(input: CompleteInput): Promise<Completion> {
   const fetcher = input.fetcher ?? fetch;
-  const response = await fetcher(joinUrl(input.endpoint.baseUrl, `${modelPath(input.model)}:generateContent`), {
-    method: "POST",
-    headers: headers(input.endpoint),
-    body: JSON.stringify(toRequest(input.messages, input.tools)),
-    signal: input.signal,
-    redirect: "error",
-  });
+  const response = await fetcher(
+    joinUrl(input.endpoint.baseUrl, `${modelPath(input.model)}:generateContent`),
+    {
+      method: "POST",
+      headers: headers(input.endpoint),
+      body: JSON.stringify(toRequest(input.messages, input.tools)),
+      signal: input.signal,
+      redirect: "error",
+    },
+  );
   await ensureOk(response, "Gemini");
   return fromResponse(await response.json());
 }
 
-export async function listModels(endpoint: Endpoint, fetcher: typeof fetch = fetch): Promise<string[]> {
-  const response = await fetcher(joinUrl(endpoint.baseUrl, "models?pageSize=200"), { headers: headers(endpoint), redirect: "error" });
+export async function listModels(
+  endpoint: Endpoint,
+  fetcher: typeof fetch = fetch,
+): Promise<string[]> {
+  const response = await fetcher(joinUrl(endpoint.baseUrl, "models?pageSize=200"), {
+    headers: headers(endpoint),
+    redirect: "error",
+  });
   await ensureOk(response, "Gemini");
-  const body = (await response.json()) as { models?: { name?: string; supportedGenerationMethods?: string[] }[] };
+  const body = (await response.json()) as {
+    models?: { name?: string; supportedGenerationMethods?: string[] }[];
+  };
   return (body.models ?? [])
     .filter((model) => model.supportedGenerationMethods?.includes("generateContent"))
     .map((model) => (model.name ?? "").replace(/^models\//, ""))

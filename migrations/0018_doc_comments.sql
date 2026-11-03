@@ -1,6 +1,5 @@
--- Comentarios sobre una nota o un archivo, sin editarlo: los deja su dueño o
--- cualquiera con quien esté compartido (también en solo lectura). Se borran
--- al vaciar el documento de la papelera.
+-- Document comments can be added by owners and shared recipients, including read-only recipients.
+-- Remove them when the document is purged from trash.
 create table if not exists doc_comment (
   id text primary key,
   owner_id text not null references "user" ("id") on delete cascade,

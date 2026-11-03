@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { notePresence } from "@/server/history.functions";
 
-/** Cada cuánto avisa un editor abierto (el servidor olvida a los 30 s). */
+/** Editor heartbeat interval; server presence expires after thirty seconds. */
 const BEAT_MS = 10_000;
 
 /**
- * Quién más está editando la nota `docId` (de `shareId`, si es compartida), y
- * aviso al servidor de si aquí se está editando. Se repite mientras la nota
- * está abierta y la pestaña visible; al cerrarla o dejar de editar, se retira.
+ * Other editors of docId, optionally under shareId, and this client's editing heartbeat.
+ * Refresh while the document is open and the tab visible; withdraw presence when closing or
+ * stopping editing.
  */
-export function useNotePresence(docId: string | null, editing: boolean, shareId?: string): string[] {
+export function useNotePresence(
+  docId: string | null,
+  editing: boolean,
+  shareId?: string,
+): string[] {
   const [editors, setEditors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -29,7 +33,10 @@ export function useNotePresence(docId: string | null, editing: boolean, shareId?
     return () => {
       cancelled = true;
       window.clearInterval(timer);
-      if (editing) void notePresence({ data: { docId, editing: false, ...(shareId ? { shareId } : {}) } }).catch(() => undefined);
+      if (editing)
+        void notePresence({
+          data: { docId, editing: false, ...(shareId ? { shareId } : {}) },
+        }).catch(() => undefined);
     };
   }, [docId, editing, shareId]);
 

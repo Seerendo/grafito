@@ -44,9 +44,8 @@ function pgliteBootstrapPlugin(): Plugin {
 }
 
 /**
- * Las fuentes de Excalidraw (14 MB) se sirven desde Grafito y no desde un CDN,
- * para que los dibujos funcionen sin internet: se copian a `public/excalidraw/`
- * (no versionado) al arrancar o construir. Ver `components/vault/DrawingView.tsx`.
+ * Serve Excalidraw fonts locally for offline drawings. Copy them to ignored public/excalidraw
+ * during startup/build; see DrawingView.tsx.
  */
 function excalidrawAssetsPlugin(): Plugin {
   return {
@@ -59,12 +58,10 @@ function excalidrawAssetsPlugin(): Plugin {
   };
 }
 
-// Destino del build de producción. `node-server` genera `.output/server/index.mjs`
-// (lo que ejecuta la imagen de Docker); `NITRO_PRESET=vercel` despliega en Vercel.
+// Production Nitro preset: node-server emits .output/server/index.mjs for Docker; NITRO_PRESET=vercel targets Vercel.
 const nitroPreset = process.env.NITRO_PRESET?.trim() || "node-server";
 
-// `npm run dev` escucha en `0.0.0.0:8080` para que se alcance desde fuera del
-// contenedor o de la máquina.
+// Development listens on 0.0.0.0:8080 for access outside the container or host.
 export default defineConfig(({ command, isPreview }) => ({
   server: {
     host: "0.0.0.0",

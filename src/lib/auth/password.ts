@@ -1,30 +1,29 @@
 import { authClient } from "./client";
 import { bearerHeader, rememberBearerFrom } from "./bearer";
 
-/**
- * Llamadas de usuario y contraseña contra `/api/auth/*`, compartidas por el
- * ingreso (`AccessGate`) y la cuenta (`AccountScreen`).
- */
+/** Shared username/password calls to /api/auth for sign-in and account screens. */
 
 /**
- * Avisa a `useSession()` de que la sesión cambió. Better Auth solo lo hace solo
- * cuando la llamada pasa por `authClient`; aquí usamos `fetch` directo (para
- * leer `set-auth-token`), así que hay que dar la señal a mano.
+ * Notify useSession after direct fetch requests. Better Auth automatically signals changes only
+ * through authClient; direct calls are needed to read set-auth-token.
  */
 function refreshSessionStore(): void {
   authClient.$store.notify("$sessionSignal");
 }
 
-/** Entra con email y contraseña y refresca la sesión. Devuelve si se aceptó. */
+/** Sign in with email/password and refresh session state; return whether accepted. */
 export async function signInWithPassword(email: string, password: string): Promise<boolean> {
   return (await signInDetailed(email, password)).ok;
 }
 
 /**
- * Como `signInWithPassword`, pero si se rechaza dice por qué cuando el servidor
- * lo explica (p. ej. `TEMP_ACCESS_EXPIRED`, ver `server/temp-access.ts`).
+ * Password sign-in with server-provided rejection details such as TEMP_ACCESS_EXPIRED; see
+ * server/temp-access.ts.
  */
-export async function signInDetailed(email: string, password: string): Promise<{ ok: true } | { ok: false; code: string }> {
+export async function signInDetailed(
+  email: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; code: string }> {
   const response = await fetch("/api/auth/sign-in/email", {
     method: "POST",
     credentials: "include",
@@ -40,8 +39,11 @@ export async function signInDetailed(email: string, password: string): Promise<{
   return { ok: false, code: body?.message ?? "" };
 }
 
-/** Cambia la contraseña de la sesión actual. Devuelve si se aceptó. */
-export async function changePassword(currentPassword: string, newPassword: string): Promise<boolean> {
+/** Change the current session's password and report acceptance. */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<boolean> {
   const response = await fetch("/api/auth/change-password", {
     method: "POST",
     credentials: "include",

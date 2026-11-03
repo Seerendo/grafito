@@ -1,8 +1,6 @@
 /**
- * Diferencias por líneas entre dos textos (para el historial de versiones).
- * Recorta lo común al principio y al final y compara el centro con la
- * subsecuencia común más larga; si el centro es enorme, lo marca entero como
- * quitado y añadido para no bloquear el navegador.
+ * Line diff trims common prefixes/suffixes and applies LCS to the middle. For very large
+ * differences, mark the whole middle removed/added to avoid blocking the browser.
  */
 
 export type DiffLine = { kind: "same" | "added" | "removed"; text: string };
@@ -31,15 +29,20 @@ function middle(a: string[], b: string[]): DiffLine[] {
   if (a.length === 0) return b.map((text) => ({ kind: "added", text }));
   if (b.length === 0) return a.map((text) => ({ kind: "removed", text }));
   if (a.length * b.length > MAX_CELLS) {
-    return [...a.map((text): DiffLine => ({ kind: "removed", text })), ...b.map((text): DiffLine => ({ kind: "added", text }))];
+    return [
+      ...a.map((text): DiffLine => ({ kind: "removed", text })),
+      ...b.map((text): DiffLine => ({ kind: "added", text })),
+    ];
   }
-  // lcs[i][j] = longitud de la subsecuencia común de a[i..] y b[j..].
+  // lcs[i][j] is the common-subsequence length for a[i..] and b[j..].
   const cols = b.length + 1;
   const lcs = new Uint32Array((a.length + 1) * cols);
   for (let i = a.length - 1; i >= 0; i -= 1) {
     for (let j = b.length - 1; j >= 0; j -= 1) {
       lcs[i * cols + j] =
-        a[i] === b[j] ? lcs[(i + 1) * cols + j + 1]! + 1 : Math.max(lcs[(i + 1) * cols + j]!, lcs[i * cols + j + 1]!);
+        a[i] === b[j]
+          ? lcs[(i + 1) * cols + j + 1]! + 1
+          : Math.max(lcs[(i + 1) * cols + j]!, lcs[i * cols + j + 1]!);
     }
   }
   const out: DiffLine[] = [];
@@ -63,7 +66,7 @@ function middle(a: string[], b: string[]): DiffLine[] {
   return out;
 }
 
-/** Cuántas líneas se añadieron y quitaron. */
+/** Count added and removed lines. */
 export function diffStats(lines: DiffLine[]): { added: number; removed: number } {
   let added = 0;
   let removed = 0;

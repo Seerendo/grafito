@@ -8,9 +8,8 @@ import type { ZipTicket } from "@/server/export.functions";
 import { zipStream } from "@/server/zip";
 
 /**
- * `GET /api/portfolios/:id/download`: el portafolio (con sus subportafolios)
- * como .zip; `all` es toda la bóveda. Acceso con el enlace firmado que da la
- * app (`t`, ver `export.functions.ts`) o con un token personal de la API.
+ * GET /api/portfolios/:id/download streams a portfolio subtree ZIP; all means the entire vault.
+ * Authorize through the signed t token or a personal API token.
  */
 export const Route = createFileRoute("/api/portfolios/$id/download")({
   server: {

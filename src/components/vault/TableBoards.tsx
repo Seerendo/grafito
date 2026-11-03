@@ -8,8 +8,8 @@ import { tableRowHistory } from "@/server/table.functions";
 type Where = { docId: string; shareId?: string };
 
 /**
- * Tablero, galería y calendario de una tabla (fase 3). La cuadrícula sigue
- * en `TableView`. Arrastrar una tarjeta de tablero cambia la selección.
+ * Table board, gallery and calendar views. Grid remains in TableView; dragging board cards
+ * changes their selection value.
  */
 export function TableBoards({
   mode,
@@ -39,19 +39,35 @@ export function TableBoards({
   const group = selects.find((field) => field.id === kanbanFieldId) ?? selects[0] ?? null;
   const dateField = dates.find((field) => field.id === calendarFieldId) ?? dates[0] ?? null;
   const titleOf = (row: TableRow) => {
-    const field = fields.find((item) => (item.type === "text" || item.type === "select") && item.id !== group?.id) ?? fields.find((item) => item.id !== group?.id);
+    const field =
+      fields.find(
+        (item) => (item.type === "text" || item.type === "select") && item.id !== group?.id,
+      ) ?? fields.find((item) => item.id !== group?.id);
     const text = field ? textOf(row, field) : "";
     return text || t("(sin nombre)");
   };
 
   if (mode === "kanban") {
-    if (!group) return <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("El tablero necesita una columna de selección.")}</p>;
-    const lanes = [...(group.choices ?? []).map((choice) => ({ key: choice, label: choice })), { key: "", label: t("Sin grupo") }];
+    if (!group)
+      return (
+        <p className="grid flex-1 place-items-center px-6 text-sm text-muted">
+          {t("El tablero necesita una columna de selección.")}
+        </p>
+      );
+    const lanes = [
+      ...(group.choices ?? []).map((choice) => ({ key: choice, label: choice })),
+      { key: "", label: t("Sin grupo") },
+    ];
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {selects.length > 1 ? (
           <div className="border-b border-line px-3 py-2">
-            <FieldPicker label={t("Agrupar por")} value={group.id} options={selects} onChange={onKanbanField} />
+            <FieldPicker
+              label={t("Agrupar por")}
+              value={group.id}
+              options={selects}
+              onChange={onKanbanField}
+            />
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-3">
@@ -59,7 +75,9 @@ export function TableBoards({
             const cards = rows.filter((row) => {
               const value = row.cells[group.id];
               const text = typeof value === "string" ? value : "";
-              return lane.key ? text === lane.key : !lane.key && !(group.choices ?? []).includes(text);
+              return lane.key
+                ? text === lane.key
+                : !lane.key && !(group.choices ?? []).includes(text);
             });
             return (
               <section
@@ -88,7 +106,14 @@ export function TableBoards({
                       className={`rounded-md border border-line bg-surface p-2.5 text-sm ${editable ? "cursor-grab active:cursor-grabbing" : ""}`}
                     >
                       <p className="truncate font-medium">{titleOf(row)}</p>
-                      <CardFacts row={row} fields={fields} skip={new Set([group.id, fields.find((item) => item.type === "text")?.id ?? ""])} textOf={textOf} />
+                      <CardFacts
+                        row={row}
+                        fields={fields}
+                        skip={
+                          new Set([group.id, fields.find((item) => item.type === "text")?.id ?? ""])
+                        }
+                        textOf={textOf}
+                      />
                     </article>
                   ))}
                 </div>
@@ -103,7 +128,9 @@ export function TableBoards({
   if (mode === "gallery") {
     return (
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        {rows.length === 0 ? <p className="py-16 text-center text-sm text-muted">{t("La tabla está vacía.")}</p> : null}
+        {rows.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted">{t("La tabla está vacía.")}</p>
+        ) : null}
         <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
           {rows.map((row) => (
             <article key={row.id} className="rounded-lg border border-line bg-surface p-3">
@@ -116,7 +143,12 @@ export function TableBoards({
     );
   }
 
-  if (!dateField) return <p className="grid flex-1 place-items-center px-6 text-sm text-muted">{t("El calendario necesita una columna de fecha.")}</p>;
+  if (!dateField)
+    return (
+      <p className="grid flex-1 place-items-center px-6 text-sm text-muted">
+        {t("El calendario necesita una columna de fecha.")}
+      </p>
+    );
   return (
     <CalendarBoard
       field={dateField}
@@ -205,8 +237,10 @@ function CalendarBoard({
   });
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
-  // Solo la primera letra en mayúscula («Octubre de 2026», no «Octubre De 2026»).
-  const monthName = new Intl.DateTimeFormat(intl(), { month: "long", year: "numeric" }).format(cursor);
+  // Capitalize only the first letter of the localized month heading.
+  const monthName = new Intl.DateTimeFormat(intl(), { month: "long", year: "numeric" }).format(
+    cursor,
+  );
   const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
   const first = new Date(year, month, 1);
   const start = new Date(first);
@@ -232,14 +266,28 @@ function CalendarBoard({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
-        <button type="button" aria-label={t("Mes anterior")} onClick={() => setCursor(new Date(year, month - 1, 1))} className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          aria-label={t("Mes anterior")}
+          onClick={() => setCursor(new Date(year, month - 1, 1))}
+          className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg"
+        >
           <ChevronLeft className="size-4" />
         </button>
         <p className="min-w-36 text-center text-sm">{label}</p>
-        <button type="button" aria-label={t("Mes siguiente")} onClick={() => setCursor(new Date(year, month + 1, 1))} className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          aria-label={t("Mes siguiente")}
+          onClick={() => setCursor(new Date(year, month + 1, 1))}
+          className="grid size-8 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg"
+        >
           <ChevronRight className="size-4" />
         </button>
-        <button type="button" onClick={() => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} className="h-8 rounded-md px-2 text-xs text-accent hover:bg-elevated">
+        <button
+          type="button"
+          onClick={() => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
+          className="h-8 rounded-md px-2 text-xs text-accent hover:bg-elevated"
+        >
           {t("Hoy")}
         </button>
         <FieldPicker label={t("Fecha")} value={field.id} options={dates} onChange={onField} />
@@ -257,15 +305,26 @@ function CalendarBoard({
           const items = byDay.get(key) ?? [];
           const inMonth = date.getMonth() === month;
           return (
-            <div key={key} className={`min-w-0 border-b border-l border-line p-1 ${inMonth ? "" : "bg-inset/50 text-faint"}`}>
+            <div
+              key={key}
+              className={`min-w-0 border-b border-l border-line p-1 ${inMonth ? "" : "bg-inset/50 text-faint"}`}
+            >
               <p className="px-0.5 text-xs">{date.getDate()}</p>
               <ul className="space-y-0.5">
                 {items.slice(0, 3).map((row) => (
-                  <li key={row.id} className="truncate rounded bg-accent/15 px-1 text-xs text-fg" title={titleOf(row)}>
+                  <li
+                    key={row.id}
+                    className="truncate rounded bg-accent/15 px-1 text-xs text-fg"
+                    title={titleOf(row)}
+                  >
                     {titleOf(row)}
                   </li>
                 ))}
-                {items.length > 3 ? <li className="px-1 text-xs text-faint">{t("{n} más", { n: items.length - 3 })}</li> : null}
+                {items.length > 3 ? (
+                  <li className="px-1 text-xs text-faint">
+                    {t("{n} más", { n: items.length - 3 })}
+                  </li>
+                ) : null}
               </ul>
             </div>
           );
@@ -283,8 +342,16 @@ type HistoryItem = {
   changes: { field: string; from: string; to: string }[];
 };
 
-/** Quién cambió la fila, y el valor anterior y el nuevo. */
-export function RowHistoryDialog({ where, rowId, onClose }: { where: Where; rowId: string; onClose: () => void }) {
+/** Row change author, previous value and new value. */
+export function RowHistoryDialog({
+  where,
+  rowId,
+  onClose,
+}: {
+  where: Where;
+  rowId: string;
+  onClose: () => void;
+}) {
   const [items, setItems] = useState<HistoryItem[] | null>(null);
   const [error, setError] = useState("");
   const docId = where.docId;
@@ -302,18 +369,25 @@ export function RowHistoryDialog({ where, rowId, onClose }: { where: Where; rowI
       alive = false;
     };
   }, [docId, shareId, rowId]);
-  const when = (at: number) => new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(at);
+  const when = (at: number) =>
+    new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "short" }).format(at);
   return (
     <Modal title={t("Historial")} onClose={onClose}>
       {error ? <p className="text-sm text-muted">{error}</p> : null}
-      {items && items.length === 0 ? <p className="text-sm text-muted">{t("Esta fila no tiene cambios.")}</p> : null}
+      {items && items.length === 0 ? (
+        <p className="text-sm text-muted">{t("Esta fila no tiene cambios.")}</p>
+      ) : null}
       {items === null && !error ? <p className="text-sm text-muted">{t("Cargando…")}</p> : null}
       <ol className="max-h-96 space-y-4 overflow-y-auto">
         {(items ?? []).map((item) => (
           <li key={item.id}>
             <p className="text-xs text-faint">
               {item.actor || t("(sin nombre)")} · {when(item.at)}
-              {item.kind === "create" ? ` · ${t("Creada")}` : item.kind === "delete" ? ` · ${t("Borrada")}` : ""}
+              {item.kind === "create"
+                ? ` · ${t("Creada")}`
+                : item.kind === "delete"
+                  ? ` · ${t("Borrada")}`
+                  : ""}
             </p>
             <ul className="mt-1 space-y-0.5 text-sm">
               {item.changes.map((change, index) => (

@@ -1,19 +1,18 @@
 /**
- * Texto para el índice de búsqueda. Sin modelos: un recorte alrededor de la
- * coincidencia y un tope de lo que se guarda por documento, para que la
- * indexación no se lleve la memoria de un equipo pequeño.
+ * Bounded search-index text and match excerpts without models. Per-document limits keep
+ * indexing viable on small machines.
  */
 
-/** Caracteres de contenido que se guardan por documento. */
+/** Indexed content character limit per document. */
 export const INDEX_CAP = 24_000;
 
-/** Quita bytes nulos, que Postgres y Elasticsearch no aceptan en el texto. */
+/** Remove null bytes unsupported by Postgres and Elasticsearch text. */
 function stripNuls(value: string): string {
   const nul = String.fromCharCode(0);
   return value.includes(nul) ? value.split(nul).join("") : value;
 }
 
-/** Junta las partes y se queda con el tope. */
+/** Combine parts and truncate to the limit. */
 export function indexBody(parts: readonly string[]): string {
   const text = parts
     .map((part) => stripNuls(part).trim())
@@ -22,7 +21,7 @@ export function indexBody(parts: readonly string[]): string {
   return text.length > INDEX_CAP ? text.slice(0, INDEX_CAP) : text;
 }
 
-/** Una aparición de la frase, con el texto que la rodea en el documento. */
+/** One phrase occurrence with surrounding document text. */
 export type Passage = { before: string; match: string; after: string };
 
 const PASSAGE_RADIUS = 36;
@@ -36,17 +35,14 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Frase completa, sin distinguir mayúsculas. Los espacios del medio pueden variar. */
+/** Match the complete phrase case-insensitively, allowing whitespace variation. */
 function phrasePattern(query: string): RegExp | null {
   const words = query.trim().split(/\s+/).filter(Boolean);
   if (words.join(" ").length < 2) return null;
   return new RegExp(words.map(escapeRegExp).join("\\s+"), "gi");
 }
 
-/**
- * Todas las veces que la frase aparece, cada una con su alrededor.
- * Si no está la frase entera, no hay resultado: una sola de sus palabras no cuenta.
- */
+/** Return every full-phrase occurrence with context. Individual matching words alone do not qualify. */
 export function findPassages(
   body: string,
   query: string,
@@ -74,13 +70,13 @@ export function findPassages(
   return { items, more: Math.max(0, count - items.length) };
 }
 
-/** La primera aparición, en una sola línea. Vacío si la frase no está. */
+/** First occurrence on one line; empty when the phrase is absent. */
 export function snippet(body: string, query: string, radius = 90): string {
   const first = findPassages(body, query, radius, 1).items[0];
   return first ? `${first.before}${first.match}${first.after}` : "";
 }
 
-/** Trocea un texto para pintar en negrita cada vez que aparece la frase. */
+/** Split text into spans for bolding every phrase occurrence. */
 export function markSpans(text: string, query: string): { text: string; mark: boolean }[] {
   const pattern = phrasePattern(query);
   if (!pattern) return [{ text, mark: false }];
@@ -97,10 +93,7 @@ export function markSpans(text: string, query: string): { text: string; mark: bo
   return spans.length > 0 ? spans : [{ text, mark: false }];
 }
 
-/**
- * La barra de búsqueda se queda con el elemento solo si la frase escrita
- * está en su texto. Una coincidencia aproximada no basta.
- */
+/** Search-bar filtering requires the exact phrase in item text; approximate matches are insufficient. */
 export function exactPhraseFilter(value: string, search: string, keywords: string[] = []): number {
   const needle = collapse(search).toLowerCase();
   if (!needle) return 1;
@@ -109,9 +102,8 @@ export function exactPhraseFilter(value: string, search: string, keywords: strin
 }
 
 /**
- * Resultados del índice cuyo título (y el texto local que ya se ve, p. ej.
- * celdas) no contiene la búsqueda. Así la lista no repite lo que ya salió
- * por el título.
+ * Exclude indexed results already matching title or visible local text, preventing duplicate
+ * search entries.
  */
 export function hitsBeyondTitle<T extends { id: string }>(
   hits: readonly T[],

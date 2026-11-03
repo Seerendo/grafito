@@ -19,14 +19,13 @@ import { intl, t } from "@/app/i18n";
 
 type Item = Awaited<ReturnType<typeof trashList>>[number];
 
-/** Días que se guarda un documento en la papelera (`TRASH_DAYS` en el servidor). */
+/** Trash retention days, matching server TRASH_DAYS. */
 const TRASH_DAYS = 30;
 
 /**
- * Papelera: recuperar o borrar para siempre lo eliminado (un portafolio, con
- * lo que contiene dentro). Una pestaña para la
- * Carpeta Personal y otra por cada espacio de trabajo que administro (solo sus
- * administradores ven y recuperan lo que se borró allí).
+ * Restore or permanently delete trash, including portfolio subtrees. Tabs cover personal trash
+ * and each administered workspace; only its administrators can view and restore workspace
+ * trash.
  */
 export function TrashBoard() {
   const can = usePermissions();
@@ -42,9 +41,9 @@ export function TrashBoard() {
   const [picked, setPicked] = useState<string[]>([]);
   const [anchor, setAnchor] = useState<string | null>(null);
   const menu = useContextMenu();
-  // Fuera de un elemento: vaciar, cambiar de pestaña… (lo mismo que los botones).
+  // Outside item rows, expose general actions such as emptying trash and switching tabs.
   const autoMenu = useAutoContextMenu();
-  // En un espacio de trabajo, quien lo administra puede recuperar y vaciar.
+  // Workspace administrators may restore or purge its trash.
   const mayRestore = tab ? true : canRestore;
   const mayPurge = tab ? true : canPurge;
 
@@ -61,7 +60,7 @@ export function TrashBoard() {
         const result = await workspaceTrashList({ data: { shareId: which } });
         setItems(result.items);
       } else {
-        // Antes se sube lo pendiente, para que lo recién borrado ya esté aquí.
+        // Upload pending changes first so newly deleted items appear here.
         const owner = useVault.getState().owner;
         if (owner) await syncVault(owner);
         setItems(await trashList());
@@ -81,7 +80,7 @@ export function TrashBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  /** Recupera uno o varios y se queda en la papelera. Se detiene en el primer fallo. */
+  /** Restore selected items without leaving trash; stop at the first failure. */
   const restoreMany = async (ids: string[]) => {
     if (ids.length === 0) return;
     setBusy(ids[0] ?? "many");
@@ -90,7 +89,9 @@ export function TrashBoard() {
     let failed = false;
     try {
       for (const id of ids) {
-        const result = tab ? await workspaceTrashRestore({ data: { shareId: tab, id } }) : await trashRestore({ data: { id } });
+        const result = tab
+          ? await workspaceTrashRestore({ data: { shareId: tab, id } })
+          : await trashRestore({ data: { id } });
         if (!result.ok) {
           setError(result.error);
           failed = true;
@@ -106,7 +107,11 @@ export function TrashBoard() {
       await load();
       if (!failed) {
         setNotice(
-          ids.length > 1 ? t("Recuperados.") : tab ? t("Recuperado en el espacio de trabajo.") : t("Recuperado."),
+          ids.length > 1
+            ? t("Recuperados.")
+            : tab
+              ? t("Recuperado en el espacio de trabajo.")
+              : t("Recuperado."),
         );
       }
     } catch {
@@ -128,11 +133,13 @@ export function TrashBoard() {
       return;
     }
     if (event.ctrlKey || event.metaKey) {
-      setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+      setPicked((current) =>
+        current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+      );
       setAnchor(id);
       return;
     }
-    // Un segundo clic en el único elegido lo suelta.
+    // Clicking the only selected item again deselects it.
     if (picked.length === 1 && picked[0] === id) {
       setPicked([]);
       setAnchor(null);
@@ -146,7 +153,9 @@ export function TrashBoard() {
     setConfirming(null);
     setBusy(ids?.[0] ?? "all");
     try {
-      const result = tab ? await workspaceTrashPurge({ data: { shareId: tab, ids } }) : await trashPurge({ data: { ids } });
+      const result = tab
+        ? await workspaceTrashPurge({ data: { shareId: tab, ids } })
+        : await trashPurge({ data: { ids } });
       if (!result.ok) setError(result.error);
       else {
         const gone = new Set(ids ?? []);
@@ -204,36 +213,49 @@ export function TrashBoard() {
         </div>
         {spaces.length > 0 ? (
           <div role="tablist" data-ui="trash-tabs" className="mt-5 flex flex-wrap gap-1.5">
-            {[{ shareId: null as string | null, name: t("Carpeta Personal") }, ...spaces].map((space) => {
-              const Icon = space.shareId ? Building2 : House;
-              const on = tab === space.shareId;
-              return (
-                <button
-                  key={space.shareId ?? "personal"}
-                  type="button"
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => setTab(space.shareId)}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm ${
-                    on ? "border-accent bg-accent/15 text-fg" : "border-line text-muted hover:bg-elevated hover:text-fg"
-                  }`}
-                >
-                  <Icon className="size-3.5" />
-                  {space.name}
-                </button>
-              );
-            })}
+            {[{ shareId: null as string | null, name: t("Carpeta Personal") }, ...spaces].map(
+              (space) => {
+                const Icon = space.shareId ? Building2 : House;
+                const on = tab === space.shareId;
+                return (
+                  <button
+                    key={space.shareId ?? "personal"}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setTab(space.shareId)}
+                    className={`inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm ${
+                      on
+                        ? "border-accent bg-accent/15 text-fg"
+                        : "border-line text-muted hover:bg-elevated hover:text-fg"
+                    }`}
+                  >
+                    <Icon className="size-3.5" />
+                    {space.name}
+                  </button>
+                );
+              },
+            )}
           </div>
         ) : null}
         {error ? <p className="mt-4 text-sm text-danger">{t(error)}</p> : null}
         {notice ? <p className="mt-4 text-sm text-muted">{notice}</p> : null}
         {!items && !error ? <p className="mt-6 text-sm text-muted">{t("Cargando…")}</p> : null}
-        {items && items.length === 0 ? <p className="mt-6 text-sm text-muted">{t("La papelera está vacía.")}</p> : null}
+        {items && items.length === 0 ? (
+          <p className="mt-6 text-sm text-muted">{t("La papelera está vacía.")}</p>
+        ) : null}
         {items && items.length > 0 ? (
-          <ul data-ui="trash-list" className="mt-6 overflow-hidden rounded-lg border border-line bg-surface">
+          <ul
+            data-ui="trash-list"
+            className="mt-6 overflow-hidden rounded-lg border border-line bg-surface"
+          >
             {items.map((item) => {
-              const Icon = item.kind === "portfolio" ? Folder : item.kind === "file" ? File : FileText;
-              const left = Math.max(0, TRASH_DAYS - Math.floor((Date.now() - item.deletedAt) / 86_400_000));
+              const Icon =
+                item.kind === "portfolio" ? Folder : item.kind === "file" ? File : FileText;
+              const left = Math.max(
+                0,
+                TRASH_DAYS - Math.floor((Date.now() - item.deletedAt) / 86_400_000),
+              );
               const on = picked.includes(item.id);
               const chosen = on && picked.length > 1 ? picked : [item.id];
               return (
@@ -248,7 +270,10 @@ export function TrashBoard() {
                       ...(mayRestore
                         ? [
                             {
-                              label: chosen.length > 1 ? t("Recuperar {n}", { n: chosen.length }) : t("Recuperar"),
+                              label:
+                                chosen.length > 1
+                                  ? t("Recuperar {n}", { n: chosen.length })
+                                  : t("Recuperar"),
                               onClick: () => void restoreMany(chosen),
                             },
                           ]
@@ -256,7 +281,10 @@ export function TrashBoard() {
                       ...(mayPurge
                         ? [
                             {
-                              label: chosen.length > 1 ? t("Eliminar {n}", { n: chosen.length }) : t("Eliminar para siempre"),
+                              label:
+                                chosen.length > 1
+                                  ? t("Eliminar {n}", { n: chosen.length })
+                                  : t("Eliminar para siempre"),
                               danger: true,
                               onClick: () => setConfirming(chosen),
                             },
@@ -272,16 +300,21 @@ export function TrashBoard() {
                       {item.kind === "portfolio"
                         ? `${t("Portafolio")} · ${item.count ?? 0} ${item.count === 1 ? t("documento") : t("documentos")} · `
                         : ""}
-                      {item.portfolioName ?? t("Carpeta Personal")} · {formatWhen(item.deletedAt)} · {left} {left === 1 ? t("día") : t("días")}
+                      {item.portfolioName ?? t("Carpeta Personal")} · {formatWhen(item.deletedAt)} ·{" "}
+                      {left} {left === 1 ? t("día") : t("días")}
                     </span>
                   </span>
                   <span className="flex items-center gap-4">
                     {mayRestore ? (
-                      <TextAction onClick={() => void restoreMany([item.id])}>{busy === item.id ? t("…") : t("Recuperar")}</TextAction>
+                      <TextAction onClick={() => void restoreMany([item.id])}>
+                        {busy === item.id ? t("…") : t("Recuperar")}
+                      </TextAction>
                     ) : null}
                     {mayPurge ? (
                       <TextAction tone="danger" onClick={() => setConfirming(chosen)}>
-                        {chosen.length > 1 ? t("Eliminar {n}", { n: chosen.length }) : t("Eliminar")}
+                        {chosen.length > 1
+                          ? t("Eliminar {n}", { n: chosen.length })
+                          : t("Eliminar")}
                       </TextAction>
                     ) : null}
                   </span>
@@ -299,15 +332,24 @@ export function TrashBoard() {
           >
             <p className="text-sm text-muted">
               {confirming === "all"
-                ? t("Se borrará para siempre todo lo que hay en esta papelera ({n}). No se puede deshacer.", { n: items?.length ?? 0 })
+                ? t(
+                    "Se borrará para siempre todo lo que hay en esta papelera ({n}). No se puede deshacer.",
+                    { n: items?.length ?? 0 },
+                  )
                 : confirming.length > 1
-                  ? t("Se borrarán para siempre {n} elementos. No se puede deshacer.", { n: confirming.length })
+                  ? t("Se borrarán para siempre {n} elementos. No se puede deshacer.", {
+                      n: confirming.length,
+                    })
                   : t("«{0}» se borrará para siempre. No se puede deshacer.", {
                       0: items?.find((item) => item.id === confirming[0])?.title ?? "",
                     })}
             </p>
             <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setConfirming(null)} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated">
+              <button
+                type="button"
+                onClick={() => setConfirming(null)}
+                className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated"
+              >
                 {t("Cancelar")}
               </button>
               <button
@@ -327,5 +369,10 @@ export function TrashBoard() {
 }
 
 function formatWhen(ms: number): string {
-  return new Intl.DateTimeFormat(intl(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(ms));
+  return new Intl.DateTimeFormat(intl(), {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(ms));
 }

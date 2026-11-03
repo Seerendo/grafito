@@ -8,15 +8,35 @@ import { Mark } from "@/components/brand/Mark";
 import { AccessTrail, chosenExpiry, ExpiryField, utcDay } from "@/components/vault/AccessWindow";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
-import type { CellValue, FormFieldView, TableField, TableForm, TableRow } from "@/domain/vault/table";
+import type {
+  CellValue,
+  FormFieldView,
+  TableField,
+  TableForm,
+  TableRow,
+} from "@/domain/vault/table";
 import type { ExpiryChoice } from "@/domain/access-window";
 import { orgPath } from "@/domain/orgs";
 import { isPublicField } from "@/domain/vault/table";
-import { invitedFormFile, invitedFormOpen, invitedFormSubmit, publicFormFile, publicFormOpen, publicFormSubmit, tableAddRows, tableAttach, tableFormActivity, tableFormPeople, tableRevokeForm, tableRowChoices, tableSaveForm } from "@/server/table.functions";
+import {
+  invitedFormFile,
+  invitedFormOpen,
+  invitedFormSubmit,
+  publicFormFile,
+  publicFormOpen,
+  publicFormSubmit,
+  tableAddRows,
+  tableAttach,
+  tableFormActivity,
+  tableFormPeople,
+  tableRevokeForm,
+  tableRowChoices,
+  tableSaveForm,
+} from "@/server/table.functions";
 
 type Where = { docId: string; shareId?: string };
 
-/** El enlace público del formulario. */
+/** Public form link. */
 function formHref(token: string): string {
   return `${window.location.origin}/f/${token}`;
 }
@@ -25,7 +45,7 @@ function when(ms: number): string {
   return new Intl.DateTimeFormat(intl(), { dateStyle: "long", timeStyle: "short" }).format(ms);
 }
 
-/** Configurar el formulario y rellenarlo desde la tabla. */
+/** Configure and fill the form from its table. */
 export function FormDialog({
   title,
   fields,
@@ -49,7 +69,12 @@ export function FormDialog({
   const [name, setName] = useState(form?.title ?? title.replace(/\.tabla$/i, ""));
   const [description, setDescription] = useState(form?.description ?? "");
   const [picked, setPicked] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries((form?.fields ?? fields.map((field) => ({ id: field.id, required: false }))).map((field) => [field.id, field.required])),
+    Object.fromEntries(
+      (form?.fields ?? fields.map((field) => ({ id: field.id, required: false }))).map((field) => [
+        field.id,
+        field.required,
+      ]),
+    ),
   );
   const [publish, setPublish] = useState(Boolean(form?.enabled));
   const [current, setCurrent] = useState(form);
@@ -61,13 +86,21 @@ export function FormDialog({
   const [linkDate, setLinkDate] = useState("");
   const [linkTouched, setLinkTouched] = useState(false);
   const [trail, setTrail] = useState<Awaited<ReturnType<typeof tableFormActivity>> | null>(null);
-  const [people, setPeople] = useState<{ id: string; name: string; loginName: string }[] | null>(null);
+  const [people, setPeople] = useState<{ id: string; name: string; loginName: string }[] | null>(
+    null,
+  );
   const [orgs, setOrgs] = useState<{ id: string; name: string; parentId: string | null }[]>([]);
   const [inviteUsers, setInviteUsers] = useState<Set<string>>(
-    () => new Set((form?.invites ?? []).filter((item) => item.kind === "user").map((item) => item.subjectId)),
+    () =>
+      new Set(
+        (form?.invites ?? []).filter((item) => item.kind === "user").map((item) => item.subjectId),
+      ),
   );
   const [inviteOrgs, setInviteOrgs] = useState<Set<string>>(
-    () => new Set((form?.invites ?? []).filter((item) => item.kind === "org").map((item) => item.subjectId)),
+    () =>
+      new Set(
+        (form?.invites ?? []).filter((item) => item.kind === "org").map((item) => item.subjectId),
+      ),
   );
   const [who, setWho] = useState("");
   const selected = fields.filter((field) => field.id in picked);
@@ -106,7 +139,12 @@ export function FormDialog({
 
   const filteredPeople = useMemo(() => {
     const needle = who.trim().toLowerCase();
-    return (people ?? []).filter((person) => !needle || person.name.toLowerCase().includes(needle) || person.loginName.toLowerCase().includes(needle));
+    return (people ?? []).filter(
+      (person) =>
+        !needle ||
+        person.name.toLowerCase().includes(needle) ||
+        person.loginName.toLowerCase().includes(needle),
+    );
   }, [people, who]);
   const filteredOrgs = useMemo(() => {
     const needle = who.trim().toLowerCase();
@@ -121,7 +159,9 @@ export function FormDialog({
       return;
     }
     setBusy(true);
-    const expiresAt = publish ? chosenExpiry(linkTouched, false, linkMode, linkDate, linkExisting) : undefined;
+    const expiresAt = publish
+      ? chosenExpiry(linkTouched, false, linkMode, linkDate, linkExisting)
+      : undefined;
     const result = await tableSaveForm({
       data: {
         ...where,
@@ -142,14 +182,25 @@ export function FormDialog({
     setLinkTouched(false);
     setCurrent(result.form);
     onSaved(result.form);
-    setInviteUsers(new Set(result.form.invites.filter((item) => item.kind === "user").map((item) => item.subjectId)));
-    setInviteOrgs(new Set(result.form.invites.filter((item) => item.kind === "org").map((item) => item.subjectId)));
+    setInviteUsers(
+      new Set(
+        result.form.invites.filter((item) => item.kind === "user").map((item) => item.subjectId),
+      ),
+    );
+    setInviteOrgs(
+      new Set(
+        result.form.invites.filter((item) => item.kind === "org").map((item) => item.subjectId),
+      ),
+    );
     const notes: string[] = [];
     const notice = "notice" in result ? result.notice : undefined;
-    if (notice?.mailOff && (inviteUsers.size > 0 || inviteOrgs.size > 0)) notes.push(t("El correo no está configurado: se guardó, pero no se envió el aviso."));
-    for (const name of notice?.missing ?? []) notes.push(t("{0} no tiene correo: el aviso no se envió.", { 0: name }));
+    if (notice?.mailOff && (inviteUsers.size > 0 || inviteOrgs.size > 0))
+      notes.push(t("El correo no está configurado: se guardó, pero no se envió el aviso."));
+    for (const name of notice?.missing ?? [])
+      notes.push(t("{0} no tiene correo: el aviso no se envió.", { 0: name }));
     if ((notice?.failed ?? 0) > 0) notes.push(t("No se pudo enviar el correo."));
-    if ((notice?.mailed ?? 0) > 0 && notes.length === 0) notes.push(t("Se envió el aviso por correo."));
+    if ((notice?.mailed ?? 0) > 0 && notes.length === 0)
+      notes.push(t("Se envió el aviso por correo."));
     setMessage(notes.join(" "));
     loadTrail();
   };
@@ -190,19 +241,35 @@ export function FormDialog({
 
   const attach = async (fieldId: string, file: File) => {
     const portfolioId = where.shareId
-      ? (useSharedView.getState().tree?.documents.find((document) => document.id === where.docId)?.portfolioId ?? null)
-      : (useVault.getState().documents.find((document) => document.id === where.docId)?.portfolioId ?? null);
-    const stored = await uploadVaultFile(file, { portfolioId, ...(where.shareId ? { shareId: where.shareId } : {}) });
+      ? (useSharedView.getState().tree?.documents.find((document) => document.id === where.docId)
+          ?.portfolioId ?? null)
+      : (useVault.getState().documents.find((document) => document.id === where.docId)
+          ?.portfolioId ?? null);
+    const stored = await uploadVaultFile(file, {
+      portfolioId,
+      ...(where.shareId ? { shareId: where.shareId } : {}),
+    });
     const created = await tableAttach({
-      data: { ...where, name: file.name, mime: file.type || "application/octet-stream", key: stored.key, size: stored.size },
+      data: {
+        ...where,
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        key: stored.key,
+        size: stored.size,
+      },
     });
     if (!created.ok) {
       setMessage(t(created.error));
       return;
     }
     const previous = values[fieldId];
-    const refs = Array.isArray(previous) ? previous.filter((ref) => ref && typeof ref === "object" && "kind" in ref) : [];
-    setValues((currentValues) => ({ ...currentValues, [fieldId]: [...refs, { id: created.id, kind: "document" as const }] }));
+    const refs = Array.isArray(previous)
+      ? previous.filter((ref) => ref && typeof ref === "object" && "kind" in ref)
+      : [];
+    setValues((currentValues) => ({
+      ...currentValues,
+      [fieldId]: [...refs, { id: created.id, kind: "document" as const }],
+    }));
   };
 
   const toggleId = (set: Set<string>, value: string, apply: (next: Set<string>) => void) => {
@@ -217,8 +284,14 @@ export function FormDialog({
       {link ? (
         <div className="mb-3 rounded-md border border-accent/40 bg-accent/5 p-3">
           <p className="text-xs font-medium">{t("Enlace público")}</p>
-          <p className="mt-1 text-xs text-muted">{t("Cualquiera con este enlace puede añadir una fila. No ve el resto de la tabla.")}</p>
-          <p className="mt-1 text-xs text-muted">{current?.expiresAt ? t("Caduca el {0}.", { 0: when(current.expiresAt) }) : t("No caduca")}</p>
+          <p className="mt-1 text-xs text-muted">
+            {t("Cualquiera con este enlace puede añadir una fila. No ve el resto de la tabla.")}
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            {current?.expiresAt
+              ? t("Caduca el {0}.", { 0: when(current.expiresAt) })
+              : t("No caduca")}
+          </p>
           <div className="mt-2 flex items-center gap-2">
             <input
               readOnly
@@ -237,7 +310,12 @@ export function FormDialog({
               {copied ? t("Enlace copiado") : t("Copiar")}
             </button>
             {editable ? (
-              <button type="button" disabled={busy} onClick={() => void revoke()} className="h-9 shrink-0 text-xs text-danger hover:underline disabled:opacity-60">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void revoke()}
+                className="h-9 shrink-0 text-xs text-danger hover:underline disabled:opacity-60"
+              >
                 {t("Revocar enlace")}
               </button>
             ) : null}
@@ -245,11 +323,19 @@ export function FormDialog({
         </div>
       ) : null}
       <div className="mb-3 flex gap-1">
-        <button type="button" onClick={() => setMode("fill")} className={`h-8 rounded-md px-3 text-xs ${mode === "fill" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated"}`}>
+        <button
+          type="button"
+          onClick={() => setMode("fill")}
+          className={`h-8 rounded-md px-3 text-xs ${mode === "fill" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated"}`}
+        >
           {t("Rellenar")}
         </button>
         {editable ? (
-          <button type="button" onClick={() => setMode("setup")} className={`h-8 rounded-md px-3 text-xs ${mode === "setup" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated"}`}>
+          <button
+            type="button"
+            onClick={() => setMode("setup")}
+            className={`h-8 rounded-md px-3 text-xs ${mode === "setup" ? "bg-accent text-accent-fg" : "text-muted hover:bg-elevated"}`}
+          >
             {t("Configurar")}
           </button>
         ) : null}
@@ -258,11 +344,20 @@ export function FormDialog({
         <div className="space-y-3">
           <label className="block text-sm">
             <span className="text-xs text-faint">{t("Nombre")}</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-line bg-inset px-2 outline-none" />
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-line bg-inset px-2 outline-none"
+            />
           </label>
           <label className="block text-sm">
             <span className="text-xs text-faint">{t("Descripción")}</span>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 outline-none" />
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 outline-none"
+            />
           </label>
           <ul className="max-h-48 space-y-1 overflow-y-auto">
             {fields.map((field) => (
@@ -282,7 +377,16 @@ export function FormDialog({
                 <span className="min-w-0 flex-1 truncate">{field.name}</span>
                 {field.id in picked ? (
                   <label className="flex items-center gap-1 text-xs text-faint">
-                    <input type="checkbox" checked={picked[field.id]} onChange={() => setPicked((currentPicked) => ({ ...currentPicked, [field.id]: !currentPicked[field.id] }))} />
+                    <input
+                      type="checkbox"
+                      checked={picked[field.id]}
+                      onChange={() =>
+                        setPicked((currentPicked) => ({
+                          ...currentPicked,
+                          [field.id]: !currentPicked[field.id],
+                        }))
+                      }
+                    />
                     {t("Obligatoria")}
                   </label>
                 ) : null}
@@ -290,7 +394,11 @@ export function FormDialog({
             ))}
           </ul>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={publish} onChange={(event) => setPublish(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={publish}
+              onChange={(event) => setPublish(event.target.checked)}
+            />
             {t("Enlace público")}
           </label>
           {publish ? (
@@ -304,43 +412,92 @@ export function FormDialog({
               }}
             />
           ) : null}
-          <p className="text-xs text-muted">{t("El enlace público no pide cuenta: quien lo tenga añade una fila y no ve la tabla.")}</p>
-          {publish && !link ? <p className="text-xs text-faint">{t("Al guardar se crea el enlace, con la duración de arriba.")}</p> : null}
-          {!link && current?.revokedAt ? <p className="text-xs text-muted">{t("El enlace ya no sirve.")}</p> : null}
-          <p className="text-xs text-faint">{t("En el enlace público no salen los vínculos ni las relaciones. Los adjuntos sí.")}</p>
+          <p className="text-xs text-muted">
+            {t("El enlace público no pide cuenta: quien lo tenga añade una fila y no ve la tabla.")}
+          </p>
+          {publish && !link ? (
+            <p className="text-xs text-faint">
+              {t("Al guardar se crea el enlace, con la duración de arriba.")}
+            </p>
+          ) : null}
+          {!link && current?.revokedAt ? (
+            <p className="text-xs text-muted">{t("El enlace ya no sirve.")}</p>
+          ) : null}
+          <p className="text-xs text-faint">
+            {t("En el enlace público no salen los vínculos ni las relaciones. Los adjuntos sí.")}
+          </p>
           <div className="space-y-2 border-t border-line pt-3">
             <p className="text-sm font-medium">{t("Enviar a usuarios u organizaciones")}</p>
-            <p className="text-xs text-muted">{t("Quien marques recibe el formulario por correo. Lo abre con su cuenta y solo ve las preguntas, no la tabla.")}</p>
-            <SearchField value={who} onChange={setWho} placeholder={t("Buscar usuario u organización")} />
+            <p className="text-xs text-muted">
+              {t(
+                "Quien marques recibe el formulario por correo. Lo abre con su cuenta y solo ve las preguntas, no la tabla.",
+              )}
+            </p>
+            <SearchField
+              value={who}
+              onChange={setWho}
+              placeholder={t("Buscar usuario u organización")}
+            />
             <ul className="max-h-48 overflow-y-auto rounded-md border border-line">
-              {filteredOrgs.length > 0 ? <li className="border-b border-line bg-surface px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted uppercase">{t("Organizaciones")}</li> : null}
+              {filteredOrgs.length > 0 ? (
+                <li className="border-b border-line bg-surface px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted uppercase">
+                  {t("Organizaciones")}
+                </li>
+              ) : null}
               {filteredOrgs.map((org) => (
                 <li key={org.id}>
                   <label className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm hover:bg-elevated">
-                    <input type="checkbox" checked={inviteOrgs.has(org.id)} onChange={() => toggleId(inviteOrgs, org.id, setInviteOrgs)} />
+                    <input
+                      type="checkbox"
+                      checked={inviteOrgs.has(org.id)}
+                      onChange={() => toggleId(inviteOrgs, org.id, setInviteOrgs)}
+                    />
                     <Building2 className="size-3.5 shrink-0 text-faint" />
                     <span className="min-w-0 flex-1 truncate">{org.path}</span>
                   </label>
                 </li>
               ))}
-              <li className="border-b border-line bg-surface px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted uppercase">{t("Usuarios")}</li>
-              {people === null ? <li className="px-3 py-3 text-sm text-muted">{t("Cargando…")}</li> : null}
-              {people !== null && filteredPeople.length === 0 ? <li className="px-3 py-3 text-sm text-muted">{t("Ningún usuario coincide.")}</li> : null}
+              <li className="border-b border-line bg-surface px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted uppercase">
+                {t("Usuarios")}
+              </li>
+              {people === null ? (
+                <li className="px-3 py-3 text-sm text-muted">{t("Cargando…")}</li>
+              ) : null}
+              {people !== null && filteredPeople.length === 0 ? (
+                <li className="px-3 py-3 text-sm text-muted">{t("Ningún usuario coincide.")}</li>
+              ) : null}
               {filteredPeople.map((person) => (
                 <li key={person.id}>
                   <label className="flex min-h-10 w-full items-center gap-2 px-3 text-left text-sm hover:bg-elevated">
-                    <input type="checkbox" checked={inviteUsers.has(person.id)} onChange={() => toggleId(inviteUsers, person.id, setInviteUsers)} />
+                    <input
+                      type="checkbox"
+                      checked={inviteUsers.has(person.id)}
+                      onChange={() => toggleId(inviteUsers, person.id, setInviteUsers)}
+                    />
                     <User className="size-3.5 shrink-0 text-faint" />
                     <span className="min-w-0 flex-1 truncate">{person.name}</span>
-                    {person.loginName ? <span className="text-xs text-faint">{person.loginName}</span> : null}
+                    {person.loginName ? (
+                      <span className="text-xs text-faint">{person.loginName}</span>
+                    ) : null}
                   </label>
                 </li>
               ))}
             </ul>
           </div>
           {trail ? <AccessTrail periods={trail.periods} events={trail.events} /> : null}
-          <button type="button" disabled={busy || selected.length === 0} onClick={() => void save()} className="h-10 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50">
-            {busy ? t("Guardando…") : publish && !link ? (current?.revokedAt ? t("Nuevo enlace") : t("Crear enlace")) : t("Guardar")}
+          <button
+            type="button"
+            disabled={busy || selected.length === 0}
+            onClick={() => void save()}
+            className="h-10 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
+          >
+            {busy
+              ? t("Guardando…")
+              : publish && !link
+                ? current?.revokedAt
+                  ? t("Nuevo enlace")
+                  : t("Crear enlace")
+                : t("Guardar")}
           </button>
         </div>
       ) : (
@@ -357,7 +514,9 @@ export function FormDialog({
           values={values}
           where={where}
           busy={busy}
-          onChange={(id, value) => setValues((currentValues) => ({ ...currentValues, [id]: value }))}
+          onChange={(id, value) =>
+            setValues((currentValues) => ({ ...currentValues, [id]: value }))
+          }
           onFile={(id, file) => void attach(id, file)}
           onSubmit={() => void submit()}
         />
@@ -398,9 +557,21 @@ function FillForm({
     >
       {description ? <p className="text-sm text-muted">{description}</p> : null}
       {fields.map((field) => (
-        <FieldInput key={field.id} field={field} value={values[field.id] ?? null} where={where} token={token} onChange={(value) => onChange(field.id, value)} onFile={(file) => onFile(field.id, file)} />
+        <FieldInput
+          key={field.id}
+          field={field}
+          value={values[field.id] ?? null}
+          where={where}
+          token={token}
+          onChange={(value) => onChange(field.id, value)}
+          onFile={(file) => onFile(field.id, file)}
+        />
       ))}
-      <button type="submit" disabled={busy || fields.length === 0} className="h-11 w-full rounded-md bg-accent text-sm font-medium text-accent-fg disabled:opacity-50">
+      <button
+        type="submit"
+        disabled={busy || fields.length === 0}
+        className="h-11 w-full rounded-md bg-accent text-sm font-medium text-accent-fg disabled:opacity-50"
+      >
         {busy ? t("Enviando…") : t("Enviar")}
       </button>
     </form>
@@ -426,7 +597,11 @@ function FieldInput({
   if (field.type === "checkbox") {
     return (
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={value === true} onChange={(event) => onChange(event.target.checked ? true : null)} />
+        <input
+          type="checkbox"
+          checked={value === true}
+          onChange={(event) => onChange(event.target.checked ? true : null)}
+        />
         {field.name}
         {field.required ? <span className="text-faint">*</span> : null}
       </label>
@@ -439,7 +614,11 @@ function FieldInput({
           {field.name}
           {field.required ? " *" : ""}
         </span>
-        <select value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || null)} className={className}>
+        <select
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(event.target.value || null)}
+          className={className}
+        >
           <option value="">—</option>
           {(field.choices ?? []).map((choice) => (
             <option key={choice} value={choice}>
@@ -451,7 +630,15 @@ function FieldInput({
     );
   }
   if (field.type === "relation" && where && field.relatedTableId) {
-    return <RelationInput field={field} value={value} where={where} tableId={field.relatedTableId} onChange={onChange} />;
+    return (
+      <RelationInput
+        field={field}
+        value={value}
+        where={where}
+        tableId={field.relatedTableId}
+        onChange={onChange}
+      />
+    );
   }
   if (field.type === "file") {
     const count = Array.isArray(value) ? value.length : 0;
@@ -471,9 +658,18 @@ function FieldInput({
             if (!file) return;
             if (token) {
               void fileToBase64(file).then((base64) =>
-                publicFormFile({ data: { token, name: file.name, mime: file.type || "application/octet-stream", base64 } }).then((result) => {
+                publicFormFile({
+                  data: {
+                    token,
+                    name: file.name,
+                    mime: file.type || "application/octet-stream",
+                    base64,
+                  },
+                }).then((result) => {
                   if (result.ok) {
-                    const previous = Array.isArray(value) ? value.filter((ref) => ref && typeof ref === "object" && "kind" in ref) : [];
+                    const previous = Array.isArray(value)
+                      ? value.filter((ref) => ref && typeof ref === "object" && "kind" in ref)
+                      : [];
                     onChange([...previous, { id: result.id, kind: "document" }]);
                   }
                 }),
@@ -487,7 +683,9 @@ function FieldInput({
     );
   }
   if (field.type === "link" || field.type === "relation" || field.type === "formula") {
-    return <p className="text-xs text-faint">{t("«{0}» se completa en la tabla.", { 0: field.name })}</p>;
+    return (
+      <p className="text-xs text-faint">{t("«{0}» se completa en la tabla.", { 0: field.name })}</p>
+    );
   }
   return (
     <label className="block text-sm">
@@ -496,10 +694,23 @@ function FieldInput({
         {field.required ? " *" : ""}
       </span>
       {field.type === "text" ? (
-        <textarea value={typeof value === "string" ? value : ""} onChange={(event) => onChange(event.target.value || null)} rows={3} className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 outline-none" />
+        <textarea
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onChange(event.target.value || null)}
+          rows={3}
+          className="mt-1 w-full rounded-md border border-line bg-inset px-2 py-1.5 outline-none"
+        />
       ) : (
         <input
-          type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "time" ? "time" : "text"}
+          type={
+            field.type === "number"
+              ? "number"
+              : field.type === "date"
+                ? "date"
+                : field.type === "time"
+                  ? "time"
+                  : "text"
+          }
           step="any"
           value={value === null || Array.isArray(value) ? "" : String(value)}
           onChange={(event) => onChange(event.target.value || null)}
@@ -531,7 +742,9 @@ function RelationInput({
       })
       .catch(() => undefined);
   }, [where.docId, where.shareId, tableId]);
-  const current = Array.isArray(value) ? value.find((ref) => ref && typeof ref === "object" && "rowId" in ref) : null;
+  const current = Array.isArray(value)
+    ? value.find((ref) => ref && typeof ref === "object" && "rowId" in ref)
+    : null;
   const selected = current && "rowId" in current ? current.rowId : "";
   return (
     <label className="block text-sm">
@@ -541,7 +754,9 @@ function RelationInput({
       </span>
       <select
         value={selected}
-        onChange={(event) => onChange(event.target.value ? [{ tableId, rowId: event.target.value }] : null)}
+        onChange={(event) =>
+          onChange(event.target.value ? [{ tableId, rowId: event.target.value }] : null)
+        }
         className="mt-1 h-10 w-full rounded-md border border-line bg-inset px-2 outline-none"
       >
         <option value="">—</option>
@@ -567,7 +782,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/** Página pública: solo añade una fila. */
+/** Public form only adds a row. */
 export function PublicFormScreen({ token }: { token: string }) {
   const [view, setView] = useState<Awaited<ReturnType<typeof publicFormOpen>> | null>(null);
   const [values, setValues] = useState<Record<string, CellValue>>({});
@@ -611,7 +826,9 @@ export function PublicFormScreen({ token }: { token: string }) {
             <div className="mt-4">
               <FillForm
                 description={view.description}
-                fields={view.fields.filter((field) => isPublicField(field.type) || field.type === "file")}
+                fields={view.fields.filter(
+                  (field) => isPublicField(field.type) || field.type === "file",
+                )}
                 values={values}
                 token={token}
                 busy={busy}
@@ -628,7 +845,7 @@ export function PublicFormScreen({ token }: { token: string }) {
   );
 }
 
-/** Formulario enviado a una persona o a una organización: pide sesión y no muestra la tabla. */
+/** User/organization form invitation requires sign-in and does not expose the table. */
 export function InvitedFormScreen({ token }: { token: string }) {
   const [view, setView] = useState<Awaited<ReturnType<typeof invitedFormOpen>> | null>(null);
   const [values, setValues] = useState<Record<string, CellValue>>({});
@@ -667,7 +884,9 @@ export function InvitedFormScreen({ token }: { token: string }) {
     }
     setValues((current) => {
       const previous = current[id];
-      const refs = Array.isArray(previous) ? previous.filter((ref) => ref && typeof ref === "object" && "kind" in ref) : [];
+      const refs = Array.isArray(previous)
+        ? previous.filter((ref) => ref && typeof ref === "object" && "kind" in ref)
+        : [];
       return { ...current, [id]: [...refs, { id: result.id, kind: "document" as const }] };
     });
   };
@@ -687,7 +906,9 @@ export function InvitedFormScreen({ token }: { token: string }) {
             <div className="mt-4">
               <FillForm
                 description={view.description}
-                fields={view.fields.filter((field) => isPublicField(field.type) || field.type === "file")}
+                fields={view.fields.filter(
+                  (field) => isPublicField(field.type) || field.type === "file",
+                )}
                 values={values}
                 busy={busy}
                 onChange={(id, value) => setValues((current) => ({ ...current, [id]: value }))}

@@ -10,27 +10,28 @@ import {
 } from "./types.ts";
 
 /**
- * API nativa de Ollama: `POST {base}/api/chat` con `stream: false`. Las
- * herramientas usan el mismo formato que OpenAI, pero los argumentos de las
- * llamadas llegan como objeto (no como texto) y los resultados se devuelven
- * con `role: "tool"` y `tool_name`. Modelos en `GET {base}/api/tags`.
+ * Native Ollama adapter posts /api/chat with stream=false. Tool schemas resemble OpenAI, but
+ * arguments are objects and results use role=tool with tool_name. Models come from /api/tags.
  */
 
 type OllamaMessage =
   | { role: "system" | "user"; content: string }
-  | { role: "assistant"; content: string; tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[] }
+  | {
+      role: "assistant";
+      content: string;
+      tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
+    }
   | { role: "tool"; content: string; tool_name: string };
 
 /**
- * Contexto que se le pide a Ollama (`num_ctx`). Por defecto usa 2048–4096
- * tokens y, si la conversación no cabe, recorta por el principio: se perdían
- * las instrucciones y las herramientas, y el modelo decía haber hecho cosas
- * que no hizo. Se pide lo que hace falta (unos 3 caracteres por token, más
- * margen para la respuesta), en potencias de 2 para que Ollama no recargue el
- * modelo a cada mensaje, entre 8192 y 32768.
+ * Request enough Ollama num_ctx to preserve instructions/tools, estimating three characters per
+ * token plus reply headroom. Use powers of two between 8192 and 32768 to avoid frequent model
+ * reloads.
  */
 export function contextSize(messages: ChatMessage[], tools: ToolSpec[]): number {
-  const chars = messages.reduce((sum, message) => sum + message.content.length, 0) + JSON.stringify(tools).length;
+  const chars =
+    messages.reduce((sum, message) => sum + message.content.length, 0) +
+    JSON.stringify(tools).length;
   const needed = Math.ceil(chars / 3) + 2048;
   let size = 8192;
   while (size < needed && size < 32_768) size *= 2;
@@ -39,13 +40,18 @@ export function contextSize(messages: ChatMessage[], tools: ToolSpec[]): number 
 
 export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpec[]) {
   const mapped: OllamaMessage[] = messages.map((message) => {
-    if (message.role === "tool") return { role: "tool", content: message.content, tool_name: message.name };
+    if (message.role === "tool")
+      return { role: "tool", content: message.content, tool_name: message.name };
     if (message.role === "assistant") {
       return {
         role: "assistant",
         content: message.content,
         ...(message.toolCalls?.length
-          ? { tool_calls: message.toolCalls.map((call) => ({ function: { name: call.name, arguments: call.arguments } })) }
+          ? {
+              tool_calls: message.toolCalls.map((call) => ({
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            }
           : {}),
       };
     }
@@ -60,7 +66,11 @@ export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpe
       ? {
           tools: tools.map((tool) => ({
             type: "function" as const,
-            function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            },
           })),
         }
       : {}),
@@ -68,9 +78,14 @@ export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpe
 }
 
 export function fromResponse(body: unknown): Completion {
-  const message = (body as {
-    message?: { content?: string; tool_calls?: { function?: { name?: string; arguments?: unknown } }[] };
-  }).message;
+  const message = (
+    body as {
+      message?: {
+        content?: string;
+        tool_calls?: { function?: { name?: string; arguments?: unknown } }[];
+      };
+    }
+  ).message;
   return {
     text: message?.content ?? "",
     toolCalls: (message?.tool_calls ?? [])
@@ -103,9 +118,18 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   return fromResponse(await response.json());
 }
 
-export async function listModels(endpoint: Endpoint, fetcher: typeof fetch = fetch): Promise<string[]> {
-  const response = await fetcher(joinUrl(endpoint.baseUrl, "api/tags"), { headers: headers(endpoint), redirect: "error" });
+export async function listModels(
+  endpoint: Endpoint,
+  fetcher: typeof fetch = fetch,
+): Promise<string[]> {
+  const response = await fetcher(joinUrl(endpoint.baseUrl, "api/tags"), {
+    headers: headers(endpoint),
+    redirect: "error",
+  });
   await ensureOk(response, "Ollama");
   const body = (await response.json()) as { models?: { name?: string }[] };
-  return (body.models ?? []).map((model) => model.name ?? "").filter(Boolean).sort();
+  return (body.models ?? [])
+    .map((model) => model.name ?? "")
+    .filter(Boolean)
+    .sort();
 }

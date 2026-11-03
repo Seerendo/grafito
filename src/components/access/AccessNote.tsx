@@ -5,11 +5,10 @@ import { revealAccessNote } from "@/server/mail.functions";
 import { intl, t } from "@/app/i18n";
 
 /**
- * La nota secreta del correo de acceso: muestra una sola vez el usuario y la
- * contraseña temporal. El token va en el fragmento de la URL (`#`), que el
- * navegador no manda al servidor; se quita de la barra de direcciones en
- * cuanto se lee, y el servidor destruye la nota al abrirla. Lo que se ve solo
- * vive en esta página: al recargarla o cerrarla, ya no está.
+ * One-time access-email note containing username and temporary password. Its token comes from
+ * the URL fragment, which is not sent with navigation. Remove it immediately; the server
+ * destroys the note on reading. Contents live only in this page and disappear on reload or
+ * close.
  */
 
 type Note = { login: string; password: string; expiresAt: number };
@@ -23,14 +22,20 @@ export function AccessNoteScreen() {
     if (started.current) return;
     started.current = true;
     const token = window.location.hash.slice(1);
-    // Fuera de la barra y del historial: recargar no vuelve a pedir la nota.
+    // Remove the fragment from address bar and history so reload cannot request the note again.
     window.history.replaceState(null, "", window.location.pathname);
     if (!token) {
       setState("gone");
       return;
     }
     void revealAccessNote({ data: { token } })
-      .then((result) => setState(result.ok ? { login: result.login, password: result.password, expiresAt: result.expiresAt } : "gone"))
+      .then((result) =>
+        setState(
+          result.ok
+            ? { login: result.login, password: result.password, expiresAt: result.expiresAt }
+            : "gone",
+        ),
+      )
       .catch(() => setState("gone"));
   }, []);
 
@@ -44,9 +49,14 @@ export function AccessNoteScreen() {
           <>
             <h1 className="mt-2 font-serif text-3xl">{t("Esta nota ya no existe")}</h1>
             <p className="mt-4 text-sm text-muted">
-              {t("Ya se abrió una vez o venció. Si no guardaste la contraseña, pide al administrador que te envíe un acceso nuevo.")}
+              {t(
+                "Ya se abrió una vez o venció. Si no guardaste la contraseña, pide al administrador que te envíe un acceso nuevo.",
+              )}
             </p>
-            <a href="/" className="mt-5 inline-flex h-11 items-center rounded-md border border-line px-4 text-sm hover:bg-elevated">
+            <a
+              href="/"
+              className="mt-5 inline-flex h-11 items-center rounded-md border border-line px-4 text-sm hover:bg-elevated"
+            >
               {t("Ir a Grafito")}
             </a>
           </>
@@ -54,7 +64,9 @@ export function AccessNoteScreen() {
           <>
             <h1 className="mt-2 font-serif text-3xl">{t("Tu acceso")}</h1>
             <p className="mt-4 text-sm text-danger">
-              {t("Esta nota se destruyó al abrirla: cópiala ahora. Si recargas o cierras la página, ya no podrás verla.")}
+              {t(
+                "Esta nota se destruyó al abrirla: cópiala ahora. Si recargas o cierras la página, ya no podrás verla.",
+              )}
             </p>
             <dl className="mt-4 space-y-3 text-sm">
               <div>
@@ -74,16 +86,26 @@ export function AccessNoteScreen() {
                     title={t("Copiar")}
                     className="grid size-10 shrink-0 place-items-center rounded-md border border-line hover:bg-elevated"
                   >
-                    {copied ? <Check className="size-4 text-accent" /> : <Copy className="size-4" />}
+                    {copied ? (
+                      <Check className="size-4 text-accent" />
+                    ) : (
+                      <Copy className="size-4" />
+                    )}
                   </button>
                 </dd>
               </div>
             </dl>
             {state.expiresAt ? (
               <p className="mt-4 text-sm text-muted">
-                {t("Sirve para entrar una sola vez, hasta el {0}. Al entrar elegirás tu propia contraseña.", {
-                  0: new Intl.DateTimeFormat(intl(), { dateStyle: "long", timeStyle: "short" }).format(new Date(state.expiresAt)),
-                })}
+                {t(
+                  "Sirve para entrar una sola vez, hasta el {0}. Al entrar elegirás tu propia contraseña.",
+                  {
+                    0: new Intl.DateTimeFormat(intl(), {
+                      dateStyle: "long",
+                      timeStyle: "short",
+                    }).format(new Date(state.expiresAt)),
+                  },
+                )}
               </p>
             ) : null}
             <a

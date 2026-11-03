@@ -6,11 +6,12 @@ import { Select } from "@/components/ui/Select";
 import { LOCALES, isLocale, type Locale } from "@/domain/i18n";
 import { savePreferences } from "@/server/session.functions";
 
-/** Cambia el idioma con un fundido suave (View Transitions si el navegador las tiene). */
+/** Change language with a soft transition, using View Transitions where supported. */
 function switchLocale(locale: Locale): void {
-  // La aplicación se vuelve a montar: que la página siga donde estaba.
+  // Preserve the page position across application remount.
   keepForRemount();
-  const start = (document as Document & { startViewTransition?: (update: () => void) => unknown }).startViewTransition;
+  const start = (document as Document & { startViewTransition?: (update: () => void) => unknown })
+    .startViewTransition;
   if (!start) {
     setLocale(locale);
     return;
@@ -18,7 +19,7 @@ function switchLocale(locale: Locale): void {
   start.call(document, () => flushSync(() => setLocale(locale)));
 }
 
-/** Cuenta → Preferencias: idioma de la interfaz (se guarda en la cuenta al pulsar Guardar). */
+/** Account interface-language preference, persisted when saving. */
 export function PreferencesForm() {
   const locale = useLocale();
   const [draft, setDraft] = useState<Locale>(locale);

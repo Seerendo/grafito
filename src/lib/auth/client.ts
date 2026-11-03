@@ -4,14 +4,12 @@ import { getBearerToken, setBearerToken } from "./bearer";
 import { writeSessionUser } from "./session-sync";
 
 /**
- * Cliente de Better Auth para el navegador. Habla con `/api/auth/*` del mismo
- * origen y, si hay un token bearer guardado, lo adjunta (ver `./bearer`).
- *
- * Para salir usa `signOut()` de aquí, no `authClient.signOut()`: la llamada
- * directa deja el token guardado y `onRequest` lo seguiría mandando.
+ * Browser Better Auth client uses same-origin /api/auth and attaches a saved bearer token. Use
+ * this module's signOut wrapper so local tokens are cleared; calling authClient.signOut
+ * directly would keep sending them.
  */
 export const authClient = createAuthClient({
-  // `signIn.oauth2` para el SSO por OpenID Connect.
+  // signIn.oauth2 implements OIDC SSO.
   plugins: [genericOAuthClient()],
   fetchOptions: {
     onRequest(ctx) {
@@ -23,13 +21,12 @@ export const authClient = createAuthClient({
 });
 
 /**
- * Solo el servidor puede borrar la cookie HttpOnly, así que la salida espera su
- * respuesta (con un límite, para que el botón no quede colgado) y falla si no
- * llega: redirigir igual mostraría una salida que no ocurrió.
+ * Only the server can clear HttpOnly cookies. Wait for sign-out confirmation with a timeout,
+ * and report failure rather than falsely showing a signed-out state.
  */
 const SIGN_OUT_TIMEOUT_MS = 10_000;
 
-/** Cierra la sesión en el servidor, borra el token local y redirige. */
+/** Close the server session, clear the local token and redirect. */
 export async function signOut(redirectTo = "/"): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<"timeout">((resolve) => {
@@ -50,7 +47,7 @@ export async function signOut(redirectTo = "/"): Promise<void> {
     );
   }
   setBearerToken(null);
-  // Las demás pestañas también salen (ver `session-sync.ts`).
+  // Sign out other tabs too; see session-sync.ts.
   writeSessionUser("");
   window.location.replace(redirectTo);
 }

@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Mark } from "@/components/brand/Mark";
 import { t } from "@/app/i18n";
 
-/** Página 404 de cualquier ruta que no existe. */
+/** 404 page for unmatched routes. */
 export function NotFound() {
   return (
     <main data-ui="auth" className="grid min-h-dvh place-items-center bg-bg px-6 text-fg">

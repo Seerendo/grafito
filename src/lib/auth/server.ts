@@ -1,13 +1,8 @@
 /**
- * Better Auth de Grafito (solo servidor). Usuario y contraseña locales, en la
- * misma base que el resto de la app: Postgres con `DATABASE_URL`, si no PGLite.
- * Además, los proveedores externos activados en Administración → Autenticación:
- * LDAP (`./ldap-plugin.server`), OAuth (Google, GitHub, Microsoft) y SSO por
- * OpenID Connect (p. ej. Keycloak).
- *
- * La instancia se construye a partir de esa configuración y se cachea; se
- * rehace sola cuando cambia (ver `getAuth`). Nunca importar desde código de
- * cliente: arrastra `pg` y los secretos.
+ * Server-only Better Auth configuration shares Postgres or PGLite with the application.
+ * Supports local credentials and configured LDAP, OAuth and OIDC providers. Cache the instance
+ * and rebuild when settings change. Never import into browser code because it includes pg and
+ * secrets.
  */
 import { betterAuth, type GenericEndpointContext } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -29,7 +24,7 @@ import {
 } from "./providers.server";
 import { provisionExternalUser, syncExternalEmail } from "./provision.server";
 
-// Arranca (y comparte) la preparación de PGLite en cuanto carga este módulo.
+// Start and share PGLite initialization when this module loads.
 void ensureDbReady();
 
 const globalAuthRef = globalThis as typeof globalThis & {
@@ -38,23 +33,19 @@ const globalAuthRef = globalThis as typeof globalThis & {
   __grafitoAuth__?: { key: string; auth: Auth; checkedAt: number };
 };
 
-/**
- * Sin `BETTER_AUTH_SECRET`, un secreto por proceso. Vive en `globalThis` para
- * que un HMR no invalide las sesiones guardadas en PGLite.
- */
+/** Fallback per-process secret stored on globalThis so HMR preserves PGLite sessions. */
 function processAuthSecret(): string {
   globalAuthRef.__grafitoAuthSecret__ ??= randomBytes(32).toString("hex");
   return globalAuthRef.__grafitoAuthSecret__;
 }
 
-/** Variable de entorno; vacía o solo espacios cuenta como ausente. */
+/** Read an environment variable, treating empty or whitespace-only values as absent. */
 const env = (key: string): string | undefined => {
   const value = process.env[key]?.trim();
   return value ? value : undefined;
 };
 
-// El navegador puede mandar cualquiera de estos Origin para el mismo servidor;
-// fiarse solo de `localhost` rechaza `127.0.0.1` con "Invalid origin".
+// Accept localhost and loopback origins used for the same local server.
 const LOCAL_ORIGINS: string[] = [
   "http://localhost:8080",
   "http://127.0.0.1:8080",
@@ -67,9 +58,7 @@ const baseURL = explicitBaseURL ?? {
   protocol: "auto" as const,
   fallback: "http://localhost:8080",
 };
-// Otras direcciones por las que se entra al mismo servidor (su IP y su dominio,
-// por ejemplo), separadas por comas. Sin ellas, Better Auth rechaza el ingreso
-// con «Invalid origin» (ver `AccessGate`).
+// Additional comma-separated server addresses prevent Invalid origin failures; see AccessGate.
 const extraOrigins: string[] = (env("BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
   .split(",")
   .map((origin) => origin.trim().replace(/\/+$/, ""))
@@ -81,9 +70,8 @@ const fixedOrigins: string[] = [
 ];
 
 /**
- * El Origin de una petición hecha desde la misma dirección a la que va (la IP
- * del servidor, o el dominio de un proxy que conserva Host o manda
- * X-Forwarded-Host): no es de otro sitio, así que se acepta sin listarla.
+ * Accept a request origin matching its destination through Host or X-Forwarded-Host without
+ * requiring a separate trusted-origin entry.
  */
 function sameSiteOrigin(request?: Request): string | null {
   const origin = request?.headers.get("origin");
@@ -99,16 +87,16 @@ function sameSiteOrigin(request?: Request): string | null {
 
 const trustedOrigins = (request?: Request) => [...fixedOrigins, sameSiteOrigin(request)];
 
-/** Una sola conexión de Better Auth por proceso, aunque la instancia se rehaga. */
+/** Reuse one Better Auth connection pool per process even when rebuilding the auth instance. */
 function database() {
   globalAuthRef.__grafitoAuthDatabase__ ??= env("DATABASE_URL")
-    ? // Pocas conexiones: solo sesiones e ingresos (el resto va por `db.ts`).
+    ? // Small pool for sessions and sign-ins; application data uses db.ts.
       new Pool({ connectionString: env("DATABASE_URL"), max: 5 })
     : { dialect: pgliteDialect(() => getPglite()), type: "postgres" as const };
   return globalAuthRef.__grafitoAuthDatabase__;
 }
 
-/** Proveedor externo del que viene la petición que crea un usuario, si lo hay. */
+/** External provider responsible for an account-creation request, if any. */
 function externalProvider(context: GenericEndpointContext | null): string | null {
   const params = (context?.params ?? {}) as Record<string, string | undefined>;
   return params.providerId ?? params.id ?? null;
@@ -117,7 +105,8 @@ function externalProvider(context: GenericEndpointContext | null): string | null
 function buildAuth(providers: ProviderRow[]) {
   const ready = providers.filter(providerReady);
   const byId = new Map(ready.map((row) => [row.id, row]));
-  const oauth = (id: "google" | "github" | "microsoft") => byId.get(id)?.config as OAuthConfig | undefined;
+  const oauth = (id: "google" | "github" | "microsoft") =>
+    byId.get(id)?.config as OAuthConfig | undefined;
   const google = oauth("google");
   const github = oauth("github");
   const microsoft = oauth("microsoft");
@@ -129,16 +118,19 @@ function buildAuth(providers: ProviderRow[]) {
     database: database(),
     trustedOrigins,
 
-    // Sin caché de cookie: el plazo de sesión de administración borra filas de
-    // "session" en vivo, y una cookie cacheada dejaría al visitante dentro.
+    // Disable cookie caching because administrators revoke sessions by deleting rows immediately.
     session: { cookieCache: { enabled: false } },
 
-    // minPasswordLength 4 para que el "admin" inicial sea una credencial válida.
+    // Minimum password length four permits the initial admin credential.
     emailAndPassword: { enabled: true, minPasswordLength: 4, maxPasswordLength: 128 },
 
     socialProviders: {
-      ...(google ? { google: { clientId: google.clientId, clientSecret: google.clientSecret } } : {}),
-      ...(github ? { github: { clientId: github.clientId, clientSecret: github.clientSecret } } : {}),
+      ...(google
+        ? { google: { clientId: google.clientId, clientSecret: google.clientSecret } }
+        : {}),
+      ...(github
+        ? { github: { clientId: github.clientId, clientSecret: github.clientSecret } }
+        : {}),
       ...(microsoft
         ? {
             microsoft: {
@@ -150,24 +142,21 @@ function buildAuth(providers: ProviderRow[]) {
         : {}),
     },
 
-    // Un proveedor externo no se apropia de una cuenta existente solo porque
-    // trae el mismo correo: cada cuenta externa nueva es un usuario nuevo.
+    // External providers cannot claim existing accounts merely by supplying the same email; newly provisioned identities remain separate.
     account: { accountLinking: { disableImplicitLinking: true } },
 
     databaseHooks: {
-      // Acceso temporal por correo (`server/temp-access.ts`): la contraseña ya
-      // se comprobó; si venció o ya se usó una vez, no se abre la sesión.
+      // After password verification, reject temporary email access that expired or was already used; see server/temp-access.ts.
       session: {
         create: {
           before: async (session) => {
             const { claimTempAccess } = await import("@/server/temp-access");
             const state = await claimTempAccess(await getSql(), session.userId);
-            if (state === "expired") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_EXPIRED" });
+            if (state === "expired")
+              throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_EXPIRED" });
             if (state === "used") throw new APIError("FORBIDDEN", { message: "TEMP_ACCESS_USED" });
           },
-          // LDAP, OAuth o SSO: el correo de la cuenta es el de su proveedor.
-          // El ingreso correcto queda en la auditoría. Si la tabla aún no
-          // existe, o la nota falla, la sesión se abre igual.
+          // Refresh provider-controlled email and audit successful sign-in. Missing audit schema or audit failures must not prevent the session from opening.
           after: async (session) => {
             const sql = await getSql();
             await syncExternalEmail(sql, session.userId).catch(() => undefined);
@@ -180,7 +169,10 @@ function buildAuth(providers: ProviderRow[]) {
                 where u.id = ${session.userId}
                 limit 1
               `;
-              const address = "ipAddress" in session && typeof session.ipAddress === "string" ? session.ipAddress : "";
+              const address =
+                "ipAddress" in session && typeof session.ipAddress === "string"
+                  ? session.ipAddress
+                  : "";
               await recordAudit(sql, {
                 actorId: session.userId,
                 actorName: rows[0]?.login_name || rows[0]?.name || "",
@@ -198,13 +190,13 @@ function buildAuth(providers: ProviderRow[]) {
       },
       user: {
         create: {
-          // Filtro de dominios del proveedor (vacío = cualquiera).
+          // Provider email-domain filter; empty permits any domain.
           before: async (user, context) => {
             const provider = externalProvider(context);
             const row = provider ? byId.get(provider as ProviderRow["id"]) : undefined;
             if (row && !domainAllowed(row, user.email)) return false;
           },
-          // Rol por defecto y nombre de usuario para quien llega por OAuth o SSO.
+          // Assign default role and username to OAuth/SSO accounts.
           after: async (user, context) => {
             const provider = externalProvider(context);
             const row = provider ? byId.get(provider as ProviderRow["id"]) : undefined;
@@ -220,9 +212,7 @@ function buildAuth(providers: ProviderRow[]) {
       },
     },
 
-    // Cookies `__Host-` (Secure + Path=/ + sin Domain): ningún subdominio hermano
-    // puede plantar una cookie con el mismo nombre. Los navegadores aceptan
-    // Secure en http://localhost, así que el desarrollo local sigue funcionando.
+    // Use __Host- cookies with Secure, Path=/ and no Domain to prevent sibling-subdomain cookie injection. Browsers permit Secure cookies on localhost HTTP for development.
     advanced: {
       useSecureCookies: false,
       defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
@@ -252,10 +242,9 @@ function buildAuth(providers: ProviderRow[]) {
             }),
           ]
         : []),
-      // `Authorization: Bearer <token>` como alternativa a la cookie, para
-      // navegadores donde la cookie Secure no llega (ver `./bearer`).
+      // Bearer authentication supports browsers unable to retain Secure cookies; see bearer.ts.
       bearer(),
-      // Pasa los Set-Cookie de Better Auth a TanStack Start. Debe ir el último.
+      // Forward Better Auth Set-Cookie headers to TanStack Start; this plugin must be last.
       tanstackStartCookies(),
     ],
   });
@@ -263,15 +252,15 @@ function buildAuth(providers: ProviderRow[]) {
 
 export type Auth = ReturnType<typeof buildAuth>;
 
-/** Cada cuánto se mira si cambió la configuración de proveedores. */
+/** Provider-settings refresh interval. */
 const RECHECK_MS = 5000;
 
 /**
- * Instancia de Better Auth con los proveedores activos. Se rehace solo cuando
- * cambia su configuración; `invalidateAuth()` fuerza la comprobación.
+ * Cache Better Auth with active providers and rebuild only after configuration changes.
+ * invalidateAuth forces a refresh.
  */
 export async function getAuth(): Promise<Auth> {
-  // El secreto de sesión no puede ser el de ejemplo público (ver `server/install-secrets.ts`).
+  // Never use the public example session secret; see server/install-secrets.ts.
   const { ensureInstallSecrets } = await import("@/server/install-secrets");
   ensureInstallSecrets();
   const cached = globalAuthRef.__grafitoAuth__;
@@ -281,7 +270,7 @@ export async function getAuth(): Promise<Auth> {
   try {
     providers = await readProviders(await getSql());
   } catch {
-    /* sin la tabla todavía: solo usuario y contraseña */
+    /* Provider table unavailable; use local credentials only. */
   }
   const key = JSON.stringify(providers.filter(providerReady).map((row) => [row.id, row.updatedAt]));
   if (cached && cached.key === key) {

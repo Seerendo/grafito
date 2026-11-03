@@ -1,18 +1,21 @@
 import type { Sql } from "@/lib/db";
 import { isTextAnchor, type TextAnchor } from "@/domain/vault/anchor";
 
-/**
- * Comentarios de un documento (solo servidor). Ver
- * `migrations/0018_doc_comments.sql` y `comments.functions.ts`, que comprueba
- * quién tiene acceso.
- */
+/** Server document comments; migration 0018 defines storage and comments.functions.ts enforces access. */
 
 export const MAX_COMMENT = 4000;
-/** Comentarios que se conservan por documento (los más antiguos se descartan). */
+/** Maximum retained comments per document; discard oldest entries. */
 const KEEP = 500;
 
-/** Con `anchor`, es una nota sobre esa frase de un PDF. */
-export type DocComment = { id: string; authorId: string | null; author: string; body: string; at: number; anchor: TextAnchor | null };
+/** An anchor attaches the comment to a PDF phrase. */
+export type DocComment = {
+  id: string;
+  authorId: string | null;
+  author: string;
+  body: string;
+  at: number;
+  anchor: TextAnchor | null;
+};
 
 function parseAnchor(raw: string | null): TextAnchor | null {
   if (!raw) return null;
@@ -24,7 +27,11 @@ function parseAnchor(raw: string | null): TextAnchor | null {
   }
 }
 
-export async function listComments(sql: Sql, ownerId: string, docId: string): Promise<DocComment[]> {
+export async function listComments(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+): Promise<DocComment[]> {
   const rows = await sql<{
     id: string;
     author_id: string | null;
@@ -48,7 +55,14 @@ export async function listComments(sql: Sql, ownerId: string, docId: string): Pr
 
 export async function addComment(
   sql: Sql,
-  input: { ownerId: string; docId: string; authorId: string; authorName: string; body: string; anchor?: TextAnchor | null },
+  input: {
+    ownerId: string;
+    docId: string;
+    authorId: string;
+    authorName: string;
+    body: string;
+    anchor?: TextAnchor | null;
+  },
 ): Promise<void> {
   const anchor = input.anchor ? JSON.stringify(input.anchor) : null;
   await sql`
@@ -62,8 +76,11 @@ export async function addComment(
   for (const row of old) await sql`delete from doc_comment where id = ${row.id}`;
 }
 
-/** Borra un comentario si lo escribió `userId` o es el dueño del documento. */
-export async function deleteComment(sql: Sql, input: { ownerId: string; docId: string; id: string; userId: string }): Promise<void> {
+/** Delete only when userId authored the comment or owns the document. */
+export async function deleteComment(
+  sql: Sql,
+  input: { ownerId: string; docId: string; id: string; userId: string },
+): Promise<void> {
   await sql`
     delete from doc_comment
     where id = ${input.id} and owner_id = ${input.ownerId} and doc_id = ${input.docId}

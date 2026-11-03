@@ -7,12 +7,9 @@ import { publicDocOwner } from "@/server/share";
 import { getDoc } from "@/server/vault";
 
 /**
- * `GET /api/files/:id`: el archivo de un documento. Acceso, en este orden:
- *  - enlace firmado (`o`, `e`, `s`, `d`), que da la propia app tras comprobar
- *    permisos (`server/file-links.ts`);
- *  - `token` de un enlace público que incluya el documento;
- *  - token personal de la API o sesión, para archivos propios.
- * `download` lo entrega como descarga.
+ * GET /api/files/:id authorizes signed links first, then public-share tokens, then personal API
+ * tokens or sessions for owned files. Signed links are issued after permission checks. download
+ * requests attachment delivery.
  */
 export const Route = createFileRoute("/api/files/$id")({
   server: {
@@ -24,7 +21,9 @@ export const Route = createFileRoute("/api/files/$id")({
           let sql = await getSql();
           let ownerId: string | null = null;
           let download = url.searchParams.has("download");
-          const signed = url.searchParams.has("s") ? verifyFileUrl(params.id, url.searchParams) : null;
+          const signed = url.searchParams.has("s")
+            ? verifyFileUrl(params.id, url.searchParams)
+            : null;
           const token = url.searchParams.get("token");
           if (url.searchParams.has("s")) {
             if (!signed) return apiError(403, "El enlace caducó. Vuelve a abrir el documento.");

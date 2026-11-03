@@ -1,12 +1,15 @@
 import type { Sql } from "@/lib/db";
 
 /**
- * Tareas periódicas con varias instancias de Grafito: solo una las corre en
- * cada vuelta. `claimJob` reserva la tarea `name` durante `ttlMs` (una fila de
- * `app_setting` con la hora hasta la que queda reservada) y dice si la
- * consiguió esta instancia. Sirve igual con Postgres que con PGLite.
+ * claimJob reserves a named periodic task in app_setting until now+ttlMs. Only the successful
+ * claimant runs that pass. Works with Postgres and PGLite.
  */
-export async function claimJob(sql: Sql, name: string, ttlMs: number, now = Date.now()): Promise<boolean> {
+export async function claimJob(
+  sql: Sql,
+  name: string,
+  ttlMs: number,
+  now = Date.now(),
+): Promise<boolean> {
   const rows = await sql<{ key: string }>`
     insert into app_setting (key, value) values (${`job:${name}`}, ${String(now + ttlMs)})
     on conflict (key) do update set value = excluded.value

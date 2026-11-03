@@ -1,13 +1,13 @@
 /**
- * Respuesta de clamd (INSTREAM) y la decisión de dejar pasar un archivo.
- * El socket está en `server/clamav.ts`.
+ * Interpret clamd INSTREAM responses and decide whether to accept a file. Socket handling lives
+ * in server/clamav.ts.
  */
 
 export type ScanVerdict = "clean" | "infected" | "error";
 
 const NUL = String.fromCharCode(0);
 
-/** `stream: OK` es limpio; `stream: Firma FOUND` está infectado. Lo demás es un fallo. */
+/** stream: OK means clean; stream: <signature> FOUND means infected; anything else is a failure. */
 export function parseClamdReply(raw: string): {
   verdict: ScanVerdict;
   signature: string;
@@ -21,8 +21,8 @@ export function parseClamdReply(raw: string): {
 }
 
 /**
- * Sin antivirus configurado se permite. Configurado y limpio, también.
- * Infectado o sin respuesta: se rechaza (el archivo no se queda guardado).
+ * Allow files when scanning is disabled or returns clean. Reject infected files and scanner
+ * failures without retaining the object.
  */
 export function scanDecision(
   configured: boolean,
@@ -32,7 +32,7 @@ export function scanDecision(
   return "reject";
 }
 
-/** Lo que Administración → Seguridad guarda. */
+/** Settings persisted by security administration. */
 export type ClamavConfig = {
   enabled: boolean;
   host: string;
@@ -40,7 +40,7 @@ export type ClamavConfig = {
   timeoutSeconds: number;
 };
 
-/** Dirección del servicio de Compose, hasta que esa pantalla se guarda. */
+/** Compose scanner address used until settings are saved. */
 export const DEFAULT_CLAMAV: ClamavConfig = {
   enabled: true,
   host: "clamav",
@@ -52,7 +52,7 @@ const HOSTNAME =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 const IPV4 = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 
-/** Nombre de máquina o IPv4. Vacío solo vale si el antivirus está apagado. */
+/** Hostname or IPv4 address; empty is valid only when scanning is disabled. */
 export function parseClamavConfig(
   input: ClamavConfig,
 ): { ok: true; config: ClamavConfig } | { ok: false; error: string } {
@@ -82,7 +82,7 @@ export function parseClamavConfig(
   };
 }
 
-/** `null` si no hay que analizar. */
+/** null means scanning is unnecessary. */
 export function clamavEndpoint(config: ClamavConfig): { host: string; port: number } | null {
   if (!config.enabled || !config.host) return null;
   return { host: config.host, port: config.port };

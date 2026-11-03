@@ -1,24 +1,16 @@
 /**
- * Clics que no son para escribir: un hueco (la barra superior vacía, el
- * espacio entre paneles o entre campos de un formulario, el fondo de un
- * diálogo) o la etiqueta de un campo de texto. El navegador lleva ahí la
- * selección de texto al punto más cercano, que suele ser el final de un campo
- * o de su etiqueta, y deja una barra parpadeando donde nadie escribe.
- *
- * Una guarda para toda la app (`installBlankClickGuard`, montada en la ruta
- * raíz): en esos clics no se mueve la selección y el campo que tuviera el
- * foco lo suelta, como al hacer clic fuera de él. Para escribir se hace clic
- * en el propio campo.
- *
- * No actúa sobre el texto de lectura (la nota, el chat, las listas), que se
- * puede seleccionar arrastrando, ni sobre lo que se arrastra o se dibuja.
+ * App-wide blank-click guard installed in the root route. Clicks on empty space or text-field
+ * labels must blur the current field without moving the text selection to a stray blinking
+ * caret. Users click directly into fields to type. Reading text remains selectable, and drag or
+ * drawing surfaces retain their behavior.
  */
 
 const TEXT_INPUT = new Set(["text", "email", "password", "url", "number", "search", "tel", ""]);
 
-const CONTROL = "input, textarea, select, button, a, [contenteditable], [role=button], [role=menuitem], [role=switch], [tabindex]";
+const CONTROL =
+  "input, textarea, select, button, a, [contenteditable], [role=button], [role=menuitem], [role=switch], [tabindex]";
 
-/** Zonas donde arrastrar desde un margen sirve para seleccionar, o que se arrastran. */
+/** Areas where dragging from margins selects content, or that are themselves draggable. */
 const KEEP = 'article, [data-reader], canvas, svg, [draggable="true"], [data-ui="graph"]';
 
 function isTextControl(control: HTMLElement | null): boolean {
@@ -28,10 +20,12 @@ function isTextControl(control: HTMLElement | null): boolean {
   );
 }
 
-/** Un hueco: ni un control ni un elemento con texto propio. */
+/** Blank space: neither a control nor an element with its own text. */
 export function isBlank(target: HTMLElement): boolean {
   if (target.closest(CONTROL) || target.closest("label")) return false;
-  return ![...target.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
+  return ![...target.childNodes].some(
+    (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim(),
+  );
 }
 
 export function releaseFocus(): void {
@@ -39,23 +33,25 @@ export function releaseFocus(): void {
 }
 
 /**
- * Quita una selección vacía (un cursor de texto suelto) que no está en un
- * campo enfocado: al cambiar de pantalla, el navegador la deja en el primer
- * campo cercano, donde parpadea sin que nadie haya hecho clic.
+ * Remove an empty selection outside the focused field; navigation can leave a blinking caret
+ * near a field the user never clicked.
  */
 export function clearStrayCaret(): void {
   const selection = window.getSelection();
   if (!selection || selection.type !== "Caret") return;
   const active = document.activeElement;
-  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || (active as HTMLElement | null)?.isContentEditable) return;
+  if (
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLTextAreaElement ||
+    (active as HTMLElement | null)?.isContentEditable
+  )
+    return;
   selection.removeAllRanges();
 }
 
 /**
- * La etiqueta de un campo de texto (su nombre o el espacio a su lado), sin
- * contar la de los buscadores con forma de píldora, cuya etiqueta es el
- * propio campo (`data-field`). Las casillas e interruptores siguen
- * activándose desde su etiqueta.
+ * Text-field labels, excluding pill search labels whose entire area is the field (data-field).
+ * Checkbox and switch labels still activate their controls.
  */
 function textLabel(target: HTMLElement): HTMLLabelElement | null {
   const label = target.closest("label");
@@ -71,30 +67,37 @@ export function installBlankClickGuard(): () => void {
     const target = event.target as HTMLElement | null;
     if (!target || !(target instanceof HTMLElement)) return;
     if (target.closest("input, textarea, select, [contenteditable]")) return;
-    // Sobre la barra de desplazamiento de un panel: que se pueda arrastrar.
-    const scrolls = target.scrollHeight > target.clientHeight || target.scrollWidth > target.clientWidth;
-    if (scrolls && target.clientWidth > 0 && (event.offsetX > target.clientWidth || event.offsetY > target.clientHeight)) return;
+    // Allow dragging the panel scrollbar.
+    const scrolls =
+      target.scrollHeight > target.clientHeight || target.scrollWidth > target.clientWidth;
+    if (
+      scrolls &&
+      target.clientWidth > 0 &&
+      (event.offsetX > target.clientWidth || event.offsetY > target.clientHeight)
+    )
+      return;
     if (textLabel(target) || (isBlank(target) && !target.closest(KEEP))) {
       event.preventDefault();
       releaseFocus();
-      // Al soltar un campo, su cursor queda aparcado justo después de él (en
-      // su etiqueta) y algunos navegadores lo siguen dibujando ahí.
+      // Some browsers keep painting a caret parked just after a blurred field, inside its label.
       clearStrayCaret();
     }
   };
-  // El clic en la etiqueta ya no enfoca su campo ni pone el cursor al final.
+  // Clicking the label neither focuses its field nor moves the caret to its end.
   const onClick = (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
     if (target instanceof HTMLElement && textLabel(target)) event.preventDefault();
   };
-  // Al cambiar el foco a algo que no es un campo de texto (un botón, un
-  // selector…), el navegador deja el cursor aparcado entre elementos, junto a
-  // un campo, donde algunos navegadores lo siguen dibujando. Un cursor entre
-  // elementos (no dentro de un texto) nunca lo puso la persona: se quita.
+  // Focusing a button or selector can leave a caret between elements near a field. Such a caret was not placed inside text by the user and should be removed.
   const onFocusChange = () => {
     window.setTimeout(() => {
       const selection = window.getSelection();
-      if (!selection || selection.type !== "Caret" || selection.anchorNode?.nodeType !== Node.ELEMENT_NODE) return;
+      if (
+        !selection ||
+        selection.type !== "Caret" ||
+        selection.anchorNode?.nodeType !== Node.ELEMENT_NODE
+      )
+        return;
       clearStrayCaret();
     }, 0);
   };

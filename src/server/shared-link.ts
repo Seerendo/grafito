@@ -8,10 +8,8 @@ import { getDoc, nextRevision } from "@/server/vault";
 import { vaultIndex } from "@/server/vault-index";
 
 /**
- * Crea o quita un vínculo manual en un documento de un espacio de trabajo (o
- * de un portafolio compartido). Se guarda en la bóveda del dueño, no en la de
- * quien lo pide. El destino tiene que estar en el mismo elemento y quien
- * vincula tiene que poder editar el origen y ver el destino.
+ * Create/remove a manual link in the owner's shared/workspace vault. Caller must edit the
+ * source and read the target, both within the same shared item.
  */
 
 type Change = {
@@ -32,7 +30,8 @@ export async function changeSharedLink(
   const editable = await editableTarget(sql, input.userId, input.shareId, input.docId);
   if (!editable) return { ok: false, error: "Ya no puedes editar este documento." };
   const share = await shareForUser(sql, input.userId, input.shareId);
-  if (!share || share.ownerId !== editable.ownerId) return { ok: false, error: "Ya no puedes editar este documento." };
+  if (!share || share.ownerId !== editable.ownerId)
+    return { ok: false, error: "Ya no puedes editar este documento." };
   const current = await getDoc(sql, editable.ownerId, input.docId);
   if (!current) return { ok: false, error: "Ya no puedes editar este documento." };
   const index = await vaultIndex(sql, editable.ownerId);
@@ -43,9 +42,20 @@ export async function changeSharedLink(
     if (input.add.targetId === input.docId && input.add.target !== "portfolio") {
       return { ok: false, error: "Ese destino no está en este espacio." };
     }
-    if (!linkKept(input.add, covered)) return { ok: false, error: "Ese destino no está en este espacio." };
-    const portfolioId = input.add.target === "portfolio" ? input.add.targetId : index.docById.get(input.add.targetId)?.portfolioId ?? null;
-    if (!(await mayReadInPortfolio(sql, { ownerId: editable.ownerId, access: share.access }, input.userId, portfolioId))) {
+    if (!linkKept(input.add, covered))
+      return { ok: false, error: "Ese destino no está en este espacio." };
+    const portfolioId =
+      input.add.target === "portfolio"
+        ? input.add.targetId
+        : (index.docById.get(input.add.targetId)?.portfolioId ?? null);
+    if (
+      !(await mayReadInPortfolio(
+        sql,
+        { ownerId: editable.ownerId, access: share.access },
+        input.userId,
+        portfolioId,
+      ))
+    ) {
       return { ok: false, error: "Ese destino no está en este espacio." };
     }
     const next = withManualLink(links, input.add);

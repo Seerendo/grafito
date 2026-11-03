@@ -6,7 +6,13 @@ import type { Sql } from "@/lib/db";
 import { encryptionReady } from "@/server/crypto";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { allowedHost, GitError, normalizeBaseUrl, openRepo, type Provider } from "@/server/git/providers";
+import {
+  allowedHost,
+  GitError,
+  normalizeBaseUrl,
+  openRepo,
+  type Provider,
+} from "@/server/git/providers";
 import {
   ALL,
   cleanFolder,
@@ -22,10 +28,8 @@ import {
 } from "@/server/git/sync";
 
 /**
- * Enlazar un portafolio (o toda la bóveda) con un repositorio de GitHub o
- * GitLab: ver el estado, guardar (comprobando el acceso), sincronizar ya y
- * desconectar. Hace falta el plugin `git` encendido y el permiso `git.sync`.
- * Ver `server/git/sync.ts` y `docs/GIT.md`.
+ * Manage Git repository links, validation, immediate sync and disconnection. Requires the git
+ * plugin and git.sync permission; see server/git/sync.ts and docs/GIT.md.
  */
 
 const id = z.string().min(1).max(80);
@@ -34,7 +38,8 @@ const GIT_SYNC = "git.sync";
 async function access(userId: string) {
   const sql = await requireLease(userId);
   const profile = await readUserProfile(sql, userId);
-  const ok = (await gitEnabled(sql)) && allows(profile, GIT_SYNC) && allows(profile, PERMISSION.notesRead);
+  const ok =
+    (await gitEnabled(sql)) && allows(profile, GIT_SYNC) && allows(profile, PERMISSION.notesRead);
   return { sql, ok };
 }
 
@@ -54,19 +59,22 @@ function publicLink(link: LinkRow) {
     folder: link.folder,
     direction: link.direction,
     lastError: link.last_error,
-    lastSyncAt: link.last_sync_at === null || link.last_sync_at === undefined ? null : Number(link.last_sync_at),
+    lastSyncAt:
+      link.last_sync_at === null || link.last_sync_at === undefined
+        ? null
+        : Number(link.last_sync_at),
     lastSummary: link.last_summary,
     hookPath: `/api/git/hook/${link.id}`,
     hookSecret: link.hook_secret,
   };
 }
 
-/**
- * Acepta `grupo/proyecto` o la dirección completa del repositorio
- * (`https://gitlab.universidad.edu/grupo/sub/proyecto.git`): de ella salen
- * el servidor y la ruta.
- */
-function parseRepo(provider: Provider, baseUrl: string, repo: string): { baseUrl: string; repo: string } {
+/** Accept repository group/project paths or full URLs, extracting host and nested project path. */
+function parseRepo(
+  provider: Provider,
+  baseUrl: string,
+  repo: string,
+): { baseUrl: string; repo: string } {
   const raw = repo.trim();
   if (/^https?:\/\//i.test(raw)) {
     const url = new URL(raw);
@@ -76,7 +84,10 @@ function parseRepo(provider: Provider, baseUrl: string, repo: string): { baseUrl
       .replace(/^\/+|\/+$/g, "");
     return { baseUrl: `${url.protocol}//${url.host}`, repo: path };
   }
-  return { baseUrl: normalizeBaseUrl(provider, baseUrl), repo: raw.replace(/\.git$/i, "").replace(/^\/+|\/+$/g, "") };
+  return {
+    baseUrl: normalizeBaseUrl(provider, baseUrl),
+    repo: raw.replace(/\.git$/i, "").replace(/^\/+|\/+$/g, ""),
+  };
 }
 
 export const gitLinkState = createServerFn({ method: "GET" })
@@ -94,16 +105,23 @@ export const gitLinkState = createServerFn({ method: "GET" })
     };
   });
 
-/** Los portafolios enlazados (para marcarlos en la interfaz). */
+/** Linked portfolios for UI indicators. */
 export const gitLinkedPortfolios = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const { sql, ok } = await access(context.userId);
-    if (!ok) return { available: false, linked: [] as Array<{ portfolioId: string; error: boolean }> };
+    if (!ok)
+      return { available: false, linked: [] as Array<{ portfolioId: string; error: boolean }> };
     const rows = await sql<{ portfolio_id: string; last_error: string }>`
       select portfolio_id, last_error from git_link where user_id = ${context.userId}
     `;
-    return { available: true, linked: rows.map((row) => ({ portfolioId: row.portfolio_id, error: Boolean(row.last_error) })) };
+    return {
+      available: true,
+      linked: rows.map((row) => ({
+        portfolioId: row.portfolio_id,
+        error: Boolean(row.last_error),
+      })),
+    };
   });
 
 const settings = z.object({
@@ -114,7 +132,7 @@ const settings = z.object({
   branch: z.string().trim().min(1).max(200),
   folder: z.string().max(300),
   direction: z.enum(["both", "push", "pull"]),
-  /** Vacío al editar: se conserva el guardado. */
+  /** Empty credential input preserves the stored value. */
   token: z.string().max(500),
 });
 
@@ -124,7 +142,11 @@ export const saveGitLink = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { sql, ok } = await access(context.userId);
     if (!ok) return { ok: false as const, error: "Tu rol no puede sincronizar con Git." };
-    if (!encryptionReady()) return { ok: false as const, error: "El servidor no tiene clave de cifrado para guardar el token." };
+    if (!encryptionReady())
+      return {
+        ok: false as const,
+        error: "El servidor no tiene clave de cifrado para guardar el token.",
+      };
     if (data.portfolioId !== ALL) {
       const exists = await sql<{ id: string }>`
         select id from vault_portfolio where user_id = ${context.userId} and id = ${data.portfolioId} and not deleted limit 1
@@ -137,7 +159,11 @@ export const saveGitLink = createServerFn({ method: "POST" })
     } catch {
       return { ok: false as const, error: "La dirección del servidor no es válida." };
     }
-    if (!target.repo.includes("/")) return { ok: false as const, error: "Escribe el repositorio como dueño/nombre (o grupo/proyecto)." };
+    if (!target.repo.includes("/"))
+      return {
+        ok: false as const,
+        error: "Escribe el repositorio como dueño/nombre (o grupo/proyecto).",
+      };
     if (!allowedHost(target.baseUrl)) {
       return {
         ok: false as const,
@@ -150,7 +176,7 @@ export const saveGitLink = createServerFn({ method: "POST" })
     const folder = cleanFolder(data.folder);
     const direction = data.direction as Direction;
 
-    // Se comprueba antes de guardar: acceso, permiso de escritura y rama.
+    // Validate repository access, write permission and branch before saving.
     try {
       const repo = openRepo({
         provider: data.provider,
@@ -161,7 +187,11 @@ export const saveGitLink = createServerFn({ method: "POST" })
       });
       const info = await repo.check();
       if (direction !== "pull" && !info.canWrite) {
-        return { ok: false as const, error: "El token solo puede leer este repositorio. Usa «Solo traer» o un token con permiso de escritura." };
+        return {
+          ok: false as const,
+          error:
+            "El token solo puede leer este repositorio. Usa «Solo traer» o un token con permiso de escritura.",
+        };
       }
       const head = await repo.head();
       if (!head && (data.provider === "github" || direction === "pull")) {
@@ -171,7 +201,10 @@ export const saveGitLink = createServerFn({ method: "POST" })
         };
       }
     } catch (error) {
-      return { ok: false as const, error: error instanceof GitError ? error.message : "No se pudo comprobar el repositorio." };
+      return {
+        ok: false as const,
+        error: error instanceof GitError ? error.message : "No se pudo comprobar el repositorio.",
+      };
     }
 
     const now = Date.now();
@@ -189,7 +222,7 @@ export const saveGitLink = createServerFn({ method: "POST" })
           last_error = '', head = ${moved ? null : existing.head}
         where id = ${existing.id}
       `;
-      // Otro repositorio u otra carpeta: se empieza de cero (nada se borra en ningún lado).
+      // Changing repository or folder resets sync metadata without deleting either side.
       if (moved) {
         await sql`delete from git_link_file where link_id = ${existing.id}`;
         await sql`update git_link set last_summary = '' where id = ${existing.id}`;
@@ -204,10 +237,14 @@ export const saveGitLink = createServerFn({ method: "POST" })
     }
     startGitSync();
     const link = await linkFor(sql, context.userId, data.portfolioId);
-    // La primera vuelta ya, sin esperar al temporizador.
+    // Run the first synchronization immediately.
     const result = link ? await runLink(sql, link.id) : null;
     const fresh = await linkFor(sql, context.userId, data.portfolioId);
-    return { ok: true as const, link: fresh ? publicLink(fresh) : null, message: result?.message ?? "" };
+    return {
+      ok: true as const,
+      link: fresh ? publicLink(fresh) : null,
+      message: result?.message ?? "",
+    };
   });
 
 export const syncGitNow = createServerFn({ method: "POST" })
@@ -221,10 +258,15 @@ export const syncGitNow = createServerFn({ method: "POST" })
     startGitSync();
     const result = await runLink(sql, link.id);
     const fresh = await linkFor(sql, context.userId, data.portfolioId);
-    return { ok: true as const, synced: result.ok, message: result.message, link: fresh ? publicLink(fresh) : null };
+    return {
+      ok: true as const,
+      synced: result.ok,
+      message: result.message,
+      link: fresh ? publicLink(fresh) : null,
+    };
   });
 
-/** Desconecta: el repositorio y los documentos de Grafito quedan como están. */
+/** Disconnect while preserving repository and vault content. */
 export const removeGitLink = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ portfolioId: id }).parse(input))

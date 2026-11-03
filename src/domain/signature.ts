@@ -1,8 +1,6 @@
 /**
- * De qué versión es una firma: el título y, en una nota, el texto; en un
- * archivo, la clave con la que está guardado (cambia en cada guardado).
- * El servidor guarda el SHA-256 de este texto. No es un certificado: solo
- * permite saber si el documento cambió después de firmar.
+ * Signature version identity includes title plus note text or file storage key. The server
+ * hashes it with SHA-256 to detect later changes; it is not a certificate.
  */
 export function signatureMaterial(input: {
   kind: "markdown" | "file";

@@ -1,30 +1,21 @@
-/** Organizaciones jerárquicas: `parentId` nulo es una organización raíz. */
+import { subtreeIds } from "./hierarchy.ts";
+
+/** Hierarchical organizations; null parentId denotes a root. */
 export type Org = { id: string; name: string; parentId: string | null };
 
-/** Hijas directas, ordenadas por nombre. */
+/** Direct children sorted by name. */
 export function childOrgs<T extends Org>(orgs: readonly T[], parentId: string | null): T[] {
   return orgs
     .filter((org) => org.parentId === parentId)
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
-/** La organización y todas sus sub-organizaciones. */
+/** The organization and all descendants. */
 export function orgSubtree(orgs: readonly Org[], id: string): Set<string> {
-  const ids = new Set<string>([id]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const org of orgs) {
-      if (org.parentId && ids.has(org.parentId) && !ids.has(org.id)) {
-        ids.add(org.id);
-        grew = true;
-      }
-    }
-  }
-  return ids;
+  return subtreeIds(orgs, id);
 }
 
-/** «Empresa › Ventas › Norte». */
+/** Example breadcrumb: Company › Sales › North. */
 export function orgPath(orgs: readonly Org[], id: string): string {
   const byId = new Map(orgs.map((org) => [org.id, org]));
   const names: string[] = [];
@@ -38,7 +29,7 @@ export function orgPath(orgs: readonly Org[], id: string): string {
   return names.join(" › ");
 }
 
-/** Mover `id` bajo `parentId` crearía un ciclo. */
+/** Whether moving id beneath parentId would create a cycle. */
 export function wouldCycle(orgs: readonly Org[], id: string, parentId: string | null): boolean {
   return parentId !== null && orgSubtree(orgs, id).has(parentId);
 }

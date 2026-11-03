@@ -1,13 +1,7 @@
--- Compartir notas y portafolios en solo lectura.
---
--- Lo privado no tiene fila: es el valor por defecto. Una fila en share_item
--- hace visible una nota (kind = 'document') o un portafolio con todo lo que
--- contiene (kind = 'portfolio'):
---   visibility = 'shared' → los usuarios de share_grant, con sesión.
---   visibility = 'public' → cualquiera con el enlace /p/<public_token>, sin sesión.
---
--- Las notas viven en el navegador de su dueño; published_* guarda la copia que
--- se muestra a los demás y la actualiza el propio dueño al editar (ShareMirror).
+-- Read-only sharing of notes and portfolios. Private items have no row. share_item exposes a
+-- document or an entire portfolio. Shared visibility requires a signed-in share_grant recipient;
+-- public visibility allows anyone with /p/<public_token>. Originally notes lived in the owner's
+-- browser; published_* stores the copy updated by ShareMirror.
 
 create table if not exists share_item (
   id text primary key,

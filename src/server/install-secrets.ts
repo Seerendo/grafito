@@ -3,24 +3,13 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "n
 import { join } from "node:path";
 
 /**
- * Secretos propios de cada instalación (solo servidor).
- *
- * `BETTER_AUTH_SECRET` firma las sesiones, los enlaces de archivos y las
- * fichas del editor de Office; `GRAFITO_ENCRYPTION_KEY` cifra las claves de IA
- * y la contraseña SMTP. Si faltan o tienen el valor de ejemplo que se publicó
- * en `docker-compose.yml` (y que cualquiera puede leer en el repositorio), con
- * él se podrían falsificar enlaces y fichas para leer o cambiar archivos ajenos.
- *
- * En ese caso se usa uno aleatorio de esta instalación, guardado en
- * `GRAFITO_SECRETS_DIR` (por defecto `.data/secrets`; en Docker, su propio
- * volumen). No va en la base de datos para que una copia de la base no lleve
- * también la clave que descifra lo que contiene. La clave de cifrado de
- * ejemplo pasa a `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (si no hay otra), así lo
- * cifrado con ella en versiones anteriores se sigue leyendo y se vuelve a
- * cifrar con la nueva al usarse.
+ * Installation secrets sign sessions/file/WOPI tokens and encrypt AI/SMTP credentials. Replace
+ * missing or publicly known example values with random secrets in GRAFITO_SECRETS_DIR, separate
+ * from database backups. Preserve the legacy encryption key as PREVIOUS when needed so old
+ * ciphertext can be read and re-encrypted.
  */
 
-/** Valores de ejemplo publicados: nunca valen como secreto. */
+/** Public example values must never be accepted as secrets. */
 const PUBLIC_DEFAULTS: Record<string, string[]> = {
   BETTER_AUTH_SECRET: ["grafito-dev-secret-cambia-esto"],
   GRAFITO_ENCRYPTION_KEY: ["grafito-dev-encryption-key-cambia-esto-0001"],
@@ -44,19 +33,19 @@ function readOrCreate(dir: string, name: string): string {
   try {
     chmodSync(file, 0o600);
   } catch {
-    /* sistemas sin permisos POSIX */
+    /* Platforms without POSIX permissions. */
   }
   return value;
 }
 
-/** Pone en el entorno secretos propios donde falten o sean los de ejemplo. Una vez por proceso. */
+/** Initialize missing/example environment secrets once per process. */
 export function ensureInstallSecrets(): void {
   if (done) return;
   done = true;
   installSecrets(process.env, secretsDir());
 }
 
-/** Lo de `ensureInstallSecrets` sobre un entorno y una carpeta dados; devuelve qué cambió. */
+/** Apply secret initialization to an explicit environment and folder; report changes. */
 export function installSecrets(env: Record<string, string | undefined>, dir: string): string[] {
   const changed: string[] = [];
   for (const name of Object.keys(PUBLIC_DEFAULTS)) {
@@ -67,13 +56,11 @@ export function installSecrets(env: Record<string, string | undefined>, dir: str
     try {
       value = readOrCreate(dir, name);
     } catch (error) {
-      // Sin disco donde guardarlo (p. ej. una plataforma sin sistema de
-      // archivos): uno por proceso, mejor que el público.
+      // Without writable persistent storage, use a per-process random secret rather than the public example.
       value = randomBytes(48).toString("base64url");
       console.error(`[grafito] No se pudo guardar ${name} en ${dir}:`, error);
     }
-    // Lo cifrado hasta ahora pudo hacerse con la clave de ejemplo (la pasaba
-    // `docker-compose.yml`, aunque hoy llegue vacía): se sigue pudiendo leer.
+    // Legacy Compose deployments may have encrypted with the example key; preserve read compatibility.
     if (name === "GRAFITO_ENCRYPTION_KEY" && !env.GRAFITO_ENCRYPTION_KEY_PREVIOUS?.trim()) {
       env.GRAFITO_ENCRYPTION_KEY_PREVIOUS = PUBLIC_DEFAULTS[name]![0];
     }

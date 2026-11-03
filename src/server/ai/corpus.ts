@@ -39,17 +39,15 @@ import {
 } from "./access.ts";
 
 /**
- * Lo que el asistente puede abrir en una respuesta: la bóveda propia, lo
- * compartido y los espacios, ya filtrados. Cada escritura vuelve a comprobar
- * el permiso en el servidor (`editableTarget`, `uploadTarget`); la copia de
- * esta respuesta no basta.
+ * Per-response authorized corpus includes personal, shared and workspace content. Recheck every
+ * write through editableTarget/uploadTarget; the response snapshot alone is insufficient.
  */
 
 const MAX_NOTE = 30_000;
 const LIST_CAP = 100;
 const SEARCH_CAP = 30;
 
-/** Reserva sitio para lo compartido cuando la lista propia ya llena el tope. */
+/** Reserve room for shared results when owned content fills the list limit. */
 function mixDocs(docs: AiDoc[], cap: number): AiDoc[] {
   const own = docs.filter((doc) => doc.source === "propio");
   const shared = docs.filter((doc) => doc.source !== "propio");
@@ -162,9 +160,8 @@ function remember(found: Map<string, Found>, doc: AiDoc, snippet = ""): void {
 }
 
 /**
- * Título y contenido indexado (notas, celdas y texto de archivos). El índice
- * no abre nada que esta persona no tenga en la vista, salvo sus propias notas
- * que no cupieron en el lote.
+ * Search titles and indexed note/cell/file text. Expose only visible documents, plus owned
+ * notes omitted by the preload limit.
  */
 async function searchDocs(
   sql: Sql,
@@ -214,8 +211,8 @@ async function searchDocs(
 }
 
 /**
- * Abre un documento que ya está en la vista. En lo compartido, `grantedDocOwner`
- * vuelve a comprobar el permiso: si se revocó a mitad de la respuesta, no se lee.
+ * Read a visible document and recheck shared access through grantedDocOwner so mid-response
+ * revocation takes effect.
  */
 async function openReadable(sql: Sql, userId: string, doc: AiDoc): Promise<Opened | null> {
   if (!doc.shareId) {
@@ -228,7 +225,7 @@ async function openReadable(sql: Sql, userId: string, doc: AiDoc): Promise<Opene
   return document ? { ownerId, document } : null;
 }
 
-/** Dueño sobre el que se puede escribir. Lo compartido pasa por `editableTarget`. */
+/** Resolve an authorized write owner; shared writes pass through editableTarget. */
 async function writableOwner(sql: Sql, userId: string, doc: AiDoc): Promise<string | null> {
   if (writeRefusal(doc)) return null;
   if (!doc.shareId) return (await getDoc(sql, userId, doc.id)) ? userId : null;
@@ -346,17 +343,21 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
       const inScope = (doc: AiDoc) =>
         !scope || (doc.ownerId === scope.ownerId && doc.portfolioId === scope.portfolioId);
       const query = input.query?.trim() ?? "";
-      // Con texto, la búsqueda también alcanza notas propias que no entraron en
-      // el lote de 500, y el texto indexado de los archivos. Sin texto, se
-      // lista lo ya filtrado por acceso.
-      const found = query ? (await searchDocs(sql, userId, seen, caps, query)).filter((item) => inScope(item.doc)) : null;
+      // Text search also reaches owned notes beyond the 500-item preload and indexed file contents. Without a query, list the access-filtered snapshot.
+      const found = query
+        ? (await searchDocs(sql, userId, seen, caps, query)).filter((item) => inScope(item.doc))
+        : null;
       const docs = found ? found.map((item) => item.doc) : seen.docs.filter(inScope);
-      const snippets = new Map((found ?? []).map((item) => [`${item.doc.ownerId}:${item.doc.id}`, item.snippet]));
-      // Sin un portafolio concreto, una bóveda grande no debe tapar lo compartido.
+      const snippets = new Map(
+        (found ?? []).map((item) => [`${item.doc.ownerId}:${item.doc.id}`, item.snippet]),
+      );
+      // Without a specific portfolio, prevent a large personal vault from hiding shared content.
       const shown = scope ? docs.slice(0, LIST_CAP) : mixDocs(docs, LIST_CAP);
       return {
         result: {
-          documents: shown.map((doc) => showDoc(doc, snippets.get(`${doc.ownerId}:${doc.id}`) ?? "")),
+          documents: shown.map((doc) =>
+            showDoc(doc, snippets.get(`${doc.ownerId}:${doc.id}`) ?? ""),
+          ),
           ...(docs.length > LIST_CAP ? { truncated: true, total: docs.length } : {}),
         },
         event: { label: `Listó ${shown.length} documentos`, ok: true },

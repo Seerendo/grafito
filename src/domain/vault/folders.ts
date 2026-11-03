@@ -1,15 +1,14 @@
 const IGNORED_UPLOAD = new Set([".DS_Store", "Thumbs.db"]);
 
-/** Archivos que el sistema mete en una carpeta y no hay que subir. */
+/** System-generated folder files excluded from upload. */
 export function ignoredUpload(path: string): boolean {
   const base = path.replaceAll("\\", "/").split("/").pop() ?? path;
   return IGNORED_UPLOAD.has(base);
 }
 
 /**
- * Una carpeta soltada o elegida en el equipo: las subcarpetas que hay que
- * crear (de fuera hacia dentro) y en cuál va cada archivo. `folder` vacío es
- * el portafolio de destino. Se ignoran rutas que salen de la carpeta (`..`).
+ * Plan folder imports from outermost to innermost and assign files to folders. Empty folder
+ * denotes the destination portfolio. Ignore traversal paths containing dot-dot.
  */
 export function folderPlan(paths: readonly string[]): {
   folders: string[];

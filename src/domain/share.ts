@@ -2,22 +2,19 @@ import { descendantIds } from "./vault/portfolios.ts";
 import type { Portfolio } from "./vault/types.ts";
 
 /**
- * Compartir en solo lectura. Lo privado no se guarda (es el valor por defecto);
- * `shared` lo ven los usuarios elegidos y `public` cualquiera con el enlace.
+ * Private visibility is implicit and unpersisted. shared is limited to selected users; public
+ * allows anyone with the link.
  */
 export type Visibility = "private" | "shared" | "public";
 export type ShareKind = "document" | "portfolio";
 
 export type ShareTarget = { kind: ShareKind; targetId: string };
 
-/** Lo mínimo de un documento para decidir si un elemento compartido lo cubre. */
+/** Minimal document placement needed to determine share coverage. */
 type Placed = { id: string; portfolioId: string | null };
 type Tree = Pick<Portfolio, "id" | "parentId">;
 
-/**
- * Documentos y portafolios que cubre un elemento compartido: la nota sola, o
- * el portafolio con todos sus subportafolios y documentos.
- */
+/** Share coverage: one document, or a portfolio subtree and its documents. */
 export function coveredBy(
   share: ShareTarget,
   portfolios: readonly Tree[],
@@ -40,9 +37,8 @@ export function coveredBy(
 }
 
 /**
- * Si un vínculo manual apunta a algo que ese elemento compartido incluye.
- * Un portafolio no es un documento: si no se mira `target`, se pierde al
- * publicar el árbol.
+ * Whether a manual link targets content within this share. Check target kind so portfolio links
+ * survive publication.
  */
 export function linkKept(
   link: { targetId: string; target?: string },
@@ -52,7 +48,7 @@ export function linkKept(
   return covered.documentIds.has(link.targetId);
 }
 
-/** Unión de lo que cubren varios elementos compartidos. */
+/** Union of content covered by multiple shares. */
 export function coveredByAll(
   shares: readonly ShareTarget[],
   portfolios: readonly Tree[],
@@ -68,7 +64,7 @@ export function coveredByAll(
   return { documentIds, portfolioIds };
 }
 
-/** Visibilidad efectiva de un documento: la suya o la heredada de un portafolio. */
+/** Document visibility, explicit or inherited from its portfolio. */
 export function effectiveVisibility(
   documentId: string,
   shares: readonly (ShareTarget & { visibility: Exclude<Visibility, "private"> })[],

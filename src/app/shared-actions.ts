@@ -10,10 +10,8 @@ import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/tabl
 import type { IncomingFile } from "@/components/vault/ingest-files";
 
 /**
- * Lo que se hace dentro de un portafolio compartido conmigo con permiso de
- * edición (un espacio de trabajo, por ejemplo): desde los botones del visor y
- * desde el clic derecho del directorio. Tras cada cambio se vuelve a leer lo
- * compartido y se muestra en el visor. Devuelven el error, o `null`.
+ * Actions within editable shared portfolios and workspaces, used by viewer buttons and
+ * directory menus. Reload shared content after each change. Return an error or null.
  */
 
 async function refresh(shareId: string, docId: string | null, reveal = true): Promise<void> {
@@ -21,7 +19,7 @@ async function refresh(shareId: string, docId: string | null, reveal = true): Pr
   if (!tree) return;
   const view = useSharedView.getState();
   const same = view.tree?.share.id === shareId;
-  // Una carga no abre el archivo ni cambia de pantalla si ese compartido no está abierto.
+  // Uploading must not open a file or navigate if its shared item is not currently open.
   if (!reveal) {
     if (!same) return;
     const keep = view.docId;
@@ -31,19 +29,30 @@ async function refresh(shareId: string, docId: string | null, reveal = true): Pr
   }
   const keep = docId ?? (same ? view.docId : null);
   if (keep && tree.documents.some((doc) => doc.id === keep)) view.openShared(tree, keep);
-  // Sin documento: la página que estaba abierta (o la del compartido).
+  // Without a document, keep the current portfolio page or the shared item's root.
   else view.openSharedPortfolio(tree, same ? view.portfolioId : null);
 }
 
-export async function newSharedNote(shareId: string, portfolioId: string | null): Promise<string | null> {
-  const result = await createSharedNote({ data: { shareId, portfolioId, title: "" } }).catch(() => null);
+export async function newSharedNote(
+  shareId: string,
+  portfolioId: string | null,
+): Promise<string | null> {
+  const result = await createSharedNote({ data: { shareId, portfolioId, title: "" } }).catch(
+    () => null,
+  );
   if (!result?.ok) return result?.error ?? t("No se pudo crear la nota.");
   await refresh(shareId, result.id);
   return null;
 }
 
-export async function newSharedPortfolio(shareId: string, parentId: string | null, name: string): Promise<string | null> {
-  const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(() => null);
+export async function newSharedPortfolio(
+  shareId: string,
+  parentId: string | null,
+  name: string,
+): Promise<string | null> {
+  const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(
+    () => null,
+  );
   if (!result?.ok) return result?.error ?? t("No se pudo crear el portafolio.");
   await refresh(shareId, null);
   return null;
@@ -59,7 +68,9 @@ export async function uploadToShared(
   for (const file of [...files]) {
     try {
       const stored = await uploadVaultFile(file, { shareId, portfolioId });
-      const result = await addSharedFile({ data: { shareId, portfolioId, key: stored.key, name: file.name, mime: file.type } });
+      const result = await addSharedFile({
+        data: { shareId, portfolioId, key: stored.key, name: file.name, mime: file.type },
+      });
       if (!result.ok) return result.error;
       last = result.id;
     } catch (error) {
@@ -77,24 +88,29 @@ export async function deleteFromShared(shareId: string, docId: string): Promise<
   return null;
 }
 
-/** Un portafolio con lo que contiene, a la papelera de su dueño (en un espacio de trabajo, la de sus administradores). */
-export async function deletePortfolioFromShared(shareId: string, portfolioId: string): Promise<string | null> {
+/** Move a portfolio subtree to its owner's trash; workspace trash belongs to its administrators. */
+export async function deletePortfolioFromShared(
+  shareId: string,
+  portfolioId: string,
+): Promise<string | null> {
   const result = await deleteSharedPortfolio({ data: { shareId, portfolioId } }).catch(() => null);
   if (!result?.ok) return result?.error ?? t("No se pudo eliminar.");
   await refresh(shareId, null);
   return null;
 }
 
-/** «Nueva tabla» en un portafolio de lo compartido (un espacio de trabajo). */
-export async function newSharedTable(shareId: string, portfolioId: string | null): Promise<string | null> {
-  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, { type: TABLE_MIME });
+/** Create a table inside a shared portfolio or workspace. */
+export async function newSharedTable(
+  shareId: string,
+  portfolioId: string | null,
+): Promise<string | null> {
+  const file = new File([emptyTableFile()], `${t("Tabla")}${TABLE_EXTENSION}`, {
+    type: TABLE_MIME,
+  });
   return uploadToShared(shareId, portfolioId, [file], true);
 }
 
-/**
- * Sube una carpeta con sus subcarpetas. Los portafolios se crean antes de
- * refrescar el árbol: hasta entonces la ruta vive en `ids`.
- */
+/** Upload a folder hierarchy. Create portfolios before refreshing the tree; ids tracks paths until then. */
 export async function uploadFolderToShared(
   shareId: string,
   portfolioId: string | null,
@@ -126,12 +142,16 @@ export async function uploadFolderToShared(
     if (!ids.has(parentKey)) continue;
     const parentId = ids.get(parentKey) ?? null;
     const name = slash === -1 ? folder : folder.slice(slash + 1);
-    const known = visible()?.portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name);
+    const known = visible()?.portfolios.find(
+      (portfolio) => portfolio.parentId === parentId && portfolio.name === name,
+    );
     if (known) {
       ids.set(folder, known.id);
       continue;
     }
-    const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(() => null);
+    const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(
+      () => null,
+    );
     if (!result?.ok) {
       folderError = result?.error ?? t("No se pudo crear el portafolio.");
       continue;
@@ -148,7 +168,13 @@ export async function uploadFolderToShared(
     try {
       const stored = await uploadVaultFile(item.file, { shareId, portfolioId: dest });
       const result = await addSharedFile({
-        data: { shareId, portfolioId: dest, key: stored.key, name: item.file.name, mime: item.file.type },
+        data: {
+          shareId,
+          portfolioId: dest,
+          key: stored.key,
+          name: item.file.name,
+          mime: item.file.type,
+        },
       });
       if (!result.ok) {
         error = result.error;
@@ -164,8 +190,12 @@ export async function uploadFolderToShared(
   return error;
 }
 
-/** Pide archivos con el selector del sistema (desde un clic) y los sube. Con `directory`, una carpeta. */
-export function pickAndUpload(shareId: string, portfolioId: string | null, directory = false): void {
+/** Open the system file picker from a user click and upload selections; directory selects a folder. */
+export function pickAndUpload(
+  shareId: string,
+  portfolioId: string | null,
+  directory = false,
+): void {
   const input = document.createElement("input");
   input.type = "file";
   input.multiple = true;
@@ -188,7 +218,10 @@ export function pickAndUpload(shareId: string, portfolioId: string | null, direc
   input.click();
 }
 
-/** Un error de estas acciones, en el aviso de la bóveda. */
+/** Display a shared-action error in the vault notification. */
 export function report(error: string | null): void {
-  if (error) useVault.getState().setDialog({ type: "upload-error", title: "No se pudo hacer", message: error });
+  if (error)
+    useVault
+      .getState()
+      .setDialog({ type: "upload-error", title: "No se pudo hacer", message: error });
 }

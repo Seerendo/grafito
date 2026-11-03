@@ -10,9 +10,8 @@ const DELAY_MS = 2500;
 let lastPublished = "";
 
 /**
- * Mantiene al día la copia de solo lectura de lo que el usuario comparte. Las
- * notas viven en su navegador; cada cambio en algo compartido se publica unos
- * segundos después. Solo publica la bóveda que pertenece a la sesión.
+ * Maintain the read-only published backup of shared browser content shortly after edits.
+ * Publish only the vault owned by the current session.
  */
 export function ShareMirror() {
   const userId = useCurrentUser()?.id;
@@ -39,7 +38,7 @@ export function ShareMirror() {
           kind: document.kind,
           portfolioId: document.portfolioId,
           content: document.kind === "markdown" ? document.content : "",
-          // La copia de respaldo no lleva los bytes: se sirven desde el almacén.
+          // Published backups omit file bytes, which are served from storage.
           file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
           updatedBy: document.updatedBy,
           updatedAt: new Date(document.updatedAt).toISOString(),

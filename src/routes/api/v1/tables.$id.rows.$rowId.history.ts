@@ -3,7 +3,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { apiCaller, apiError, failure, json, requirePermission } from "@/server/api";
 import { rowHistory, tableDocument } from "@/server/table";
 
-/** `GET /api/v1/tables/:id/rows/:rowId/history`: los últimos cambios de la fila. */
+/** GET /api/v1/tables/:id/rows/:rowId/history returns recent row changes. */
 export const Route = createFileRoute("/api/v1/tables/$id/rows/$rowId/history")({
   server: {
     handlers: {

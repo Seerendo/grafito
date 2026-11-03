@@ -1,5 +1,5 @@
--- Invitaciones a rellenar un formulario (usuario u organización), distintas
--- del enlace público. El token no cambia, para que el correo siga abriendo.
+-- User or organization form invitations are separate from public links. Keep their token stable
+-- so emailed links continue working.
 
 alter table data_form add column if not exists invite_token text;
 

@@ -4,25 +4,22 @@ import type { UserProfile } from "@/server/profile";
 import { endpointFor } from "./config.ts";
 import type { AiProfile } from "./profiles.ts";
 import { complete } from "./providers.ts";
-import { vaultTools, type ToolEvent } from "./tools.ts";
-import { CLAIMS_WRITE, compactToolResults, WRITE_TOOLS } from "./guard.ts";
+import { vaultTools } from "./tools.ts";
+import { executeAgent } from "./engine.ts";
+import type { AgentEvent } from "./events.ts";
+export type { AgentEvent } from "./events.ts";
 import type { ChatMessage } from "./types.ts";
 
 /**
- * El asistente: alterna llamadas al modelo y a las herramientas de la bóveda
- * hasta que el modelo responde sin pedir más herramientas (o se alcanza el
- * límite de pasos). Emite eventos para que el chat muestre el progreso.
+ * Compose the assistant's provider, prompt and authorized tools. The bounded engine alternates
+ * completions and tool calls while emitting progress events.
  */
 
-export type AgentEvent =
-  | { type: "tool"; tool: string; event: ToolEvent }
-  | { type: "text"; text: string }
-  | { type: "error"; message: string }
-  | { type: "done"; changed: boolean };
-
-const MAX_STEPS = 8;
-
-function systemPrompt(profile: UserProfile, toolNames: string[], persona: AiProfile | null): string {
+function systemPrompt(
+  profile: UserProfile,
+  toolNames: string[],
+  persona: AiProfile | null,
+): string {
   const today = new Date().toISOString().slice(0, 10);
   const lines = [
     "Eres el asistente de Grafito, una bóveda de notas en Markdown con portafolios (carpetas), archivos y enlaces [[Título]] entre notas.",
@@ -41,11 +38,11 @@ function systemPrompt(profile: UserProfile, toolNames: string[], persona: AiProf
     "En la conversación, lo que hiciste en cada respuesta anterior aparece entre corchetes («[Acciones: …]»): es lo que de verdad pasó.",
     "Si el primer mensaje es una memoria entre corchetes, Grafito comprimió ahí lo ya hablado para no reenviar el historial. Úsala como antecedente y no la contestes.",
   ];
-  // El perfil que eligió la persona: sus indicaciones van después de las del
-  // asistente, así que mandan sobre el tono, el formato y el enfoque.
+  // Append the selected persona's instructions to control tone, format and focus.
   if (persona) {
     lines.push(`Perfil activo: «${persona.name}».`);
-    if (persona.readOnly) lines.push("Este perfil solo lee la bóveda: no puedes crear ni editar notas ni portafolios.");
+    if (persona.readOnly)
+      lines.push("Este perfil solo lee la bóveda: no puedes crear ni editar notas ni portafolios.");
     if (persona.instructions) lines.push(`Indicaciones de este perfil:\n${persona.instructions}`);
   }
   return lines.join("\n");
@@ -57,7 +54,7 @@ export async function runAgent(input: {
   profile: UserProfile;
   provider: AiProviderId;
   model: string;
-  /** Perfil del chat elegido, si hay uno. */
+  /** Optional selected chat persona. */
   persona?: AiProfile | null;
   history: { role: "user" | "assistant"; content: string }[];
   signal?: AbortSignal;
@@ -65,61 +62,34 @@ export async function runAgent(input: {
 }): Promise<void> {
   const { policy, endpoint } = await endpointFor(input.sql, input.userId, input.provider);
   const persona = input.persona ?? null;
-  const tools = vaultTools(input.sql, input.userId, input.profile, { readOnly: persona?.readOnly ?? false });
+  const tools = vaultTools(input.sql, input.userId, input.profile, {
+    readOnly: persona?.readOnly ?? false,
+  });
   const messages: ChatMessage[] = [
-    { role: "system", content: systemPrompt(input.profile, tools.specs.map((spec) => spec.name), persona) },
-    ...input.history.map((message) => ({ role: message.role, content: message.content }) as ChatMessage),
+    {
+      role: "system",
+      content: systemPrompt(
+        input.profile,
+        tools.specs.map((spec) => spec.name),
+        persona,
+      ),
+    },
+    ...input.history.map(
+      (message) => ({ role: message.role, content: message.content }) as ChatMessage,
+    ),
   ];
-  let changed = false;
-  // Escrituras que salieron bien en esta respuesta (crear, editar).
-  let wrote = 0;
-  let checked = false;
-  const canWrite = tools.specs.some((spec) => WRITE_TOOLS.has(spec.name));
-  for (let step = 0; step < MAX_STEPS; step += 1) {
-    if (input.signal?.aborted) return;
-    compactToolResults(messages);
-    const completion = await complete(policy.protocol, {
-      endpoint,
-      model: input.model,
-      messages,
-      tools: tools.specs,
-      signal: input.signal,
-    });
-    if (completion.toolCalls.length === 0) {
-      const text = completion.text || "(sin respuesta)";
-      // Dice que creó o cambió algo sin haberlo hecho: una oportunidad para
-      // hacerlo de verdad o corregirse; si insiste, se avisa a la persona.
-      if (canWrite && wrote === 0 && CLAIMS_WRITE.test(text)) {
-        if (!checked) {
-          checked = true;
-          messages.push({ role: "assistant", content: text });
-          messages.push({
-            role: "user",
-            content:
-              "(Comprobación automática de Grafito, no la escribió la persona.) En esta respuesta no se creó ni se cambió nada: ninguna herramienta que escribe se llamó con éxito. Si la persona lo pidió, hazlo ahora llamando a la herramienta. Si no, responde de nuevo sin decir que lo hiciste.",
-          });
-          continue;
-        }
-        input.emit({
-          type: "text",
-          text: `${text}\n\n> **Ojo:** en esta respuesta no se creó ni se cambió nada en la bóveda, aunque el texto lo diga.`,
-        });
-        input.emit({ type: "done", changed });
-        return;
-      }
-      input.emit({ type: "text", text });
-      input.emit({ type: "done", changed });
-      return;
-    }
-    messages.push({ role: "assistant", content: completion.text, toolCalls: completion.toolCalls });
-    for (const call of completion.toolCalls) {
-      const { content, event } = await tools.run(call);
-      if (event.changed) changed = true;
-      if (event.ok && WRITE_TOOLS.has(call.name)) wrote += 1;
-      input.emit({ type: "tool", tool: call.name, event });
-      messages.push({ role: "tool", toolCallId: call.id, name: call.name, content });
-    }
-  }
-  input.emit({ type: "text", text: "Me detuve tras varios pasos con herramientas. Pídeme que continúe si hace falta." });
-  input.emit({ type: "done", changed });
+  await executeAgent({
+    messages,
+    tools,
+    signal: input.signal,
+    emit: input.emit,
+    complete: (messages, specs) =>
+      complete(policy.protocol, {
+        endpoint,
+        model: input.model,
+        messages,
+        tools: specs,
+        signal: input.signal,
+      }),
+  });
 }

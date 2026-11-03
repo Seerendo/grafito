@@ -29,13 +29,15 @@ export function ChromeHeader() {
 
   return (
     <>
-      <header data-ui="topbar" className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+      <header
+        data-ui="topbar"
+        className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3"
+      >
         <Link
           to="/"
           aria-label={t("Inicio")}
           onClick={() => useVault.getState().showStart()}
-          // Sin dejar un cursor de texto en el logo: al cambiar de pantalla, el
-          // navegador lo trasladaría a un campo (p. ej. «Filtrar»).
+          // Avoid leaving a caret in the logo that navigation could move into a text field.
           onMouseDown={(event) => event.preventDefault()}
           className="flex h-11 shrink-0 items-center gap-0.5 rounded-md pr-1 text-fg transition-opacity select-none hover:opacity-80"
         >
@@ -65,8 +67,7 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  // Abierto con el ratón: al cerrarse, el botón suelta el foco para que no
-  // quede recuadrado (con el teclado sí conserva el foco y su anillo).
+  // Release pointer-triggered focus when closing; retain keyboard focus and its ring.
   const byPointer = useRef(false);
   const letters = initials(profile.displayName);
 
@@ -116,7 +117,11 @@ export function AccountMenu() {
         </span>
       </button>
       {open ? (
-        <div role="menu" data-ui="popover" className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl">
+        <div
+          role="menu"
+          data-ui="popover"
+          className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl"
+        >
           <p className="truncate px-3 py-2 text-sm font-medium">{profile.displayName}</p>
           {(profile.isAdmin || profile.canAdmin) && pathname !== "/admin" ? (
             <button
@@ -170,7 +175,8 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
     if (userId) useVault.getState().openVaultFor(userId);
   }, [userId]);
   const portfolios = useVault((view) => view.portfolios);
-  const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
+  const portfolioName = (id: string | null) =>
+    portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
   const known = new Set(documents.map((document) => document.id));
   const localPassages = new Map(
     documents.flatMap((document) => {
@@ -189,7 +195,11 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div data-ui="overlay" className="fixed inset-0 z-40 flex items-start justify-center bg-inset/80 px-4 pt-24" onMouseDown={onClose}>
+    <div
+      data-ui="overlay"
+      className="fixed inset-0 z-40 flex items-start justify-center bg-inset/80 px-4 pt-24"
+      onMouseDown={onClose}
+    >
       <Command
         label={t("Buscar notas")}
         vimBindings={false}
@@ -208,11 +218,15 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
           />
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
-          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
+          <Command.Empty className="px-3 py-8 text-center text-sm text-muted">
+            {t("Sin resultados")}
+          </Command.Empty>
           <Command.Group heading={t("Notas")}>
             {documents.map((document) => {
               const found = localPassages.get(document.id);
-              const around = found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ?? "";
+              const around =
+                found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ??
+                "";
               return (
                 <Command.Item
                   key={document.id}
@@ -230,7 +244,9 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
                         <Marked text={document.title} query={query} />
                       </span>
                       <span className="ml-auto shrink-0 text-xs text-faint">
-                        {document.kind === "file" ? t("archivo") : portfolioName(document.portfolioId)}
+                        {document.kind === "file"
+                          ? t("archivo")
+                          : portfolioName(document.portfolioId)}
                       </span>
                     </span>
                     {found ? (

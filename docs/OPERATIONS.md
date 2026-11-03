@@ -24,13 +24,13 @@ The internal services (Postgres, Elasticsearch, Redis, MinIO) only listen on
 
 ## What holds data
 
-| Service | Holds | Needs a backup? |
-| --- | --- | --- |
-| Postgres (`grafito_pg`) | Accounts, roles, every vault (notes, file metadata), sharing, versions, trash, API tokens, encrypted AI keys; file bytes too when there is no MinIO | **Yes**: it is the source of truth |
-| MinIO (`grafito_s3`) | The bytes of uploaded files | **Yes** |
-| Elasticsearch (`grafito_es`) | The search index | No: it is rebuilt from Postgres |
-| Redis (`grafito_redis`) | Session deadlines | No: users only have to sign in again |
-| Secrets (`grafito_secrets`) | `BETTER_AUTH_SECRET` and `GRAFITO_ENCRYPTION_KEY` when Grafito created them (not set in `.env`) | **Yes, apart from the database:** without the key, saved AI keys and the SMTP password can't be read. Copy `/app/.data/secrets` somewhere safe, or set both secrets in `.env` |
+| Service                      | Holds                                                                                                                                               | Needs a backup?                                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres (`grafito_pg`)      | Accounts, roles, every vault (notes, file metadata), sharing, versions, trash, API tokens, encrypted AI keys; file bytes too when there is no MinIO | **Yes**: it is the source of truth                                                                                                                                            |
+| MinIO (`grafito_s3`)         | The bytes of uploaded files                                                                                                                         | **Yes**                                                                                                                                                                       |
+| Elasticsearch (`grafito_es`) | The search index                                                                                                                                    | No: it is rebuilt from Postgres                                                                                                                                               |
+| Redis (`grafito_redis`)      | Session deadlines                                                                                                                                   | No: users only have to sign in again                                                                                                                                          |
+| Secrets (`grafito_secrets`)  | `BETTER_AUTH_SECRET` and `GRAFITO_ENCRYPTION_KEY` when Grafito created them (not set in `.env`)                                                     | **Yes, apart from the database:** without the key, saved AI keys and the SMTP password can't be read. Copy `/app/.data/secrets` somewhere safe, or set both secrets in `.env` |
 
 ## Scheduled backups
 
@@ -44,10 +44,10 @@ Two services run on the same interval:
   database dump can still find the files it refers to. Prune it by hand if
   it grows too large.
 
-| Variable | Default |
-| --- | --- |
+| Variable                  | Default         |
+| ------------------------- | --------------- |
 | `BACKUP_INTERVAL_SECONDS` | `86400` (daily) |
-| `BACKUP_KEEP_DAYS` | `14` |
+| `BACKUP_KEEP_DAYS`        | `14`            |
 
 Check that it is working:
 
@@ -229,17 +229,17 @@ The test stack starts the same service with
 
 ## When something is down
 
-| Symptom | Check | Fix |
-| --- | --- | --- |
-| The page doesn't load | `docker compose ps`, `docker compose logs --tail 100 app` | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`. |
-| Sign-in fails for everyone | `docker compose logs app \| grep -i auth` | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident. |
-| Search returns nothing | Administración → Monitorización y logs → Fuentes → Comprobar | Start Elasticsearch. Search falls back to Postgres meanwhile. |
-| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read. |
-| Every upload fails as soon as it finishes | Scanning is on by default (Administración → Seguridad) | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen. |
-| Everyone is signed out | Redis was restarted or flushed | Nothing to fix: session deadlines are recreated on the next sign-in. |
-| AI chat says the key can't be read | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect. |
-| Disk full | `docker system df`, `du -sh backups` | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`. |
-| Data loss or corruption | — | Restore the latest good dump (see above). |
+| Symptom                                     | Check                                                                      | Fix                                                                                                                                           |
+| ------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| The page doesn't load                       | `docker compose ps`, `docker compose logs --tail 100 app`                  | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`.    |
+| Sign-in fails for everyone                  | `docker compose logs app \| grep -i auth`                                  | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident.                      |
+| Search returns nothing                      | Administración → Monitorización y logs → Fuentes → Comprobar               | Start Elasticsearch. Search falls back to Postgres meanwhile.                                                                                 |
+| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación                        | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read.                       |
+| Every upload fails as soon as it finishes   | Scanning is on by default (Administración → Seguridad)                     | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen. |
+| Everyone is signed out                      | Redis was restarted or flushed                                             | Nothing to fix: session deadlines are recreated on the next sign-in.                                                                          |
+| AI chat says the key can't be read          | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect.                                               |
+| Disk full                                   | `docker system df`, `du -sh backups`                                       | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`.                                                                |
+| Data loss or corruption                     | —                                                                          | Restore the latest good dump (see above).                                                                                                     |
 
 ## Upgrading
 

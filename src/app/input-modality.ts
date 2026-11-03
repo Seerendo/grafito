@@ -1,11 +1,6 @@
 /**
- * Anillo de foco solo para quien navega con Tab.
- *
- * Tras un clic, el elemento pulsado (una fila del directorio, un botón) queda
- * con el foco sin anillo; pero al pulsar después cualquier tecla, el navegador
- * da por hecho que se usa el teclado y se lo dibuja (`:focus-visible`). Con el
- * ratón, `<html data-modality="pointer">` lo apaga (ver styles.css) hasta que
- * se pulsa Tab, que es cuando el anillo sirve para saber dónde se está.
+ * Show focus rings for Tab navigation. Pointer clicks set html data-modality=pointer to
+ * suppress browser focus-visible rings until Tab is pressed; see styles.css.
  */
 export function installInputModality(): () => void {
   const root = document.documentElement;

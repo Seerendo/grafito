@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AccessGate } from "@/components/access/AccessGate";
 import { InvitedFormScreen } from "@/components/vault/TableForm";
 
-/** Formulario enviado a una persona o a una organización. Pide sesión. */
+/** User or organization invitation form requiring a session. */
 export const Route = createFileRoute("/formularios/$token")({
   component: InvitedForm,
 });

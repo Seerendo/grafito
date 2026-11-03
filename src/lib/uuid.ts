@@ -1,8 +1,4 @@
-/**
- * Un UUID v4 que también funciona en páginas servidas por http fuera de
- * localhost: allí el navegador no ofrece `crypto.randomUUID` (solo existe en
- * contextos seguros), pero sí `crypto.getRandomValues`.
- */
+/** UUID v4 fallback for non-localhost HTTP, where randomUUID is unavailable but getRandomValues works. */
 export function uuid(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));

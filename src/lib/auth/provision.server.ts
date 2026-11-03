@@ -2,9 +2,8 @@ import type { Sql } from "../db";
 import { logActivity } from "@/server/audit";
 
 /**
- * Alta de cuentas que llegan por LDAP, OAuth o SSO (solo servidor): les da el
- * rol por defecto del proveedor y un nombre de usuario único, igual que una
- * cuenta creada desde Administración.
+ * Provision LDAP/OAuth/SSO accounts with the provider's default role and a unique username,
+ * matching administrator-created accounts.
  */
 
 function slug(value: string): string {
@@ -22,21 +21,27 @@ async function uniqueLogin(sql: Sql, wanted: string): Promise<string> {
   const base = slug(wanted);
   let candidate = base;
   for (let index = 2; index < 1000; index += 1) {
-    const taken = await sql<{ user_id: string }>`select user_id from app_user_role where login_name = ${candidate} limit 1`;
+    const taken = await sql<{
+      user_id: string;
+    }>`select user_id from app_user_role where login_name = ${candidate} limit 1`;
     if (!taken[0]) return candidate;
     candidate = `${base}-${index}`;
   }
   return `${base}-${Date.now()}`;
 }
 
-/** Asigna rol y nombre de usuario a una cuenta externa recién creada (idempotente). */
+/** Idempotently assign role and username to a newly provisioned external account. */
 export async function provisionExternalUser(
   sql: Sql,
   input: { userId: string; source: string; login: string; roleId: string },
 ): Promise<void> {
-  const existing = await sql<{ user_id: string }>`select user_id from app_user_role where user_id = ${input.userId} limit 1`;
+  const existing = await sql<{
+    user_id: string;
+  }>`select user_id from app_user_role where user_id = ${input.userId} limit 1`;
   if (existing[0]) return;
-  const role = await sql<{ id: string }>`select id from app_role where id = ${input.roleId} limit 1`;
+  const role = await sql<{
+    id: string;
+  }>`select id from app_role where id = ${input.roleId} limit 1`;
   const roleId = role[0]?.id ?? "miembro";
   const login = await uniqueLogin(sql, input.login);
   await sql`
@@ -52,13 +57,12 @@ export async function provisionExternalUser(
   });
 }
 
-/** Direcciones que Grafito se inventa (usuario local, LDAP sin correo): no son de nadie. */
+/** Synthetic local/LDAP fallback email addresses do not belong to real recipients. */
 const SYNTHETIC = /@(?:ldap\.)?grafito\.app$/i;
 
 /**
- * El correo de una cuenta que entra por LDAP, OAuth o SSO es el que da su
- * proveedor: se copia al correo de la cuenta en cada ingreso y no se puede
- * cambiar en Grafito (ver `externalEmail`). Las cuentas locales no se tocan.
+ * Refresh external account email from its provider on each sign-in and disallow local editing.
+ * Leave local accounts unchanged; see externalEmail.
  */
 export async function syncExternalEmail(sql: Sql, userId: string): Promise<void> {
   const rows = await sql<{ email: string; source: string | null }>`
@@ -73,9 +77,11 @@ export async function syncExternalEmail(sql: Sql, userId: string): Promise<void>
   `;
 }
 
-/** Si el correo de la cuenta lo fija su proveedor externo (y cuál es el proveedor). */
+/** Whether an external provider controls the account email, and which provider. */
 export async function externalEmail(sql: Sql, userId: string): Promise<string | null> {
-  const rows = await sql<{ source: string | null }>`select source from app_user_role where user_id = ${userId} limit 1`;
+  const rows = await sql<{
+    source: string | null;
+  }>`select source from app_user_role where user_id = ${userId} limit 1`;
   const source = rows[0]?.source;
   return source && source !== "local" ? source : null;
 }

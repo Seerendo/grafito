@@ -1,0 +1,14 @@
+node_modules/
+.data/
+.output/
+.tanstack/
+.nitro/
+.vercel/
+dist/
+coverage/
+backups/
+backups-test/
+.claude/
+public/excalidraw/
+src/routeTree.gen.ts
+package-lock.json

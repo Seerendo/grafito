@@ -5,7 +5,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
-/** Flat ESLint config de Grafito (TanStack Start + React). */
+/** Grafito flat ESLint configuration (TanStack Start + React). */
 export default tseslint.config(
   {
     ignores: [
@@ -31,15 +31,40 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
+  {
+    files: ["src/domain/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/server/**",
+                "@/app/**",
+                "@/components/**",
+                "@/routes/**",
+                "@/lib/**",
+                "**/server/**",
+                "**/app/**",
+                "**/components/**",
+                "**/routes/**",
+                "**/lib/**",
+              ],
+              message:
+                "Domain code must remain independent of application and infrastructure layers. Move shared contracts into domain.",
+            },
+          ],
+        },
+      ],
     },
   },
   // Disable rules that conflict with Prettier formatting.

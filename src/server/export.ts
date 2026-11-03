@@ -5,9 +5,8 @@ import { safeName, uniqueName, ZIP_LIMIT, ZIP_MAX_ENTRIES, type ZipEntry } from 
 import { VaultError } from "./vault";
 
 /**
- * Un portafolio entero (con sus subportafolios) o toda la bóveda (`ALL`) como
- * entradas de un .zip (solo servidor): cada portafolio es una carpeta, cada
- * nota un `.md` y cada archivo va tal cual. Ver `zip.ts`.
+ * Build ZIP entries for a portfolio subtree or ALL vault content. Portfolios become folders,
+ * notes become Markdown and files retain bytes; see zip.ts.
  */
 
 export const ALL = "all";
@@ -41,7 +40,7 @@ export async function planExport(
   const root = whole ? null : byId.get(portfolioId);
   if (!whole && !root) throw new VaultError("Ese portafolio no existe.", 404);
 
-  // Carpeta de cada portafolio dentro del zip (relativa a la raíz exportada).
+  // Each portfolio's path relative to the exported root.
   const folders = new Map<string | null, string>([[whole ? null : portfolioId, ""]]);
   const names = new Map<string, Set<string>>();
   const taken = (folder: string) => {
@@ -61,7 +60,7 @@ export async function planExport(
     folders.set(id, folder);
     return folder;
   };
-  // Primero las carpetas, en orden de nombre, para que los nombres repetidos sean estables.
+  // Allocate folder names in sorted order for stable duplicate handling.
   for (const row of [...portfolios].sort((a, b) => a.name.localeCompare(b.name))) folderOf(row.id);
 
   const docs = await sql<Row>`
@@ -101,7 +100,10 @@ export async function planExport(
     });
   }
   if (entries.length > ZIP_MAX_ENTRIES || total > ZIP_LIMIT * 0.98) {
-    throw new VaultError("Es demasiado grande para un solo .zip (más de 4 GB o de 65.535 documentos).", 413);
+    throw new VaultError(
+      "Es demasiado grande para un solo .zip (más de 4 GB o de 65.535 documentos).",
+      413,
+    );
   }
   return { name: whole ? "Grafito" : safeName(root!.name, "Portafolio"), entries };
 }

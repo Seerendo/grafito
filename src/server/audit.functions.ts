@@ -11,7 +11,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { logActivity, retentionDays, setRetentionDays } from "@/server/audit";
 
-/** Consulta, exportación y plazo de la auditoría (Administración → Auditoría). */
+/** Audit query, export and retention administration. */
 
 type Sql = Awaited<ReturnType<typeof import("@/lib/db").getSql>>;
 

@@ -5,11 +5,7 @@ import { useAccountProfile } from "@/app/account-profile";
 import { mailState, saveMailSettings, sendTestMail } from "@/server/mail.functions";
 import { t } from "@/app/i18n";
 
-/**
- * Administración → Correo electrónico: el servidor SMTP con el que Grafito
- * manda los accesos de los usuarios nuevos y los avisos de cambios. Ver
- * docs/MAIL.md.
- */
+/** SMTP administration for new-account access and change notifications; see docs/MAIL.md. */
 
 type State = Extract<Awaited<ReturnType<typeof mailState>>, { ok: true }>;
 type Security = State["settings"]["security"];
@@ -92,7 +88,11 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
     setMessage(null);
     try {
       const result = await sendTestMail({ data: { ...values(), to: testTo } });
-      setMessage(result.ok ? { ok: true, text: "Correo de prueba enviado." } : { ok: false, text: result.error });
+      setMessage(
+        result.ok
+          ? { ok: true, text: "Correo de prueba enviado." }
+          : { ok: false, text: result.error },
+      );
     } catch {
       setMessage({ ok: false, text: "No se pudo enviar el correo." });
     } finally {
@@ -107,7 +107,10 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
     >
       {!state.encryption ? (
         <p className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
-          {t("Falta")}{" "}<code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}{t("(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.")}
+          {t("Falta")} <code>{t("GRAFITO_ENCRYPTION_KEY")}</code>{" "}
+          {t(
+            "(32 caracteres o más) en el servidor: nadie podrá guardar claves hasta que la definas.",
+          )}
         </p>
       ) : null}
       <p className={`text-sm ${state.ready ? "text-accent" : "text-muted"}`}>
@@ -115,7 +118,13 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
       </p>
 
       <Section title={t("Servidor SMTP")}>
-        <TextField label={t("Servidor")} value={host} onChange={setHost} autoComplete="off" optional />
+        <TextField
+          label={t("Servidor")}
+          value={host}
+          onChange={setHost}
+          autoComplete="off"
+          optional
+        />
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">
             <span className="text-muted">{t("Seguridad")}</span>
@@ -123,7 +132,7 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
               value={security}
               onChange={(value) => {
                 const next = value as Security;
-                // Si el puerto era el típico de la seguridad anterior, se cambia con ella.
+                // Update the port when it still matches the previous security mode's default.
                 if (Number(port) === PORTS[security]) setPort(String(PORTS[next]));
                 setSecurity(next);
               }}
@@ -134,9 +143,21 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
               <option value="none">{t("Ninguna")}</option>
             </Select>
           </label>
-          <TextField label={t("Puerto")} value={port} onChange={setPort} autoComplete="off" type="number" />
+          <TextField
+            label={t("Puerto")}
+            value={port}
+            onChange={setPort}
+            autoComplete="off"
+            type="number"
+          />
         </div>
-        <TextField label={t("Usuario")} value={user} onChange={setUser} autoComplete="off" optional />
+        <TextField
+          label={t("Usuario")}
+          value={user}
+          onChange={setUser}
+          autoComplete="off"
+          optional
+        />
         <div>
           <TextField
             label={initial.hasPassword ? t("Contraseña (vacío = la guardada)") : t("Contraseña")}
@@ -151,7 +172,11 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
           />
           {initial.hasPassword && !password ? (
             <label className="mt-2 flex items-center gap-2 text-sm text-muted">
-              <input type="checkbox" checked={clearPassword} onChange={(event) => setClearPassword(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={clearPassword}
+                onChange={(event) => setClearPassword(event.target.checked)}
+              />
               {t("Quitar la contraseña guardada")}
             </label>
           ) : null}
@@ -159,12 +184,32 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
       </Section>
 
       <Section title={t("Remitente")}>
-        <TextField label={t("Correo del remitente")} value={from} onChange={setFrom} autoComplete="off" type="email" optional />
-        <TextField label={t("Nombre del remitente")} value={fromName} onChange={setFromName} autoComplete="off" optional />
+        <TextField
+          label={t("Correo del remitente")}
+          value={from}
+          onChange={setFrom}
+          autoComplete="off"
+          type="email"
+          optional
+        />
+        <TextField
+          label={t("Nombre del remitente")}
+          value={fromName}
+          onChange={setFromName}
+          autoComplete="off"
+          optional
+        />
       </Section>
 
       <Section title={t("Enlaces y accesos")}>
-        <TextField label={t("Dirección de Grafito")} value={publicUrl} onChange={setPublicUrl} autoComplete="off" type="url" optional />
+        <TextField
+          label={t("Dirección de Grafito")}
+          value={publicUrl}
+          onChange={setPublicUrl}
+          autoComplete="off"
+          type="url"
+          optional
+        />
         <TextField
           label={t("Validez del acceso de un usuario nuevo (horas)")}
           value={hours}
@@ -175,7 +220,14 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
       </Section>
 
       <Section title={t("Prueba")}>
-        <TextField label={t("Enviar prueba a")} value={testTo} onChange={setTestTo} autoComplete="email" type="email" optional />
+        <TextField
+          label={t("Enviar prueba a")}
+          value={testTo}
+          onChange={setTestTo}
+          autoComplete="email"
+          type="email"
+          optional
+        />
         <div className="flex items-end">
           <button
             type="button"
@@ -196,17 +248,23 @@ function MailForm({ state, onSaved }: { state: State; onSaved: () => void }) {
         >
           {busy === "save" ? t("Guardando…") : t("Guardar")}
         </button>
-        {message ? <p className={`text-sm ${message.ok ? "text-accent" : "text-danger"}`}>{t(message.text)}</p> : null}
+        {message ? (
+          <p className={`text-sm ${message.ok ? "text-accent" : "text-danger"}`}>
+            {t(message.text)}
+          </p>
+        ) : null}
       </div>
     </form>
   );
 }
 
-/** Un grupo de campos con su título, en dos columnas en pantallas anchas. */
+/** Titled field group using two columns on wide screens. */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset>
-      <legend className="mb-2 text-xs font-medium tracking-widest text-faint uppercase">{title}</legend>
+      <legend className="mb-2 text-xs font-medium tracking-widest text-faint uppercase">
+        {title}
+      </legend>
       <div className="grid gap-3 md:grid-cols-2">{children}</div>
     </fieldset>
   );

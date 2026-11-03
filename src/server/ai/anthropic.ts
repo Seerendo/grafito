@@ -9,11 +9,9 @@ import {
 } from "./types.ts";
 
 /**
- * Messages API de Anthropic (Claude): `POST {base}/v1/messages` con
- * `x-api-key` y `anthropic-version`. El mensaje de sistema va aparte, las
- * herramientas usan `input_schema`, las llamadas son bloques `tool_use` y los
- * resultados van en un mensaje `user` con bloques `tool_result` (los
- * resultados seguidos se agrupan en uno solo, como exige la API).
+ * Anthropic Messages adapter posts to /v1/messages using x-api-key and anthropic-version.
+ * System text is separate; tools use input_schema, tool_use calls and grouped user tool_result
+ * blocks.
  */
 
 const VERSION = "2023-06-01";
@@ -41,7 +39,9 @@ export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpe
     if (message.role === "system") continue;
     if (message.role === "user") push("user", [{ type: "text", text: message.content }]);
     else if (message.role === "tool") {
-      push("user", [{ type: "tool_result", tool_use_id: message.toolCallId, content: message.content }]);
+      push("user", [
+        { type: "tool_result", tool_use_id: message.toolCallId, content: message.content },
+      ]);
     } else {
       const blocks: Block[] = [];
       if (message.content) blocks.push({ type: "text", text: message.content });
@@ -57,7 +57,13 @@ export function toRequest(model: string, messages: ChatMessage[], tools: ToolSpe
     ...(system ? { system } : {}),
     messages: out,
     ...(tools.length
-      ? { tools: tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) }
+      ? {
+          tools: tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.parameters,
+          })),
+        }
       : {}),
   };
 }
@@ -77,12 +83,20 @@ export function fromResponse(body: unknown): Completion {
       .join(""),
     toolCalls: blocks
       .filter((block) => block.type === "tool_use" && block.name)
-      .map((block, index) => ({ id: block.id || `toolu_${index}`, name: block.name!, arguments: block.input ?? {} })),
+      .map((block, index) => ({
+        id: block.id || `toolu_${index}`,
+        name: block.name!,
+        arguments: block.input ?? {},
+      })),
   };
 }
 
 function headers(endpoint: Endpoint): Record<string, string> {
-  return { "content-type": "application/json", "x-api-key": endpoint.apiKey, "anthropic-version": VERSION };
+  return {
+    "content-type": "application/json",
+    "x-api-key": endpoint.apiKey,
+    "anthropic-version": VERSION,
+  };
 }
 
 export async function complete(input: CompleteInput): Promise<Completion> {
@@ -98,8 +112,14 @@ export async function complete(input: CompleteInput): Promise<Completion> {
   return fromResponse(await response.json());
 }
 
-export async function listModels(endpoint: Endpoint, fetcher: typeof fetch = fetch): Promise<string[]> {
-  const response = await fetcher(joinUrl(endpoint.baseUrl, "v1/models?limit=100"), { headers: headers(endpoint), redirect: "error" });
+export async function listModels(
+  endpoint: Endpoint,
+  fetcher: typeof fetch = fetch,
+): Promise<string[]> {
+  const response = await fetcher(joinUrl(endpoint.baseUrl, "v1/models?limit=100"), {
+    headers: headers(endpoint),
+    redirect: "error",
+  });
   await ensureOk(response, "Claude");
   const body = (await response.json()) as { data?: { id?: string }[] };
   return (body.data ?? []).map((model) => model.id ?? "").filter(Boolean);

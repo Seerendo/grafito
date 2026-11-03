@@ -1,5 +1,16 @@
 import { copyText } from "@/lib/clipboard";
-import { Building2, Check, Eye, Globe, Link2, Lock, Pencil, ShieldCheck, User, Users } from "lucide-react";
+import {
+  Building2,
+  Check,
+  Eye,
+  Globe,
+  Link2,
+  Lock,
+  Pencil,
+  ShieldCheck,
+  User,
+  Users,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { publicUrl, setMyShares, shareOf, useMyShares } from "@/app/shares";
 import { useVault } from "@/app/vault/store";
@@ -9,14 +20,32 @@ import { SearchField } from "@/components/ui/SearchField";
 import { orgPath } from "@/domain/orgs";
 import type { ExpiryChoice } from "@/domain/access-window";
 import type { ShareKind, Visibility } from "@/domain/share";
-import { revokePublicShare, revokeShareGrant, setShare, shareOrgs, shareTrail, shareUsers } from "@/server/share.functions";
+import {
+  revokePublicShare,
+  revokeShareGrant,
+  setShare,
+  shareOrgs,
+  shareTrail,
+  shareUsers,
+} from "@/server/share.functions";
 import { t } from "@/app/i18n";
 
 type Candidate = Awaited<ReturnType<typeof shareUsers>>[number];
 type OrgCandidate = Awaited<ReturnType<typeof shareOrgs>>[number];
 
-/** Elegir quién ve una nota o un portafolio (privada, con usuarios u organizaciones, pública) y si pueden editarla. */
-export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string; onClose: () => void }) {
+/**
+ * Choose private, user/organization-shared or public visibility and edit access for a note or
+ * portfolio.
+ */
+export function ShareDialog({
+  kind,
+  id,
+  onClose,
+}: {
+  kind: ShareKind;
+  id: string;
+  onClose: () => void;
+}) {
   const shares = useMyShares();
   const title = useVault((state) =>
     kind === "document"
@@ -87,7 +116,10 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (people ?? []).filter(
-      (person) => !needle || person.name.toLowerCase().includes(needle) || person.loginName.toLowerCase().includes(needle),
+      (person) =>
+        !needle ||
+        person.name.toLowerCase().includes(needle) ||
+        person.loginName.toLowerCase().includes(needle),
     );
   }, [people, query]);
 
@@ -107,7 +139,10 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
   };
 
   const save = async () => {
-    if ((visibility === "shared" && grantTouched && grantMode === "date" && !grantDate) || (visibility === "public" && linkTouched && linkMode === "date" && !linkDate)) {
+    if (
+      (visibility === "shared" && grantTouched && grantMode === "date" && !grantDate) ||
+      (visibility === "public" && linkTouched && linkMode === "date" && !linkDate)
+    ) {
       setError(t("Elige una fecha."));
       return;
     }
@@ -115,8 +150,13 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
     setError("");
     try {
       const expiresAt =
-        visibility === "shared" ? chosenExpiry(grantTouched, uniform.mixed, grantMode, grantDate, uniform.at) : undefined;
-      const linkExpiresAt = visibility === "public" ? chosenExpiry(linkTouched, false, linkMode, linkDate, linkExisting) : undefined;
+        visibility === "shared"
+          ? chosenExpiry(grantTouched, uniform.mixed, grantMode, grantDate, uniform.at)
+          : undefined;
+      const linkExpiresAt =
+        visibility === "public"
+          ? chosenExpiry(linkTouched, false, linkMode, linkDate, linkExisting)
+          : undefined;
       const result = await setShare({
         data: {
           kind,
@@ -139,8 +179,10 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
       setMyShares(result.shares);
       loadTrail();
       const notes: string[] = [];
-      if (result.notice.mailOff) notes.push(t("El correo no está configurado: se guardó, pero no se envió el aviso."));
-      for (const name of result.notice.missing) notes.push(t("{0} no tiene correo: el aviso no se envió.", { 0: name }));
+      if (result.notice.mailOff)
+        notes.push(t("El correo no está configurado: se guardó, pero no se envió el aviso."));
+      for (const name of result.notice.missing)
+        notes.push(t("{0} no tiene correo: el aviso no se envió.", { 0: name }));
       if (result.notice.failed > 0) notes.push(t("No se pudo enviar el correo."));
       if (notes.length > 0) {
         setError(notes.join(" "));
@@ -158,14 +200,26 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
     setBusy(true);
     setError("");
     try {
-      const result = await revokeShareGrant({ data: { kind, targetId: id, subjectKind, subjectId } });
+      const result = await revokeShareGrant({
+        data: { kind, targetId: id, subjectKind, subjectId },
+      });
       if (!result.ok) {
         setError(result.error);
         return;
       }
       setMyShares(result.shares);
-      if (subjectKind === "user") setSelected((prev) => { const next = new Set(prev); next.delete(subjectId); return next; });
-      else setSelectedOrgs((prev) => { const next = new Set(prev); next.delete(subjectId); return next; });
+      if (subjectKind === "user")
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.delete(subjectId);
+          return next;
+        });
+      else
+        setSelectedOrgs((prev) => {
+          const next = new Set(prev);
+          next.delete(subjectId);
+          return next;
+        });
       loadTrail();
     } catch {
       setError(t("No se pudo guardar."));
@@ -193,18 +247,31 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
     }
   };
 
-  const link = current?.visibility === "public" && current.publicToken ? publicUrl(current.publicToken) : null;
+  const link =
+    current?.visibility === "public" && current.publicToken ? publicUrl(current.publicToken) : null;
 
   return (
     <Modal title={t("Compartir «{0}»", { 0: title })} onClose={onClose}>
       <div className="space-y-2" role="radiogroup" aria-label={t("Visibilidad")}>
-        <Choice active={visibility === "private"} onClick={() => setVisibility("private")} icon={<Lock className="size-4" />}>
+        <Choice
+          active={visibility === "private"}
+          onClick={() => setVisibility("private")}
+          icon={<Lock className="size-4" />}
+        >
           <strong className="font-medium">{t("Privada")}</strong>
         </Choice>
-        <Choice active={visibility === "shared"} onClick={() => setVisibility("shared")} icon={<Users className="size-4" />}>
+        <Choice
+          active={visibility === "shared"}
+          onClick={() => setVisibility("shared")}
+          icon={<Users className="size-4" />}
+        >
           <strong className="font-medium">{t("Compartida")}</strong>
         </Choice>
-        <Choice active={visibility === "public"} onClick={() => setVisibility("public")} icon={<Globe className="size-4" />}>
+        <Choice
+          active={visibility === "public"}
+          onClick={() => setVisibility("public")}
+          icon={<Globe className="size-4" />}
+        >
           <strong className="font-medium">{t("Pública")}</strong>
         </Choice>
       </div>
@@ -212,14 +279,26 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
       {visibility === "shared" ? (
         <div className="mt-4 space-y-2">
           <div className="space-y-2" role="radiogroup" aria-label={t("Permiso")}>
-            <Choice active={access === "read"} onClick={() => setAccess("read")} icon={<Eye className="size-4" />}>
+            <Choice
+              active={access === "read"}
+              onClick={() => setAccess("read")}
+              icon={<Eye className="size-4" />}
+            >
               {t("Solo lectura")}
             </Choice>
-            <Choice active={access === "edit"} onClick={() => setAccess("edit")} icon={<Pencil className="size-4" />}>
+            <Choice
+              active={access === "edit"}
+              onClick={() => setAccess("edit")}
+              icon={<Pencil className="size-4" />}
+            >
               {t("Puede editar")}
             </Choice>
             {kind === "portfolio" ? (
-              <Choice active={access === "admin"} onClick={() => setAccess("admin")} icon={<ShieldCheck className="size-4" />}>
+              <Choice
+                active={access === "admin"}
+                onClick={() => setAccess("admin")}
+                icon={<ShieldCheck className="size-4" />}
+              >
                 {t("Administrador")}
               </Choice>
             ) : null}
@@ -234,7 +313,11 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
               setGrantDate(date);
             }}
           />
-          <SearchField value={query} onChange={setQuery} placeholder={t("Buscar usuario u organización")} />
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder={t("Buscar usuario u organización")}
+          />
           <ul className="max-h-56 overflow-y-auto rounded-md border border-line">
             {filteredOrgs.length > 0 ? <ListHeading>{t("Organizaciones")}</ListHeading> : null}
             {filteredOrgs.map((org) => (
@@ -244,11 +327,15 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
                 icon={<Building2 className="size-3.5" />}
                 label={org.path}
                 onToggle={() => toggle(selectedOrgs, org.id, setSelectedOrgs)}
-                onRevoke={current?.orgIds.includes(org.id) ? () => void dropGrant("org", org.id) : undefined}
+                onRevoke={
+                  current?.orgIds.includes(org.id) ? () => void dropGrant("org", org.id) : undefined
+                }
               />
             ))}
             <ListHeading>{t("Usuarios")}</ListHeading>
-            {people === null ? <li className="px-3 py-3 text-sm text-muted">{t("Cargando…")}</li> : null}
+            {people === null ? (
+              <li className="px-3 py-3 text-sm text-muted">{t("Cargando…")}</li>
+            ) : null}
             {people !== null && filtered.length === 0 ? (
               <li className="px-3 py-3 text-sm text-muted">{t("Ningún usuario coincide.")}</li>
             ) : null}
@@ -260,7 +347,11 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
                 label={person.name}
                 hint={person.loginName}
                 onToggle={() => toggle(selected, person.id, setSelected)}
-                onRevoke={current?.userIds.includes(person.id) ? () => void dropGrant("user", person.id) : undefined}
+                onRevoke={
+                  current?.userIds.includes(person.id)
+                    ? () => void dropGrant("user", person.id)
+                    : undefined
+                }
               />
             ))}
           </ul>
@@ -296,7 +387,12 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
               >
                 {copied ? t("Copiado") : t("Copiar")}
               </button>
-              <button type="button" disabled={busy} onClick={() => void dropLink()} className="shrink-0 text-sm text-danger underline-offset-4 hover:underline disabled:opacity-60">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void dropLink()}
+                className="shrink-0 text-sm text-danger underline-offset-4 hover:underline disabled:opacity-60"
+              >
                 {t("Revocar enlace")}
               </button>
             </div>
@@ -306,11 +402,21 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
         </div>
       ) : null}
 
-      <div className="mt-4">{trail ? <AccessTrail periods={trail.periods} events={trail.events} /> : <p className="text-xs text-muted">{t("Cargando…")}</p>}</div>
+      <div className="mt-4">
+        {trail ? (
+          <AccessTrail periods={trail.periods} events={trail.events} />
+        ) : (
+          <p className="text-xs text-muted">{t("Cargando…")}</p>
+        )}
+      </div>
 
       {error ? <p className="mt-3 text-sm text-danger">{t(error)}</p> : null}
       <div className="mt-4 flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg">
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-11 rounded-md px-3 text-sm text-muted hover:bg-elevated hover:text-fg"
+        >
           {link && visibility === "public" ? t("Cerrar") : t("Cancelar")}
         </button>
         <button
@@ -319,7 +425,13 @@ export function ShareDialog({ kind, id, onClose }: { kind: ShareKind; id: string
           onClick={() => void save()}
           className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-60"
         >
-          {busy ? t("Guardando…") : visibility === "public" && !link ? (current?.linkRevokedAt ? t("Nuevo enlace") : t("Crear enlace")) : t("Guardar")}
+          {busy
+            ? t("Guardando…")
+            : visibility === "public" && !link
+              ? current?.linkRevokedAt
+                ? t("Nuevo enlace")
+                : t("Crear enlace")
+              : t("Guardar")}
         </button>
       </div>
     </Modal>
@@ -385,7 +497,9 @@ function CheckRow({
         onClick={onToggle}
         className="flex min-h-11 min-w-0 flex-1 items-center gap-3 px-3 text-left text-sm hover:bg-elevated"
       >
-        <span className={`grid size-4 shrink-0 place-items-center border ${on ? "border-accent bg-accent text-accent-fg" : "border-line"}`}>
+        <span
+          className={`grid size-4 shrink-0 place-items-center border ${on ? "border-accent bg-accent text-accent-fg" : "border-line"}`}
+        >
           {on ? <Check className="size-3" /> : null}
         </span>
         <span className="shrink-0 text-faint">{icon}</span>
@@ -393,7 +507,11 @@ function CheckRow({
         {hint ? <span className="text-xs text-faint">{t(hint)}</span> : null}
       </button>
       {onRevoke ? (
-        <button type="button" onClick={onRevoke} className="shrink-0 px-3 text-xs text-danger hover:bg-elevated">
+        <button
+          type="button"
+          onClick={onRevoke}
+          className="shrink-0 px-3 text-xs text-danger hover:bg-elevated"
+        >
           {t("Revocar")}
         </button>
       ) : null}

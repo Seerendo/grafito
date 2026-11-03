@@ -7,14 +7,14 @@ import { allows, readUserProfile } from "@/server/profile";
 import { MAX_CONTENT, pullChanges, pushChanges } from "@/server/vault";
 import { MAX_EXACT } from "@/domain/vault/anchor";
 
-/** Sincronización de la bóveda del navegador con la del servidor (ver `app/vault/sync.ts`). */
+/** Browser/server vault synchronization; see app/vault/sync.ts. */
 
 const id = z.string().min(1).max(80);
 
 const linkSchema = z.object({
   targetId: id,
   kind: z.enum(["referencia", "llama"]),
-  // Vínculo desde una frase de un PDF (ver `domain/vault/anchor.ts`).
+  // PDF phrase link; see domain/vault/anchor.ts.
   anchor: z
     .object({
       page: z.number().int().min(1).max(100_000),
@@ -23,7 +23,7 @@ const linkSchema = z.object({
       suffix: z.string().max(64),
     })
     .optional(),
-  // A un portafolio, y a algo compartido conmigo (ver `ManualLink`).
+  // Portfolio and shared targets; see ManualLink.
   target: z.literal("portfolio").optional(),
   shareId: id.optional(),
 });
@@ -34,8 +34,7 @@ const docSchema = z.object({
   kind: z.enum(["markdown", "file"]),
   portfolioId: id.nullable(),
   content: z.string().max(MAX_CONTENT),
-  // Los archivos nuevos solo traen su clave; `dataUrl` es de cachés antiguas y
-  // de las notas de ejemplo, y el servidor lo pasa al almacén (server/files.ts).
+  // New files supply keys; legacy/sample dataUrl content is migrated by server/files.ts.
   file: z
     .object({
       name: z.string().max(200),
@@ -51,8 +50,14 @@ const docSchema = z.object({
   updatedAt: z.number(),
   createdBy: z.string().max(80),
   updatedBy: z.string().max(80),
-  // La versión del servidor de la que parte esta edición (notas; ver `SyncBase`).
-  base: z.object({ content: z.string().max(MAX_CONTENT), title: z.string().max(200), updatedAt: z.number() }).optional(),
+  // Server base for this note edit; see SyncBase.
+  base: z
+    .object({
+      content: z.string().max(MAX_CONTENT),
+      title: z.string().max(200),
+      updatedAt: z.number(),
+    })
+    .optional(),
 });
 
 const portfolioSchema = z.object({
@@ -62,7 +67,7 @@ const portfolioSchema = z.object({
   links: z.array(linkSchema).max(500).optional(),
 });
 
-/** Permisos de escritura: sin ninguno, el navegador no puede cambiar la bóveda del servidor. */
+/** Without write capabilities, browser changes cannot mutate the server vault. */
 const WRITE = [
   PERMISSION.notesCreate,
   PERMISSION.notesEdit,
@@ -88,9 +93,12 @@ export const pushVault = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    if (!WRITE.some((key) => allows(profile, key))) return { ok: false as const, error: "Tu rol no puede modificar la bóveda." };
-    const canDelete = allows(profile, PERMISSION.notesDelete) || allows(profile, PERMISSION.filesDelete);
-    if (data.deletedDocs.length > 0 && !canDelete) return { ok: false as const, error: "Tu rol no puede borrar." };
+    if (!WRITE.some((key) => allows(profile, key)))
+      return { ok: false as const, error: "Tu rol no puede modificar la bóveda." };
+    const canDelete =
+      allows(profile, PERMISSION.notesDelete) || allows(profile, PERMISSION.filesDelete);
+    if (data.deletedDocs.length > 0 && !canDelete)
+      return { ok: false as const, error: "Tu rol no puede borrar." };
     if (data.deletedPortfolios.length > 0 && !allows(profile, PERMISSION.portfoliosManage)) {
       return { ok: false as const, error: "Tu rol no puede borrar portafolios." };
     }

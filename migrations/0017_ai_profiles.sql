@@ -1,6 +1,5 @@
--- Perfiles del chat de IA de cada usuario («Documentación», «Análisis»…): un
--- nombre, las indicaciones que se suman a las del asistente y si el perfil
--- solo puede leer la bóveda (sin crear ni editar).
+-- Per-user AI personas: name, additional assistant instructions and a read-only flag preventing
+-- vault creation or editing.
 create table if not exists ai_profile (
   id text primary key,
   user_id text not null references "user" ("id") on delete cascade,

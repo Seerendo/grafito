@@ -8,7 +8,12 @@ export function Mark() {
         stroke="var(--color-accent)"
         strokeWidth="1.4"
       />
-      <path d="M16 6.5v19M7.5 11.5 16 17l8.5-5.5" fill="none" stroke="var(--color-accent)" strokeWidth="1.2" />
+      <path
+        d="M16 6.5v19M7.5 11.5 16 17l8.5-5.5"
+        fill="none"
+        stroke="var(--color-accent)"
+        strokeWidth="1.2"
+      />
     </svg>
   );
 }

@@ -7,7 +7,7 @@ import { pingEndpoint, probeClamd, readClamavSettings, writeClamavSettings } fro
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 
-/** Administración → Seguridad (permiso `security.manage`). */
+/** Security administration requires security.manage. */
 
 const form = z.object({
   enabled: z.boolean(),
@@ -52,7 +52,7 @@ export const saveClamavSettings = createServerFn({ method: "POST" })
     return { ok: true as const, settings: { ...parsed.config, source: "saved" as const } };
   });
 
-/** Pregunta a clamd con lo escrito en el formulario, sin guardarlo. */
+/** Probe clamd with unsaved form settings. */
 export const probeClamav = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => form.omit({ enabled: true, timeoutSeconds: true }).parse(input))

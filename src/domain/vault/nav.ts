@@ -1,11 +1,8 @@
 import type { Portfolio } from "./types";
 
-/**
- * Dónde queda la bóveda después de borrar, y qué carpetas hay que desplegar
- * en el directorio al abrir algo. Lógica pura: la usa el store y las pruebas.
- */
+/** Pure post-deletion navigation and ancestor expansion used by the store and tests. */
 
-/** Desde `id` hasta la raíz, incluido `id`. Vacío si no hay carpeta. */
+/** Path from id to root, including id; empty when no folder exists. */
 export function portfolioPath(
   portfolios: readonly Pick<Portfolio, "id" | "parentId">[],
   id: string | null,
@@ -23,10 +20,7 @@ export function portfolioPath(
   return path;
 }
 
-/**
- * Despliega `id` y sus padres. En el directorio, `collapsed[id] === true`
- * significa plegado; `false` o ausente, abierto.
- */
+/** Expand id and its ancestors. collapsed=true means closed; false or absent means open. */
 export function expandTo(
   collapsed: Record<string, boolean>,
   portfolios: readonly Pick<Portfolio, "id" | "parentId">[],
@@ -47,9 +41,8 @@ export type DeleteLanding = {
 };
 
 /**
- * Si se está viendo justo lo que se borra, se abre su carpeta (o la Carpeta
- * Personal, si vivía en la raíz o la carpeta también se fue). Si se está
- * viendo otra cosa, `null`: no hay que cambiar de sitio.
+ * When deleting the currently viewed item, open its surviving parent or personal root. Return
+ * null if the active view is unaffected.
  */
 export function landingAfterDelete(input: {
   activeId: string | null;
@@ -69,11 +62,12 @@ export function landingAfterDelete(input: {
   if (!docRemoved && !folderRemoved) return null;
   const start = docRemoved ? input.activeDocPortfolioId : input.selectedPortfolioId;
   const landed = climb(start, input.removedPortfolios, input.portfolios);
-  if (!landed) return { activeId: null, selectedPortfolioId: null, folderPicked: false, rootPicked: true };
+  if (!landed)
+    return { activeId: null, selectedPortfolioId: null, folderPicked: false, rootPicked: true };
   return { activeId: null, selectedPortfolioId: landed, folderPicked: true, rootPicked: false };
 }
 
-/** La primera carpeta de `start` hacia arriba que no se borró, o `null` (la raíz). */
+/** First surviving ancestor from start, or null for the root. */
 export function climb(
   start: string | null,
   removed: ReadonlySet<string>,
@@ -90,10 +84,8 @@ export function climb(
 }
 
 /**
- * Claves que hay que desplegar en «Compartidos conmigo» o «Espacios de trabajo»
- * para ver `portfolioId`. La raíz del compartido se abre con el id del elemento;
- * las carpetas de dentro, con `shareId:portfolioId`. La propia raíz no lleva
- * la segunda clave: sus hijos ya se ven al abrir el elemento.
+ * Expansion keys for shared/workspace navigation. The share root uses its share ID; nested
+ * folders use shareId:portfolioId. The root needs no second key.
  */
 export function sharedExpandKeys(input: {
   shareId: string;

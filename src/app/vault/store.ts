@@ -22,9 +22,8 @@ import { createSeed } from "./seed";
 import { t } from "@/app/i18n";
 
 /**
- * Cada usuario guarda su bóveda en su propia clave (`grafito.v2:<userId>`).
- * Las claves sin usuario son de versiones anteriores, compartidas por todo el
- * navegador: solo el administrador las adopta, una vez, y luego se borran.
+ * Each user stores their vault under grafito.v2:<userId>. Legacy unscoped browser storage is
+ * adopted once by the administrator and then removed.
  */
 const STORAGE_PREFIX = "grafito.v2:";
 const SHARED_KEY = "grafito.v2";
@@ -35,9 +34,8 @@ function storageKey(userId: string): string {
 }
 
 /**
- * Nota recién creada que aún no se guardó: vive solo en este navegador hasta
- * que se le escribe algo. Si se deja en blanco (sin texto y con el título con
- * el que nació), al salir de ella se descarta. Ver `isBlankDraft`.
+ * A new unsaved note remains local until edited. Leaving it with no content and its original
+ * title discards it; see isBlankDraft.
  */
 export type Draft = { id: string; title: string };
 
@@ -49,10 +47,14 @@ type Persisted = {
   draft?: Draft | null;
 };
 
-/** Si `document` es la nota nueva y sigue en blanco (no se sube ni se guarda). */
+/** Whether the document is the untouched new draft, excluded from persistence and upload. */
 export function isBlankDraft(draft: Draft | null | undefined, document: Document): boolean {
   return Boolean(
-    draft && draft.id === document.id && document.kind === "markdown" && !document.content.trim() && document.title === draft.title,
+    draft &&
+    draft.id === document.id &&
+    document.kind === "markdown" &&
+    !document.content.trim() &&
+    document.title === draft.title,
   );
 }
 
@@ -74,16 +76,19 @@ function authorOf(value: unknown): string {
 }
 
 /**
- * Marca de un cambio hecho aquí. En una nota, recuerda además la versión del
- * servidor de la que parte (la primera vez que cambia desde que se sincronizó):
- * con ella el servidor junta este cambio con el de otra persona.
+ * Mark a local change. On the first note edit since synchronization, retain its server base
+ * version for concurrent merging.
  */
 function mark(document: Document): { updatedAt: number; updatedBy: string; base?: SyncBase } {
   const stamp = { updatedAt: Date.now(), updatedBy: actorName() };
   if (document.kind !== "markdown") return stamp;
   return {
     ...stamp,
-    base: document.base ?? { content: document.content, title: document.title, updatedAt: document.updatedAt },
+    base: document.base ?? {
+      content: document.content,
+      title: document.title,
+      updatedAt: document.updatedAt,
+    },
   };
 }
 
@@ -102,7 +107,11 @@ function normalize(document: Document): Document {
             typeof link.targetId === "string" &&
             (link.kind === "referencia" || link.kind === "llama"),
         )
-        .map((link) => (link.anchor && !isTextAnchor(link.anchor) ? { targetId: link.targetId, kind: link.kind } : link))
+        .map((link) =>
+          link.anchor && !isTextAnchor(link.anchor)
+            ? { targetId: link.targetId, kind: link.kind }
+            : link,
+        )
     : [];
   return {
     id: document.id,
@@ -139,17 +148,20 @@ function parseSaved(raw: string): Persisted | null {
   const documents = data.documents.filter(isDocument).map(normalize);
   if (documents.length === 0) return null;
   const portfolios = Array.isArray(data.portfolios) ? data.portfolios.filter(isPortfolio) : [];
-  // Sin documento abierto (la Carpeta Personal) se queda así al recargar; uno
-  // que ya no existe también: no se abre otro cualquiera en su lugar.
-  const activeId = documents.some((document) => document.id === data.activeId) ? (data.activeId as string) : null;
+  // Preserve the personal-root view after reload. If the previous document is missing, do not open an arbitrary replacement.
+  const activeId = documents.some((document) => document.id === data.activeId)
+    ? (data.activeId as string)
+    : null;
   const mode: ViewMode =
     data.mode === "edit" || data.mode === "split" || data.mode === "read" ? data.mode : "read";
   const draft =
-    data.draft && typeof data.draft.id === "string" && typeof data.draft.title === "string" ? data.draft : null;
+    data.draft && typeof data.draft.id === "string" && typeof data.draft.title === "string"
+      ? data.draft
+      : null;
   return { documents, portfolios, activeId, mode, draft };
 }
 
-/** Bóveda compartida de versiones anteriores (sin usuario), si la hay. */
+/** Legacy browser-wide vault, if present. */
 function loadShared(): Persisted | null {
   const current = localStorage.getItem(SHARED_KEY);
   if (current) return parseSaved(current);
@@ -157,11 +169,11 @@ function loadShared(): Persisted | null {
   return legacy ? migrateLegacyVault(JSON.parse(legacy)) : null;
 }
 
-/**
- * Bóveda guardada de `userId`. Si no tiene, y `adoptShared`, la compartida de
- * versiones anteriores (`adopted: true`).
- */
-function loadSaved(userId: string, adoptShared: boolean): { saved: Persisted | null; adopted: boolean } {
+/** Load userId's saved vault, or adopt the legacy shared vault when allowed, marking adopted=true. */
+function loadSaved(
+  userId: string,
+  adoptShared: boolean,
+): { saved: Persisted | null; adopted: boolean } {
   if (typeof window === "undefined") return { saved: null, adopted: false };
   try {
     const own = localStorage.getItem(storageKey(userId));
@@ -230,7 +242,8 @@ function withTitle(documents: Document[], id: string, title: string): Document[]
       return {
         ...document,
         title,
-        content: document.kind === "markdown" ? replaceWikiTitle(content, current.title, title) : content,
+        content:
+          document.kind === "markdown" ? replaceWikiTitle(content, current.title, title) : content,
         ...mark(document),
       };
     }
@@ -244,10 +257,8 @@ type VaultState = Persisted & {
   selectedPortfolioId: string | null;
   rootPicked: boolean;
   /**
-   * Si lo último que se eligió en el directorio fue una carpeta (la raíz o un
-   * portafolio) y no un documento: solo entonces se resalta la carpeta. La
-   * carpeta elegida (`selectedPortfolioId`) sigue decidiendo dónde se crean
-   * las notas nuevas y dónde caen los archivos subidos.
+   * Highlight a folder only when the last directory selection was a folder. selectedPortfolioId
+   * still controls destinations for new notes and uploads.
    */
   folderPicked: boolean;
   collapsed: Record<string, boolean>;
@@ -256,36 +267,36 @@ type VaultState = Persisted & {
   graph: boolean;
   palette: boolean;
   dialog: DialogState;
-  /** Usuario dueño de la bóveda en memoria; `null` hasta `openVaultFor`. */
+  /** Owner of the in-memory vault; null until openVaultFor. */
   owner: string | null;
-  /** La bóveda de `owner` ya se cargó y se puede guardar. */
+  /** The owner's vault has loaded and may be persisted. */
   hydrated: boolean;
-  /** La bóveda en memoria es la de ejemplo: no venía guardada en este navegador. */
+  /** The in-memory vault is seeded sample data, not previously saved browser data. */
   seeded: boolean;
-  /** Aplica cambios llegados del servidor (sincronización, IA, API). */
+  /** Apply server changes from synchronization, AI or API. */
   applyRemote: (changes: {
     docs: Document[];
     deletedDocs: string[];
     portfolios: Portfolio[];
     deletedPortfolios: string[];
   }) => void;
-  /** Sustituye la bóveda entera por la del servidor. */
+  /** Replace the whole vault with the server version. */
   replaceVault: (documents: Document[], portfolios: Portfolio[]) => void;
   /**
-   * Notas que otra persona cambió a la vez que aquí, sin poder juntarse: la
-   * versión del servidor, hasta que se elija cuál queda (ver `sync.ts`).
+   * Server versions of concurrently edited notes that could not merge, retained until conflict
+   * resolution; see sync.ts.
    */
   conflicts: Record<string, Document>;
   setConflict: (doc: Document) => void;
   clearConflict: (id: string) => void;
   /**
-   * Tras subir: lo subido ya es la versión del servidor. Si la nota cambió
-   * mientras se subía, su base pasa a ser lo subido.
+   * After upload, the uploaded state becomes the server base. If edited during upload, retain
+   * the newer local change against that base.
    */
   markSynced: (pushed: Document[]) => void;
-  /** Carga la bóveda de `userId` (o la de ejemplo si no tiene). */
+  /** Load a user's vault or sample data if absent. */
   openVaultFor: (userId: string) => void;
-  /** Guarda y descarga la bóveda en memoria (al salir). */
+  /** Persist and unload the in-memory vault on exit. */
   closeVault: () => void;
   setActive: (id: string) => void;
   selectInGraph: (id: string) => void;
@@ -298,34 +309,48 @@ type VaultState = Persisted & {
   setDialog: (dialog: DialogState) => void;
   setSelectedPortfolio: (id: string | null) => void;
   clearSelection: () => void;
-  /** Vuelve al inicio: sin nota abierta, sin grafo, filtro ni diálogos. */
+  /** Return home with no open note, graph, filter or dialogs. */
   showStart: () => void;
   toggleCollapsed: (id: string) => void;
   updateContent: (id: string, content: string) => void;
   rename: (id: string, title: string) => boolean;
   togglePin: (id: string) => void;
   toggleTask: (id: string, line: number) => void;
-  createDocument: (portfolioId?: string | null, title?: string, content?: string, options?: { open?: boolean }) => string;
-  /** `open` abre el archivo recién subido. Una carga normal lo deja cerrado. */
-  uploadFile: (portfolioId: string | null, name: string, mime: string, stored: { key: string; size: number }, open?: boolean) => string | null;
+  createDocument: (
+    portfolioId?: string | null,
+    title?: string,
+    content?: string,
+    options?: { open?: boolean },
+  ) => string;
+  /** open selects a newly uploaded file; normal uploads leave it closed. */
+  uploadFile: (
+    portfolioId: string | null,
+    name: string,
+    mime: string,
+    stored: { key: string; size: number },
+    open?: boolean,
+  ) => string | null;
   createPortfolio: (parentId: string | null, name: string) => string | null;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
-  /** Varios documentos y portafolios a la vez (`doc:<id>`, `port:<id>`): a la papelera, con lo que contienen. */
+  /** Move selected doc:<id> and port:<id> entries, including descendants, to trash. */
   deleteMany: (keys: string[]) => void;
   moveDocument: (id: string, portfolioId: string | null) => void;
   movePortfolio: (id: string, parentId: string | null) => void;
   /**
-   * Mueve varios documentos y portafolios a la vez. Devuelve los títulos que no
-   * se movieron porque en el destino ya hay un documento con ese nombre.
+   * Move multiple documents and portfolios. Return titles blocked by document-name collisions
+   * at the destination.
    */
-  moveMany: (items: { kind: "document" | "portfolio"; id: string }[], target: string | null) => string[];
+  moveMany: (
+    items: { kind: "document" | "portfolio"; id: string }[],
+    target: string | null,
+  ) => string[];
   renamePortfolio: (id: string, name: string) => boolean;
   resolveMove: (action: "replace" | "rename") => void;
-  /** Con `anchor`, el vínculo sale de esa frase del archivo (puede haber varios al mismo destino). */
+  /** An anchor makes the link originate from a file phrase; multiple phrases may link to one target. */
   /**
-   * `sourceId` puede ser una nota, un archivo o un portafolio. `extra`: el
-   * destino es un portafolio, o algo compartido conmigo (`shareId`).
+   * sourceId may identify a note, file or portfolio. extra identifies portfolio targets or
+   * shared targets through shareId.
    */
   addManualLink: (
     sourceId: string,
@@ -335,25 +360,25 @@ type VaultState = Persisted & {
     extra?: Pick<ManualLink, "target" | "shareId">,
   ) => void;
   removeManualLink: (sourceId: string, link: Pick<ManualLink, "targetId" | "anchor">) => void;
-  /** La descripción de un portafolio (en su página). */
+  /** Portfolio description shown on its page. */
   /**
-   * Quita los vínculos a lo compartido por `shareId` cuyo destino ya no se ve:
-   * todos si `keep` es `null` (sin acceso), o los que no están en `keep`.
+   * Prune links for shareId when their targets are absent from keep; null removes all links
+   * after access loss.
    */
   pruneShareLinks: (shareId: string, keep: Set<string> | null) => void;
-  /** Una frase vinculada a la que ir al abrir su archivo (desde Menciones). */
+  /** Linked phrase to reveal when opening a file from mentions. */
   focusAnchor: { docId: string; anchor: TextAnchor } | null;
   setFocusAnchor: (focus: { docId: string; anchor: TextAnchor } | null) => void;
   openTitle: (title: string) => void;
   duplicate: (id: string) => void;
   importNote: (title: string, content: string, portfolioId?: string | null, open?: boolean) => void;
   closeActive: () => void;
-  /** Abre un portafolio en el centro: sus subportafolios, notas y archivos. */
+  /** Open a portfolio page showing child portfolios, notes and files. */
   openPortfolio: (id: string) => void;
   reset: () => void;
 };
 
-/** Estado de una bóveda recién abierta: datos guardados o de ejemplo, UI limpia. */
+/** Newly opened vault state: saved or sample data and a clean UI. */
 function freshVault(saved: Persisted | null) {
   const seed = createSeed();
   return {
@@ -399,7 +424,7 @@ export const useVault = create<VaultState>((set, get) => ({
   openVaultFor: (userId) => {
     if (get().owner === userId && get().hydrated) return;
     persist(get());
-    // Solo el administrador hereda la bóveda compartida de versiones anteriores.
+    // Only administrators inherit legacy browser-wide vaults.
     const { saved, adopted } = loadSaved(userId, heldAdminId() === userId);
     const nested = saved ? nestSamplePortfolios(saved.portfolios) : null;
     set({
@@ -428,14 +453,16 @@ export const useVault = create<VaultState>((set, get) => ({
       .documents.filter((document) => !gone.has(document.id))
       .map((document) => incoming.get(document.id) ?? document);
     const known = new Set(documents.map((document) => document.id));
-    for (const document of incoming.values()) if (!known.has(document.id)) documents.unshift(document);
+    for (const document of incoming.values())
+      if (!known.has(document.id)) documents.unshift(document);
     const goneFolders = new Set(changes.deletedPortfolios);
     const folders = new Map(changes.portfolios.map((portfolio) => [portfolio.id, portfolio]));
     const portfolios = get()
       .portfolios.filter((portfolio) => !goneFolders.has(portfolio.id))
       .map((portfolio) => folders.get(portfolio.id) ?? portfolio);
     const knownFolders = new Set(portfolios.map((portfolio) => portfolio.id));
-    for (const portfolio of folders.values()) if (!knownFolders.has(portfolio.id)) portfolios.push(portfolio);
+    for (const portfolio of folders.values())
+      if (!knownFolders.has(portfolio.id)) portfolios.push(portfolio);
     const activeId = get().activeId;
     set({
       documents,
@@ -465,7 +492,10 @@ export const useVault = create<VaultState>((set, get) => ({
         const { base: _base, ...synced } = document;
         return synced;
       }
-      return { ...document, base: { content: doc.content, title: doc.title, updatedAt: doc.updatedAt } };
+      return {
+        ...document,
+        base: { content: doc.content, title: doc.title, updatedAt: doc.updatedAt },
+      };
     });
     if (touched) set({ documents });
   },
@@ -483,12 +513,23 @@ export const useVault = create<VaultState>((set, get) => ({
   setActive: (id) => {
     const state = get();
     const portfolioId = state.documents.find((document) => document.id === id)?.portfolioId ?? null;
-    set({ activeId: id, graph: false, palette: false, folderPicked: false, collapsed: expandTo(state.collapsed, state.portfolios, portfolioId) });
+    set({
+      activeId: id,
+      graph: false,
+      palette: false,
+      folderPicked: false,
+      collapsed: expandTo(state.collapsed, state.portfolios, portfolioId),
+    });
   },
   selectInGraph: (id) => {
     const state = get();
     const portfolioId = state.documents.find((document) => document.id === id)?.portfolioId ?? null;
-    set({ activeId: id, palette: false, folderPicked: false, collapsed: expandTo(state.collapsed, state.portfolios, portfolioId) });
+    set({
+      activeId: id,
+      palette: false,
+      folderPicked: false,
+      collapsed: expandTo(state.collapsed, state.portfolios, portfolioId),
+    });
   },
   closeActive: () => set({ activeId: null, graph: false }),
   openPortfolio: (id) => {
@@ -516,9 +557,16 @@ export const useVault = create<VaultState>((set, get) => ({
   toggleGraph: () => get().setGraph(!get().graph),
   setPalette: (palette) => set({ palette }),
   setDialog: (dialog) => set({ dialog, palette: false }),
-  setSelectedPortfolio: (id) => set({ selectedPortfolioId: id, rootPicked: id === null, folderPicked: true }),
+  setSelectedPortfolio: (id) =>
+    set({ selectedPortfolioId: id, rootPicked: id === null, folderPicked: true }),
   clearSelection: () =>
-    set({ activeId: null, graph: false, selectedPortfolioId: null, rootPicked: false, folderPicked: false }),
+    set({
+      activeId: null,
+      graph: false,
+      selectedPortfolioId: null,
+      rootPicked: false,
+      folderPicked: false,
+    }),
   showStart: () =>
     set({
       activeId: null,
@@ -582,7 +630,7 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.notesCreate)) return "";
     const target = portfolioId === undefined ? get().selectedPortfolioId : portfolioId;
     const name = uniqueTitle(get().documents, title?.trim() || t("Sin título"), target, "markdown");
-    // Sin contenido dado, la nota nace en blanco y es un borrador (`Draft`).
+    // Without supplied content, a new note starts as a blank Draft.
     const blank = content === undefined;
     const open = options?.open !== false;
     const document: Document = {
@@ -685,7 +733,8 @@ export const useVault = create<VaultState>((set, get) => ({
     }
     const removedDocs = new Set<string>();
     for (const document of state.documents) {
-      if (document.portfolioId && removedPortfolios.has(document.portfolioId)) removedDocs.add(document.id);
+      if (document.portfolioId && removedPortfolios.has(document.portfolioId))
+        removedDocs.add(document.id);
     }
     for (const key of keys) {
       if (!key.startsWith("doc:")) continue;
@@ -769,8 +818,10 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.portfoliosManage)) return [];
     const { documents, portfolios } = get();
     if (target && !portfolios.some((portfolio) => portfolio.id === target)) return [];
-    // Lo que está dentro de un portafolio también elegido viaja con él: no se saca de ahí.
-    const pickedPortfolios = items.filter((item) => item.kind === "portfolio").map((item) => item.id);
+    // Items inside selected portfolios move with their parent; do not pull them out.
+    const pickedPortfolios = items
+      .filter((item) => item.kind === "portfolio")
+      .map((item) => item.id);
     const insidePicked = (portfolioId: string | null): boolean => {
       for (let id = portfolioId, steps = 0; id && steps < 100; steps += 1) {
         if (pickedPortfolios.includes(id)) return true;
@@ -796,23 +847,29 @@ export const useVault = create<VaultState>((set, get) => ({
           document.portfolioId === target &&
           sameTitle(document.title, current.title),
       );
-      // Dos de la selección con el mismo nombre también chocan entre sí.
-      const twin = documents.some((document) => docIds.has(document.id) && sameTitle(document.title, current.title));
+      // Selected items with duplicate names also collide with each other.
+      const twin = documents.some(
+        (document) => docIds.has(document.id) && sameTitle(document.title, current.title),
+      );
       if (clash || twin) skipped.push(current.title);
       else docIds.add(current.id);
     }
     const portIds = new Set(
       items
         .filter((item) => item.kind === "portfolio" && item.id !== target)
-        // Un portafolio no puede ir dentro de sí mismo.
+        // A portfolio cannot move inside itself.
         .filter((item) => !target || !descendantIds(portfolios, item.id).has(target))
         .map((item) => item.id),
     );
     set({
       documents: documents.map((document) =>
-        docIds.has(document.id) ? { ...document, portfolioId: target, ...mark(document) } : document,
+        docIds.has(document.id)
+          ? { ...document, portfolioId: target, ...mark(document) }
+          : document,
       ),
-      portfolios: portfolios.map((portfolio) => (portIds.has(portfolio.id) ? { ...portfolio, parentId: target } : portfolio)),
+      portfolios: portfolios.map((portfolio) =>
+        portIds.has(portfolio.id) ? { ...portfolio, parentId: target } : portfolio,
+      ),
       collapsed: target ? { ...get().collapsed, [target]: false } : get().collapsed,
     });
     return skipped;
@@ -847,7 +904,9 @@ export const useVault = create<VaultState>((set, get) => ({
         .map((document) => ({
           ...document,
           portfolioId: document.id === source.id ? dialog.portfolioId : document.portfolioId,
-          ...(document.id === source.id ? mark(document) : { updatedAt: document.updatedAt, updatedBy: document.updatedBy }),
+          ...(document.id === source.id
+            ? mark(document)
+            : { updatedAt: document.updatedAt, updatedBy: document.updatedBy }),
           links: document.links
             .filter((link) => !(document.id === source.id && link.targetId === dialog.existingId))
             .map((link) =>
@@ -857,13 +916,21 @@ export const useVault = create<VaultState>((set, get) => ({
       set({
         documents,
         activeId: get().activeId === dialog.existingId ? source.id : get().activeId,
-        collapsed: dialog.portfolioId ? { ...get().collapsed, [dialog.portfolioId]: false } : get().collapsed,
+        collapsed: dialog.portfolioId
+          ? { ...get().collapsed, [dialog.portfolioId]: false }
+          : get().collapsed,
         selectedPortfolioId: dialog.portfolioId,
         dialog: null,
       });
       return;
     }
-    const title = uniqueTitle(get().documents, source.title, dialog.portfolioId, source.kind, source.id);
+    const title = uniqueTitle(
+      get().documents,
+      source.title,
+      dialog.portfolioId,
+      source.kind,
+      source.id,
+    );
     const documents = withTitle(get().documents, source.id, title).map((document) =>
       document.id === source.id
         ? { ...document, portfolioId: dialog.portfolioId, ...mark(document) }
@@ -871,7 +938,9 @@ export const useVault = create<VaultState>((set, get) => ({
     );
     set({
       documents,
-      collapsed: dialog.portfolioId ? { ...get().collapsed, [dialog.portfolioId]: false } : get().collapsed,
+      collapsed: dialog.portfolioId
+        ? { ...get().collapsed, [dialog.portfolioId]: false }
+        : get().collapsed,
       selectedPortfolioId: dialog.portfolioId,
       dialog: null,
     });
@@ -925,17 +994,25 @@ export const useVault = create<VaultState>((set, get) => ({
   },
 
   pruneShareLinks: (shareId, keep) => {
-    const gone = (link: ManualLink) => link.shareId === shareId && (keep === null || !keep.has(link.targetId));
+    const gone = (link: ManualLink) =>
+      link.shareId === shareId && (keep === null || !keep.has(link.targetId));
     const { documents, portfolios } = get();
-    if (!documents.some((document) => document.links.some(gone)) && !portfolios.some((portfolio) => (portfolio.links ?? []).some(gone))) {
+    if (
+      !documents.some((document) => document.links.some(gone)) &&
+      !portfolios.some((portfolio) => (portfolio.links ?? []).some(gone))
+    ) {
       return;
     }
     set({
       documents: documents.map((document) =>
-        document.links.some(gone) ? { ...document, links: document.links.filter((link) => !gone(link)), ...mark(document) } : document,
+        document.links.some(gone)
+          ? { ...document, links: document.links.filter((link) => !gone(link)), ...mark(document) }
+          : document,
       ),
       portfolios: portfolios.map((portfolio) =>
-        (portfolio.links ?? []).some(gone) ? { ...portfolio, links: (portfolio.links ?? []).filter((link) => !gone(link)) } : portfolio,
+        (portfolio.links ?? []).some(gone)
+          ? { ...portfolio, links: (portfolio.links ?? []).filter((link) => !gone(link)) }
+          : portfolio,
       ),
     });
   },
@@ -949,7 +1026,8 @@ export const useVault = create<VaultState>((set, get) => ({
       set({ activeId: found.id, graph: false, palette: false });
       return;
     }
-    const portfolioId = get().documents.find((document) => document.id === get().activeId)?.portfolioId ?? null;
+    const portfolioId =
+      get().documents.find((document) => document.id === get().activeId)?.portfolioId ?? null;
     get().createDocument(portfolioId, title);
   },
 
@@ -957,7 +1035,12 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!can(PERMISSION.notesCreate)) return;
     const source = get().documents.find((document) => document.id === id);
     if (!source || source.kind !== "markdown") return;
-    const title = uniqueTitle(get().documents, `${source.title} copia`, source.portfolioId, "markdown");
+    const title = uniqueTitle(
+      get().documents,
+      `${source.title} copia`,
+      source.portfolioId,
+      "markdown",
+    );
     const heading = `# ${source.title}`;
     const content = source.content.startsWith(heading)
       ? `# ${title}${source.content.slice(heading.length)}`
@@ -972,10 +1055,17 @@ export const useVault = create<VaultState>((set, get) => ({
       get().createDocument(portfolioId, name, content, { open });
       return;
     }
-    const existing = get().portfolios.find((portfolio) => portfolio.name === "Importadas" && !portfolio.parentId);
+    const existing = get().portfolios.find(
+      (portfolio) => portfolio.name === "Importadas" && !portfolio.parentId,
+    );
     const importedId = existing?.id ?? uuid();
     if (!existing) {
-      set({ portfolios: [...get().portfolios, { id: importedId, name: t("Importadas"), parentId: null }] });
+      set({
+        portfolios: [
+          ...get().portfolios,
+          { id: importedId, name: t("Importadas"), parentId: null },
+        ],
+      });
     }
     get().createDocument(importedId, title.replace(/\.md$/i, ""), content, { open });
   },
@@ -995,8 +1085,8 @@ subscribePermissions(() => {
 });
 
 /**
- * Al salir de la nota nueva (otra nota, la raíz, Esc, recargar en otra): si
- * sigue en blanco se descarta; si ya tiene algo, deja de ser borrador.
+ * On leaving a new note, discard it if still blank; otherwise clear draft status. This covers
+ * navigation, Esc and reload into another view.
  */
 function settleDraft(): void {
   const state = useVault.getState();
@@ -1004,14 +1094,22 @@ function settleDraft(): void {
   if (!draft || state.activeId === draft.id) return;
   const document = state.documents.find((item) => item.id === draft.id);
   if (document && isBlankDraft(draft, document)) {
-    useVault.setState({ documents: state.documents.filter((item) => item.id !== draft.id), draft: null });
+    useVault.setState({
+      documents: state.documents.filter((item) => item.id !== draft.id),
+      draft: null,
+    });
   } else {
     useVault.setState({ draft: null });
   }
 }
 
 useVault.subscribe((state, previous) => {
-  if (state.activeId !== previous.activeId && previous.draft && previous.activeId === previous.draft.id) settleDraft();
+  if (
+    state.activeId !== previous.activeId &&
+    previous.draft &&
+    previous.activeId === previous.draft.id
+  )
+    settleDraft();
 });
 
 const persistFlag = "__grafitoPersistV3";
@@ -1019,7 +1117,7 @@ if (typeof window !== "undefined" && !(persistFlag in window)) {
   Object.defineProperty(window, persistFlag, { value: true });
   let timer = 0;
   useVault.subscribe((state, previous) => {
-    // Al cambiar de dueño, `openVaultFor` / `closeVault` ya guardaron.
+    // openVaultFor and closeVault already persisted state when switching owners.
     if (state.owner !== previous.owner) {
       window.clearTimeout(timer);
       return;
@@ -1035,5 +1133,7 @@ if (typeof window !== "undefined" && !(persistFlag in window)) {
 }
 
 export function useActiveDocument(): Document | null {
-  return useVault((state) => state.documents.find((document) => document.id === state.activeId) ?? null);
+  return useVault(
+    (state) => state.documents.find((document) => document.id === state.activeId) ?? null,
+  );
 }

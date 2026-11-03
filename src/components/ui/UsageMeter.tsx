@@ -1,7 +1,6 @@
 /**
- * Medidor de uso (0–100 %) para paneles de administración: pista redondeada y
- * visible, relleno proporcional y el porcentaje escrito, para que no se lea
- * como un campo de texto vacío cuando el valor es bajo.
+ * Administration usage meter with visible rounded track, proportional fill and numeric
+ * percentage so low values do not resemble empty text fields.
  */
 export function UsageMeter({ percent, label }: { percent: number; label: string }) {
   const value = Math.max(0, Math.min(100, Math.round(percent)));

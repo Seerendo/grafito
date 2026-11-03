@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useTableIndex } from "@/app/table-index";
 import { tableSearchTexts } from "@/server/table.functions";
 
-/** Baja el texto indexado de las tablas para buscarlas desde la bóveda. */
+/** Fetch indexed table text for vault search. */
 export function TableIndexSync({ ownerId }: { ownerId: string | null }) {
   useEffect(() => {
     if (!ownerId) return;

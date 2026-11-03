@@ -1,4 +1,4 @@
-/** Lectura de argumentos que el modelo manda como texto. */
+/** Parse model arguments supplied as text. */
 
 export function text(args: Record<string, unknown>, key: string): string {
   const value = args[key];
@@ -9,7 +9,7 @@ export function text(args: Record<string, unknown>, key: string): string {
       : String(value);
 }
 
-/** `cells` llega como JSON en texto (el esquema de herramientas no admite objetos). */
+/** cells is JSON text because the tool schema does not support nested objects. */
 export function namedCells(args: Record<string, unknown>): Record<string, unknown> | null {
   const raw = args.cells;
   if (typeof raw === "string") {

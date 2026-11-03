@@ -15,7 +15,7 @@ export function VaultMirror() {
   const userId = user?.id;
 
   useEffect(() => {
-    // Solo se replica la bóveda que pertenece a la sesión actual.
+    // Replicate only the vault owned by the current session.
     if (!userId || owner !== userId) return;
     const held = heldAdminId();
     if (held && held !== userId) return;
@@ -24,7 +24,10 @@ export function VaultMirror() {
       title: document.title.slice(0, 200),
       kind: document.kind,
       portfolioId: document.portfolioId,
-      body: `${document.kind === "markdown" ? document.content : (document.file?.name ?? "")}\n${tableText[document.id] ?? ""}`.slice(0, 4000),
+      body: `${document.kind === "markdown" ? document.content : (document.file?.name ?? "")}\n${tableText[document.id] ?? ""}`.slice(
+        0,
+        4000,
+      ),
       links: document.links.slice(0, 80),
     }));
     const payload = `${userId}:${JSON.stringify(docs)}`;

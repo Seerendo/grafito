@@ -4,9 +4,8 @@ import { DEFAULT_DESIGN, DESIGNS, isDesign, type Design } from "@/domain/design"
 import { setDesign } from "@/server/design.functions";
 
 /**
- * Administración → Apariencia → Diseño: Moderno o Clásico para toda la
- * instalación. Cada opción se dibuja en miniatura con los colores del tema
- * actual, porque los temas se aplican a los dos diseños.
+ * Installation-wide appearance selection. Miniatures use the current theme colors because both
+ * layouts support every theme.
  */
 export function DesignPanel() {
   const [current, setCurrent] = useState<Design>(DEFAULT_DESIGN);
@@ -55,7 +54,9 @@ export function DesignPanel() {
             </span>
             <span className="theme-card-copy">
               <strong className="text-sm">{t(design.label)}</strong>
-              {current === design.id ? <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em> : null}
+              {current === design.id ? (
+                <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em>
+              ) : null}
               <small>{t(design.description)}</small>
             </span>
           </button>

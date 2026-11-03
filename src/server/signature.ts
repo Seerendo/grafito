@@ -7,16 +7,19 @@ import { readBlob, putBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
 import { editableTarget, grantedDocOwner, portfolioMembers, sharedWith } from "@/server/share";
 import { orgMemberIds, workspaceByOwner } from "@/server/workspace";
-import { decodeCertificate, hasCertificateSignature, stampCertificate } from "@/server/signature-p12";
+import {
+  decodeCertificate,
+  hasCertificateSignature,
+  stampCertificate,
+} from "@/server/signature-p12";
 import { decodeSignatureImage, pdfPageCount, stampSignature } from "@/server/signature-stamp";
 import { getDoc, replaceFile, VaultError } from "@/server/vault";
 import type { Document } from "@/domain/vault/types";
 
 /**
- * Firmas en un PDF (migraciones 0030 y 0033). Quien puede editarlo marca un
- * recuadro por persona. Esa persona firma una vez, con una imagen o con un
- * certificado .p12. Ni la imagen, ni el certificado, ni la contraseña se
- * guardan. Si el PDF cambia después por otro motivo, la lista lo dice.
+ * PDF signatures from migrations 0030/0033. Editors assign rectangles; recipients sign once
+ * with an image or .p12. Discard supplied signing material and report later unrelated PDF
+ * changes.
  */
 
 export type SignatureStatus = "pending" | "signed" | "declined";
@@ -51,14 +54,25 @@ function statusOf(value: string): SignatureStatus {
   return value === "signed" || value === "declined" ? value : "pending";
 }
 
-/** Dueño del documento si `userId` es el dueño o lo tiene compartido. */
-export async function signatureOwner(sql: Sql, userId: string, docId: string, shareId?: string): Promise<string | null> {
+/** Document owner when userId owns or has shared access. */
+export async function signatureOwner(
+  sql: Sql,
+  userId: string,
+  docId: string,
+  shareId?: string,
+): Promise<string | null> {
   if (!shareId) return (await getDoc(sql, userId, docId)) ? userId : null;
   return grantedDocOwner(sql, userId, shareId, docId);
 }
 
-/** Si `userId` puede colocar recuadros: es un PDF, y es el dueño o lo tiene con permiso de edición. */
-export async function canRequestSignatures(sql: Sql, userId: string, ownerId: string, docId: string, shareId?: string): Promise<boolean> {
+/** Rectangle placement requires a PDF and ownership or edit access. */
+export async function canRequestSignatures(
+  sql: Sql,
+  userId: string,
+  ownerId: string,
+  docId: string,
+  shareId?: string,
+): Promise<boolean> {
   const doc = await getDoc(sql, ownerId, docId);
   if (!doc?.file || !isPdfFile(doc.file.name, doc.file.mime)) return false;
   if (userId === ownerId) return true;
@@ -67,7 +81,12 @@ export async function canRequestSignatures(sql: Sql, userId: string, ownerId: st
   return target?.ownerId === ownerId;
 }
 
-async function readableBy(sql: Sql, userId: string, ownerId: string, docId: string): Promise<boolean> {
+async function readableBy(
+  sql: Sql,
+  userId: string,
+  ownerId: string,
+  docId: string,
+): Promise<boolean> {
   if (userId === ownerId) return Boolean(await getDoc(sql, ownerId, docId));
   const shares = await sql<{ id: string }>`
     with recursive mine(id) as (
@@ -97,11 +116,9 @@ async function readableBy(sql: Sql, userId: string, ownerId: string, docId: stri
 export type SignaturePerson = { id: string; name: string; loginName: string; self: boolean };
 
 /**
- * A quién se le puede marcar un recuadro en este PDF. No es la lista de
- * usuarios del sistema: en una carpeta personal, con quien se compartió el
- * documento (él o una carpeta que lo contiene) y su dueño; en un espacio de
- * trabajo, los de la organización con acceso a esa carpeta y quienes lo
- * administran. Quien lo pide también, si puede abrirlo, para firmarlo él.
+ * Eligible signers are existing document/portfolio recipients, owners, authorized workspace
+ * members and administrators, plus the requesting reader. This is not the entire user
+ * directory.
  */
 export async function signatureAudience(
   sql: Sql,
@@ -111,11 +128,17 @@ export async function signatureAudience(
 ): Promise<SignaturePerson[]> {
   const doc = await getDoc(sql, ownerId, docId);
   if (!doc) return [];
-  const hidden = new Set((await sql<{ owner_id: string }>`select owner_id from workspace`).map((row) => row.owner_id));
+  const hidden = new Set(
+    (await sql<{ owner_id: string }>`select owner_id from workspace`).map((row) => row.owner_id),
+  );
   const granted = new Map<string, { id: string; name: string; loginName: string }>();
   const add = (id: string, name: string, loginName: string) => {
     if (!id || hidden.has(id) || granted.has(id)) return;
-    granted.set(id, { id, name: name.trim() || loginName || "Sin nombre", loginName: loginName ?? "" });
+    granted.set(id, {
+      id,
+      name: name.trim() || loginName || "Sin nombre",
+      loginName: loginName ?? "",
+    });
   };
   const workspace = await workspaceByOwner(sql, ownerId);
   if (workspace) {
@@ -131,7 +154,8 @@ export async function signatureAudience(
       where w.owner_id = ${ownerId} and g.access in ('admin', 'edit')
         and (g.expires_at is null or g.expires_at > ${now})
     `;
-    for (const row of admins) if (org.has(row.id)) add(row.id, row.name ?? "", row.login_name ?? "");
+    for (const row of admins)
+      if (org.has(row.id)) add(row.id, row.name ?? "", row.login_name ?? "");
     if (doc.portfolioId) {
       const folder = await sql<{ id: string; name: string; login_name: string | null }>`
         select u.id, u.name, coalesce(r.login_name, a.login_name) as login_name
@@ -141,15 +165,22 @@ export async function signatureAudience(
         left join app_admin a on a.user_id = u.id
         where x.owner_id = ${ownerId} and x.portfolio_id = ${doc.portfolioId}
       `;
-      for (const row of folder) if (org.has(row.id)) add(row.id, row.name ?? "", row.login_name ?? "");
+      for (const row of folder)
+        if (org.has(row.id)) add(row.id, row.name ?? "", row.login_name ?? "");
     }
   } else {
     if (doc.portfolioId) {
-      for (const member of await portfolioMembers(sql, ownerId, doc.portfolioId)) add(member.userId, member.name, member.loginName);
+      for (const member of await portfolioMembers(sql, ownerId, doc.portfolioId))
+        add(member.userId, member.name, member.loginName);
     }
     await addDocumentShare(sql, ownerId, docId, add);
   }
-  const ids = keepSigners({ ownerId, callerId, grantedIds: [...granted.keys()], hiddenIds: hidden });
+  const ids = keepSigners({
+    ownerId,
+    callerId,
+    grantedIds: [...granted.keys()],
+    hiddenIds: hidden,
+  });
   const people: SignaturePerson[] = [];
   for (const id of ids) {
     const known = granted.get(id) ?? (await personById(sql, id));
@@ -159,7 +190,7 @@ export async function signatureAudience(
   return people;
 }
 
-/** Invitados del propio documento (no de una carpeta que lo contiene). */
+/** Recipients of the document itself, excluding containing-portfolio grants. */
 async function addDocumentShare(
   sql: Sql,
   ownerId: string,
@@ -198,7 +229,10 @@ async function addDocumentShare(
   for (const row of viaOrg) add(row.id, row.name ?? "", row.login_name ?? "");
 }
 
-async function personById(sql: Sql, id: string): Promise<{ id: string; name: string; loginName: string } | null> {
+async function personById(
+  sql: Sql,
+  id: string,
+): Promise<{ id: string; name: string; loginName: string } | null> {
   const rows = await sql<{ name: string; login_name: string | null }>`
     select u.name, coalesce(r.login_name, a.login_name) as login_name
     from "user" u
@@ -209,7 +243,11 @@ async function personById(sql: Sql, id: string): Promise<{ id: string; name: str
   `;
   const row = rows[0];
   if (!row || (!row.name?.trim() && !row.login_name)) return null;
-  return { id, name: row.name?.trim() || row.login_name || "Sin nombre", loginName: row.login_name ?? "" };
+  return {
+    id,
+    name: row.name?.trim() || row.login_name || "Sin nombre",
+    loginName: row.login_name ?? "",
+  };
 }
 
 function boxOf(value: unknown): number | null {
@@ -218,7 +256,11 @@ function boxOf(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-export async function listSignatures(sql: Sql, ownerId: string, docId: string): Promise<SignatureRow[]> {
+export async function listSignatures(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+): Promise<SignatureRow[]> {
   const doc = await getDoc(sql, ownerId, docId);
   const currentKey = doc?.file?.key ?? "";
   const heads = await sql<{ file_key: string }>`
@@ -264,20 +306,31 @@ export async function listSignatures(sql: Sql, ownerId: string, docId: string): 
   }));
 }
 
-/** El dueño o quien edita marca el recuadro de una persona que ya puede leer el PDF. */
+/** Editors assign rectangles only to users who can already read the PDF. */
 export async function placeSignatureBox(
   sql: Sql,
-  input: { ownerId: string; docId: string; requesterId: string; requesterName: string; signerId: string; box: SignatureBox },
+  input: {
+    ownerId: string;
+    docId: string;
+    requesterId: string;
+    requesterName: string;
+    signerId: string;
+    box: SignatureBox;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string; who?: string }> {
   const doc = await getDoc(sql, input.ownerId, input.docId);
-  if (!doc?.file?.key || !isPdfFile(doc.file.name, doc.file.mime)) return { ok: false, error: "Solo se puede firmar un PDF." };
+  if (!doc?.file?.key || !isPdfFile(doc.file.name, doc.file.mime))
+    return { ok: false, error: "Solo se puede firmar un PDF." };
   const bytes = await readBlob(sql, doc.file.key);
   if (!bytes) return { ok: false, error: "Ese archivo no existe." };
   let pages = 0;
   try {
     pages = await pdfPageCount(bytes);
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo estampar la firma en el PDF." };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "No se pudo estampar la firma en el PDF.",
+    };
   }
   if (!validBox(input.box, pages)) return { ok: false, error: "El recuadro no cabe en la página." };
   const people = await sql<{ name: string }>`select name from "user" where id = ${input.signerId}`;
@@ -285,14 +338,19 @@ export async function placeSignatureBox(
   if (!name) return { ok: false, error: "Esa persona ya no existe." };
   const audience = await signatureAudience(sql, input.ownerId, input.docId, input.requesterId);
   if (!audience.some((person) => person.id === input.signerId)) {
-    return { ok: false, error: "Comparte el documento con {0} antes de pedirle la firma.", who: name };
+    return {
+      ok: false,
+      error: "Comparte el documento con {0} antes de pedirle la firma.",
+      who: name,
+    };
   }
   const existing = await sql<{ id: string; status: string }>`
     select id, status from doc_signature
     where owner_id = ${input.ownerId} and doc_id = ${input.docId} and signer_id = ${input.signerId} and page is not null
     order by requested_at desc
   `;
-  if (existing.some((row) => row.status === "signed")) return { ok: false, error: "Esa persona ya firmó este PDF." };
+  if (existing.some((row) => row.status === "signed"))
+    return { ok: false, error: "Esa persona ya firmó este PDF." };
   const pending = existing.find((row) => row.status === "pending");
   const now = Date.now();
   if (pending) {
@@ -317,24 +375,32 @@ export async function placeSignatureBox(
   return { ok: true };
 }
 
-/** Quita un recuadro que todavía nadie ha firmado. */
-export async function removeSignatureBox(sql: Sql, input: { ownerId: string; id: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+/** Remove an unsigned rectangle. */
+export async function removeSignatureBox(
+  sql: Sql,
+  input: { ownerId: string; id: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const rows = await sql<{ status: string; page: unknown }>`
     select status, page from doc_signature where id = ${input.id} and owner_id = ${input.ownerId} limit 1
   `;
   const row = rows[0];
-  if (!row || row.page == null || row.status !== "pending") return { ok: false, error: "Esa firma ya no está pendiente." };
+  if (!row || row.page == null || row.status !== "pending")
+    return { ok: false, error: "Esa firma ya no está pendiente." };
   await sql`delete from doc_signature where id = ${input.id} and status = 'pending'`;
   return { ok: true };
 }
 
-/**
- * La persona del recuadro firma una vez: con una imagen, o con su certificado
- * .p12. La imagen, el certificado y la contraseña no se guardan.
- */
+/** Sign once with an image or .p12 without retaining image, certificate or password. */
 export async function signPdfBox(
   sql: Sql,
-  input: { userId: string; userName: string; id: string; image?: string; p12?: string; password?: string },
+  input: {
+    userId: string;
+    userName: string;
+    id: string;
+    image?: string;
+    p12?: string;
+    password?: string;
+  },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const rows = await sql<{
     owner_id: string;
@@ -365,7 +431,8 @@ export async function signPdfBox(
     h: Number(row.box_h),
   };
   const doc = await getDoc(sql, row.owner_id, row.doc_id);
-  if (!doc?.file?.key || !isPdfFile(doc.file.name, doc.file.mime)) return { ok: false, error: "Solo se puede firmar un PDF." };
+  if (!doc?.file?.key || !isPdfFile(doc.file.name, doc.file.mime))
+    return { ok: false, error: "Solo se puede firmar un PDF." };
   const pdfBytes = await readBlob(sql, doc.file.key);
   if (!pdfBytes) return { ok: false, error: "Ese archivo no existe." };
   let stamped: Uint8Array;
@@ -376,15 +443,25 @@ export async function signPdfBox(
       if (!certificate) return { ok: false, error: "Ese archivo no es un certificado .p12." };
       stamped = await stampCertificate(pdfBytes, certificate, input.password ?? "", box);
     } else if (hasCertificateSignature(pdfBytes)) {
-      return { ok: false, error: "Este PDF ya tiene una firma con certificado. Una imagen la invalidaría." };
+      return {
+        ok: false,
+        error: "Este PDF ya tiene una firma con certificado. Una imagen la invalidaría.",
+      };
     } else {
       const image = decodeSignatureImage(input.image ?? "");
       if (image === "big") return { ok: false, error: "La firma es demasiado grande." };
-      if (!image) return { ok: false, error: "La firma tiene que ser una imagen PNG o JPEG, o un certificado .p12." };
+      if (!image)
+        return {
+          ok: false,
+          error: "La firma tiene que ser una imagen PNG o JPEG, o un certificado .p12.",
+        };
       stamped = await stampSignature(pdfBytes, image, box);
     }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "No se pudo estampar la firma en el PDF." };
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "No se pudo estampar la firma en el PDF.",
+    };
   }
   const key = newFileKey(row.owner_id);
   await putBlob(sql, key, stamped, "application/pdf");
@@ -415,10 +492,16 @@ export async function signPdfBox(
   return { ok: true };
 }
 
-/** Pide la firma a esas personas. Quien no puede abrir el documento se devuelve en `blocked`. */
+/** Request signatures and return inaccessible recipients in blocked. */
 export async function requestSignatures(
   sql: Sql,
-  input: { ownerId: string; docId: string; requesterId: string; requesterName: string; userIds: string[] },
+  input: {
+    ownerId: string;
+    docId: string;
+    requesterId: string;
+    requesterName: string;
+    userIds: string[];
+  },
 ): Promise<{ blocked: string[] }> {
   const blocked: string[] = [];
   const now = Date.now();
@@ -460,13 +543,21 @@ export async function decideSignature(
   sql: Sql,
   input: { userId: string; id: string; status: "signed" | "declined"; note: string },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const rows = await sql<{ owner_id: string; doc_id: string; signer_id: string; status: string; page: unknown }>`
+  const rows = await sql<{
+    owner_id: string;
+    doc_id: string;
+    signer_id: string;
+    status: string;
+    page: unknown;
+  }>`
     select owner_id, doc_id, signer_id, status, page from doc_signature where id = ${input.id} limit 1
   `;
   const row = rows[0];
-  if (!row || row.signer_id !== input.userId) return { ok: false, error: "Esa firma ya no está pendiente." };
+  if (!row || row.signer_id !== input.userId)
+    return { ok: false, error: "Esa firma ya no está pendiente." };
   if (row.status !== "pending") return { ok: false, error: "Esa firma ya no está pendiente." };
-  if (input.status === "signed" && row.page != null) return { ok: false, error: "Sube la imagen de tu firma." };
+  if (input.status === "signed" && row.page != null)
+    return { ok: false, error: "Sube la imagen de tu firma." };
   if (!(await readableBy(sql, input.userId, row.owner_id, row.doc_id))) {
     return { ok: false, error: "Ya no tienes acceso a este documento." };
   }
@@ -489,9 +580,15 @@ export type PendingSignature = {
   shareId: string | null;
 };
 
-/** Firmas que le pidieron a `userId` y siguen pendientes, con cómo abrir el documento. */
+/** Pending signature requests for userId with document navigation metadata. */
 export async function pendingSignatures(sql: Sql, userId: string): Promise<PendingSignature[]> {
-  const rows = await sql<{ id: string; owner_id: string; doc_id: string; title: string; requested_by_name: string }>`
+  const rows = await sql<{
+    id: string;
+    owner_id: string;
+    doc_id: string;
+    title: string;
+    requested_by_name: string;
+  }>`
     select s.id, s.owner_id, s.doc_id, d.title, s.requested_by_name
     from doc_signature s
     join vault_doc d on d.user_id = s.owner_id and d.id = s.doc_id and not d.deleted

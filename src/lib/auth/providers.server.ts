@@ -1,9 +1,8 @@
 import type { Sql } from "../db";
 
 /**
- * Proveedores externos de inicio de sesión (solo servidor), guardados en
- * `auth_provider` (migración 0007). Se configuran desde Administración →
- * Autenticación; los secretos nunca salen del servidor sin enmascarar.
+ * Server-only external authentication provider settings in auth_provider, migration 0007.
+ * Administration configures them; mask all secrets before browser responses.
  */
 
 export type ProviderId = "ldap" | "google" | "github" | "microsoft" | "sso";
@@ -16,12 +15,12 @@ export type LdapConfig = {
   bindDn: string;
   bindPassword: string;
   baseDn: string;
-  /** `{{username}}` se reemplaza por lo que escribe la persona (escapado). */
+  /** Replace the username placeholder with escaped user input. */
   userFilter: string;
   nameAttr: string;
   emailAttr: string;
   startTls: boolean;
-  /** Acepta certificados no verificados (solo para pruebas). */
+  /** Allow unverified certificates for testing only. */
   allowInsecureTls: boolean;
 };
 
@@ -29,7 +28,7 @@ export type OAuthConfig = { clientId: string; clientSecret: string; tenantId: st
 
 export type SsoConfig = {
   label: string;
-  /** Emisor OIDC, p. ej. `https://keycloak.example.com/realms/grafito`. */
+  /** OIDC issuer, for example a Keycloak realm URL. */
   issuer: string;
   clientId: string;
   clientSecret: string;
@@ -62,7 +61,7 @@ export const DEFAULTS: ProviderConfig = {
   sso: { label: "SSO", issuer: "", clientId: "", clientSecret: "", scopes: "openid profile email" },
 };
 
-/** Campos secretos: se guardan, pero al navegador llegan vacíos. */
+/** Persist secret fields but send empty values to the browser. */
 const SECRETS = ["bindPassword", "clientSecret"] as const;
 
 export type ProviderRow<K extends ProviderId = ProviderId> = {
@@ -120,7 +119,7 @@ export async function readProvider<K extends ProviderId>(sql: Sql, id: K): Promi
   return (await readProviders(sql)).find((row) => row.id === id) as ProviderRow<K>;
 }
 
-/** Copia para el navegador: secretos vacíos y `hasSecret` para saber si hay uno guardado. */
+/** Browser-safe copy with empty secrets and hasSecret flags. */
 export function maskProvider(row: ProviderRow): ProviderRow & { hasSecret: boolean } {
   const config = { ...row.config } as Record<string, unknown>;
   let hasSecret = false;
@@ -134,8 +133,8 @@ export function maskProvider(row: ProviderRow): ProviderRow & { hasSecret: boole
 }
 
 /**
- * Aplica lo que llega del formulario sobre lo guardado: solo campos conocidos y
- * con su tipo, y un secreto vacío conserva el que ya había.
+ * Merge known, correctly typed form fields into stored settings. Empty secrets preserve
+ * existing values.
  */
 export function mergeConfig<K extends ProviderId>(
   id: K,
@@ -152,11 +151,16 @@ export function mergeConfig<K extends ProviderId>(
   return merged as ProviderConfig[K];
 }
 
-/** Guarda la configuración. Un secreto vacío conserva el que ya había. */
+/** Save settings while preserving existing secrets when inputs are empty. */
 export async function writeProvider(
   sql: Sql,
   id: ProviderId,
-  input: { enabled: boolean; config: Record<string, unknown>; defaultRole: string; allowedDomains: string },
+  input: {
+    enabled: boolean;
+    config: Record<string, unknown>;
+    defaultRole: string;
+    allowedDomains: string;
+  },
 ): Promise<void> {
   const current = await readProvider(sql, id);
   const config = JSON.stringify(mergeConfig(id, current.config, input.config));
@@ -173,14 +177,14 @@ export async function writeProvider(
   `;
 }
 
-/** El correo pasa el filtro de dominios del proveedor (vacío = cualquiera). */
+/** Whether email passes the provider's domain filter; empty allows any domain. */
 export function domainAllowed(row: Pick<ProviderRow, "allowedDomains">, email: string): boolean {
   if (row.allowedDomains.length === 0) return true;
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
   return row.allowedDomains.includes(domain);
 }
 
-/** Un proveedor está listo para mostrarse en el ingreso. */
+/** Whether the provider is ready to appear on the sign-in screen. */
 export function providerReady(row: ProviderRow): boolean {
   if (!row.enabled) return false;
   if (row.id === "ldap") {

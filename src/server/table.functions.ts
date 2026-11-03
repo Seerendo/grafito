@@ -6,14 +6,40 @@ import { FIELD_TYPES, VIEW_MODES } from "@/domain/vault/table";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { deliverNotice } from "@/server/notify";
-import { editableTarget, grantedDocOwner, shareCandidates, shareOrgCandidates } from "@/server/share";
-import { addRows, attachFile, attachInvitedFile, attachPublicFile, deleteField, deleteRows, formActivity, invitedFormView, publicFormView, readTable, revokeFormLink, rowChoices, rowHistory, rowsSince, saveField, saveForm, saveLayout, submitInvitedForm, submitPublicForm, syncFormInvites, tableDigests, updateCell } from "@/server/table";
+import {
+  editableTarget,
+  grantedDocOwner,
+  shareCandidates,
+  shareOrgCandidates,
+} from "@/server/share";
+import {
+  addRows,
+  attachFile,
+  attachInvitedFile,
+  attachPublicFile,
+  deleteField,
+  deleteRows,
+  formActivity,
+  invitedFormView,
+  publicFormView,
+  readTable,
+  revokeFormLink,
+  rowChoices,
+  rowHistory,
+  rowsSince,
+  saveField,
+  saveForm,
+  saveLayout,
+  submitInvitedForm,
+  submitPublicForm,
+  syncFormInvites,
+  tableDigests,
+  updateCell,
+} from "@/server/table";
 
 /**
- * Funciones de servidor de las tablas de datos (ver `server/table.ts`). Una
- * tabla propia la lee y cambia su dueño; una de lo compartido conmigo (o de un
- * espacio de trabajo), quien puede verla o editarla por ahí, igual que una
- * nota. Leer pide `notes.read`; cambiar, `notes.edit`.
+ * Table server functions authorize reads with notes.read and mutations with notes.edit plus
+ * ownership/shared access, matching note permissions.
  */
 
 const id = z.string().min(1).max(80);
@@ -29,7 +55,8 @@ async function access(userId: string, input: { docId: string; shareId?: string }
   if (!input.shareId) return { sql, ownerId: userId, canEdit: mayEdit, actor };
   const editable = mayEdit ? await editableTarget(sql, userId, input.shareId, input.docId) : null;
   if (write) return editable ? { sql, ownerId: editable.ownerId, canEdit: true, actor } : null;
-  const ownerId = editable?.ownerId ?? (await grantedDocOwner(sql, userId, input.shareId, input.docId));
+  const ownerId =
+    editable?.ownerId ?? (await grantedDocOwner(sql, userId, input.shareId, input.docId));
   return ownerId ? { sql, ownerId, canEdit: Boolean(editable), actor } : null;
 }
 
@@ -45,14 +72,17 @@ export const tableOpen = createServerFn({ method: "GET" })
     return { ok: true as const, canEdit: ctx.canEdit, ...table };
   });
 
-/** Lo que cambiaron los demás desde `since`. */
+/** Changes from other users since the supplied timestamp. */
 export const tableChanges = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => where.extend({ since: z.number() }).parse(input))
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, false);
     if (!ctx) return { ok: false as const, error: "No puedes ver esta tabla." };
-    return { ok: true as const, ...(await rowsSince(ctx.sql, ctx.ownerId, data.docId, data.since)) };
+    return {
+      ok: true as const,
+      ...(await rowsSince(ctx.sql, ctx.ownerId, data.docId, data.since)),
+    };
   });
 
 export const tableSaveField = createServerFn({ method: "POST" })
@@ -92,7 +122,14 @@ export const tableDeleteField = createServerFn({ method: "POST" })
 export const tableAddRows = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    where.extend({ rows: z.array(z.object({ cells: z.record(z.string(), z.unknown()) })).min(1).max(1000) }).parse(input),
+    where
+      .extend({
+        rows: z
+          .array(z.object({ cells: z.record(z.string(), z.unknown()) }))
+          .min(1)
+          .max(1000),
+      })
+      .parse(input),
   )
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, true);
@@ -102,7 +139,9 @@ export const tableAddRows = createServerFn({ method: "POST" })
 
 export const tableUpdateCell = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => where.extend({ rowId: id, fieldId: id, value: z.unknown() }).parse(input))
+  .validator((input: unknown) =>
+    where.extend({ rowId: id, fieldId: id, value: z.unknown() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, true);
     if (!ctx) return denied;
@@ -111,7 +150,9 @@ export const tableUpdateCell = createServerFn({ method: "POST" })
 
 export const tableDeleteRows = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => where.extend({ rowIds: z.array(id).min(1).max(1000) }).parse(input))
+  .validator((input: unknown) =>
+    where.extend({ rowIds: z.array(id).min(1).max(1000) }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, true);
     if (!ctx) return denied;
@@ -144,7 +185,10 @@ export const tableRowHistory = createServerFn({ method: "GET" })
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, false);
     if (!ctx) return { ok: false as const, error: "No puedes ver esta tabla." };
-    return { ok: true as const, history: await rowHistory(ctx.sql, ctx.ownerId, data.docId, data.rowId) };
+    return {
+      ok: true as const,
+      history: await rowHistory(ctx.sql, ctx.ownerId, data.docId, data.rowId),
+    };
   });
 
 export const tableSaveForm = createServerFn({ method: "POST" })
@@ -188,14 +232,17 @@ export const tableSaveForm = createServerFn({ method: "POST" })
     return { ok: true as const, form: synced.form, notice };
   });
 
-/** Personas y organizaciones a las que se puede enviar el formulario. */
+/** Available user and organization form recipients. */
 export const tableFormPeople = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => where.parse(input))
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, true);
     if (!ctx) return { users: [], orgs: [] };
-    return { users: await shareCandidates(ctx.sql, context.userId), orgs: await shareOrgCandidates(ctx.sql) };
+    return {
+      users: await shareCandidates(ctx.sql, context.userId),
+      orgs: await shareOrgCandidates(ctx.sql),
+    };
   });
 
 export const tableRevokeForm = createServerFn({ method: "POST" })
@@ -220,11 +267,16 @@ export const tableFormActivity = createServerFn({ method: "GET" })
 
 export const tableRowChoices = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => where.extend({ tableId: id, query: z.string().max(120).optional() }).parse(input))
+  .validator((input: unknown) =>
+    where.extend({ tableId: id, query: z.string().max(120).optional() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const ctx = await access(context.userId, data, false);
     if (!ctx) return { ok: false as const, error: "No puedes ver esta tabla." };
-    return { ok: true as const, rows: await rowChoices(ctx.sql, ctx.ownerId, data.tableId, data.query ?? "") };
+    return {
+      ok: true as const,
+      rows: await rowChoices(ctx.sql, ctx.ownerId, data.tableId, data.query ?? ""),
+    };
   });
 
 export const tableAttach = createServerFn({ method: "POST" })
@@ -243,7 +295,8 @@ export const tableAttach = createServerFn({ method: "POST" })
     const ctx = await access(context.userId, data, true);
     if (!ctx) return denied;
     const { mayUpload } = await import("@/server/upload-target");
-    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId ?? null))) return { ok: false as const, error: "Ese archivo no es de esta bóveda." };
+    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId ?? null)))
+      return { ok: false as const, error: "Ese archivo no es de esta bóveda." };
     return attachFile(ctx.sql, ctx.ownerId, data.docId, {
       name: data.name,
       mime: data.mime,
@@ -262,7 +315,7 @@ export const tableSearchTexts = createServerFn({ method: "GET" })
 
 const TOO_MANY = "Demasiados envíos seguidos. Espera un minuto y vuelve a intentarlo.";
 
-/** Límite de envíos sin sesión (ver `form-limit.ts`). */
+/** Unauthenticated submission limits; see form-limit.ts. */
 async function allowed(kind: "submit" | "file", token: string): Promise<boolean> {
   const { getRequest } = await import("@tanstack/react-start/server");
   const { allowPublicForm, clientAddress } = await import("@/server/form-limit");
@@ -279,7 +332,9 @@ export const publicFormOpen = createServerFn({ method: "GET" })
 
 export const publicFormSubmit = createServerFn({ method: "POST" })
   .validator((input: unknown) =>
-    z.object({ token: z.string().min(16).max(64), cells: z.record(z.string(), z.unknown()) }).parse(input),
+    z
+      .object({ token: z.string().min(16).max(64), cells: z.record(z.string(), z.unknown()) })
+      .parse(input),
   )
   .handler(async ({ data }) => {
     if (!(await allowed("submit", data.token))) return { ok: false as const, error: TOO_MANY };
@@ -316,12 +371,20 @@ export const invitedFormOpen = createServerFn({ method: "GET" })
 
 export const invitedFormSubmit = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => inviteToken.extend({ cells: z.record(z.string(), z.unknown()) }).parse(input))
+  .validator((input: unknown) =>
+    inviteToken.extend({ cells: z.record(z.string(), z.unknown()) }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     if (!(await allowed("submit", data.token))) return { ok: false as const, error: TOO_MANY };
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    return submitInvitedForm(sql, data.token, context.userId, profile.displayName || profile.loginName || "Alguien", data.cells);
+    return submitInvitedForm(
+      sql,
+      data.token,
+      context.userId,
+      profile.displayName || profile.loginName || "Alguien",
+      data.cells,
+    );
   });
 
 export const invitedFormFile = createServerFn({ method: "POST" })
@@ -339,6 +402,11 @@ export const invitedFormFile = createServerFn({ method: "POST" })
     if (!(await allowed("file", data.token))) return { ok: false as const, error: TOO_MANY };
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    return attachInvitedFile(sql, data.token, context.userId, profile.displayName || profile.loginName || "Alguien", data);
+    return attachInvitedFile(
+      sql,
+      data.token,
+      context.userId,
+      profile.displayName || profile.loginName || "Alguien",
+      data,
+    );
   });
-

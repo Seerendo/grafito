@@ -1,10 +1,7 @@
 /**
- * WebDAV de la bóveda: rutas, nombres y permisos. Sin base de datos.
- * El árbol real lo arma `server/dav/handle.ts`.
- *
- * `/dav/Personal` es la bóveda de quien entra. `/dav/Compartidos` es lo que
- * le compartieron (y, dentro, las carpetas de un espacio que le concedieron).
- * Un administrador no ve desde aquí las bóvedas ajenas.
+ * Pure WebDAV paths, names and permissions. server/dav/handle.ts builds the tree. /dav/Personal
+ * exposes the caller's vault; /dav/Compartidos exposes granted shared/workspace content.
+ * Administrators do not gain access to other vaults.
  */
 import { PERMISSION } from "./permissions.ts";
 
@@ -50,12 +47,12 @@ const WRITE_OPS = new Set<DavOp>([
 
 export type DavProfile = { isAdmin: boolean; permissions: readonly string[] };
 
-/** `null`: la bóveda propia. Si no, lo compartido ya resuelto (ver / escribir ese nodo). */
+/** null denotes the owned vault; otherwise this is resolved shared-node read/write access. */
 export type DavShareGate = { read: boolean; write: boolean } | null;
 
 /**
- * El rol manda en la bóveda propia. En lo compartido, además, hace falta
- * poder leer o escribir ese nodo: ser administrador no salta esa valla.
+ * Role permissions govern owned content. Shared content also requires node access, which
+ * administrator status cannot bypass.
  */
 export function davPermitted(op: DavOp, profile: DavProfile, share: DavShareGate): boolean {
   if (share) {
@@ -73,7 +70,7 @@ export function davPermitted(op: DavOp, profile: DavProfile, share: DavShareGate
   return profile.permissions.includes(ROLE[op]);
 }
 
-/** Si un nombre aparece en un listado. Las carpetas se ven para poder llegar a lo demás. */
+/** Whether a name appears in listings. Folders remain visible for navigation. */
 export function davShows(profile: DavProfile, kind: "portfolio" | "markdown" | "file"): boolean {
   if (profile.isAdmin) return true;
   if (kind === "markdown") return profile.permissions.includes(PERMISSION.notesRead);
@@ -85,7 +82,7 @@ export function davShows(profile: DavProfile, kind: "portfolio" | "markdown" | "
   );
 }
 
-/** Un segmento ya decodificado, o `null` si es `.`, `..`, vacío o trae una barra. */
+/** Decode one path segment; reject empty, dot, dot-dot and slash-containing values. */
 export function cleanSegment(raw: string): string | null {
   let value: string;
   try {
@@ -116,7 +113,7 @@ export function parseDavPath(pathname: string): DavWhere {
   return { kind: "bad" };
 }
 
-/** Nombre usable en un segmento: sin barras, sin controles, sin punto final. */
+/** Safe path segment without slashes, control characters or trailing periods. */
 export function sanitizeBase(name: string): string {
   const chars: string[] = [];
   for (const ch of name.trim()) {
@@ -149,8 +146,8 @@ function extensionOf(name: string): string {
 }
 
 /**
- * Nombres únicos dentro de una carpeta. Si dos coinciden (sin distinguir
- * mayúsculas), los dos llevan el inicio del id: el nombre pelado deja de usarse.
+ * Case-insensitive duplicate names receive ID prefixes on both entries; the ambiguous bare name
+ * is no longer used.
  */
 export function assignSegments(
   items: readonly { id: string; base: string }[],
@@ -172,7 +169,7 @@ export function assignSegments(
   });
 }
 
-/** El id cuyo segmento coincide. Si hay varios iguales, no elige. */
+/** Find the ID matching a segment; refuse ambiguous matches. */
 export function matchSegment(
   items: readonly { id: string; segment: string }[],
   wanted: string,
@@ -185,8 +182,8 @@ export function matchSegment(
 }
 
 /**
- * `Depth` ausente se lee como 1 (un cliente que no lo manda igual ve los hijos).
- * `infinity` no se recorre: el servidor responde 403 y el cliente puede pedir 1.
+ * Missing Depth defaults to one so children remain visible. Reject infinity with 403 rather
+ * than recursively enumerating everything.
  */
 export function davDepth(header: string | null): { depth: 0 | 1 } | { reject: true } {
   const value = (header ?? "1").trim().toLowerCase();
@@ -195,12 +192,12 @@ export function davDepth(header: string | null): { depth: 0 | 1 } | { reject: tr
   return { reject: true };
 }
 
-/** `Overwrite: F` no pisa. Cualquier otra cosa (o ninguna) sí. */
+/** Overwrite: F prevents replacement; all other or missing values allow it. */
 export function overwriteAllowed(header: string | null): boolean {
   return (header ?? "T").trim().toUpperCase() !== "F";
 }
 
-/** La ruta de un `Destination` absoluto o relativo. */
+/** Extract the path from an absolute or relative Destination. */
 export function pathFromDestination(value: string | null, requestUrl: string): string | null {
   if (!value?.trim()) return null;
   try {
@@ -237,7 +234,7 @@ function rfc1123(ms: number): string {
   return new Date(ms).toUTCString();
 }
 
-/** Cuerpo `207 Multi-Status` de un PROPFIND. */
+/** PROPFIND 207 Multi-Status body. */
 export function propfindXml(items: readonly DavListed[]): string {
   const rows = items
     .map((item) => {
@@ -260,7 +257,7 @@ export function propfindXml(items: readonly DavListed[]): string {
   return `<?xml version="1.0" encoding="utf-8"?>\n<d:multistatus xmlns:d="DAV:">${rows}</d:multistatus>`;
 }
 
-/** PROPPATCH no guarda nada: responde 200 para que el cliente siga. */
+/** PROPPATCH does not persist properties; return success so clients continue. */
 export function proppatchXml(href: string, body: string): string {
   const names = [...body.matchAll(/<\/(?:[A-Za-z0-9]+:)?([A-Za-z0-9]+)>/g)]
     .map((match) => match[1] ?? "")
@@ -280,7 +277,7 @@ export function proppatchXml(href: string, body: string): string {
   );
 }
 
-/** Segundos de un `Timeout: Second-N`, entre 1 y 3600. */
+/** Timeout seconds from Second-N, bounded to 1–3600. */
 export function lockSeconds(header: string | null): number {
   const match = /Second-(\d+)/i.exec(header ?? "");
   const value = match ? Number(match[1]) : 600;
@@ -288,7 +285,7 @@ export function lockSeconds(header: string | null): number {
   return Math.min(Math.floor(value), 3600);
 }
 
-/** El token que el cliente presenta en `If` o `Lock-Token`. */
+/** Lock token supplied through If or Lock-Token. */
 export function presentedLock(header: string | null): string | null {
   if (!header) return null;
   const match = /opaquelocktoken:[A-Za-z0-9-]+/i.exec(header);
@@ -332,7 +329,7 @@ export function mimeForName(name: string, header: string | null): string {
   return MIME[ext] ?? "application/octet-stream";
 }
 
-/** Intentos fallidos de entrada por WebDAV: 20 en 10 minutos cierran la puerta. */
+/** Block WebDAV sign-in after twenty failures within ten minutes. */
 export const DAV_FAIL_WINDOW_MS = 10 * 60 * 1000;
 export const DAV_FAIL_MAX = 20;
 

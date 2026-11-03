@@ -11,14 +11,16 @@ import type { Document } from "@/domain/vault/types";
 import { createDrawing, createTable, ingestExternalFiles } from "./ingest-files";
 import { requestNotePdf } from "./NotePdf";
 
-export type RowMenuTarget = ({ kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string }) & {
-  /** Sobre una fila elegida entre varias (Ctrl o Mayús): todas las elegidas. */
+export type RowMenuTarget = (
+  { kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string }
+) & {
+  /** Right-clicking a selected row applies to the whole Ctrl/Shift selection. */
   many?: string[];
 };
 
 type RowMenu = RowMenuTarget & { x: number; y: number };
 
-/** Margen entre el menú y el borde de la ventana. */
+/** Margin between context menu and viewport edge. */
 const EDGE = 8;
 
 function downloadDocument(document: Document) {
@@ -36,11 +38,13 @@ function downloadDocument(document: Document) {
 }
 
 /**
- * Menú contextual de la bóveda (raíz, portafolio o documento), compartido por
- * el directorio y la raíz del área de trabajo. Devuelve `openMenu` para el
- * `onContextMenu` de cada fila y el elemento a pintar.
+ * Vault context menu shared by directory and workspace pages. Return openMenu for row handlers
+ * and the rendered menu element.
  */
-export function useRowMenu(onOpenNote: (id: string) => void, onSelect?: (target: { kind: "document" | "portfolio"; id: string }) => void) {
+export function useRowMenu(
+  onOpenNote: (id: string) => void,
+  onSelect?: (target: { kind: "document" | "portfolio"; id: string }) => void,
+) {
   const [menu, setMenu] = useState<RowMenu | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadTo = useRef<string | null>(null);
@@ -132,10 +136,14 @@ function RowContextMenu({
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState({ left: menu.x, top: menu.y, ready: false });
   const document = menu.kind === "document" ? documents.find((item) => item.id === menu.id) : null;
-  const portfolioId = menu.kind === "portfolio" ? menu.id : menu.kind === "document" ? (document?.portfolioId ?? null) : null;
+  const portfolioId =
+    menu.kind === "portfolio"
+      ? menu.id
+      : menu.kind === "document"
+        ? (document?.portfolioId ?? null)
+        : null;
 
-  // Se mide ya pintado: si no cabe hacia abajo o a la derecha, se abre hacia
-  // el otro lado, y nunca se sale de la ventana.
+  // Measure after rendering and flip placement to keep the menu within the viewport.
   useLayoutEffect(() => {
     const box = ref.current?.getBoundingClientRect();
     if (!box) return;
@@ -155,24 +163,41 @@ function RowContextMenu({
   const vault = useVault.getState;
   const items: { label: string; onClick: () => void; danger?: boolean }[] = [];
   if (onSelect && (menu.kind === "document" || menu.kind === "portfolio")) {
-    const target = menu.kind === "document" ? { kind: "document" as const, id: menu.id } : { kind: "portfolio" as const, id: menu.id };
+    const target =
+      menu.kind === "document"
+        ? { kind: "document" as const, id: menu.id }
+        : { kind: "portfolio" as const, id: menu.id };
     items.push({ label: t("Seleccionar"), onClick: act(() => onSelect(target)) });
   }
   if (can(PERMISSION.notesCreate)) {
-    items.push({ label: t("Nueva nota"), onClick: act(() => onOpenNote(vault().createDocument(portfolioId))) });
+    items.push({
+      label: t("Nueva nota"),
+      onClick: act(() => onOpenNote(vault().createDocument(portfolioId))),
+    });
   }
   if (can(PERMISSION.portfoliosManage)) {
     const parentId = menu.kind === "portfolio" ? menu.id : null;
-    items.push({ label: t("Nuevo portafolio"), onClick: act(() => vault().setDialog({ type: "portfolio", parentId })) });
+    items.push({
+      label: t("Nuevo portafolio"),
+      onClick: act(() => vault().setDialog({ type: "portfolio", parentId })),
+    });
   }
   if (can(PERMISSION.filesUpload)) {
     items.push({
       label: t("Nuevo dibujo"),
-      onClick: act(() => void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
+      onClick: act(
+        () =>
+          void createDrawing(portfolioId).then(() =>
+            onOpenNote(useVault.getState().activeId ?? ""),
+          ),
+      ),
     });
     items.push({
       label: t("Nueva tabla"),
-      onClick: act(() => void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))),
+      onClick: act(
+        () =>
+          void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? "")),
+      ),
     });
     items.push({ label: t("Subir archivo"), onClick: () => onUpload(portfolioId, false) });
     items.push({ label: t("Subir carpeta"), onClick: () => onUpload(portfolioId, true) });
@@ -180,13 +205,22 @@ function RowContextMenu({
   if (menu.kind === "document" && document) {
     const id = document.id;
     if (can(PERMISSION.notesShare)) {
-      items.push({ label: t("Compartir…"), onClick: act(() => vault().setDialog({ type: "share", kind: "document", id })) });
+      items.push({
+        label: t("Compartir…"),
+        onClick: act(() => vault().setDialog({ type: "share", kind: "document", id })),
+      });
     }
     if (can(PERMISSION.notesEdit)) {
-      items.push({ label: t("Renombrar"), onClick: act(() => vault().setDialog({ type: "rename-document", id })) });
+      items.push({
+        label: t("Renombrar"),
+        onClick: act(() => vault().setDialog({ type: "rename-document", id })),
+      });
     }
     if (can(PERMISSION.linksManage)) {
-      items.push({ label: t("Vincular"), onClick: act(() => vault().setDialog({ type: "link", sourceId: id })) });
+      items.push({
+        label: t("Vincular"),
+        onClick: act(() => vault().setDialog({ type: "link", sourceId: id })),
+      });
     }
     if (document.kind === "markdown" && can(PERMISSION.notesCreate)) {
       items.push({
@@ -210,31 +244,59 @@ function RowContextMenu({
       });
     }
     if (can(deletePermission(document.kind))) {
-      items.push({ label: t("Eliminar"), danger: true, onClick: act(() => vault().setDialog({ type: "delete-document", id })) });
+      items.push({
+        label: t("Eliminar"),
+        danger: true,
+        onClick: act(() => vault().setDialog({ type: "delete-document", id })),
+      });
     }
   }
   const canZip = can(PERMISSION.notesExport) || can(PERMISSION.filesDownload);
   const canGit = gitOn && can(PERMISSION.gitSync);
   if (menu.kind === "root" && canZip) {
-    items.push({ label: t("Descargar todo (.zip)"), onClick: act(() => void downloadPortfolio("all")) });
+    items.push({
+      label: t("Descargar todo (.zip)"),
+      onClick: act(() => void downloadPortfolio("all")),
+    });
   }
   if (menu.kind === "root" && canGit) {
-    items.push({ label: t("Sincronizar todo con Git…"), onClick: act(() => vault().setDialog({ type: "git", portfolioId: "all" })) });
+    items.push({
+      label: t("Sincronizar todo con Git…"),
+      onClick: act(() => vault().setDialog({ type: "git", portfolioId: "all" })),
+    });
   }
   if (menu.kind === "portfolio") {
     const id = menu.id;
-    if (canZip) items.push({ label: t("Descargar (.zip)"), onClick: act(() => void downloadPortfolio(id)) });
-    if (canGit) items.push({ label: t("Sincronizar con Git…"), onClick: act(() => vault().setDialog({ type: "git", portfolioId: id })) });
-    items.push({ label: t("Espacio y permisos…"), onClick: act(() => vault().setDialog({ type: "space", portfolioId: id })) });
+    if (canZip)
+      items.push({ label: t("Descargar (.zip)"), onClick: act(() => void downloadPortfolio(id)) });
+    if (canGit)
+      items.push({
+        label: t("Sincronizar con Git…"),
+        onClick: act(() => vault().setDialog({ type: "git", portfolioId: id })),
+      });
+    items.push({
+      label: t("Espacio y permisos…"),
+      onClick: act(() => vault().setDialog({ type: "space", portfolioId: id })),
+    });
     if (can(PERMISSION.notesShare)) {
-      items.push({ label: t("Compartir…"), onClick: act(() => vault().setDialog({ type: "share", kind: "portfolio", id })) });
+      items.push({
+        label: t("Compartir…"),
+        onClick: act(() => vault().setDialog({ type: "share", kind: "portfolio", id })),
+      });
     }
     if (can(PERMISSION.portfoliosManage)) {
-      items.push({ label: t("Renombrar"), onClick: act(() => vault().setDialog({ type: "rename-portfolio", id })) });
-      items.push({ label: t("Eliminar"), danger: true, onClick: act(() => vault().setDialog({ type: "delete-portfolio", id })) });
+      items.push({
+        label: t("Renombrar"),
+        onClick: act(() => vault().setDialog({ type: "rename-portfolio", id })),
+      });
+      items.push({
+        label: t("Eliminar"),
+        danger: true,
+        onClick: act(() => vault().setDialog({ type: "delete-portfolio", id })),
+      });
     }
   }
-  // Sobre una fila elegida entre varias: lo que vale para todas a la vez.
+  // For a multi-selection, expose actions applicable to all selected rows.
   if (menu.many && menu.many.length > 1) {
     const keys = menu.many;
     items.splice(0, items.length, {
@@ -244,8 +306,7 @@ function RowContextMenu({
     });
   }
   if (items.length === 0) return null;
-  // En el cuerpo de la página: dentro de un panel con `backdrop-filter` (diseño
-  // Moderno) un `position: fixed` queda recortado por el panel.
+  // Portal into body so backdrop-filter panels cannot clip fixed-position menus.
   return createPortal(
     <div
       ref={ref}

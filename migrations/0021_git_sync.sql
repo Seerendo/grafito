@@ -1,8 +1,6 @@
--- Sincronización con Git (GitHub, GitLab, también instalaciones propias): un
--- portafolio (o toda la bóveda, `all`) se refleja en una carpeta de un
--- repositorio, en ambos sentidos. Es opcional: el plugin `git` viene apagado
--- y el permiso `git.sync` solo lo tiene el administrador. Ver
--- `src/server/git/sync.ts`.
+-- Bidirectional Git sync with GitHub or GitLab, including self-hosted instances. Mirror a
+-- portfolio or the entire vault (all) into a repository folder. The optional git plugin defaults
+-- off; git.sync initially belongs only to administrators. See src/server/git/sync.ts.
 
 insert into app_plugin (id, name, description, enabled, built_in) values
   ('git', 'Git', 'Sincronizar portafolios con un repositorio de GitHub o GitLab', false, true)
@@ -16,9 +14,8 @@ insert into app_role_permission (role_id, permission_key) values
   ('admin', 'git.sync')
 on conflict do nothing;
 
--- Un portafolio enlazado con una carpeta de un repositorio. `token` va cifrado
--- (GRAFITO_ENCRYPTION_KEY); `hook_secret` firma los webhooks opcionales;
--- `head`, el último commit sincronizado.
+-- Portfolio linked to a repository folder. token is encrypted with GRAFITO_ENCRYPTION_KEY;
+-- hook_secret signs optional webhooks; head records the last synchronized commit.
 create table if not exists git_link (
   id text primary key,
   user_id text not null references "user" ("id") on delete cascade,
@@ -40,10 +37,8 @@ create table if not exists git_link (
   unique (user_id, portfolio_id)
 );
 
--- Cada archivo del repositorio enlazado con un documento, como quedó en la
--- última sincronización: el blob de Git, la fecha del documento, su título y
--- portafolio (para no cambiar la ruta si no cambian), y el texto de la nota
--- (`base`, para unir cambios hechos a la vez en los dos lados).
+-- Last synchronized state for each repository file: Git blob, document timestamp, title and
+-- portfolio preserve unchanged paths. base stores note text for merging concurrent changes.
 create table if not exists git_link_file (
   link_id text not null references git_link (id) on delete cascade,
   path text not null,

@@ -21,7 +21,11 @@ function bindNotePdf(next: Handler) {
 }
 
 function fileName(title: string) {
-  const clean = title.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || t("nota");
+  const clean =
+    title
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || t("nota");
   return `${clean}.pdf`;
 }
 
@@ -75,7 +79,7 @@ function bakeStyles(root: HTMLElement) {
     }
   }
 }
-  function loadImage(src: string) {
+function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
@@ -115,7 +119,7 @@ async function rasterizeSvgs(root: HTMLElement) {
       png.style.height = `${height}px`;
       svg.replaceWith(png);
     } catch {
-      // Si el SVG no se puede rasterizar, html2canvas intenta el original.
+      // If SVG rasterization fails, html2canvas tries the original.
     }
   }
 }
@@ -201,7 +205,10 @@ export function NotePdfHost() {
   return (
     <>
       {notice ? (
-        <p data-ui="toast" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-sm text-fg shadow-2xl">
+        <p
+          data-ui="toast"
+          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line bg-surface px-4 py-2 text-sm text-fg shadow-2xl"
+        >
           {t(notice)}
         </p>
       ) : null}
@@ -213,7 +220,9 @@ export function NotePdfHost() {
               source={job.content}
               title={job.title}
               variant="print"
-              noteExists={(name) => documents.some((item) => item.title.toLowerCase() === name.toLowerCase())}
+              noteExists={(name) =>
+                documents.some((item) => item.title.toLowerCase() === name.toLowerCase())
+              }
               onWiki={() => undefined}
               onTag={() => undefined}
               onToggleTask={() => undefined}

@@ -1,11 +1,11 @@
 import { Navigate } from "@tanstack/react-router";
 
-/** Ruta de ingreso. */
+/** Sign-in route. */
 export const SIGN_IN_PATH = "/login";
 
 /**
- * Redirección en cliente al ingreso (`<Navigate>`, sin recargar la SPA).
- * Renderízalo solo cuando `useCurrentUserState().isPending` ya sea falso.
+ * Client-side Navigate redirect to sign-in without reloading the SPA. Render only after
+ * user-state loading finishes.
  */
 export function RedirectToSignIn({ to = SIGN_IN_PATH }: { to?: string }) {
   return <Navigate to={to} />;

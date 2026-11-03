@@ -8,12 +8,15 @@ import { blockUnsafeBlob } from "@/server/clamav";
 import { checkSpace } from "@/server/space";
 import { mayUpload, uploadTarget } from "@/server/upload-target";
 
-/** `POST /api/files/uploads/complete`: cierra o cancela una subida (ver `uploads.ts`). */
+/** POST /api/files/uploads/complete finishes or aborts an upload; see uploads.ts. */
 
 const finish = z.object({
   key: z.string().min(1).max(200),
   uploadId: z.string().min(1).max(1000),
-  parts: z.array(z.object({ part: z.number().int().min(1).max(10_000), etag: z.string().max(200) })).max(10_000).default([]),
+  parts: z
+    .array(z.object({ part: z.number().int().min(1).max(10_000), etag: z.string().max(200) }))
+    .max(10_000)
+    .default([]),
   abort: z.boolean().optional(),
   portfolioId: z.string().min(1).max(80).nullable().optional(),
   shareId: z.string().min(1).max(80).nullable().optional(),
@@ -29,7 +32,8 @@ async function completeUpload(request: Request): Promise<Response> {
     requirePermission(profile, PERMISSION.filesUpload, "Tu rol no permite subir archivos.");
     const body = finish.safeParse(await readJson(request));
     if (!body.success) return apiError(400, "Se espera { key, uploadId, parts }.");
-    if (!(await mayUpload(sql, userId, body.data.key, body.data.shareId ?? null))) return apiError(403, "Esa subida no es tuya.");
+    if (!(await mayUpload(sql, userId, body.data.key, body.data.shareId ?? null)))
+      return apiError(403, "Esa subida no es tuya.");
     if (body.data.abort) {
       await abortUpload(sql, body.data.key, body.data.uploadId);
       return json({ ok: true });
@@ -40,10 +44,12 @@ async function completeUpload(request: Request): Promise<Response> {
       await deleteBlob(sql, body.data.key);
       return apiError(413, `El archivo supera el límite de ${megabytes(max)}.`);
     }
-    // Con el tamaño real: lo declarado al empezar podía no coincidir.
+    // Check actual size because the initial declared size may differ.
     const target = await uploadTarget(sql, userId, body.data);
     const full =
-      typeof target === "string" ? target : await checkSpace(sql, { ...target, uploaderId: userId, bytes: size });
+      typeof target === "string"
+        ? target
+        : await checkSpace(sql, { ...target, uploaderId: userId, bytes: size });
     if (full) {
       await deleteBlob(sql, body.data.key);
       return apiError(413, full);

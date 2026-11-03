@@ -13,7 +13,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { backlinkLine, extractHeadings, extractTags, extractWikiLinks, findByTitle } from "@/domain/vault/links";
+import {
+  backlinkLine,
+  extractHeadings,
+  extractTags,
+  extractWikiLinks,
+  findByTitle,
+} from "@/domain/vault/links";
 import type { ManualKind } from "@/domain/vault/types";
 import { commitSharedLink, resolveLink, useSharedTrees } from "@/app/shared-links";
 import { useSharedView } from "@/app/shared-view";
@@ -64,7 +70,7 @@ export function ContextPane({
   onOpenNote: (id: string) => void;
   onInspect: (id: string) => void;
   onFilter: () => void;
-  /** En escritorio, pliega el panel a un riel (`ContextRail`). */
+  /** Collapse the desktop panel into ContextRail. */
   onCollapse?: () => void;
   holdGraph: boolean;
 }) {
@@ -101,10 +107,15 @@ export function ContextPane({
     setOpenSections((state) => ({ ...state, [key]: !state[key] }));
   };
 
-  const sharedDoc = sharedTree && sharedDocId ? sharedTree.documents.find((item) => item.id === sharedDocId) : undefined;
+  const sharedDoc =
+    sharedTree && sharedDocId
+      ? sharedTree.documents.find((item) => item.id === sharedDocId)
+      : undefined;
   if (sharedTree && sharedDoc) {
     const sharedDocuments = asDocuments(sharedTree.documents).map((item) =>
-      sharedBody && item.id === sharedBody.id ? { ...item, content: sharedBody.content, kind: item.kind } : item,
+      sharedBody && item.id === sharedBody.id
+        ? { ...item, content: sharedBody.content, kind: item.kind }
+        : item,
     );
     const opened = sharedDocuments.find((item) => item.id === sharedDoc.id);
     if (opened) {
@@ -113,21 +124,32 @@ export function ContextPane({
         if (anchor) setFocusAnchor({ docId: id, anchor });
         const tree = useSharedView.getState().tree;
         if (!tree) return;
-        if (tree.portfolios.some((portfolio) => portfolio.id === id) && !tree.documents.some((item) => item.id === id)) {
+        if (
+          tree.portfolios.some((portfolio) => portfolio.id === id) &&
+          !tree.documents.some((item) => item.id === id)
+        ) {
           useSharedView.getState().openSharedPortfolio(tree, id);
           return;
         }
         useSharedView.getState().openShared(tree, id);
       };
       return (
-        <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
+        <aside
+          data-ui="context"
+          className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line"
+        >
           <CollapseButton onCollapse={onCollapse} />
           <SharedContext
             document={opened}
             documents={sharedDocuments}
             portfolios={sharedTree.portfolios}
             onOpen={openSharedTarget}
-            onLink={canLinkShared ? () => setDialog({ type: "link", sourceId: opened.id, shareId: sharedTree.share.id }) : undefined}
+            onLink={
+              canLinkShared
+                ? () =>
+                    setDialog({ type: "link", sourceId: opened.id, shareId: sharedTree.share.id })
+                : undefined
+            }
             onUnlink={
               canLinkShared
                 ? (link) => {
@@ -141,7 +163,9 @@ export function ContextPane({
               <MessageSquare className="size-3.5" />
               {t("Comentarios")}
               {commentCount > 0 ? (
-                <span className="rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">{commentCount}</span>
+                <span className="rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">
+                  {commentCount}
+                </span>
               ) : null}
             </p>
             <Comments docId={opened.id} shareId={sharedTree.share.id} onCount={setCommentCount} />
@@ -153,7 +177,10 @@ export function ContextPane({
 
   if (!document) {
     return (
-      <aside data-ui="context" className="flex h-full flex-col bg-surface text-sm text-faint md:w-72 md:border-l md:border-line">
+      <aside
+        data-ui="context"
+        className="flex h-full flex-col bg-surface text-sm text-faint md:w-72 md:border-l md:border-line"
+      >
         <CollapseButton onCollapse={onCollapse} />
         <p className="flex flex-1 items-center justify-center p-6">{t("Sin documento abierto")}</p>
       </aside>
@@ -169,7 +196,10 @@ export function ContextPane({
           target: findByTitle(documents, title),
         }))
       : [];
-  const manual = document.links.map((link) => ({ link, target: resolveLink(link, documents, portfolios, trees) }));
+  const manual = document.links.map((link) => ({
+    link,
+    target: resolveLink(link, documents, portfolios, trees),
+  }));
   const incomingWiki = documents
     .filter((item) => item.id !== document.id && item.kind === "markdown")
     .flatMap((item) => {
@@ -177,7 +207,14 @@ export function ContextPane({
         (title) => title.toLowerCase() === document.title.toLowerCase(),
       );
       if (!hit) return [];
-      return [{ id: item.id, title: item.title, detail: backlinkLine(item.content, document.title), via: "wiki" as const }];
+      return [
+        {
+          id: item.id,
+          title: item.title,
+          detail: backlinkLine(item.content, document.title),
+          via: "wiki" as const,
+        },
+      ];
     });
   const incomingManual = documents
     .filter((item) => item.id !== document.id)
@@ -187,8 +224,10 @@ export function ContextPane({
         .map((link) => ({
           id: item.id,
           title: item.title,
-          // Desde una frase de un PDF: cuál y en qué página.
-          detail: link.anchor ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»` : KIND_LABEL[link.kind],
+          // Source PDF phrase and page.
+          detail: link.anchor
+            ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»`
+            : KIND_LABEL[link.kind],
           via: link.kind,
           key: linkKey(link),
           anchor: link.anchor,
@@ -201,7 +240,8 @@ export function ContextPane({
     if (mode === "edit") setMode("split");
     onOpenNote(document.id);
     requestAnimationFrame(() => {
-      const target = window.document.getElementById(id) ?? window.document.getElementById("note-top");
+      const target =
+        window.document.getElementById(id) ?? window.document.getElementById("note-top");
       target?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
@@ -212,7 +252,10 @@ export function ContextPane({
   };
 
   return (
-    <aside data-ui="context" className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line">
+    <aside
+      data-ui="context"
+      className="flex h-full min-h-0 w-full flex-col overflow-y-auto bg-surface px-3 py-1 md:w-72 md:border-l md:border-line"
+    >
       <CollapseButton onCollapse={onCollapse} />
       {document.kind === "markdown" ? (
         <Section
@@ -257,12 +300,19 @@ export function ContextPane({
         ) : (
           <ul>
             {manual.map((item) => (
-              <li key={`${item.link.kind}-${linkKey(item.link)}`} className="flex items-center gap-1">
+              <li
+                key={`${item.link.kind}-${linkKey(item.link)}`}
+                className="flex items-center gap-1"
+              >
                 <button
                   type="button"
                   disabled={!item.target}
-                  onClick={() => (item.target?.open ? item.target.open() : item.target && choose(item.target.id))}
-                  onDoubleClick={() => item.target && !item.target.open && onOpenNote(item.target.id)}
+                  onClick={() =>
+                    item.target?.open ? item.target.open() : item.target && choose(item.target.id)
+                  }
+                  onDoubleClick={() =>
+                    item.target && !item.target.open && onOpenNote(item.target.id)
+                  }
                   className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-sm hover:bg-elevated disabled:hover:bg-transparent"
                 >
                   <span className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[11px] text-accent">
@@ -325,10 +375,16 @@ export function ContextPane({
                     className="flex min-h-10 w-full items-center gap-2 rounded-md px-1.5 text-left text-sm hover:bg-elevated"
                   >
                     <FileText className="size-3.5 shrink-0 text-faint" />
-                    <span className={`truncate ${item.target ? "text-fg" : "text-muted underline decoration-dashed"}`}>
+                    <span
+                      className={`truncate ${item.target ? "text-fg" : "text-muted underline decoration-dashed"}`}
+                    >
                       {item.title}
                     </span>
-                    {item.target ? null : <span className="ml-auto shrink-0 text-[11px] text-faint">{t("sin crear")}</span>}
+                    {item.target ? null : (
+                      <span className="ml-auto shrink-0 text-[11px] text-faint">
+                        {t("sin crear")}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -352,8 +408,9 @@ export function ContextPane({
                 <button
                   type="button"
                   onClick={() => {
-                    // Desde una frase de un PDF: al abrirlo, ir a ella.
-                    if ("anchor" in item && item.anchor && !holdGraph) setFocusAnchor({ docId: item.id, anchor: item.anchor });
+                    // Navigate to the linked PDF phrase after opening.
+                    if ("anchor" in item && item.anchor && !holdGraph)
+                      setFocusAnchor({ docId: item.id, anchor: item.anchor });
                     choose(item.id);
                   }}
                   onDoubleClick={() => onOpenNote(item.id)}
@@ -362,7 +419,11 @@ export function ContextPane({
                   <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-fg">{item.title}</span>
-                    {item.detail ? <span className="mt-0.5 line-clamp-2 block text-xs text-faint">{t(item.detail)}</span> : null}
+                    {item.detail ? (
+                      <span className="mt-0.5 line-clamp-2 block text-xs text-faint">
+                        {t(item.detail)}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
               </li>
@@ -425,16 +486,25 @@ function OutlineTree({
         const open = !folded[node.id];
         return (
           <li key={node.id}>
-            <div className="flex items-center" style={{ paddingLeft: `${(node.level - 1) * 0.7}rem` }}>
+            <div
+              className="flex items-center"
+              style={{ paddingLeft: `${(node.level - 1) * 0.7}rem` }}
+            >
               {hasKids ? (
                 <button
                   type="button"
-                  aria-label={open ? t("Replegar {0}", { 0: node.text }) : t("Desplegar {0}", { 0: node.text })}
+                  aria-label={
+                    open
+                      ? t("Replegar {0}", { 0: node.text })
+                      : t("Desplegar {0}", { 0: node.text })
+                  }
                   aria-expanded={open}
                   onClick={() => onToggle(node.id)}
                   className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
                 >
-                  <ChevronRight className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+                  <ChevronRight
+                    className={`size-3.5 transition-transform ${open ? "rotate-90" : ""}`}
+                  />
                 </button>
               ) : (
                 <span className="w-7 shrink-0" />
@@ -448,7 +518,12 @@ function OutlineTree({
               </button>
             </div>
             {hasKids && open ? (
-              <OutlineTree nodes={node.children} folded={folded} onToggle={onToggle} onJump={onJump} />
+              <OutlineTree
+                nodes={node.children}
+                folded={folded}
+                onToggle={onToggle}
+                onJump={onJump}
+              />
             ) : null}
           </li>
         );
@@ -457,10 +532,7 @@ function OutlineTree({
   );
 }
 
-/**
- * Bloque del panel de detalles: cabecera con icono, título, contador y una
- * frase que dice qué contiene, separado del siguiente por una línea.
- */
+/** Details section with icon, title, count and description, separated by a divider. */
 function Section({
   title,
   icon,
@@ -482,7 +554,9 @@ function Section({
       <span className="text-faint">{icon}</span>
       <span className="text-[11px] font-semibold tracking-wider text-muted uppercase">{title}</span>
       {count !== undefined ? (
-        <span className="ml-1 rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">{count}</span>
+        <span className="ml-1 rounded-full bg-elevated px-1.5 text-[11px] leading-5 text-muted tabular-nums">
+          {count}
+        </span>
       ) : null}
     </>
   );
@@ -496,7 +570,9 @@ function Section({
             onClick={fold.onToggle}
             className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md text-left hover:text-fg"
           >
-            <ChevronRight className={`size-3.5 shrink-0 text-faint transition-transform ${fold.open ? "rotate-90" : ""}`} />
+            <ChevronRight
+              className={`size-3.5 shrink-0 text-faint transition-transform ${fold.open ? "rotate-90" : ""}`}
+            />
             {heading}
           </button>
         ) : (
@@ -504,11 +580,7 @@ function Section({
         )}
         {open ? action : null}
       </div>
-      {open ? (
-        <div className="mt-1 pl-5">
-          {children}
-        </div>
-      ) : null}
+      {open ? <div className="mt-1 pl-5">{children}</div> : null}
     </section>
   );
 }
@@ -534,10 +606,13 @@ function CollapseButton({ onCollapse }: { onCollapse?: () => void }) {
   );
 }
 
-/** Detalles plegados: un riel estrecho a la derecha con una flecha para desplegarlos. */
+/** Collapsed details rail with an expansion arrow. */
 export function ContextRail({ onExpand }: { onExpand: () => void }) {
   return (
-    <div data-ui="rail" className="flex h-full w-9 shrink-0 flex-col items-center border-l border-line bg-surface pt-2">
+    <div
+      data-ui="rail"
+      className="flex h-full w-9 shrink-0 flex-col items-center border-l border-line bg-surface pt-2"
+    >
       <button
         type="button"
         aria-label={t("Desplegar los detalles")}
@@ -550,4 +625,3 @@ export function ContextRail({ onExpand }: { onExpand: () => void }) {
     </div>
   );
 }
-

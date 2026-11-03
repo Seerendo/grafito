@@ -1,19 +1,17 @@
 /**
- * Límite de envíos de los formularios públicos (sin sesión): por dirección y
- * por formulario, en una ventana de un minuto. Sin él, quien tenga el enlace
- * podría llenar la tabla o subir archivos sin parar. Vive en memoria de cada
- * instancia; con varias, el límite efectivo se multiplica por ellas, que sigue
- * cortando un abuso. Sin `@/` en los imports: se prueba con `node --test`.
+ * Per-process public-form limits by address and form within one minute prevent unlimited
+ * submissions/uploads. Effective limits multiply across replicas. Relative imports support Node
+ * tests.
  */
 
 const WINDOW_MS = 60_000;
 
 export const LIMITS = {
-  /** Envíos de una misma dirección a un formulario. */
+  /** Submissions per address and form. */
   submitPerAddress: 5,
-  /** Envíos a un formulario entre todos. */
+  /** Total submissions per form. */
   submitPerForm: 60,
-  /** Archivos subidos por una misma dirección a un formulario. */
+  /** Uploads per address and form. */
   filePerAddress: 10,
 } as const;
 
@@ -27,31 +25,41 @@ function take(key: string, max: number, now: number): boolean {
   }
   recent.push(now);
   hits.set(key, recent);
-  // Que el mapa no crezca sin fin con direcciones que ya no vuelven.
+  // Prune stale addresses to bound map growth.
   if (hits.size > 20_000) {
-    for (const [other, times] of hits) if (times.every((at) => now - at >= WINDOW_MS)) hits.delete(other);
+    for (const [other, times] of hits)
+      if (times.every((at) => now - at >= WINDOW_MS)) hits.delete(other);
   }
   return true;
 }
 
-/** Si se admite un envío (`submit`) o un archivo (`file`) más; `false` si hay que esperar. */
-export function allowPublicForm(kind: "submit" | "file", token: string, address: string, now = Date.now()): boolean {
+/** Whether another submission or file is allowed; false means retry later. */
+export function allowPublicForm(
+  kind: "submit" | "file",
+  token: string,
+  address: string,
+  now = Date.now(),
+): boolean {
   if (kind === "file") return take(`file:${token}:${address}`, LIMITS.filePerAddress, now);
   if (!take(`form:${token}`, LIMITS.submitPerForm, now)) return false;
   return take(`submit:${token}:${address}`, LIMITS.submitPerAddress, now);
 }
 
 /**
- * La dirección de quien envía: la última de `X-Forwarded-For`, que es la que
- * añade el gateway de Grafito (las anteriores las puede inventar el cliente).
+ * Use the final X-Forwarded-For address added by Grafito's gateway; earlier entries may be
+ * client-controlled.
  */
 export function clientAddress(headers: Headers): string {
   const forwarded = headers.get("x-forwarded-for");
-  const last = forwarded?.split(",").map((part) => part.trim()).filter(Boolean).pop();
+  const last = forwarded
+    ?.split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .pop();
   return last || headers.get("x-real-ip") || "desconocida";
 }
 
-/** Solo para pruebas. */
+/** Test-only helper. */
 export function resetFormLimits(): void {
   hits.clear();
 }

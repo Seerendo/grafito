@@ -1,13 +1,11 @@
 import type { Sql } from "@/lib/db";
 
 /**
- * Perfiles del chat de IA (solo servidor). Ver `migrations/0017_ai_profiles.sql`.
- * Cada persona crea los suyos; el chat manda el id del perfil elegido y el
- * asistente suma sus indicaciones (y, si es de solo lectura, deja fuera las
- * herramientas que crean o editan; ver `agent.ts`).
+ * Per-user AI personas from migration 0017. The selected persona adds instructions and, when
+ * read-only, excludes mutation tools; see agent.ts.
  */
 
-/** Perfiles por usuario. */
+/** Maximum personas per user. */
 export const MAX_PROFILES = 30;
 
 export type AiProfile = { id: string; name: string; instructions: string; readOnly: boolean };
@@ -35,11 +33,13 @@ export async function readProfile(sql: Sql, userId: string, id: string): Promise
   return rows[0] ? fromRow(rows[0]) : null;
 }
 
-/** Crea o actualiza un perfil; `false` si ya tiene el máximo y es uno nuevo. */
+/** Create/update a persona; return false when a new persona would exceed the limit. */
 export async function writeProfile(sql: Sql, userId: string, profile: AiProfile): Promise<boolean> {
   const exists = await readProfile(sql, userId, profile.id);
   if (!exists) {
-    const count = await sql<{ n: unknown }>`select count(*) as n from ai_profile where user_id = ${userId}`;
+    const count = await sql<{
+      n: unknown;
+    }>`select count(*) as n from ai_profile where user_id = ${userId}`;
     if (Number(count[0]?.n ?? 0) >= MAX_PROFILES) return false;
   }
   const now = Date.now();

@@ -1,4 +1,26 @@
-import { Activity, Building2, ChevronRight, FileClock, FileSearch, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, Shield, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import {
+  Activity,
+  Building2,
+  ChevronRight,
+  FileClock,
+  FileSearch,
+  FolderOpen,
+  PieChart,
+  Clock,
+  LayoutTemplate,
+  Mail,
+  Network,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  Database,
+  HardDrive,
+  KeyRound,
+  Palette,
+  Puzzle,
+  ScrollText,
+  Users,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -16,10 +38,22 @@ import { SettingsNav } from "@/components/chrome/SettingsNav";
 import { useAutoContextMenu } from "@/components/ui/use-auto-context-menu";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/server/admin.functions";
+import {
+  adminState,
+  probeSources,
+  setPluginEnabled,
+  setSourceEnabled,
+} from "@/server/admin.functions";
 import { setSessionTtl, storageReport } from "@/server/session.functions";
 import { AuditBoard } from "./AuditBoard";
-import { IndexBoard, LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
+import {
+  IndexBoard,
+  LogsBoard,
+  MonitorBoard,
+  RolesBoard,
+  UsersBoard,
+  type AdminView,
+} from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
 import { QuotaBoard } from "./QuotaBoard";
 import { WorkspaceBoard } from "./WorkspaceBoard";
@@ -31,8 +65,35 @@ import { SecurityBoard } from "./SecurityBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
-type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "seguridad" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "auditoria" | "indexacion" | "espacio" | "fuentes" | "temas" | "diseno";
+type Section =
+  | "usuarios"
+  | "autenticacion"
+  | "ia"
+  | "correo"
+  | "seguridad"
+  | "plugins"
+  | "apariencia"
+  | "sesion"
+  | "monitor";
+type Leaf =
+  | "usuarios"
+  | "roles"
+  | "organizaciones"
+  | "cuotas"
+  | "cuotas-portafolio"
+  | "espacios-trabajo"
+  | "asignado"
+  | "ldap"
+  | "oauth"
+  | "sso"
+  | "monitor"
+  | "logs"
+  | "auditoria"
+  | "indexacion"
+  | "espacio"
+  | "fuentes"
+  | "temas"
+  | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -47,7 +108,15 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     id: "usuarios",
     label: "Usuarios y permisos",
     icon: Users,
-    need: ["admin.access", "users.create", "users.update", "users.delete", "roles.manage", "orgs.manage", "space.manage"],
+    need: [
+      "admin.access",
+      "users.create",
+      "users.update",
+      "users.delete",
+      "roles.manage",
+      "orgs.manage",
+      "space.manage",
+    ],
   },
   {
     id: "autenticacion",
@@ -78,7 +147,8 @@ const NAV_KEY = "grafito.admin.nav";
 
 function readNav(): { section: Section | null; leaf: Leaf | null; roleId: string | null } {
   try {
-    const data = readReloadState<{ section?: unknown; leaf?: unknown; roleId?: unknown }>(NAV_KEY) ?? {};
+    const data =
+      readReloadState<{ section?: unknown; leaf?: unknown; roleId?: unknown }>(NAV_KEY) ?? {};
     const section = NAV.some((item) => item.id === data.section) ? (data.section as Section) : null;
     return {
       section,
@@ -90,18 +160,24 @@ function readNav(): { section: Section | null; leaf: Leaf | null; roleId: string
   }
 }
 
-/**
- * Los subapartados de cada sección (los mismos en sus tarjetas y en la barra
- * lateral), según los permisos del rol.
- */
-function leavesOf(view: AdminView, section: Section): { id: Leaf; label: string; icon: typeof Users }[] {
+/** Role-filtered subsections shared by cards and sidebar navigation. */
+function leavesOf(
+  view: AdminView,
+  section: Section,
+): { id: Leaf; label: string; icon: typeof Users }[] {
   if (section === "usuarios") {
     return [
-      ...(allowed(view, "users.create") || allowed(view, "users.update") || allowed(view, "users.delete")
+      ...(allowed(view, "users.create") ||
+      allowed(view, "users.update") ||
+      allowed(view, "users.delete")
         ? [{ id: "usuarios" as const, label: "Usuarios", icon: Users }]
         : []),
-      ...(allowed(view, "roles.manage") ? [{ id: "roles" as const, label: "Roles", icon: KeyRound }] : []),
-      ...(allowed(view, "orgs.manage") ? [{ id: "organizaciones" as const, label: "Organizaciones", icon: Building2 }] : []),
+      ...(allowed(view, "roles.manage")
+        ? [{ id: "roles" as const, label: "Roles", icon: KeyRound }]
+        : []),
+      ...(allowed(view, "orgs.manage")
+        ? [{ id: "organizaciones" as const, label: "Organizaciones", icon: Building2 }]
+        : []),
       ...(allowed(view, "space.manage")
         ? [
             { id: "cuotas" as const, label: "Espacio por usuario", icon: HardDrive },
@@ -128,9 +204,15 @@ function leavesOf(view: AdminView, section: Section): { id: Leaf; label: string;
             { id: "indexacion" as const, label: "Indexación", icon: FileSearch },
           ]
         : []),
-      ...(allowed(view, "admin.access") ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }] : []),
-      ...(allowed(view, "space.manage") ? [{ id: "asignado" as const, label: "Espacio asignado", icon: PieChart }] : []),
-      ...(allowed(view, "sources.manage") ? [{ id: "fuentes" as const, label: "Fuentes", icon: Database }] : []),
+      ...(allowed(view, "admin.access")
+        ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }]
+        : []),
+      ...(allowed(view, "space.manage")
+        ? [{ id: "asignado" as const, label: "Espacio asignado", icon: PieChart }]
+        : []),
+      ...(allowed(view, "sources.manage")
+        ? [{ id: "fuentes" as const, label: "Fuentes", icon: Database }]
+        : []),
     ];
   }
   if (section === "apariencia") {
@@ -153,14 +235,16 @@ function visibleNav(view: AdminView) {
 export function AdminScreen() {
   const { user, isPending } = useCurrentUserState();
   const [view, setState] = useState<State | null>(null);
-  // Dónde estaba: solo al recargar la página; entrar de nuevo empieza desde el principio.
+  // Restore position only after reload; normal navigation starts fresh.
   const [section, setSection] = useState<Section | null>(() => readNav().section);
   const [leaf, setLeaf] = useState<Leaf | null>(() => readNav().leaf);
   const [roleId, setRoleId] = useState<string | null>(() => readNav().roleId);
   const autoMenu = useAutoContextMenu();
   useSaveOnReload(NAV_KEY, { section, leaf, roleId });
   const [error, setError] = useState("");
-  const [probe, setProbe] = useState<{ elastic: string; bucket: string; antivirus: string } | null>(null);
+  const [probe, setProbe] = useState<{ elastic: string; bucket: string; antivirus: string } | null>(
+    null,
+  );
 
   const load = () => {
     void adminState()
@@ -175,7 +259,9 @@ export function AdminScreen() {
             isAdmin: next.owner,
             canAdmin: true,
           });
-          setPluginFlags(Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.enabled])));
+          setPluginFlags(
+            Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.enabled])),
+          );
         }
       })
       .catch(() => setError(t("No se pudo leer la administración.")));
@@ -203,7 +289,12 @@ export function AdminScreen() {
           target.tagName === "SELECT" ||
           target.isContentEditable)
       ) {
-        if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) {
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT")
+        ) {
           target.blur();
         }
         return;
@@ -257,8 +348,9 @@ export function AdminScreen() {
     setRoleId(null);
   };
   const title = heading(view, current?.id ?? null, leaf, roleId);
-  // Administración › sección › subapartado › rol: cada paso lleva de vuelta a él.
-  const leafLabel = current && leaf ? leavesOf(view, current.id).find((item) => item.id === leaf)?.label : null;
+  // Administration breadcrumbs return to each section, subsection or role.
+  const leafLabel =
+    current && leaf ? leavesOf(view, current.id).find((item) => item.id === leaf)?.label : null;
   const crumbs: { label: string; go?: () => void }[] = current
     ? [
         {
@@ -279,7 +371,12 @@ export function AdminScreen() {
             : undefined,
         },
         ...(leaf
-          ? [{ label: leafLabel ? t(leafLabel) : title, go: roleId ? () => setRoleId(null) : undefined }]
+          ? [
+              {
+                label: leafLabel ? t(leafLabel) : title,
+                go: roleId ? () => setRoleId(null) : undefined,
+              },
+            ]
           : []),
         ...(roleId ? [{ label: title }] : []),
       ]
@@ -313,12 +410,17 @@ export function AdminScreen() {
           <div
             data-ui="admin-content"
             className="min-h-0 flex-1 overflow-y-auto"
-            // En un subapartado, clic derecho en cualquier parte: lo mismo que sus botones.
+            // Within a subsection, the context menu exposes the same actions as its buttons.
             onContextMenu={leaf ? autoMenu.onContextMenu : undefined}
           >
             <div className="grafito-in w-full px-4 py-6 sm:px-8">
               {current ? (
-                <nav data-ui="breadcrumb" data-menu-skip aria-label={t("Ruta")} className="mb-2 flex flex-wrap items-center gap-1 text-xs text-faint">
+                <nav
+                  data-ui="breadcrumb"
+                  data-menu-skip
+                  aria-label={t("Ruta")}
+                  className="mb-2 flex flex-wrap items-center gap-1 text-xs text-faint"
+                >
                   {crumbs.map((crumb, index) => (
                     <span key={crumb.label} className="flex items-center gap-1">
                       {index > 0 ? <ChevronRight className="size-3 shrink-0" /> : null}
@@ -351,16 +453,29 @@ export function AdminScreen() {
                     <p className="text-sm text-muted">{t("Este rol no administra cuentas.")}</p>
                   )
                 ) : null}
-                {current?.id === "usuarios" && leaf === "usuarios" ? <UsersBoard view={view} reload={load} /> : null}
-                {current?.id === "usuarios" && leaf === "organizaciones" ? <OrgsBoard view={view} /> : null}
-                {current?.id === "usuarios" && leaf === "cuotas" ? <QuotaBoard view="users" /> : null}
-                {current?.id === "usuarios" && leaf === "cuotas-portafolio" ? <QuotaBoard view="portfolios" /> : null}
-                {current?.id === "usuarios" && leaf === "espacios-trabajo" ? <WorkspaceBoard /> : null}
+                {current?.id === "usuarios" && leaf === "usuarios" ? (
+                  <UsersBoard view={view} reload={load} />
+                ) : null}
+                {current?.id === "usuarios" && leaf === "organizaciones" ? (
+                  <OrgsBoard view={view} />
+                ) : null}
+                {current?.id === "usuarios" && leaf === "cuotas" ? (
+                  <QuotaBoard view="users" />
+                ) : null}
+                {current?.id === "usuarios" && leaf === "cuotas-portafolio" ? (
+                  <QuotaBoard view="portfolios" />
+                ) : null}
+                {current?.id === "usuarios" && leaf === "espacios-trabajo" ? (
+                  <WorkspaceBoard />
+                ) : null}
                 {current?.id === "usuarios" && leaf === "roles" ? (
                   <RolesBoard view={view} reload={load} roleId={roleId} onOpen={setRoleId} />
                 ) : null}
                 {current?.id === "autenticacion" && !leaf ? (
-                  <OptionGrid items={leavesOf(view, "autenticacion")} onPick={(id) => setLeaf(id)} />
+                  <OptionGrid
+                    items={leavesOf(view, "autenticacion")}
+                    onPick={(id) => setLeaf(id)}
+                  />
                 ) : null}
                 {current?.id === "autenticacion" && leaf === "ldap" ? <LdapPanel /> : null}
                 {current?.id === "autenticacion" && leaf === "oauth" ? <OAuthPanel /> : null}
@@ -414,7 +529,12 @@ export function AdminScreen() {
   );
 }
 
-function heading(view: AdminView, section: Section | null, leaf: Leaf | null, roleId: string | null) {
+function heading(
+  view: AdminView,
+  section: Section | null,
+  leaf: Leaf | null,
+  roleId: string | null,
+) {
   if (!section) return t("Administración");
   if (section === "usuarios" && leaf === "usuarios") return t("Usuarios");
   if (section === "usuarios" && leaf === "roles") {
@@ -468,13 +588,19 @@ function Sources({
             <Switch
               checked={source.enabled}
               ariaLabel={t(source.label)}
-              onChange={(enabled) => void setSourceEnabled({ data: { id: source.id, enabled } }).then(reload)}
+              onChange={(enabled) =>
+                void setSourceEnabled({ data: { id: source.id, enabled } }).then(reload)
+              }
             />
           </li>
         ))}
       </ul>
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <button type="button" onClick={onProbe} className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+        <button
+          type="button"
+          onClick={onProbe}
+          className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated"
+        >
           {t("Comprobar")}
         </button>
         {probe ? (
@@ -489,19 +615,30 @@ function Sources({
   );
 }
 
-function Plugins({ view, reload }: { view: Extract<State, { isAdmin: true }>; reload: () => void }) {
+function Plugins({
+  view,
+  reload,
+}: {
+  view: Extract<State, { isAdmin: true }>;
+  reload: () => void;
+}) {
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-surface">
       <ul>
         {view.plugins.map((plugin) => (
-          <li key={plugin.id} className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0">
+          <li
+            key={plugin.id}
+            className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0"
+          >
             <div className="min-w-0 flex-1">
               <p className="text-sm">{t(plugin.name)}</p>
             </div>
             <Switch
               checked={plugin.enabled}
               ariaLabel={t(plugin.name)}
-              onChange={(enabled) => void setPluginEnabled({ data: { id: plugin.id, enabled } }).then(reload)}
+              onChange={(enabled) =>
+                void setPluginEnabled({ data: { id: plugin.id, enabled } }).then(reload)
+              }
             />
           </li>
         ))}
@@ -533,7 +670,9 @@ function ThemesPanel() {
             </span>
             <span className="theme-card-copy">
               <strong className="text-sm">{t(theme.name)}</strong>
-              {current === theme.id ? <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em> : null}
+              {current === theme.id ? (
+                <em className="ml-2 text-xs text-accent not-italic">{t("En uso")}</em>
+              ) : null}
               <small>{t(theme.blurb)}</small>
             </span>
           </button>
@@ -560,12 +699,18 @@ function SessionPanel({ seconds }: { seconds: number }) {
               aria-pressed={picked === item.seconds}
               onClick={() => setPicked(item.seconds)}
               className={`flex h-14 w-full items-center gap-3 px-4 text-left text-sm transition-colors ${
-                picked === item.seconds ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"
+                picked === item.seconds
+                  ? "bg-elevated text-fg"
+                  : "text-muted hover:bg-elevated hover:text-fg"
               }`}
             >
-              <span className={`size-2 rounded-full ${picked === item.seconds ? "bg-accent" : "bg-line"}`} />
+              <span
+                className={`size-2 rounded-full ${picked === item.seconds ? "bg-accent" : "bg-line"}`}
+              />
               {t(item.label)}
-              {seconds === item.seconds ? <span className="ml-auto text-xs text-faint">{t("Actual")}</span> : null}
+              {seconds === item.seconds ? (
+                <span className="ml-auto text-xs text-faint">{t("Actual")}</span>
+              ) : null}
             </button>
           </li>
         ))}
@@ -624,12 +769,17 @@ function SpacePanel() {
 
   if (error) return <p className="text-sm text-danger">{t(error)}</p>;
   if (!stores) return <p className="text-sm text-muted">{t("Cargando…")}</p>;
-  if (stores.length === 0) return <p className="text-sm text-muted">{t("Ninguna base conectada.")}</p>;
+  if (stores.length === 0)
+    return <p className="text-sm text-muted">{t("Ninguna base conectada.")}</p>;
 
   return (
     <div className="space-y-4">
       <div className="flex">
-        <button type="button" onClick={load} className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+        <button
+          type="button"
+          onClick={load}
+          className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated"
+        >
           {t("Actualizar")}
         </button>
       </div>
@@ -637,7 +787,10 @@ function SpacePanel() {
         {stores.map((store) => {
           const measured = store.total != null && store.available != null && store.total > 0;
           const percent = measured
-            ? Math.max(0, Math.min(100, Math.round(((store.total! - store.available!) / store.total!) * 100)))
+            ? Math.max(
+                0,
+                Math.min(100, Math.round(((store.total! - store.available!) / store.total!) * 100)),
+              )
             : 0;
           return (
             <div key={store.id} className="border border-line bg-surface p-4">
@@ -646,14 +799,16 @@ function SpacePanel() {
                 <>
                   <p className="mt-1 font-serif text-3xl">{formatBytes(store.available!)}</p>
                   <p className="mt-1 text-xs text-muted">
-                    {t("Disponible de")}{" "}{formatBytes(store.total!)}
+                    {t("Disponible de")} {formatBytes(store.total!)}
                     {store.used != null ? ` · base ${formatBytes(store.used)}` : ""}
                   </p>
                   <UsageMeter percent={percent} label={t("Uso de {0}", { 0: store.label })} />
                 </>
               ) : (
                 <>
-                  <p className="mt-1 font-serif text-3xl">{store.used != null ? formatBytes(store.used) : "—"}</p>
+                  <p className="mt-1 font-serif text-3xl">
+                    {store.used != null ? formatBytes(store.used) : "—"}
+                  </p>
                   <p className="mt-1 text-xs text-muted">{t("Ocupado")}</p>
                 </>
               )}
@@ -679,8 +834,13 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${units[index]}`;
 }
 
-function engineLabel(id: string, engines: { relational: string; documents: string; files: string }): string {
-  if (id === "relational") return engines.relational === "postgres" ? t("Postgres") : t("Postgres embebido");
-  if (id === "documents") return engines.documents === "elasticsearch" ? t("Elasticsearch") : t("Índice de Postgres");
+function engineLabel(
+  id: string,
+  engines: { relational: string; documents: string; files: string },
+): string {
+  if (id === "relational")
+    return engines.relational === "postgres" ? t("Postgres") : t("Postgres embebido");
+  if (id === "documents")
+    return engines.documents === "elasticsearch" ? t("Elasticsearch") : t("Índice de Postgres");
   return engines.files === "minio" ? t("MinIO") : t("Postgres");
 }

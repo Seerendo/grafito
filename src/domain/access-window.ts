@@ -1,4 +1,4 @@
-/** Cuánto dura un permiso o un enlace. `date` es el final de ese día (UTC). */
+/** Grant or link duration. date expires at the end of that UTC day. */
 
 export type ExpiryChoice = "never" | "1" | "7" | "30" | "90" | "date";
 

@@ -2,10 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { readOfficeToken } from "@/server/office";
 import { getDoc } from "@/server/vault";
 
-/**
- * WOPI `CheckFileInfo`: lo pide el editor de Office (Collabora) al abrir un
- * documento. El acceso va en `access_token` (ficha firmada por Grafito).
- */
+/** WOPI CheckFileInfo requested by Collabora on opening, authorized by Grafito's signed access_token. */
 export const Route = createFileRoute("/wopi/files/$id")({
   server: {
     handlers: {

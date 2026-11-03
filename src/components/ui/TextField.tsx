@@ -1,4 +1,4 @@
-/** Campo de texto con etiqueta, el de los formularios de ingreso y cuenta. */
+/** Labeled text field for sign-in and account forms. */
 export function TextField({
   label,
   value,
@@ -14,10 +14,10 @@ export function TextField({
   value: string;
   onChange: (value: string) => void;
   autoComplete: string;
-  /** Oculta lo escrito (`type="password"`). */
+  /** Hide input using password type. */
   secret?: boolean;
   type?: string;
-  /** Sin `required`. */
+  /** Do not require a value. */
   optional?: boolean;
   autoFocus?: boolean;
   title?: string;

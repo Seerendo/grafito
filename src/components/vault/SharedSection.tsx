@@ -1,13 +1,36 @@
-import { Building2, ChevronRight, File, FileText, Folder, FolderOpen, Pencil, Sheet, Users } from "lucide-react";
+import {
+  Building2,
+  ChevronRight,
+  File,
+  FileText,
+  Folder,
+  FolderOpen,
+  Pencil,
+  Sheet,
+  Users,
+} from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
 import { useEffect, useRef, useState } from "react";
 import { useSharedView } from "@/app/shared-view";
-import { deleteFromShared, newSharedNote, newSharedTable, pickAndUpload, report, uploadFolderToShared } from "@/app/shared-actions";
+import {
+  deleteFromShared,
+  newSharedNote,
+  newSharedTable,
+  pickAndUpload,
+  report,
+  uploadFolderToShared,
+} from "@/app/shared-actions";
 import { isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
-import { canEditSharedPortfolio, canManageSharedSpace, childrenOf, docsIn, rootParent } from "@/components/share/shared-tree";
+import {
+  canEditSharedPortfolio,
+  canManageSharedSpace,
+  childrenOf,
+  docsIn,
+  rootParent,
+} from "@/components/share/shared-tree";
 import { sharedExpandKeys } from "@/domain/vault/nav";
 import { sharedWithMe } from "@/server/share.functions";
 import { fetchSharedTree } from "@/app/shared-open";
@@ -15,11 +38,8 @@ import type { SharedTree } from "@/server/share";
 import { t } from "@/app/i18n";
 
 /**
- * «Compartidos conmigo» como segunda raíz del directorio: lo que otros
- * usuarios u organizaciones me dejaron ver, en solo lectura. Los portafolios
- * se despliegan aquí mismo y los documentos se abren en el área principal.
- * Con `workspaces`, la raíz «Espacios de trabajo»: los de mis organizaciones
- * (que también llegan como compartidos; ver `server/workspace.ts`).
+ * Shared directory root expands portfolios and opens documents in the main area. workspaces
+ * switches to organization workspaces, also delivered as shares; see server/workspace.ts.
  */
 
 type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
@@ -27,27 +47,32 @@ type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
 const OPEN_KEY = "grafito.shared-open";
 const WORKSPACES_OPEN_KEY = "grafito.workspaces-open";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
-/** Lo compartido leído hace menos de esto no se vuelve a leer al abrir algo. */
+/** Do not reload recently fetched shares when opening their contents. */
 const FRESH_MS = 30_000;
 
 /**
- * Lo último leído, para que al volver a la bóveda (desde la administración,
- * por ejemplo) las secciones salgan ya como estaban, sin aparecer y
- * desaparecer mientras se vuelve a leer. Solo vale para la misma cuenta.
+ * Retain last-read sections for the same account so returning from settings avoids flicker
+ * while refreshing.
  */
 let lastInbox: { owner: string | null; inbox: Inbox } | null = null;
 
 function storedOpen(key: string, workspaces: boolean): boolean {
   try {
     const value = localStorage.getItem(key);
-    // Los espacios de trabajo salen desplegados hasta que se pliegan.
+    // Workspaces start expanded until explicitly collapsed.
     return value === "1" || (workspaces && value === null);
   } catch {
     return false;
   }
 }
 
-export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => void; workspaces?: boolean }) {
+export function SharedSection({
+  onOpen,
+  workspaces = false,
+}: {
+  onOpen: () => void;
+  workspaces?: boolean;
+}) {
   const openKey = workspaces ? WORKSPACES_OPEN_KEY : OPEN_KEY;
   const [open, setOpen] = useState(() => storedOpen(openKey, workspaces));
   const [all, setItems] = useState<Inbox | null>(() =>
@@ -60,17 +85,22 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
   const activeDoc = useSharedView((state) => state.docId);
   const showShared = useSharedView((state) => state.openShared);
   const showPortfolio = useSharedView((state) => state.openSharedPortfolio);
-  // La página abierta (sin documento): el compartido o uno de sus portafolios.
-  const boardShare = useSharedView((state) => (state.tree && !state.docId ? state.tree.share.id : null));
+  // Current portfolio page when no document is open.
+  const boardShare = useSharedView((state) =>
+    state.tree && !state.docId ? state.tree.share.id : null,
+  );
   const boardPortfolio = useSharedView((state) => state.portfolioId);
   const menu = useContextMenu();
 
   /**
-   * Clic derecho en lo compartido (abrir ya es un clic): con permiso de
-   * edición en un portafolio, añadir aquí o eliminar (a la papelera de su dueño, que en un
-   * espacio de trabajo ven sus administradores).
+   * Shared context menu: authorized editors add or delete within portfolios. Deletions go to
+   * owner trash, managed by workspace administrators for workspace content.
    */
-  const menuFor = (item: NonNullable<Inbox>[number], tree: SharedTree | null | undefined, target: { kind: "portfolio" | "doc"; id: string | null }): ContextItem[] => {
+  const menuFor = (
+    item: NonNullable<Inbox>[number],
+    tree: SharedTree | null | undefined,
+    target: { kind: "portfolio" | "doc"; id: string | null },
+  ): ContextItem[] => {
     const folderId = () => {
       if (target.kind === "portfolio") return target.id;
       if (!target.id || !tree) return null;
@@ -84,7 +114,13 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       const docId = target.id;
       return [
         ...(writable
-          ? [{ label: t("Eliminar"), danger: true, onClick: () => void deleteFromShared(item.id, docId).then(report) }]
+          ? [
+              {
+                label: t("Eliminar"),
+                danger: true,
+                onClick: () => void deleteFromShared(item.id, docId).then(report),
+              },
+            ]
           : []),
       ];
     }
@@ -93,11 +129,26 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     return [
       ...(writable
         ? [
-            { label: t("Nueva nota"), onClick: () => void newSharedNote(item.id, here).then((error) => (error ? report(error) : onOpen())) },
-            { label: t("Nueva tabla"), onClick: () => void newSharedTable(item.id, here).then((error) => (error ? report(error) : onOpen())) },
+            {
+              label: t("Nueva nota"),
+              onClick: () =>
+                void newSharedNote(item.id, here).then((error) =>
+                  error ? report(error) : onOpen(),
+                ),
+            },
+            {
+              label: t("Nueva tabla"),
+              onClick: () =>
+                void newSharedTable(item.id, here).then((error) =>
+                  error ? report(error) : onOpen(),
+                ),
+            },
             {
               label: t("Nuevo portafolio"),
-              onClick: () => useVault.getState().setDialog({ type: "shared-portfolio", shareId: item.id, parentId: here }),
+              onClick: () =>
+                useVault
+                  .getState()
+                  .setDialog({ type: "shared-portfolio", shareId: item.id, parentId: here }),
             },
             { label: t("Subir archivo"), onClick: () => pickAndUpload(item.id, here) },
             { label: t("Subir carpeta"), onClick: () => pickAndUpload(item.id, here, true) },
@@ -107,7 +158,10 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
         ? [
             {
               label: t("Espacio y permisos…"),
-              onClick: () => useVault.getState().setDialog({ type: "space", portfolioId: here, shareId: item.id }),
+              onClick: () =>
+                useVault
+                  .getState()
+                  .setDialog({ type: "space", portfolioId: here, shareId: item.id }),
             },
           ]
         : []),
@@ -141,7 +195,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
   useEffect(() => {
     const stored = storedOpen(openKey, workspaces);
     setOpen(stored);
-    // Los espacios de trabajo se leen siempre: sin ninguno, la sección no sale.
+    // Always load workspaces; hide their section when none exist.
     if (stored || workspaces) void refresh();
   }, [openKey, workspaces]);
 
@@ -151,19 +205,21 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     try {
       localStorage.setItem(openKey, next ? "1" : "0");
     } catch {
-      /* solo es una preferencia */
+      /* Optional preference. */
     }
     if (next) void refresh();
   };
 
-  // Lo que se añade desde el visor (nota o archivo nuevos) también se ve aquí.
+  // Reflect notes and files created from the viewer in the directory.
   const viewed = useSharedView((state) => state.tree);
   useEffect(() => {
-    if (viewed) setTrees((current) => (viewed.share.id in current ? { ...current, [viewed.share.id]: viewed } : current));
+    if (viewed)
+      setTrees((current) =>
+        viewed.share.id in current ? { ...current, [viewed.share.id]: viewed } : current,
+      );
   }, [viewed]);
 
-  // Cuándo se leyó cada uno: al abrir algo se vuelve a leer solo si pasó
-  // `FRESH_MS` (el texto de cada nota se pide siempre al abrirla).
+  // Refresh trees on opening only after FRESH_MS; always fetch note content on opening.
   const [dropKey, setDropKey] = useState<string | null>(null);
   const readAt = useRef(new Map<string, number>());
   const loadTree = async (shareId: string, fresh = false): Promise<SharedTree | null> => {
@@ -183,10 +239,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       return next;
     });
 
-  // Al abrir un archivo o un portafolio (desde el visor, la página o una
-  // búsqueda), se despliega su camino aquí y la fila entra en la vista. Solo
-  // cuando cambia el destino: refrescar el árbol o plegar a mano no vuelve a
-  // abrir la sección ni mueve el scroll.
+  // When the navigation target changes, expand its ancestors and scroll its row into view. Tree refreshes and manual collapsing must not reopen sections or move scroll.
   const target = `${viewed?.share.id ?? ""}:${activeDoc ?? ""}:${boardPortfolio ?? ""}`;
   const expandedTo = useRef("");
   const scrolled = useRef("");
@@ -198,7 +251,9 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     if (!items || !items.some((item) => item.id === viewed.share.id)) return;
     if (expandedTo.current === target) return;
     expandedTo.current = target;
-    const doc = activeDoc ? viewed.documents.find((document) => document.id === activeDoc) : undefined;
+    const doc = activeDoc
+      ? viewed.documents.find((document) => document.id === activeDoc)
+      : undefined;
     const portfolioId = doc ? doc.portfolioId : boardPortfolio;
     const keys = sharedExpandKeys({
       shareId: viewed.share.id,
@@ -212,7 +267,9 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     } catch {
       /* preferencia */
     }
-    setTrees((current) => (current[viewed.share.id] === viewed ? current : { ...current, [viewed.share.id]: viewed }));
+    setTrees((current) =>
+      current[viewed.share.id] === viewed ? current : { ...current, [viewed.share.id]: viewed },
+    );
     setExpanded((current) => {
       let changed = false;
       const next = new Set(current);
@@ -248,7 +305,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     scrolled.current = reveal;
   }, [reveal, open, expanded, revealReady, items, viewed]);
 
-  // Se vuelve a leer al abrir (si no es reciente): otra persona con permiso de edición pudo cambiarlo.
+  // Refresh stale content on opening because other editors may have changed it.
   const openDoc = async (shareId: string, docId: string) => {
     const tree = await loadTree(shareId, true);
     if (!tree?.documents.some((document) => document.id === docId)) return;
@@ -262,11 +319,13 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
     const row = (event.target as HTMLElement).closest<HTMLElement>("[data-drop-share]");
-    const next = row?.dataset.dropShare ? `${row.dataset.dropShare}:${row.dataset.dropPortfolio ?? ""}` : null;
+    const next = row?.dataset.dropShare
+      ? `${row.dataset.dropShare}:${row.dataset.dropPortfolio ?? ""}`
+      : null;
     if (dropKey !== next) setDropKey(next);
   };
 
-  // Soltar aquí no puede caer en la Carpeta Personal: o entra en este portafolio, o no entra.
+  // Drops must target this shared portfolio or fail; never fall through to the personal root.
   const dropShared = (event: React.DragEvent) => {
     if (!isExternalFileDrag(event.dataTransfer)) return;
     event.preventDefault();
@@ -280,8 +339,16 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
       const files = await readDroppedEntries(event.dataTransfer);
       if (files.length === 0) return;
       const tree = await fetchSharedTree(shareId, true).catch(() => null);
-      const portfolioId = tree && which === "root" ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : which || null;
-      if (!tree || tree.share.kind !== "portfolio" || !portfolioId || !canEditSharedPortfolio(tree, portfolioId)) {
+      const portfolioId =
+        tree && which === "root"
+          ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null)
+          : which || null;
+      if (
+        !tree ||
+        tree.share.kind !== "portfolio" ||
+        !portfolioId ||
+        !canEditSharedPortfolio(tree, portfolioId)
+      ) {
         report(t("No puedes añadir nada a ese portafolio."));
         return;
       }
@@ -301,7 +368,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
     })();
   };
 
-  // Hasta saber si hay alguno (o si no hay), la sección de espacios no sale.
+  // Hide the workspace section until its presence or absence is known.
   if (workspaces && (!items || items.length === 0)) return null;
 
   return (
@@ -320,16 +387,30 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
         aria-expanded={open}
         className="flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg"
       >
-        {workspaces ? <Building2 className="size-4 shrink-0 text-faint" /> : <Users className="size-4 shrink-0 text-faint" />}
-        <span className="truncate font-medium">{workspaces ? t("Espacios de trabajo") : t("Compartidos conmigo")}</span>
-        <ChevronRight className={`ml-auto size-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`} />
+        {workspaces ? (
+          <Building2 className="size-4 shrink-0 text-faint" />
+        ) : (
+          <Users className="size-4 shrink-0 text-faint" />
+        )}
+        <span className="truncate font-medium">
+          {workspaces ? t("Espacios de trabajo") : t("Compartidos conmigo")}
+        </span>
+        <ChevronRight
+          className={`ml-auto size-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
+        />
       </button>
       {open ? (
         <ul>
-          {failed ? <li className="px-3 py-2 text-xs text-danger">{t("No se pudo leer lo compartido.")}</li> : null}
-          {!items && !failed ? <li className="px-3 py-2 text-xs text-faint">{t("Cargando…")}</li> : null}
+          {failed ? (
+            <li className="px-3 py-2 text-xs text-danger">{t("No se pudo leer lo compartido.")}</li>
+          ) : null}
+          {!items && !failed ? (
+            <li className="px-3 py-2 text-xs text-faint">{t("Cargando…")}</li>
+          ) : null}
           {items && items.length === 0 && !workspaces ? (
-            <li className="px-3 py-2 text-xs text-faint">{t("Nadie ha compartido nada contigo todavía.")}</li>
+            <li className="px-3 py-2 text-xs text-faint">
+              {t("Nadie ha compartido nada contigo todavía.")}
+            </li>
           ) : null}
           {items?.map((item) => {
             const tree = trees[item.id];
@@ -339,7 +420,9 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
             const rootId = tree ? (childrenOf(tree, rootParent(tree))[0]?.id ?? null) : null;
             const lit =
               (single && single.id === activeDoc) ||
-              (portfolio && boardShare === item.id && (boardPortfolio === null || boardPortfolio === rootId));
+              (portfolio &&
+                boardShare === item.id &&
+                (boardPortfolio === null || boardPortfolio === rootId));
             const editable = tree
               ? canEditSharedPortfolio(tree, rootId)
               : item.access === "edit" || item.access === "admin";
@@ -349,15 +432,16 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
               const { clientX, clientY } = event;
               const loaded = tree ?? (await loadTree(item.id));
               const root = loaded ? (childrenOf(loaded, rootParent(loaded))[0]?.id ?? null) : null;
-              const target = portfolio ? { kind: "portfolio" as const, id: root } : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
+              const target = portfolio
+                ? { kind: "portfolio" as const, id: root }
+                : { kind: "doc" as const, id: loaded?.documents[0]?.id ?? null };
               const items = menuFor(item, loaded, target);
               if (items.length > 0) menu.openAt(clientX, clientY, items);
             };
             return (
               <li key={item.id}>
                 {portfolio ? (
-                  // Como un portafolio de la Carpeta Personal: la flecha pliega o
-                  // despliega; el nombre abre su página.
+                  // The arrow toggles expansion; the name opens the portfolio page.
                   <div
                     title={t("De {0}", { 0: item.ownerName })}
                     onContextMenu={rootMenu}
@@ -366,13 +450,21 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                     data-drop-portfolio="root"
                     data-row={lit ? "marked" : ""}
                     className={`relative flex h-9 shrink-0 items-center rounded-md ${PAD[0]} ${
-                      dropKey === `${item.id}:root` ? "bg-accent/15" : lit ? "bg-inset" : "hover:bg-elevated"
+                      dropKey === `${item.id}:root`
+                        ? "bg-accent/15"
+                        : lit
+                          ? "bg-inset"
+                          : "hover:bg-elevated"
                     }`}
                   >
                     {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
                     <button
                       type="button"
-                      aria-label={isOpen ? t("Cerrar {0}", { 0: item.title }) : t("Abrir {0}", { 0: item.title })}
+                      aria-label={
+                        isOpen
+                          ? t("Cerrar {0}", { 0: item.title })
+                          : t("Abrir {0}", { 0: item.title })
+                      }
                       data-keep-pick
                       onClick={() => {
                         if (!isOpen) void loadTree(item.id);
@@ -380,12 +472,14 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                       }}
                       className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
                     >
-                      <ChevronRight className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                      <ChevronRight
+                        className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                      />
                     </button>
                     <button
                       type="button"
                       onClick={async () => {
-                        // Su página: sus portafolios, documentos y recientes.
+                        // Portfolio page with children, documents and recent items.
                         const loaded = await loadTree(item.id, true);
                         if (loaded) {
                           showPortfolio(loaded, null);
@@ -396,14 +490,25 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                       className="flex h-9 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg"
                     >
                       {isOpen ? (
-                        <FolderOpen className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                        <FolderOpen
+                          className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`}
+                        />
                       ) : (
-                        <Folder className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                        <Folder
+                          className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`}
+                        />
                       )}
                       <span className="truncate">{item.title || t("Sin título")}</span>
-                      {editable ? <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} /> : null}
+                      {editable ? (
+                        <Pencil
+                          className="size-3 shrink-0 text-faint"
+                          aria-label={t("Puedes editar")}
+                        />
+                      ) : null}
                       {workspaces ? null : (
-                        <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs font-normal text-faint">{item.ownerName}</span>
+                        <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs font-normal text-faint">
+                          {item.ownerName}
+                        </span>
                       )}
                     </button>
                   </div>
@@ -425,11 +530,20 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                     }`}
                   >
                     {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
-                    <FileText className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                    <FileText
+                      className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`}
+                    />
                     <span className="truncate">{item.title || t("Sin título")}</span>
-                    {editable ? <Pencil className="size-3 shrink-0 text-faint" aria-label={t("Puedes editar")} /> : null}
+                    {editable ? (
+                      <Pencil
+                        className="size-3 shrink-0 text-faint"
+                        aria-label={t("Puedes editar")}
+                      />
+                    ) : null}
                     {workspaces ? null : (
-                      <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">{item.ownerName}</span>
+                      <span className="ml-auto max-w-[40%] shrink-0 truncate pl-2 text-xs text-faint">
+                        {item.ownerName}
+                      </span>
                     )}
                   </button>
                 )}
@@ -437,7 +551,9 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
                   tree === undefined ? (
                     <p className="py-1 pl-10 text-xs text-faint">{t("Cargando…")}</p>
                   ) : tree === null ? (
-                    <p className="py-1 pl-10 text-xs text-danger">{t("Ya no está compartido contigo.")}</p>
+                    <p className="py-1 pl-10 text-xs text-danger">
+                      {t("Ya no está compartido contigo.")}
+                    </p>
                   ) : (
                     <SharedBranch
                       tree={tree}
@@ -471,10 +587,7 @@ export function SharedSection({ onOpen, workspaces = false }: { onOpen: () => vo
   );
 }
 
-/**
- * Rama de un portafolio compartido. El primer nivel (el propio portafolio
- * compartido) ya lo dibuja la fila del elemento, así que se salta.
- */
+/** Shared portfolio branch; skip its first level because the share row already renders it. */
 function SharedBranch({
   tree,
   parentId,
@@ -541,18 +654,28 @@ function SharedBranch({
               data-drop-portfolio={portfolio.id}
               data-row={lit ? "marked" : ""}
               className={`relative flex h-9 shrink-0 items-center rounded-md ${pad} ${
-                dropKey === `${tree.share.id}:${portfolio.id}` ? "bg-accent/15" : lit ? "bg-inset" : "hover:bg-elevated"
+                dropKey === `${tree.share.id}:${portfolio.id}`
+                  ? "bg-accent/15"
+                  : lit
+                    ? "bg-inset"
+                    : "hover:bg-elevated"
               }`}
             >
               {lit ? <span className="absolute inset-y-1.5 left-0 w-0.5 bg-accent" /> : null}
               <button
                 type="button"
-                aria-label={isOpen ? t("Cerrar {0}", { 0: portfolio.name }) : t("Abrir {0}", { 0: portfolio.name })}
+                aria-label={
+                  isOpen
+                    ? t("Cerrar {0}", { 0: portfolio.name })
+                    : t("Abrir {0}", { 0: portfolio.name })
+                }
                 data-keep-pick
                 onClick={() => onToggle(key)}
                 className="grid h-9 w-7 shrink-0 place-items-center text-faint hover:text-fg"
               >
-                <ChevronRight className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                <ChevronRight
+                  className={`size-3.5 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                />
               </button>
               <button
                 type="button"
@@ -561,7 +684,9 @@ function SharedBranch({
                 className="flex h-9 min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left text-sm font-medium text-fg"
               >
                 {isOpen ? (
-                  <FolderOpen className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
+                  <FolderOpen
+                    className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`}
+                  />
                 ) : (
                   <Folder className={`size-3.5 shrink-0 ${lit ? "text-accent" : "text-faint"}`} />
                 )}
@@ -591,7 +716,12 @@ function SharedBranch({
       })}
       {parentId
         ? docsIn(tree, parentId).map((document) => {
-            const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
+            const Icon =
+              document.kind === "file"
+                ? isTableName(document.file?.name ?? "")
+                  ? Sheet
+                  : File
+                : FileText;
             const on = document.id === activeDoc;
             return (
               <li key={document.id}>

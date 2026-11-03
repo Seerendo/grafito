@@ -1,6 +1,5 @@
--- Qué revisión de cada documento ya se indexó para buscar por contenido.
--- La borra «Reindexar»: el proceso de fondo vuelve a recorrer los documentos
--- sin parar el resto de Grafito.
+-- Document revision indexed for content search. Reindexing clears it and scans again in the
+-- background without stopping Grafito.
 create table if not exists content_index (
   user_id text not null,
   doc_id text not null,
@@ -12,7 +11,7 @@ create table if not exists content_index (
   primary key (user_id, doc_id)
 );
 
--- Título que se está indexando ahora, y el último error, para Monitorización.
+-- Current indexing title and last error for monitoring.
 create table if not exists index_run (
   id text primary key,
   current_title text not null default '',

@@ -4,7 +4,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { readIndexStatus, requestReindex, startContentIndex } from "@/server/index/run";
 
-/** Estado de la indexación de contenido. Monitorización → Indexación. */
+/** Content indexing status for administration monitoring. */
 export const indexStatus = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -15,7 +15,7 @@ export const indexStatus = createServerFn({ method: "GET" })
     return { ok: true as const, ...(await readIndexStatus(sql)) };
   });
 
-/** Vuelve a indexar todos los documentos, en segundo plano. */
+/** Reindex all documents in the background. */
 export const reindexContent = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {

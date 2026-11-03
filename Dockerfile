@@ -1,5 +1,4 @@
-# Grafito: build de producción (Vite + Nitro node-server) y una imagen final
-# que solo lleva la salida compilada.
+# Grafito production build and runtime image containing only compiled output.
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
@@ -8,8 +7,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 COPY . .
-# Sin DATABASE_URL en el build, `db:migrate` no hace nada: las migraciones se
-# aplican al arrancar, en la primera consulta a Postgres (src/lib/db.ts).
+# Without DATABASE_URL, build-time migrations are skipped.
+# Runtime database initialization applies them before the first query.
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

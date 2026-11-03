@@ -1,15 +1,15 @@
 import type { PublishedDoc, PublishedPortfolio, SharedTree } from "@/server/share";
 import type { Document } from "@/domain/vault/types";
 
-/**
- * Recorrido de un elemento compartido (portafolios y documentos de otro
- * usuario). Lo usan el visor y la sección «Compartidos conmigo» del directorio.
- */
+/** Shared portfolio/document traversal used by the viewer and directory. */
 
-/** El portafolio compartido es la raíz del índice; su padre queda fuera. */
+/** The shared portfolio is the index root; its parent is outside the share. */
 export function rootParent(tree: SharedTree): string | null {
   const ids = new Set(tree.portfolios.map((portfolio) => portfolio.id));
-  return tree.portfolios.find((portfolio) => !portfolio.parentId || !ids.has(portfolio.parentId))?.parentId ?? null;
+  return (
+    tree.portfolios.find((portfolio) => !portfolio.parentId || !ids.has(portfolio.parentId))
+      ?.parentId ?? null
+  );
 }
 
 export function childrenOf(tree: SharedTree, parentId: string | null): PublishedPortfolio[] {
@@ -30,10 +30,10 @@ function group<T>(map: Map<string | null, T[]>, key: string | null, value: T): v
   else map.set(key, [value]);
 }
 
-/** Documentos en el orden del índice, para abrir el primero por defecto. */
+/** Documents in index order, used to select the default first document. */
 export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   if (tree.share.kind === "document") return tree.documents;
-  // Agrupados una vez (con miles de documentos, filtrar en cada nivel era cuadrático).
+  // Group once; filtering at each level was quadratic for large trees.
   const kids = new Map<string | null, PublishedPortfolio[]>();
   for (const portfolio of tree.portfolios) group(kids, portfolio.parentId, portfolio);
   const docs = new Map<string | null, PublishedDoc[]>();
@@ -41,11 +41,15 @@ export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   const out: PublishedDoc[] = [];
   const seen = new Set<string>();
   const walk = (parentId: string | null) => {
-    const level = [...(kids.get(parentId) ?? [])].sort((a, b) => a.name.localeCompare(b.name, "es"));
+    const level = [...(kids.get(parentId) ?? [])].sort((a, b) =>
+      a.name.localeCompare(b.name, "es"),
+    );
     for (const portfolio of level) {
       if (seen.has(portfolio.id)) continue;
       seen.add(portfolio.id);
-      out.push(...[...(docs.get(portfolio.id) ?? [])].sort((a, b) => a.title.localeCompare(b.title, "es")));
+      out.push(
+        ...[...(docs.get(portfolio.id) ?? [])].sort((a, b) => a.title.localeCompare(b.title, "es")),
+      );
       walk(portfolio.id);
     }
   };
@@ -53,15 +57,19 @@ export function orderDocuments(tree: SharedTree): PublishedDoc[] {
   return out;
 }
 
-/** Si se puede crear o cambiar en ese portafolio de lo compartido. */
+/** Whether content may be created or edited in this shared portfolio. */
 export function canEditSharedPortfolio(tree: SharedTree, portfolioId: string | null): boolean {
   if (tree.share.access === "admin") return true;
-  if (tree.share.folderAccess) return Boolean(portfolioId && tree.share.folderAccess[portfolioId] === "edit");
+  if (tree.share.folderAccess)
+    return Boolean(portfolioId && tree.share.folderAccess[portfolioId] === "edit");
   return tree.share.access === "edit";
 }
 
-/** Nivel que se muestra en el portafolio abierto de lo compartido. */
-export function sharedPortfolioLevel(tree: SharedTree, portfolioId: string | null): "admin" | "edit" | "read" {
+/** Access level displayed for the open shared portfolio. */
+export function sharedPortfolioLevel(
+  tree: SharedTree,
+  portfolioId: string | null,
+): "admin" | "edit" | "read" {
   if (tree.share.access === "admin") return "admin";
   if (tree.share.folderAccess) {
     const level = portfolioId ? tree.share.folderAccess[portfolioId] : undefined;
@@ -70,21 +78,23 @@ export function sharedPortfolioLevel(tree: SharedTree, portfolioId: string | nul
   return tree.share.access === "edit" ? "edit" : "read";
 }
 
-/** Quién ve «Espacio y permisos». En un espacio, solo su administrador. */
+/** Storage-and-permissions visibility; workspace administration is required for workspaces. */
 export function canManageSharedSpace(tree: SharedTree): boolean {
   return !tree.share.workspace || tree.share.access === "admin";
 }
 
-/** Lo publicado como documentos de la bóveda, para el grafo y los vínculos. */
+/** Convert published content into vault documents for graph and links. */
 export function asDocuments(documents: PublishedDoc[]): Document[] {
   return documents.map((document) => ({
     id: document.id,
     title: document.title,
     kind: document.kind,
     portfolioId: document.portfolioId,
-    // Sin el texto (`lazy`), sus `[[vínculos]]` bastan para el grafo y las menciones.
+    // Without lazy content, wiki links suffice for graph and mentions.
     content:
-      document.lazy && !document.content ? (document.wikiLinks ?? []).map((title) => `[[${title}]]`).join("\n") : document.content,
+      document.lazy && !document.content
+        ? (document.wikiLinks ?? []).map((title) => `[[${title}]]`).join("\n")
+        : document.content,
     file: document.file ? { name: document.file.name, mime: document.file.mime } : null,
     links: document.links ?? [],
     pinned: false,

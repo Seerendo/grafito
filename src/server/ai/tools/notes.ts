@@ -2,7 +2,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { text } from "./args.ts";
 import type { Tool } from "./tool.ts";
 
-/** Notas, archivos y portafolios. La búsqueda usa el índice de contenido. */
+/** Note, file and portfolio tools; search uses the content index. */
 export const noteTools: Tool[] = [
   {
     permission: PERMISSION.notesRead,

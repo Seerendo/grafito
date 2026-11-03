@@ -1,7 +1,6 @@
--- Auditoría estructurada (Administración → Monitorización → Auditoría).
--- `app_log` sigue siendo el registro corto. Aquí cada fila tiene acción,
--- resultado y objetivo, se puede filtrar y exportar, y se poda según
--- `app_setting.audit_retention_days`.
+-- Structured audit for administration monitoring. app_log remains the short log. Each audit row
+-- has action, outcome and target; entries can be filtered and exported, with retention controlled
+-- by app_setting.audit_retention_days.
 
 create table if not exists audit_event (
   id text primary key,
@@ -23,7 +22,7 @@ create index if not exists audit_event_action_idx on audit_event (action, at des
 insert into app_setting (key, value) values ('audit_retention_days', '365')
 on conflict (key) do nothing;
 
--- Lo que ya estaba en el registro corto entra una vez, con el mismo id.
+-- Import existing short-log entries once, preserving IDs.
 insert into audit_event (id, at, actor_id, actor_name, action, outcome, area, target, detail, ip)
 select id, at, null, actor, 'admin', 'ok', area, '', message, ''
 from app_log

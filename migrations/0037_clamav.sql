@@ -1,6 +1,5 @@
--- Antivirus (Administración → Seguridad). El permiso abre esa pantalla.
--- Host, puerto y plazo se guardan en app_setting (claves clamav_*).
--- Sin esa fila, el análisis queda activo en clamav:3310.
+-- Antivirus administration permission. Store host, port and timeout in clamav_* settings. Without
+-- settings, scanning remains enabled at clamav:3310.
 
 insert into app_permission (key, label, description, area, sort) values
   ('security.manage', 'Seguridad', 'Configurar el antivirus (ClamAV)', 'Administración', 78)

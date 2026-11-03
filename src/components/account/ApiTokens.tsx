@@ -5,10 +5,7 @@ import { TextAction } from "@/components/ui/TextAction";
 import { createApiToken, myApiTokens, revokeApiToken } from "@/server/api-tokens.functions";
 import { intl, t } from "@/app/i18n";
 
-/**
- * Cuenta → API: tokens personales para usar la API REST (`/api/v1`) desde
- * scripts u otras herramientas. El token se muestra una sola vez.
- */
+/** Account API settings manage personal REST tokens for scripts and tools; reveal each token only once. */
 
 type Token = Extract<Awaited<ReturnType<typeof myApiTokens>>, { ok: true }>["tokens"][number];
 
@@ -55,7 +52,10 @@ export function ApiTokens() {
           placeholder={t("Nombre (p. ej. «Script de respaldo»)")}
           className="h-10 min-w-0 flex-1 rounded-md border border-line bg-inset px-3 text-sm"
         />
-        <button type="submit" className="h-10 rounded-md border border-line px-4 text-sm hover:bg-elevated">
+        <button
+          type="submit"
+          className="h-10 rounded-md border border-line px-4 text-sm hover:bg-elevated"
+        >
           {t("Crear token")}
         </button>
       </form>
@@ -80,11 +80,15 @@ export function ApiTokens() {
       {tokens && tokens.length > 0 ? (
         <ul className="mt-4 overflow-hidden rounded-lg border border-line bg-surface">
           {tokens.map((token) => (
-            <li key={token.id} className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0">
+            <li
+              key={token.id}
+              className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0"
+            >
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{token.name}</span>
                 <span className="block text-xs text-muted">
-                  {token.prefix}{t("… · creado")}{" "}{new Date(token.createdAt).toLocaleDateString(intl())}
+                  {token.prefix}
+                  {t("… · creado")} {new Date(token.createdAt).toLocaleDateString(intl())}
                   {token.lastUsedAt
                     ? t(" · usado {0}", { 0: new Date(token.lastUsedAt).toLocaleString(intl()) })
                     : t(" · sin usar")}

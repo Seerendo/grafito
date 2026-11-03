@@ -1,12 +1,7 @@
 /**
- * Interruptor de activar/desactivar. La pista es flex con relleno fijo y la
- * bolita se desplaza dentro de ella, así que nunca se sale del recuadro.
- * Con `label` muestra el texto al lado; sin él, usa `ariaLabel`.
- *
- * Colores por pares que cada tema ya hace contrastar: apagado, pista `inset`
- * con borde `line` y bolita `muted`; encendido, pista `accent` y bolita
- * `accent-fg`. (En temas como Folleto, `line` y `fg` son el mismo negro: no
- * se pueden usar juntos.)
+ * Toggle uses a padded flex track to contain its knob. label adds visible text; otherwise use
+ * ariaLabel. Off colors are inset/line/muted; on colors are accent/accent-fg. These theme pairs
+ * preserve contrast, including themes where line and fg coincide.
  */
 export function Switch({
   checked,

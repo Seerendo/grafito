@@ -1,15 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-/** Margen entre el menú y el borde de la ventana. */
+/** Margin between the context menu and viewport edge. */
 const EDGE = 8;
 
 export type ContextItem = { label: string; onClick: () => void; danger?: boolean };
 
 export type ContextMenuState = { x: number; y: number; items: ContextItem[] } | null;
 
-/** El menú abierto (ver `useContextMenu`). */
-export function ContextMenu({ menu, onClose }: { menu: NonNullable<ContextMenuState>; onClose: () => void }) {
+/** Open context menu; see useContextMenu. */
+export function ContextMenu({
+  menu,
+  onClose,
+}: {
+  menu: NonNullable<ContextMenuState>;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState({ left: menu.x, top: menu.y, ready: false });
 

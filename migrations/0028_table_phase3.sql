@@ -1,7 +1,5 @@
--- Tablas de datos, fase 3 (ver `src/server/table.ts`).
--- `layout` recuerda la vista (cuadrícula, tablero, galería o calendario).
--- El historial guarda, por fila, qué celda cambió (como mucho las últimas
--- cuarenta), para poder ver quién la tocó y el valor anterior.
+-- Data tables, phase 3: layout stores grid, board, gallery or calendar view. Row history retains
+-- up to forty cell changes with author and previous value; see src/server/table.ts.
 
 alter table data_meta add column if not exists layout text not null default '';
 

@@ -6,11 +6,8 @@ import { sharedTreeForUser } from "@/server/share";
 import { treeHttpResponse } from "@/server/tree-response";
 
 /**
- * `GET /api/shared/:id/tree`: el árbol de algo compartido conmigo (o de un
- * espacio de trabajo), empaquetado (ver `domain/share-pack.ts`). Con ETag: si
- * no cambió desde la última vez, el navegador recibe un 304 sin cuerpo. Va
- * comprimido una sola vez por versión (no en cada petición). Con `?fresh=1`,
- * al día aunque haya uno guardado de hace unos segundos.
+ * GET /api/shared/:id/tree returns a packed shared/workspace tree. ETags allow bodyless 304
+ * responses, compression is cached per version, and fresh=1 bypasses short-lived cached views.
  */
 export const Route = createFileRoute("/api/shared/$id/tree")({
   server: {

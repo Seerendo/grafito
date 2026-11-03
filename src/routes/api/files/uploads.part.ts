@@ -4,7 +4,7 @@ import { apiCaller, apiError, failure, json, requirePermission } from "@/server/
 import { PART_SIZE, uploadPart } from "@/server/blobs";
 import { mayUpload } from "@/server/upload-target";
 
-/** `PUT /api/files/uploads/part?key&uploadId&part`: una parte de una subida (ver `uploads.ts`). */
+/** PUT /api/files/uploads/part?key&uploadId&part uploads one part; see uploads.ts. */
 export const Route = createFileRoute("/api/files/uploads/part")({
   server: {
     handlers: {
@@ -19,7 +19,8 @@ export const Route = createFileRoute("/api/files/uploads/part")({
           if (!uploadId || !(await mayUpload(sql, userId, key, url.searchParams.get("shareId")))) {
             return apiError(403, "Esa subida no es tuya.");
           }
-          if (!Number.isInteger(part) || part < 1 || part > 10_000) return apiError(400, "Número de parte no válido.");
+          if (!Number.isInteger(part) || part < 1 || part > 10_000)
+            return apiError(400, "Número de parte no válido.");
           const declared = Number(request.headers.get("content-length") ?? 0);
           if (declared > PART_SIZE) return apiError(413, "La parte es demasiado grande.");
           const bytes = new Uint8Array(await request.arrayBuffer());

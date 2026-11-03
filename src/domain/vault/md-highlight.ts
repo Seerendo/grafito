@@ -1,8 +1,6 @@
 /**
- * Colores de sintaxis para el editor de notas (como un editor de código):
- * parte el Markdown en tramos con su tipo, línea a línea. Solo da color, no
- * cambia el texto: la suma de los tramos es siempre el texto original, para
- * que la capa coloreada quede alineada con el cuadro de texto encima.
+ * Line-based Markdown tokenization for editor highlighting. Concatenating spans must reproduce
+ * the original text exactly so the highlight layer stays aligned.
  */
 
 export type MdToken =
@@ -40,7 +38,7 @@ const INLINE: Array<[RegExp, MdToken]> = [
   [/\*[^*\s\n][^*\n]*\*/y, "em"],
 ];
 
-/** Tramos de un texto sin estructura de bloque (dentro de una línea). */
+/** Inline spans without block structure. */
 function inline(text: string, out: MdSpan[]): void {
   let plain = "";
   let at = 0;
@@ -62,7 +60,7 @@ function inline(text: string, out: MdSpan[]): void {
       }
     }
     if (matched) continue;
-    // `_énfasis_` solo entre espacios: no en nombres_con_guiones.
+    // Underscore emphasis requires whitespace boundaries, excluding underscores inside names.
     if (text[at] === "_" && (at === 0 || /\s/.test(text[at - 1]!))) {
       const hit = /_[^_\s\n][^_\n]*_(?![\p{L}\d])/uy;
       hit.lastIndex = at;
@@ -74,7 +72,7 @@ function inline(text: string, out: MdSpan[]): void {
         continue;
       }
     }
-    // #etiqueta al empezar una palabra.
+    // Recognize hashtags at word starts.
     if (text[at] === "#" && (at === 0 || /\s/.test(text[at - 1]!))) {
       const hit = /#[\p{L}\d_-]+/uy;
       hit.lastIndex = at;
@@ -98,7 +96,7 @@ function inline(text: string, out: MdSpan[]): void {
   flush();
 }
 
-/** Los tramos de cada línea del texto. */
+/** Token spans for each text line. */
 export function highlightMarkdown(source: string): MdSpan[][] {
   const lines: MdSpan[][] = [];
   let fence: string | null = null;

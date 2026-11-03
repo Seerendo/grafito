@@ -2,18 +2,15 @@ import { create } from "zustand";
 import type { SharedTree } from "@/server/share";
 
 /**
- * Qué elemento compartido conmigo (o espacio de trabajo) está abierto en la
- * bóveda. Mientras hay uno abierto, el área principal muestra el visor en
- * lugar del editor; abrir una nota propia o volver a la raíz lo cierra. Sin
- * documento (`docId` nulo), se ve la página de un portafolio de lo compartido
- * (`portfolioId`, o el compartido si es nulo): sus portafolios, sus documentos
- * y los recientes.
+ * Currently open shared item or workspace. It replaces the editor with a viewer until an owned
+ * note or vault root is opened. With no docId, show portfolioId or the shared root, including
+ * children, documents and recent items.
  */
 type SharedViewState = {
   tree: SharedTree | null;
   docId: string | null;
   portfolioId: string | null;
-  /** Texto del documento abierto, para el esquema del panel de la bóveda. */
+  /** Open document text used by the vault outline panel. */
   body: { id: string; content: string } | null;
   openShared: (tree: SharedTree, docId: string | null) => void;
   openSharedPortfolio: (tree: SharedTree, portfolioId: string | null) => void;

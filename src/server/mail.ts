@@ -3,13 +3,9 @@ import { intlLocale, translate, type Locale } from "@/domain/i18n";
 import { decrypt, encrypt } from "./crypto";
 
 /**
- * Correo electrónico por SMTP (solo servidor). Ver docs/MAIL.md.
- *
- * La configuración vive en `app_setting` (claves `mail_*`) y se edita en
- * Administración → Correo electrónico; la contraseña del servidor SMTP se
- * guarda cifrada con `GRAFITO_ENCRYPTION_KEY`. Sin servidor ni remitente, el
- * correo está apagado y Grafito funciona igual (sin avisos, y el acceso de los
- * usuarios nuevos se entrega a mano con el enlace).
+ * SMTP configuration lives under mail_* settings; encrypt passwords with
+ * GRAFITO_ENCRYPTION_KEY. Without host or sender, mail is disabled and initial access is
+ * delivered manually by link. See docs/MAIL.md.
  */
 
 export type MailSecurity = "none" | "starttls" | "tls";
@@ -22,13 +18,16 @@ export type MailSettings = {
   hasPassword: boolean;
   from: string;
   fromName: string;
-  /** Dirección con la que se abre Grafito, para los enlaces de los correos. */
+  /** Public Grafito address used in email links. */
   publicUrl: string;
-  /** Horas que vale el acceso temporal de un usuario nuevo. */
+  /** Temporary account access lifetime in hours. */
   accessHours: number;
 };
 
-export type MailInput = Omit<MailSettings, "hasPassword"> & { password?: string; clearPassword?: boolean };
+export type MailInput = Omit<MailSettings, "hasPassword"> & {
+  password?: string;
+  clearPassword?: boolean;
+};
 
 export type Mail = { to: string; subject: string; text: string; html: string };
 
@@ -55,7 +54,10 @@ function defaultPublicUrl(): string {
 
 export async function readMailSettings(sql: Sql): Promise<MailSettings & { password: string }> {
   if (cache && Date.now() - cache.at < CACHE_MS) return cache.value;
-  const rows = await sql<{ key: string; value: string }>`select key, value from app_setting where key like 'mail_%'`;
+  const rows = await sql<{
+    key: string;
+    value: string;
+  }>`select key, value from app_setting where key like 'mail_%'`;
   const raw = new Map(rows.map((row) => [row.key, row.value]));
   let password = "";
   const sealed = raw.get(KEYS.password);
@@ -99,7 +101,7 @@ export async function writeMailSettings(sql: Sql, input: MailInput): Promise<voi
     [KEYS.publicUrl, input.publicUrl.trim().replace(/\/+$/, "")],
     [KEYS.accessHours, String(input.accessHours)],
   ];
-  // Una contraseña vacía conserva la anterior; `clearPassword` la quita.
+  // Empty password preserves the existing value; clearPassword removes it.
   if (input.password) values.push([KEYS.password, encrypt(input.password)]);
   for (const [key, value] of values) {
     await sql`
@@ -107,12 +109,17 @@ export async function writeMailSettings(sql: Sql, input: MailInput): Promise<voi
       on conflict (key) do update set value = excluded.value
     `;
   }
-  if (input.clearPassword && !input.password) await sql`delete from app_setting where key = ${KEYS.password}`;
+  if (input.clearPassword && !input.password)
+    await sql`delete from app_setting where key = ${KEYS.password}`;
   cache = null;
 }
 
-/** Envía un correo con la configuración guardada. Lanza un error legible si falla. */
-export async function sendMail(sql: Sql, mail: Mail, override?: MailSettings & { password: string }): Promise<void> {
+/** Send mail with saved settings or throw a readable error. */
+export async function sendMail(
+  sql: Sql,
+  mail: Mail,
+  override?: MailSettings & { password: string },
+): Promise<void> {
   const settings = override ?? (await readMailSettings(sql));
   if (!mailReady(settings)) throw new Error("El correo no está configurado.");
   const { createTransport } = await import("nodemailer");
@@ -143,18 +150,24 @@ export async function sendMail(sql: Sql, mail: Mail, override?: MailSettings & {
 }
 
 function mailProblem(error: unknown): string {
-  const text = error instanceof Error ? `${error.message} ${(error as { code?: string }).code ?? ""}` : String(error);
-  if (/EAUTH|Invalid login|authentication/i.test(text)) return "El servidor de correo rechazó el usuario o la contraseña.";
+  const text =
+    error instanceof Error
+      ? `${error.message} ${(error as { code?: string }).code ?? ""}`
+      : String(error);
+  if (/EAUTH|Invalid login|authentication/i.test(text))
+    return "El servidor de correo rechazó el usuario o la contraseña.";
   if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|ETIMEDOUT|ECONNECTION|timeout/i.test(text)) {
     return "No se pudo conectar con el servidor de correo. Revisa el servidor, el puerto y la seguridad.";
   }
-  if (/certificate|SSL|TLS|wrong version/i.test(text)) return "Falló la conexión segura (TLS). Revisa el puerto y la seguridad.";
-  if (/recipient|mailbox|550|553/i.test(text)) return "El servidor de correo rechazó el destinatario.";
+  if (/certificate|SSL|TLS|wrong version/i.test(text))
+    return "Falló la conexión segura (TLS). Revisa el puerto y la seguridad.";
+  if (/recipient|mailbox|550|553/i.test(text))
+    return "El servidor de correo rechazó el destinatario.";
   console.error("[mail]", error);
   return "No se pudo enviar el correo.";
 }
 
-// --- Plantillas -----------------------------------------------------------------
+// Email templates.
 
 function escape(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
@@ -178,7 +191,7 @@ function paragraph(text: string): string {
 }
 
 function when(locale: Locale, ms: number): string {
-  // Con la zona horaria: el servidor puede estar en otra (en Docker, UTC salvo `TZ`).
+  // Format using the configured timezone; Docker otherwise defaults to UTC.
   return new Intl.DateTimeFormat(intlLocale(locale), {
     weekday: "long",
     day: "numeric",
@@ -191,17 +204,32 @@ function when(locale: Locale, ms: number): string {
 }
 
 export function testMail(locale: Locale, to: string): Mail {
-  const tr = (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars);
+  const tr = (text: string, vars?: Record<string, string | number>) =>
+    translate(locale, text, vars);
   const title = tr("Correo de prueba");
   const line = tr("Si lees esto, Grafito ya puede enviar correos.");
-  return { to, subject: tr("Grafito: correo de prueba"), text: `${title}\n\n${line}\n`, html: layout(title, paragraph(line)) };
+  return {
+    to,
+    subject: tr("Grafito: correo de prueba"),
+    text: `${title}\n\n${line}\n`,
+    html: layout(title, paragraph(line)),
+  };
 }
 
 export function accessMail(
   locale: Locale,
-  input: { to: string; name: string; loginName: string; link: string; signInUrl: string; expiresAt: number; resent: boolean },
+  input: {
+    to: string;
+    name: string;
+    loginName: string;
+    link: string;
+    signInUrl: string;
+    expiresAt: number;
+    resent: boolean;
+  },
 ): Mail {
-  const tr = (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars);
+  const tr = (text: string, vars?: Record<string, string | number>) =>
+    translate(locale, text, vars);
   const expires = when(locale, input.expiresAt);
   const title = input.resent ? tr("Tu nuevo acceso a Grafito") : tr("Tu acceso a Grafito");
   const lines = [
@@ -210,7 +238,9 @@ export function accessMail(
       ? tr("Un administrador te envió un acceso nuevo. El anterior ya no sirve.")
       : tr("Un administrador te creó una cuenta en Grafito."),
     tr("Tu usuario es: {0}", { 0: input.loginName }),
-    tr("Tu contraseña temporal está en una nota privada que solo se puede abrir una vez: al cerrarla o recargarla, desaparece."),
+    tr(
+      "Tu contraseña temporal está en una nota privada que solo se puede abrir una vez: al cerrarla o recargarla, desaparece.",
+    ),
   ];
   const after = [
     tr("El enlace y la contraseña vencen el {0}.", { 0: expires }),
@@ -241,15 +271,30 @@ export function changesMail(
   locale: Locale,
   input: { to: string; name: string; url: string; items: { title: string; actors: string[] }[] },
 ): Mail {
-  const tr = (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars);
+  const tr = (text: string, vars?: Record<string, string | number>) =>
+    translate(locale, text, vars);
   const single = input.items.length === 1 ? input.items[0]! : null;
   const subject = single
     ? tr("Cambios en «{0}»", { 0: single.title })
     : tr("Cambios en {0} documentos", { 0: input.items.length });
-  const intro = tr("Hola, {0}. Hubo cambios en documentos a los que tienes acceso:", { 0: input.name });
-  const rows = input.items.map((item) => tr("«{0}», por {1}", { 0: item.title, 1: item.actors.join(", ") }));
+  const intro = tr("Hola, {0}. Hubo cambios en documentos a los que tienes acceso:", {
+    0: input.name,
+  });
+  const rows = input.items.map((item) =>
+    tr("«{0}», por {1}", { 0: item.title, 1: item.actors.join(", ") }),
+  );
   const footer = tr("Puedes dejar de recibir estos avisos en Cuenta → Correo.");
-  const text = [subject, "", intro, "", ...rows.map((row) => `- ${row}`), "", `${tr("Abrir Grafito")}: ${input.url}`, "", footer].join("\n");
+  const text = [
+    subject,
+    "",
+    intro,
+    "",
+    ...rows.map((row) => `- ${row}`),
+    "",
+    `${tr("Abrir Grafito")}: ${input.url}`,
+    "",
+    footer,
+  ].join("\n");
   const html = layout(
     subject,
     paragraph(intro) +
@@ -262,19 +307,37 @@ export function changesMail(
 
 function noticeMail(
   locale: Locale,
-  input: { to: string; name: string; actor: string; title: string; url: string; subject: string; line: string; button: string },
+  input: {
+    to: string;
+    name: string;
+    actor: string;
+    title: string;
+    url: string;
+    subject: string;
+    line: string;
+    button: string;
+  },
 ): Mail {
-  const tr = (text: string, vars?: Record<string, string | number>) => translate(locale, text, vars);
+  const tr = (text: string, vars?: Record<string, string | number>) =>
+    translate(locale, text, vars);
   const hello = tr(input.line, { 0: input.name, 1: input.actor, 2: input.title });
   const subject = tr(input.subject, { 0: input.title });
   const ignore = tr("Si no esperabas este correo, puedes ignorarlo.");
   const text = [subject, "", hello, "", `${tr(input.button)}: ${input.url}`, "", ignore].join("\n");
-  const html = layout(subject, paragraph(hello) + button(input.url, tr(input.button)) + `<p style="margin:16px 0 0;font-size:13px;color:#8a8378">${escape(ignore)}</p>`);
+  const html = layout(
+    subject,
+    paragraph(hello) +
+      button(input.url, tr(input.button)) +
+      `<p style="margin:16px 0 0;font-size:13px;color:#8a8378">${escape(ignore)}</p>`,
+  );
   return { to: input.to, subject, text, html };
 }
 
-/** Aviso de que le compartieron una nota, un archivo o un portafolio. */
-export function shareMail(locale: Locale, input: { to: string; name: string; actor: string; title: string; url: string }): Mail {
+/** Notification of a shared note, file or portfolio. */
+export function shareMail(
+  locale: Locale,
+  input: { to: string; name: string; actor: string; title: string; url: string },
+): Mail {
   return noticeMail(locale, {
     ...input,
     subject: "Te compartieron «{0}»",
@@ -283,8 +346,11 @@ export function shareMail(locale: Locale, input: { to: string; name: string; act
   });
 }
 
-/** Aviso de que le invitaron a rellenar un formulario. */
-export function formMail(locale: Locale, input: { to: string; name: string; actor: string; title: string; url: string }): Mail {
+/** Form invitation notification. */
+export function formMail(
+  locale: Locale,
+  input: { to: string; name: string; actor: string; title: string; url: string },
+): Mail {
   return noticeMail(locale, {
     ...input,
     subject: "Te invitaron a rellenar «{0}»",

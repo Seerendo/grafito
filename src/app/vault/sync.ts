@@ -3,25 +3,12 @@ import { pullVault, pushVault } from "@/server/vault.functions";
 import { isBlankDraft, useVault } from "./store";
 
 /**
- * Sincronización de la bóveda del navegador con la del servidor.
- *
- * El servidor es la fuente de verdad (lo usan también la API y la IA); el
- * navegador guarda una copia para abrir al instante y trabajar sin esperar.
- * Por cada usuario se recuerda la última revisión recibida y una huella de
- * cada documento y portafolio tal como quedó sincronizado: lo que difiere de
- * esa huella es un cambio local que hay que subir.
- *
- *  1. Baja los cambios posteriores a la revisión conocida y los aplica, salvo
- *     que el documento también cambiara aquí. Una nota cambiada aquí lleva la
- *     versión de la que partió (`base`) y la junta el servidor al subirla; los
- *     archivos y las cachés antiguas sin `base` siguen con «gana el más reciente».
- *  2. Sube lo que cambió aquí. Si otra persona cambió lo mismo de una nota, el
- *     servidor no la escribe y la nota queda en `conflicts` hasta que se elige
- *     cuál queda (`keepTheirs` / `keepMine`); mientras, no se sube.
- *
- * La primera vez en un navegador: si el servidor ya tiene la bóveda y aquí solo
- * hay la de ejemplo, se adopta la del servidor; si aquí había una bóveda
- * guardada (versiones anteriores), se mezclan y se sube lo que falte.
+ * Synchronize the browser cache with the authoritative server vault used by API and AI. Track
+ * each user's revision and synchronized fingerprints. First pull newer changes, preserving
+ * local edits. Notes carry a base for server-side merging; files and legacy caches use
+ * newest-wins. Then push local changes. Unmergeable note conflicts stop uploading until
+ * keepTheirs or keepMine resolves them. New browsers replace sample data with the server vault;
+ * existing legacy local vaults merge and upload missing content.
  */
 
 type Meta = { rev: number; docs: Record<string, string>; portfolios: Record<string, string> };
@@ -57,14 +44,19 @@ function writeMeta(userId: string, meta: Meta): void {
   try {
     localStorage.setItem(META_PREFIX + userId, JSON.stringify(meta));
   } catch {
-    /* almacenamiento lleno: se reintenta en la próxima sincronización */
+    /* Storage full; retry on the next synchronization. */
   }
 }
 
-function snapshot(documents: Document[], portfolios: Portfolio[]): Pick<Meta, "docs" | "portfolios"> {
+function snapshot(
+  documents: Document[],
+  portfolios: Portfolio[],
+): Pick<Meta, "docs" | "portfolios"> {
   return {
     docs: Object.fromEntries(documents.map((doc) => [doc.id, docSignature(doc)])),
-    portfolios: Object.fromEntries(portfolios.map((portfolio) => [portfolio.id, portfolioSignature(portfolio)])),
+    portfolios: Object.fromEntries(
+      portfolios.map((portfolio) => [portfolio.id, portfolioSignature(portfolio)]),
+    ),
   };
 }
 
@@ -89,7 +81,7 @@ export function onSyncStatus(listener: (status: SyncStatus) => void): () => void
   return () => listeners.delete(listener);
 }
 
-/** Sincroniza ya; si hay una en curso, encadena otra al terminar. */
+/** Synchronize now; queue another pass if one is already running. */
 export function syncVault(userId: string): Promise<void> {
   if (running) {
     again = true;
@@ -121,7 +113,7 @@ async function syncOnce(userId: string): Promise<void> {
 
   if (!meta) {
     if (pulled.revision > 0 && useVault.getState().seeded) {
-      // Navegador nuevo: la bóveda es la del servidor.
+      // New browsers adopt the server vault.
       useVault.getState().replaceVault(pulled.docs, pulled.portfolios);
       writeMeta(userId, { rev: pulled.revision, ...snapshot(pulled.docs, pulled.portfolios) });
       return;
@@ -129,14 +121,14 @@ async function syncOnce(userId: string): Promise<void> {
     meta = { rev: 0, docs: {}, portfolios: {} };
   }
 
-  // 1. Aplicar lo que llegó, salvo lo que aquí cambió después.
+  // Apply incoming changes unless newer local edits exist.
   const local = useVault.getState();
   const localDocs = new Map(local.documents.map((doc) => [doc.id, doc]));
   const docs = pulled.docs.filter((remote) => {
     const mine = localDocs.get(remote.id);
     if (!mine) return true;
     if (local.conflicts[remote.id]) {
-      // Pendiente de elegir: se ofrece la versión más reciente del servidor.
+      // For unresolved conflicts, offer the latest server version.
       useVault.getState().setConflict(remote);
       return false;
     }
@@ -161,42 +153,52 @@ async function syncOnce(userId: string): Promise<void> {
   meta.rev = pulled.revision;
   writeMeta(userId, meta);
 
-  // 2. Subir lo que cambió aquí.
+  // Upload local changes.
   const now = useVault.getState();
   const changes = {
-    // La nota nueva en blanco no se sube: si se deja así, se descarta (`Draft`).
+    // Do not upload untouched blank drafts; they are discarded when left.
     docs: now.documents.filter(
-      (doc) => meta!.docs[doc.id] !== docSignature(doc) && !isBlankDraft(now.draft, doc) && !now.conflicts[doc.id],
+      (doc) =>
+        meta!.docs[doc.id] !== docSignature(doc) &&
+        !isBlankDraft(now.draft, doc) &&
+        !now.conflicts[doc.id],
     ),
     deletedDocs: Object.keys(meta.docs).filter((id) => !now.documents.some((doc) => doc.id === id)),
-    portfolios: now.portfolios.filter((portfolio) => meta!.portfolios[portfolio.id] !== portfolioSignature(portfolio)),
-    deletedPortfolios: Object.keys(meta.portfolios).filter((id) => !now.portfolios.some((portfolio) => portfolio.id === id)),
+    portfolios: now.portfolios.filter(
+      (portfolio) => meta!.portfolios[portfolio.id] !== portfolioSignature(portfolio),
+    ),
+    deletedPortfolios: Object.keys(meta.portfolios).filter(
+      (id) => !now.portfolios.some((portfolio) => portfolio.id === id),
+    ),
   };
-  const total = changes.docs.length + changes.deletedDocs.length + changes.portfolios.length + changes.deletedPortfolios.length;
+  const total =
+    changes.docs.length +
+    changes.deletedDocs.length +
+    changes.portfolios.length +
+    changes.deletedPortfolios.length;
   if (total === 0) return;
   const result = await pushVault({ data: changes });
   if (!result.ok) {
-    // Sin permiso de escritura: lo local se queda como estaba en el servidor la próxima vez.
+    // Without write permission, the next refresh restores authoritative server content.
     return;
   }
   const refused = new Set(result.conflicts.map((doc) => doc.id));
   useVault.getState().markSynced(changes.docs.filter((doc) => !refused.has(doc.id)));
   for (const theirs of result.conflicts) useVault.getState().setConflict(theirs);
   const after = snapshot(now.documents, now.portfolios);
-  // Una nota en conflicto sigue contando como cambiada aquí.
+  // Conflicted notes still count as locally changed.
   for (const id of refused) {
     if (meta.docs[id] === undefined) delete after.docs[id];
     else after.docs[id] = meta.docs[id];
   }
-  // Si entre medias alguien más cambió la bóveda (la IA, otra pestaña), la
-  // revisión saltó más de uno: se conserva la anterior para bajar esos cambios.
-  // Lo mismo si el servidor juntó una nota: hay que bajar la versión mezclada.
-  const rev = result.revision === meta.rev + 1 && result.merged.length === 0 ? result.revision : meta.rev;
+  // If another client or AI advanced the revision by more than one, retain the old revision so the next pull includes those changes. Also pull server-merged note versions.
+  const rev =
+    result.revision === meta.rev + 1 && result.merged.length === 0 ? result.revision : meta.rev;
   writeMeta(userId, { rev, ...after });
   if (rev !== result.revision) again = true;
 }
 
-/** Conflicto de una nota: se queda la versión del servidor (la de la otra persona). */
+/** Resolve a note conflict by keeping the server version. */
 export function keepTheirs(userId: string, id: string): void {
   const store = useVault.getState();
   const theirs = store.conflicts[id];
@@ -211,8 +213,8 @@ export function keepTheirs(userId: string, id: string): void {
 }
 
 /**
- * Conflicto de una nota: se queda la de aquí. Su base pasa a ser la versión
- * del servidor, así que al subirla la sustituye (lo anterior queda en el historial).
+ * Resolve a conflict by keeping the local version against the latest server base; the next
+ * upload replaces it while history preserves the prior version.
  */
 export function keepMine(userId: string, id: string): void {
   const store = useVault.getState();
@@ -221,24 +223,29 @@ export function keepMine(userId: string, id: string): void {
   store.clearConflict(id);
   useVault.setState((state) => ({
     documents: state.documents.map((doc) =>
-      doc.id === id ? { ...doc, base: { content: theirs.content, title: theirs.title, updatedAt: theirs.updatedAt } } : doc,
+      doc.id === id
+        ? {
+            ...doc,
+            base: { content: theirs.content, title: theirs.title, updatedAt: theirs.updatedAt },
+          }
+        : doc,
     ),
   }));
   void syncVault(userId);
 }
 
-/** Olvida el estado de sincronización (al borrar la caché local, por ejemplo). */
+/** Forget synchronization metadata, for example after clearing the local cache. */
 export function forgetSync(userId: string): void {
   try {
     localStorage.removeItem(META_PREFIX + userId);
   } catch {
-    /* nada que borrar */
+    /* Nothing to remove. */
   }
 }
 
 /**
- * Mantiene la bóveda sincronizada mientras está abierta: al empezar, unos
- * segundos después de cada cambio local, cada 20 s y al volver a la pestaña.
+ * Synchronize on opening, shortly after local edits, every twenty seconds and when returning to
+ * the tab.
  */
 export function startVaultSync(userId: string): () => void {
   let debounce = 0;

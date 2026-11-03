@@ -4,13 +4,9 @@ import { formatBytes } from "@/domain/space";
 import { createPortfolio } from "./vault";
 
 /**
- * Espacios de trabajo (solo servidor). Ver `migrations/0024_workspaces.sql`.
- *
- * Un espacio de trabajo es la bóveda de una cuenta interna, compartida con su
- * organización. Los miembros ven el espacio; lo de dentro solo lo ve quien
- * administra o quien tiene una fila en `workspace_access` (migración 0032).
- * El espacio de una organización sale del de la organización con espacio de
- * trabajo más cercana por encima.
+ * Workspaces are internal-account vaults shared with organizations. Members see the root;
+ * administrators and workspace_access grants reveal contents. Quotas derive from the nearest
+ * ancestor workspace. See migrations 0024 and 0032.
  */
 
 export type WorkspaceRow = {
@@ -34,19 +30,24 @@ export async function workspaceByOwner(sql: Sql, ownerId: string): Promise<Works
   return rows[0] ?? null;
 }
 
-const bytesOf = (row: WorkspaceRow): number | null => (row.bytes === null || row.bytes === undefined ? null : Number(row.bytes));
+const bytesOf = (row: WorkspaceRow): number | null =>
+  row.bytes === null || row.bytes === undefined ? null : Number(row.bytes);
 
-/**
- * Para cada espacio de trabajo, los de las organizaciones de debajo cuyo
- * espacio sale del suyo: los más cercanos (los que no tienen otro en medio).
- */
-export function workspaceChildren(orgs: OrgRow[], rows: WorkspaceRow[]): Map<string, WorkspaceRow[]> {
+/** Nearest descendant workspaces whose allocations consume each workspace's quota. */
+export function workspaceChildren(
+  orgs: OrgRow[],
+  rows: WorkspaceRow[],
+): Map<string, WorkspaceRow[]> {
   const byOrg = new Map(rows.map((row) => [row.org_id, row]));
   const parent = new Map(orgs.map((org) => [org.id, org.parent_id]));
   const out = new Map<string, WorkspaceRow[]>();
   for (const row of rows) {
     const seen = new Set<string>([row.org_id]);
-    for (let at = parent.get(row.org_id) ?? null; at && !seen.has(at); at = parent.get(at) ?? null) {
+    for (
+      let at = parent.get(row.org_id) ?? null;
+      at && !seen.has(at);
+      at = parent.get(at) ?? null
+    ) {
       seen.add(at);
       const above = byOrg.get(at);
       if (above) {
@@ -58,7 +59,7 @@ export function workspaceChildren(orgs: OrgRow[], rows: WorkspaceRow[]): Map<str
   return out;
 }
 
-/** El espacio de trabajo con espacio propio más cercano por encima (de quien sale el suyo). */
+/** Nearest quota-bearing ancestor workspace supplying this allocation. */
 function parentWorkspace(orgs: OrgRow[], rows: WorkspaceRow[], orgId: string): WorkspaceRow | null {
   const byOrg = new Map(rows.map((row) => [row.org_id, row]));
   const parent = new Map(orgs.map((org) => [org.id, org.parent_id]));
@@ -71,10 +72,7 @@ function parentWorkspace(orgs: OrgRow[], rows: WorkspaceRow[], orgId: string): W
   return null;
 }
 
-/**
- * Lo que puede ocupar el contenido propio de un espacio de trabajo: su espacio
- * menos lo asignado a los de debajo (`null`: sin tope).
- */
+/** Own-content capacity equals workspace quota minus child allocations; null means unlimited. */
 export async function workspaceOwnLimit(sql: Sql, ownerId: string): Promise<number | null> {
   const row = await workspaceByOwner(sql, ownerId);
   if (!row) return null;
@@ -89,11 +87,14 @@ export async function workspaceOwnLimit(sql: Sql, ownerId: string): Promise<numb
 }
 
 /**
- * Valida el espacio de un espacio de trabajo: lo de todas las organizaciones
- * hermanas no puede pasar del de arriba, ni quedar por debajo de lo que esta ya
- * repartió a las suyas. Devuelve el motivo si no vale.
+ * Validate sibling allocations against the parent and prevent quotas below existing child
+ * allocations. Return an explanatory rejection reason.
  */
-export async function checkWorkspaceBytes(sql: Sql, orgId: string, bytes: number | null): Promise<string | null> {
+export async function checkWorkspaceBytes(
+  sql: Sql,
+  orgId: string,
+  bytes: number | null,
+): Promise<string | null> {
   const orgs = await sql<OrgRow>`select id, name, parent_id from app_org`;
   const rows = await workspaces(sql);
   const children = workspaceChildren(orgs, rows);
@@ -104,7 +105,8 @@ export async function checkWorkspaceBytes(sql: Sql, orgId: string, bytes: number
   const above = parentWorkspace(orgs, rows, orgId);
   const total = above ? bytesOf(above) : null;
   if (!above || total === null) return null;
-  if (bytes === null) return `Sale del espacio de «${orgName(orgs, above.org_id)}»: hay que ponerle un tope.`;
+  if (bytes === null)
+    return `Sale del espacio de «${orgName(orgs, above.org_id)}»: hay que ponerle un tope.`;
   const siblings = (children.get(above.org_id) ?? []).filter((row) => row.org_id !== orgId);
   const others = siblings.reduce((sum, row) => sum + (bytesOf(row) ?? 0), 0);
   if (others + bytes > total) {
@@ -117,15 +119,24 @@ function orgName(orgs: OrgRow[], id: string): string {
   return orgs.find((org) => org.id === id)?.name ?? "";
 }
 
-/** Crea el espacio de trabajo de una organización: su cuenta interna, su portafolio raíz y lo compartido con ella. */
-export async function createWorkspace(sql: Sql, orgId: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const org = (await sql<OrgRow>`select id, name, parent_id from app_org where id = ${orgId} limit 1`)[0];
+/** Create organization workspace account, root portfolio and organization share. */
+export async function createWorkspace(
+  sql: Sql,
+  orgId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const org = (
+    await sql<OrgRow>`select id, name, parent_id from app_org where id = ${orgId} limit 1`
+  )[0];
   if (!org) return { ok: false, error: "Esa organización no existe." };
-  if (await sql<{ org_id: string }>`select org_id from workspace where org_id = ${orgId} limit 1`.then((rows) => rows[0])) {
+  if (
+    await sql<{
+      org_id: string;
+    }>`select org_id from workspace where org_id = ${orgId} limit 1`.then((rows) => rows[0])
+  ) {
     return { ok: false, error: "Esa organización ya tiene espacio de trabajo." };
   }
   const ownerId = `ws-${randomUUID()}`;
-  // Una cuenta sin contraseña ni proveedor: nadie puede entrar con ella.
+  // Internal account has no password or provider and cannot sign in.
   await sql`
     insert into "user" (id, name, email, "emailVerified")
     values (${ownerId}, ${org.name}, ${`${ownerId}@workspace.invalid`}, false)
@@ -144,7 +155,7 @@ export async function createWorkspace(sql: Sql, orgId: string): Promise<{ ok: tr
   return { ok: true };
 }
 
-/** Los miembros de una organización y de todas sus suborganizaciones. */
+/** Organization members including all descendants. */
 export async function orgMemberIds(sql: Sql, orgId: string): Promise<Set<string>> {
   const rows = await sql<{ user_id: string }>`
     with recursive tree(id) as (
@@ -159,7 +170,7 @@ export async function orgMemberIds(sql: Sql, orgId: string): Promise<Set<string>
 
 export type FolderLevel = "read" | "edit";
 
-/** Acceso de una persona a un portafolio del espacio (`null`: no ve lo de dentro). */
+/** User access to a workspace portfolio; null hides its contents. */
 export async function workspaceFolderLevel(
   sql: Sql,
   ownerId: string,
@@ -175,17 +186,23 @@ export async function workspaceFolderLevel(
   return access === "read" || access === "edit" ? access : null;
 }
 
-/** Concesiones de una persona en un espacio de trabajo, para filtrar el árbol. */
-export async function workspaceGrants(sql: Sql, ownerId: string, userId: string): Promise<[string, FolderLevel][]> {
+/** User workspace grants used to filter the tree. */
+export async function workspaceGrants(
+  sql: Sql,
+  ownerId: string,
+  userId: string,
+): Promise<[string, FolderLevel][]> {
   const rows = await sql<{ portfolio_id: string; access: string }>`
     select portfolio_id, access from workspace_access where owner_id = ${ownerId} and user_id = ${userId}
   `;
   return rows.flatMap((row) =>
-    row.access === "read" || row.access === "edit" ? [[row.portfolio_id, row.access] as [string, FolderLevel]] : [],
+    row.access === "read" || row.access === "edit"
+      ? [[row.portfolio_id, row.access] as [string, FolderLevel]]
+      : [],
   );
 }
 
-/** Da, cambia o quita el acceso de una persona en esos portafolios. */
+/** Grant, change or remove user access for these portfolios. */
 export async function grantWorkspaceFolders(
   sql: Sql,
   ownerId: string,
@@ -213,19 +230,25 @@ export type WorkspacePerson = {
   userId: string;
   name: string;
   loginName: string;
-  /** `null`: ve el espacio, no esta carpeta. */
+  /** null allows workspace visibility but not this folder's contents. */
   access: FolderLevel | null;
   admin: boolean;
 };
 
-/** Miembros de la organización del espacio y el acceso que tienen en un portafolio. */
+/** Workspace organization members and their portfolio access. */
 export async function workspaceAudience(
   sql: Sql,
   orgId: string,
   ownerId: string,
   portfolioId: string,
 ): Promise<WorkspacePerson[]> {
-  const rows = await sql<{ id: string; name: string; login: string | null; folder_access: string | null; admin: unknown }>`
+  const rows = await sql<{
+    id: string;
+    name: string;
+    login: string | null;
+    folder_access: string | null;
+    admin: unknown;
+  }>`
     with recursive tree(id) as (
       select id from app_org where id = ${orgId}
       union

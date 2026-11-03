@@ -1,4 +1,17 @@
-import { ChevronRight, Download, File, FileText, Folder, GitBranch, HardDrive, Link2, PenTool, Plus, Sheet, X } from "lucide-react";
+import {
+  ChevronRight,
+  Download,
+  File,
+  FileText,
+  Folder,
+  GitBranch,
+  HardDrive,
+  Link2,
+  PenTool,
+  Plus,
+  Sheet,
+  X,
+} from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
 import { resolveLink, useSharedTrees } from "@/app/shared-links";
 import { linkKey } from "@/domain/vault/anchor";
@@ -17,16 +30,21 @@ import { useRowMenu } from "./RowMenu";
 
 const RECENT = 12;
 
-/** Suma la fila a la selección del directorio sin abrirla. */
+/** Add the row to directory selection without opening it. */
 function selectInDirectory(target: { kind: "document" | "portfolio"; id: string }) {
-  useDirectoryPick.getState().add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
+  useDirectoryPick
+    .getState()
+    .add(target.kind === "document" ? `doc:${target.id}` : `port:${target.id}`);
 }
 
-/**
- * Raíz: sus portafolios y lo último que se tocó en la bóveda, con el mismo
- * menú contextual que el directorio.
- */
-export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onOpenNote: (id: string) => void }) {
+/** Vault root with portfolios, recent changes and directory-equivalent context menus. */
+export function HomeBoard({
+  onCreate,
+  onOpenNote,
+}: {
+  onCreate?: () => void;
+  onOpenNote: (id: string) => void;
+}) {
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
   const setActive = useVault((state) => state.setActive);
@@ -39,13 +57,15 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
     [portfolios],
   );
   const countIn = (id: string) =>
-    documents.filter((document) => document.portfolioId === id).length + portfolios.filter((item) => item.parentId === id).length;
+    documents.filter((document) => document.portfolioId === id).length +
+    portfolios.filter((item) => item.parentId === id).length;
   const { openMenu, element: menu } = useRowMenu(onOpenNote, selectInDirectory);
   const recent = useMemo(
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
     [documents],
   );
-  const place = (id: string | null) => portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Carpeta Personal");
+  const place = (id: string | null) =>
+    portfolios.find((portfolio) => portfolio.id === id)?.name ?? t("Carpeta Personal");
 
   return (
     <div
@@ -58,7 +78,9 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
     >
       <div className="w-full">
         <div className="flex flex-wrap items-end gap-3">
-          <h1 className="font-serif text-4xl font-semibold tracking-tight">{t("Carpeta Personal")}</h1>
+          <h1 className="font-serif text-4xl font-semibold tracking-tight">
+            {t("Carpeta Personal")}
+          </h1>
           <span className="ml-auto flex flex-wrap gap-2">
             <NewTableButton portfolioId={null} onOpenNote={onOpenNote} />
             <NewDrawingButton portfolioId={null} onOpenNote={onOpenNote} />
@@ -79,14 +101,18 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
         </div>
         {roots.length > 0 ? (
           <section className="mt-6">
-            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Portafolios")}</h2>
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+              {t("Portafolios")}
+            </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {roots.map((portfolio) => (
                 <li key={portfolio.id} className="border-b border-line last:border-b-0">
                   <button
                     type="button"
                     onClick={() => openPortfolio(portfolio.id)}
-                    onContextMenu={(event) => openMenu(event, { kind: "portfolio", id: portfolio.id })}
+                    onContextMenu={(event) =>
+                      openMenu(event, { kind: "portfolio", id: portfolio.id })
+                    }
                     className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                   >
                     <Folder className="size-4 shrink-0 text-faint" />
@@ -100,22 +126,35 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
         ) : null}
         {recent.length > 0 ? (
           <section className="mt-6">
-            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Recientes")}</h2>
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+              {t("Recientes")}
+            </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {recent.map((document) => {
-                const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
+                const Icon =
+                  document.kind === "file"
+                    ? isTableName(document.file?.name ?? "")
+                      ? Sheet
+                      : File
+                    : FileText;
                 return (
                   <li key={document.id} className="border-b border-line last:border-b-0">
                     <button
                       type="button"
                       onClick={() => setActive(document.id)}
-                      onContextMenu={(event) => openMenu(event, { kind: "document", id: document.id })}
+                      onContextMenu={(event) =>
+                        openMenu(event, { kind: "document", id: document.id })
+                      }
                       className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                     >
                       <Icon className="size-4 shrink-0 text-faint" />
                       <span className="min-w-0 flex-1 truncate text-sm">{document.title}</span>
-                      <span className="hidden shrink-0 text-xs text-faint sm:inline">{place(document.portfolioId)}</span>
-                      <span className="shrink-0 text-xs text-faint">{formatWhen(document.updatedAt)}</span>
+                      <span className="hidden shrink-0 text-xs text-faint sm:inline">
+                        {place(document.portfolioId)}
+                      </span>
+                      <span className="shrink-0 text-xs text-faint">
+                        {formatWhen(document.updatedAt)}
+                      </span>
                     </button>
                   </li>
                 );
@@ -130,8 +169,8 @@ export function HomeBoard({ onCreate, onOpenNote }: { onCreate?: () => void; onO
 }
 
 /**
- * Un portafolio abierto desde el directorio: su ruta, sus subportafolios y sus
- * notas y archivos, con el mismo menú contextual que el directorio.
+ * Portfolio page with breadcrumbs, child portfolios, notes, files and directory-equivalent
+ * context menus.
  */
 export function PortfolioBoard({
   portfolioId,
@@ -176,7 +215,8 @@ export function PortfolioBoard({
     [documents, portfolioId],
   );
   const countIn = (id: string) =>
-    documents.filter((document) => document.portfolioId === id).length + portfolios.filter((item) => item.parentId === id).length;
+    documents.filter((document) => document.portfolioId === id).length +
+    portfolios.filter((item) => item.parentId === id).length;
 
   if (!portfolio) return null;
 
@@ -191,21 +231,30 @@ export function PortfolioBoard({
       }}
     >
       <div className="w-full">
-        <nav aria-label={t("Ruta")} className="flex flex-wrap items-center gap-1 text-xs text-faint">
+        <nav
+          aria-label={t("Ruta")}
+          className="flex flex-wrap items-center gap-1 text-xs text-faint"
+        >
           <button type="button" onClick={onHome} className="hover:text-fg">
             {t("Carpeta Personal")}
           </button>
           {trail.slice(0, -1).map((step) => (
             <span key={step.id} className="flex items-center gap-1">
               <ChevronRight className="size-3" />
-              <button type="button" onClick={() => onOpenPortfolio(step.id)} className="hover:text-fg">
+              <button
+                type="button"
+                onClick={() => onOpenPortfolio(step.id)}
+                className="hover:text-fg"
+              >
                 {step.name}
               </button>
             </span>
           ))}
         </nav>
         <div className="mt-2 flex flex-wrap items-end gap-3">
-          <h1 className="min-w-0 font-serif text-4xl font-semibold tracking-tight break-words">{portfolio.name}</h1>
+          <h1 className="min-w-0 font-serif text-4xl font-semibold tracking-tight break-words">
+            {portfolio.name}
+          </h1>
           <span className="ml-auto flex flex-wrap gap-2">
             <SpaceButton portfolioId={portfolioId} />
             <GitButton portfolioId={portfolioId} />
@@ -230,7 +279,9 @@ export function PortfolioBoard({
         ) : null}
         {children.length > 0 ? (
           <section className="mt-6">
-            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Portafolios")}</h2>
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+              {t("Portafolios")}
+            </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {children.map((child) => (
                 <li key={child.id} className="border-b border-line last:border-b-0">
@@ -251,21 +302,32 @@ export function PortfolioBoard({
         ) : null}
         {items.length > 0 ? (
           <section className="mt-6">
-            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">{t("Notas y archivos")}</h2>
+            <h2 className="text-xs font-medium tracking-widest text-faint uppercase">
+              {t("Notas y archivos")}
+            </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
               {items.map((document) => {
-                const Icon = document.kind === "file" ? (isTableName(document.file?.name ?? "") ? Sheet : File) : FileText;
+                const Icon =
+                  document.kind === "file"
+                    ? isTableName(document.file?.name ?? "")
+                      ? Sheet
+                      : File
+                    : FileText;
                 return (
                   <li key={document.id} className="border-b border-line last:border-b-0">
                     <button
                       type="button"
                       onClick={() => setActive(document.id)}
-                      onContextMenu={(event) => openMenu(event, { kind: "document", id: document.id })}
+                      onContextMenu={(event) =>
+                        openMenu(event, { kind: "document", id: document.id })
+                      }
                       className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
                     >
                       <Icon className="size-4 shrink-0 text-faint" />
                       <span className="min-w-0 flex-1 truncate text-sm">{document.title}</span>
-                      <span className="shrink-0 text-xs text-faint">{formatWhen(document.updatedAt)}</span>
+                      <span className="shrink-0 text-xs text-faint">
+                        {formatWhen(document.updatedAt)}
+                      </span>
                     </button>
                   </li>
                 );
@@ -279,14 +341,22 @@ export function PortfolioBoard({
   );
 }
 
-/** «Nueva tabla» (datos con columnas y filas) en la carpeta que se está viendo. */
-function NewTableButton({ portfolioId, onOpenNote }: { portfolioId: string | null; onOpenNote: (id: string) => void }) {
+/** Create a data table in the current folder. */
+function NewTableButton({
+  portfolioId,
+  onOpenNote,
+}: {
+  portfolioId: string | null;
+  onOpenNote: (id: string) => void;
+}) {
   const can = usePermissions();
   if (!can(PERMISSION.filesUpload)) return null;
   return (
     <button
       type="button"
-      onClick={() => void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))}
+      onClick={() =>
+        void createTable(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))
+      }
       className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated"
     >
       <Sheet className="size-4" />
@@ -295,14 +365,22 @@ function NewTableButton({ portfolioId, onOpenNote }: { portfolioId: string | nul
   );
 }
 
-/** «Nuevo dibujo» (Excalidraw) en la carpeta que se está viendo. */
-function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | null; onOpenNote: (id: string) => void }) {
+/** Create an Excalidraw drawing in the current folder. */
+function NewDrawingButton({
+  portfolioId,
+  onOpenNote,
+}: {
+  portfolioId: string | null;
+  onOpenNote: (id: string) => void;
+}) {
   const can = usePermissions();
   if (!can(PERMISSION.filesUpload)) return null;
   return (
     <button
       type="button"
-      onClick={() => void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))}
+      onClick={() =>
+        void createDrawing(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))
+      }
       className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated"
     >
       <PenTool className="size-4" />
@@ -311,8 +389,14 @@ function NewDrawingButton({ portfolioId, onOpenNote }: { portfolioId: string | n
   );
 }
 
-/** Vínculos del portafolio (a notas, archivos, portafolios o lo compartido conmigo). */
-function PortfolioAbout({ portfolio, onOpenNote }: { portfolio: Portfolio; onOpenNote: (id: string) => void }) {
+/** Portfolio links to notes, files, portfolios or shared targets. */
+function PortfolioAbout({
+  portfolio,
+  onOpenNote,
+}: {
+  portfolio: Portfolio;
+  onOpenNote: (id: string) => void;
+}) {
   const can = usePermissions();
   const documents = useVault((state) => state.documents);
   const portfolios = useVault((state) => state.portfolios);
@@ -320,7 +404,10 @@ function PortfolioAbout({ portfolio, onOpenNote }: { portfolio: Portfolio; onOpe
   const setDialog = useVault((state) => state.setDialog);
   const removeLink = useVault((state) => state.removeManualLink);
   const canLink = can(PERMISSION.linksManage);
-  const links = (portfolio.links ?? []).map((link) => ({ link, target: resolveLink(link, documents, portfolios, trees) }));
+  const links = (portfolio.links ?? []).map((link) => ({
+    link,
+    target: resolveLink(link, documents, portfolios, trees),
+  }));
 
   return (
     <div data-ui="portfolio-about" className="mt-4 space-y-3">
@@ -328,13 +415,19 @@ function PortfolioAbout({ portfolio, onOpenNote }: { portfolio: Portfolio; onOpe
         <div className="flex flex-wrap items-center gap-1.5">
           {links.map(({ link, target }) =>
             target ? (
-              <span key={linkKey(link)} className="inline-flex h-8 max-w-full items-center gap-1 rounded-full border border-line pr-1 pl-2.5 text-xs">
+              <span
+                key={linkKey(link)}
+                className="inline-flex h-8 max-w-full items-center gap-1 rounded-full border border-line pr-1 pl-2.5 text-xs"
+              >
                 <button
                   type="button"
                   onClick={() => (target.open ? target.open() : onOpenNote(target.id))}
                   className="min-w-0 truncate text-fg hover:text-accent"
                 >
-                  <span className="text-accent">{link.kind === "llama" ? t("Invoca") : t("Referencia")}</span> · {target.title}
+                  <span className="text-accent">
+                    {link.kind === "llama" ? t("Invoca") : t("Referencia")}
+                  </span>{" "}
+                  · {target.title}
                 </button>
                 {canLink ? (
                   <button
@@ -401,7 +494,7 @@ function GitButton({ portfolioId }: { portfolioId: string }) {
   );
 }
 
-/** El portafolio entero, con sus subportafolios, como .zip. */
+/** Download the portfolio subtree as ZIP. */
 function ZipButton({ portfolioId }: { portfolioId: string }) {
   const can = usePermissions();
   if (!can(PERMISSION.notesExport) && !can(PERMISSION.filesDownload)) return null;

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PublicShareScreen } from "@/components/share/ShareScreens";
 
-/** Vista pública de un elemento compartido por enlace. No pasa por `AccessGate`. */
+/** Public shared-item view bypassing AccessGate. */
 export const Route = createFileRoute("/p/$token")({ component: PublicShare });
 
 function PublicShare() {

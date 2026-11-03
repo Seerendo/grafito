@@ -6,9 +6,8 @@ import { editableTarget } from "@/server/share";
 import { getDoc, replaceFile } from "@/server/vault";
 
 /**
- * WOPI `GetFile` (GET) y `PutFile` (POST): el editor de Office lee el archivo
- * y guarda los cambios. Cada guardado es un objeto nuevo y una versión en el
- * historial; el anterior se conserva para poder restaurarlo.
+ * WOPI GetFile and PutFile let Office read and save files. Every save creates a new object and
+ * history version; preserve the previous object for restoration.
  */
 export const Route = createFileRoute("/wopi/files/$id/contents")({
   server: {
@@ -22,7 +21,11 @@ export const Route = createFileRoute("/wopi/files/$id/contents")({
         const blob = doc?.file?.key ? await getBlob(sql, doc.file.key) : null;
         if (!doc?.file || !blob) return new Response("Not found", { status: 404 });
         return new Response(blob.body as BodyInit, {
-          headers: { "content-type": "application/octet-stream", "x-wopi-itemversion": doc.file.key ?? "", ...blob.headers },
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-wopi-itemversion": doc.file.key ?? "",
+            ...blob.headers,
+          },
         });
       },
       POST: async ({ request, params }) => {
@@ -35,24 +38,32 @@ export const Route = createFileRoute("/wopi/files/$id/contents")({
         if (bytes.byteLength > maxUploadBytes()) return new Response("Too large", { status: 413 });
         const { getSql } = await import("@/lib/db");
         const sql = await getSql();
-        // Si se edita por un elemento compartido, el permiso se vuelve a comprobar en cada guardado.
+        // Recheck shared edit permission on every save.
         if (token.s && !(await editableTarget(sql, token.u, token.s, params.id))) {
           return new Response("Access revoked", { status: 403 });
         }
         const doc = await getDoc(sql, token.o, params.id);
         if (!doc?.file?.key) return new Response("Not found", { status: 404 });
-        // El editor manda la fecha del archivo que abrió. Si desde entonces
-        // cambió (se restauró una versión), no se pisa: Collabora avisa y deja
-        // elegir entre recargar o sobrescribir (este último sin la cabecera).
-        const opened = request.headers.get("x-cool-wopi-timestamp") ?? request.headers.get("x-lool-wopi-timestamp");
+        // The editor sends its opened-file timestamp. Reject overwriting a newer/restored version; Collabora offers reload or explicit overwrite without that header.
+        const opened =
+          request.headers.get("x-cool-wopi-timestamp") ??
+          request.headers.get("x-lool-wopi-timestamp");
         if (opened && Date.parse(opened) !== doc.updatedAt) {
           return Response.json({ COOLStatusCode: 1010 }, { status: 409 });
         }
         const key = newFileKey(token.o);
         await putBlob(sql, key, bytes, doc.file.mime);
-        // El autoguardado del editor se agrupa en el historial; un guardado de la persona, no.
-        const autosave = (request.headers.get("x-cool-wopi-isautosave") ?? request.headers.get("x-lool-wopi-isautosave")) === "true";
-        const saved = await replaceFile(sql, token.o, params.id, { key, size: bytes.byteLength, actor: token.n, actorId: token.u, autosave });
+        // Group editor autosaves in history; explicit saves remain separate.
+        const autosave =
+          (request.headers.get("x-cool-wopi-isautosave") ??
+            request.headers.get("x-lool-wopi-isautosave")) === "true";
+        const saved = await replaceFile(sql, token.o, params.id, {
+          key,
+          size: bytes.byteLength,
+          actor: token.n,
+          actorId: token.u,
+          autosave,
+        });
         return Response.json(
           { LastModifiedTime: new Date(saved.updatedAt).toISOString() },
           { headers: { "x-wopi-itemversion": key } },

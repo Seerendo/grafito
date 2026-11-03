@@ -3,20 +3,18 @@ import type { Sql } from "@/lib/db";
 import { objectStorageEnv } from "./platform";
 
 /**
- * Bytes de los archivos (solo servidor). Con `S3_*` van a MinIO / S3; sin
- * ellas, a la tabla `file_blob` de Postgres. Ver `migrations/0011_file_storage.sql`.
- *
- * Las subidas son siempre por partes (`PART_SIZE`), en orden: en S3 es una
- * subida multiparte; en Postgres cada parte se añade al final de la fila.
+ * Server file bytes use MinIO/S3 when configured, otherwise file_blob in Postgres. Upload
+ * sequential PART_SIZE chunks through S3 multipart or row append; see migration 0011.
  */
 
-/** Tamaño de cada parte. S3 exige al menos 5 MiB salvo en la última. */
+/** Part size; S3 requires at least five MiB except for the final part. */
 export const PART_SIZE = 8 * 1024 * 1024;
 
-/** Tope por archivo: `GRAFITO_MAX_UPLOAD_MB`, o 100 MB con S3 y 20 MB en Postgres. */
+/** Per-file limit from GRAFITO_MAX_UPLOAD_MB, defaulting to 100 MB with S3 or 20 MB with Postgres. */
 export function maxUploadBytes(): number {
   const configured = Number(process.env.GRAFITO_MAX_UPLOAD_MB);
-  const megabytes = Number.isFinite(configured) && configured > 0 ? configured : objectStorageEnv() ? 100 : 20;
+  const megabytes =
+    Number.isFinite(configured) && configured > 0 ? configured : objectStorageEnv() ? 100 : 20;
   return Math.floor(megabytes * 1024 * 1024);
 }
 
@@ -48,10 +46,12 @@ function objectUrl(store: S3, key: string, query = ""): string {
 async function expectOk(response: Response, action: string): Promise<Response> {
   if (response.ok) return response;
   const detail = await response.text().catch(() => "");
-  throw new Error(`Almacenamiento de archivos: ${action} respondió ${response.status}. ${detail.slice(0, 200)}`);
+  throw new Error(
+    `Almacenamiento de archivos: ${action} respondió ${response.status}. ${detail.slice(0, 200)}`,
+  );
 }
 
-/** Empieza una subida; devuelve el identificador que piden las partes. */
+/** Start an upload and return its multipart identifier. */
 export async function startUpload(sql: Sql, key: string, mime: string): Promise<string> {
   const store = s3();
   if (!store) {
@@ -59,16 +59,26 @@ export async function startUpload(sql: Sql, key: string, mime: string): Promise<
     return key;
   }
   const response = await expectOk(
-    await store.client.fetch(objectUrl(store, key, "uploads="), { method: "POST", headers: { "content-type": mime } }),
+    await store.client.fetch(objectUrl(store, key, "uploads="), {
+      method: "POST",
+      headers: { "content-type": mime },
+    }),
     "iniciar la subida",
   );
   const uploadId = /<UploadId>([^<]+)<\/UploadId>/.exec(await response.text())?.[1];
-  if (!uploadId) throw new Error("Almacenamiento de archivos: no devolvió el identificador de la subida.");
+  if (!uploadId)
+    throw new Error("Almacenamiento de archivos: no devolvió el identificador de la subida.");
   return uploadId;
 }
 
-/** Sube la parte `part` (desde 1). Devuelve su ETag (vacío en Postgres). */
-export async function uploadPart(sql: Sql, key: string, uploadId: string, part: number, bytes: Uint8Array): Promise<string> {
+/** Upload a one-based part and return its ETag, empty for Postgres. */
+export async function uploadPart(
+  sql: Sql,
+  key: string,
+  uploadId: string,
+  part: number,
+  bytes: Uint8Array,
+): Promise<string> {
   const store = s3();
   if (!store) {
     await sql`update file_blob set data = data || ${bytes} where key = ${key}`;
@@ -76,13 +86,16 @@ export async function uploadPart(sql: Sql, key: string, uploadId: string, part: 
   }
   const query = `partNumber=${part}&uploadId=${encodeURIComponent(uploadId)}`;
   const response = await expectOk(
-    await store.client.fetch(objectUrl(store, key, query), { method: "PUT", body: bytes as Uint8Array<ArrayBuffer> }),
+    await store.client.fetch(objectUrl(store, key, query), {
+      method: "PUT",
+      body: bytes as Uint8Array<ArrayBuffer>,
+    }),
     "subir una parte",
   );
   return response.headers.get("etag") ?? "";
 }
 
-/** Cierra la subida y devuelve el tamaño final. */
+/** Finish upload and return final size. */
 export async function finishUpload(
   sql: Sql,
   key: string,
@@ -91,7 +104,9 @@ export async function finishUpload(
 ): Promise<number> {
   const store = s3();
   if (!store) {
-    const rows = await sql<{ size: number }>`select length(data) as size from file_blob where key = ${key}`;
+    const rows = await sql<{
+      size: number;
+    }>`select length(data) as size from file_blob where key = ${key}`;
     if (!rows[0]) throw new Error("La subida no existe.");
     return Number(rows[0].size);
   }
@@ -99,7 +114,10 @@ export async function finishUpload(
     "<CompleteMultipartUpload>" +
     parts
       .sort((a, b) => a.part - b.part)
-      .map((item) => `<Part><PartNumber>${item.part}</PartNumber><ETag>${escapeXml(item.etag)}</ETag></Part>`)
+      .map(
+        (item) =>
+          `<Part><PartNumber>${item.part}</PartNumber><ETag>${escapeXml(item.etag)}</ETag></Part>`,
+      )
       .join("") +
     "</CompleteMultipartUpload>";
   const response = await expectOk(
@@ -111,12 +129,16 @@ export async function finishUpload(
     "cerrar la subida",
   );
   const text = await response.text();
-  if (text.includes("<Error>")) throw new Error("Almacenamiento de archivos: no se pudo cerrar la subida.");
-  const head = await expectOk(await store.client.fetch(objectUrl(store, key), { method: "HEAD" }), "leer el tamaño");
+  if (text.includes("<Error>"))
+    throw new Error("Almacenamiento de archivos: no se pudo cerrar la subida.");
+  const head = await expectOk(
+    await store.client.fetch(objectUrl(store, key), { method: "HEAD" }),
+    "leer el tamaño",
+  );
   return Number(head.headers.get("content-length") ?? 0);
 }
 
-/** Cancela una subida a medias. */
+/** Abort an incomplete upload. */
 export async function abortUpload(sql: Sql, key: string, uploadId: string): Promise<void> {
   const store = s3();
   if (!store) {
@@ -128,31 +150,43 @@ export async function abortUpload(sql: Sql, key: string, uploadId: string): Prom
     .catch(() => undefined);
 }
 
-/** Guarda unos bytes de una vez (archivos pequeños, migración de los antiguos). */
-export async function putBlob(sql: Sql, key: string, bytes: Uint8Array, mime: string): Promise<void> {
+/** Store bytes at once for small files and legacy migration. */
+export async function putBlob(
+  sql: Sql,
+  key: string,
+  bytes: Uint8Array,
+  mime: string,
+): Promise<void> {
   const store = s3();
   if (!store) {
     await sql`insert into file_blob (key, data) values (${key}, ${bytes}) on conflict (key) do update set data = excluded.data`;
     return;
   }
   await expectOk(
-    await store.client.fetch(objectUrl(store, key), { method: "PUT", body: bytes as Uint8Array<ArrayBuffer>, headers: { "content-type": mime } }),
+    await store.client.fetch(objectUrl(store, key), {
+      method: "PUT",
+      body: bytes as Uint8Array<ArrayBuffer>,
+      headers: { "content-type": mime },
+    }),
     "guardar el archivo",
   );
 }
 
-/**
- * Lee un archivo. Con S3 se pasa `range` (cabecera Range del navegador) para
- * que los PDF y vídeos se puedan leer a trozos.
- */
+/** Read a file, forwarding Range to S3 for partial PDF/video access. */
 export async function getBlob(
   sql: Sql,
   key: string,
   range?: string | null,
-): Promise<{ body: ReadableStream<Uint8Array> | Uint8Array; status: number; headers: Record<string, string> } | null> {
+): Promise<{
+  body: ReadableStream<Uint8Array> | Uint8Array;
+  status: number;
+  headers: Record<string, string>;
+} | null> {
   const store = s3();
   if (!store) {
-    const rows = await sql<{ data: Uint8Array }>`select data from file_blob where key = ${key} limit 1`;
+    const rows = await sql<{
+      data: Uint8Array;
+    }>`select data from file_blob where key = ${key} limit 1`;
     if (!rows[0]) return null;
     const data = new Uint8Array(rows[0].data);
     return { body: data, status: 200, headers: { "content-length": String(data.byteLength) } };
@@ -164,14 +198,20 @@ export async function getBlob(
   if (response.status === 404) return null;
   await expectOk(response, "leer el archivo");
   const headers: Record<string, string> = {};
-  for (const name of ["content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+  for (const name of [
+    "content-length",
+    "content-range",
+    "accept-ranges",
+    "etag",
+    "last-modified",
+  ]) {
     const value = response.headers.get(name);
     if (value) headers[name] = value;
   }
   return { body: response.body ?? new Uint8Array(), status: response.status, headers };
 }
 
-/** Lee un archivo entero en memoria (para la IA o la API de texto). */
+/** Read the entire file into memory for AI or text extraction. */
 export async function readBlob(sql: Sql, key: string): Promise<Uint8Array | null> {
   const blob = await getBlob(sql, key);
   if (!blob) return null;
@@ -179,11 +219,13 @@ export async function readBlob(sql: Sql, key: string): Promise<Uint8Array | null
   return new Uint8Array(await new Response(blob.body).arrayBuffer());
 }
 
-/** Tamaño de un archivo guardado, o `null` si no está. */
+/** Stored file size, or null when absent. */
 export async function blobSize(sql: Sql, key: string): Promise<number | null> {
   const store = s3();
   if (!store) {
-    const rows = await sql<{ size: unknown }>`select octet_length(data) as size from file_blob where key = ${key} limit 1`;
+    const rows = await sql<{
+      size: unknown;
+    }>`select octet_length(data) as size from file_blob where key = ${key} limit 1`;
     return rows[0] ? Number(rows[0].size) : null;
   }
   const response = await store.client.fetch(objectUrl(store, key), { method: "HEAD" });
@@ -202,5 +244,9 @@ export async function deleteBlob(sql: Sql, key: string): Promise<void> {
 }
 
 function escapeXml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

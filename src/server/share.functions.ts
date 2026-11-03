@@ -22,11 +22,11 @@ import {
   writeShare,
 } from "@/server/share";
 
-/** Funciones de servidor para compartir (ver `server/share.ts`). */
+/** Sharing server functions; see server/share.ts. */
 
 const id = z.string().min(1).max(80);
 
-/** ~1,5 MB por archivo en data URL: el límite de subida (~700 KB) con margen. */
+/** About 1.5 MB per data-URL file, allowing headroom over the legacy upload limit. */
 const MAX_FILE_DATA = 1_500_000;
 
 const publishedDoc = z.object({
@@ -36,7 +36,11 @@ const publishedDoc = z.object({
   portfolioId: id.nullable(),
   content: z.string().max(400_000),
   file: z
-    .object({ name: z.string().max(200), mime: z.string().max(120), dataUrl: z.string().max(MAX_FILE_DATA).optional() })
+    .object({
+      name: z.string().max(200),
+      mime: z.string().max(120),
+      dataUrl: z.string().max(MAX_FILE_DATA).optional(),
+    })
     .nullable(),
   updatedBy: z.string().max(80),
   updatedAt: z.string().max(40),
@@ -50,7 +54,7 @@ async function sharer(userId: string) {
   return { sql, canShare: allows(profile, PERMISSION.notesShare) };
 }
 
-/** Elementos que el usuario compartió, con sus invitados. */
+/** User-owned shares and their recipients. */
 export const myShares = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -58,7 +62,7 @@ export const myShares = createServerFn({ method: "GET" })
     return ownerShares(sql, context.userId);
   });
 
-/** Usuarios con quienes se puede compartir. */
+/** Available user recipients. */
 export const shareUsers = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -67,7 +71,7 @@ export const shareUsers = createServerFn({ method: "GET" })
     return shareCandidates(sql, context.userId);
   });
 
-/** Organizaciones con las que se puede compartir. */
+/** Available organization recipients. */
 export const shareOrgs = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
@@ -76,7 +80,7 @@ export const shareOrgs = createServerFn({ method: "GET" })
     return shareOrgCandidates(sql);
   });
 
-/** Cambia la visibilidad de una nota o portafolio propio. */
+/** Change visibility of an owned note or portfolio. */
 export const setShare = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -118,10 +122,12 @@ export const setShare = createServerFn({ method: "POST" })
 
 const target = z.object({ kind: z.enum(["document", "portfolio"]), targetId: id });
 
-/** Quita a un invitado y guarda desde cuándo tenía permiso. */
+/** Remove a recipient and archive its grant interval. */
 export const revokeShareGrant = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => target.extend({ subjectKind: z.enum(["user", "org"]), subjectId: id }).parse(input))
+  .validator((input: unknown) =>
+    target.extend({ subjectKind: z.enum(["user", "org"]), subjectId: id }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const { sql, canShare } = await sharer(context.userId);
     if (!canShare) return { ok: false as const, error: "Tu rol no permite compartir." };
@@ -130,7 +136,7 @@ export const revokeShareGrant = createServerFn({ method: "POST" })
     return { ok: true as const, shares: await ownerShares(sql, context.userId) };
   });
 
-/** El enlace público deja de servir. Hay que crear otro para volver a abrirlo. */
+/** Revoke the public link; access requires creating a new one. */
 export const revokePublicShare = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.parse(input))
@@ -142,7 +148,7 @@ export const revokePublicShare = createServerFn({ method: "POST" })
     return { ok: true as const, shares: await ownerShares(sql, context.userId) };
   });
 
-/** Periodos de permiso y últimas aperturas de un elemento propio. */
+/** Grant periods and recent openings for an owned share. */
 export const shareTrail = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => target.parse(input))
@@ -152,7 +158,7 @@ export const shareTrail = createServerFn({ method: "GET" })
     return shareActivity(sql, context.userId, data);
   });
 
-/** Publica la copia de solo lectura de lo que el dueño tiene compartido. */
+/** Publish the owner's read-only shared-content backup. */
 export const publishShared = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -170,12 +176,12 @@ export const publishShared = createServerFn({ method: "POST" })
     return { ok: true as const, shares: await ownerShares(sql, context.userId) };
   });
 
-/** Lo que otros usuarios compartieron conmigo. */
+/** Items shared with the current user. */
 export const sharedWithMe = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
-    // El id del dueño se usa en el servidor (el asistente). Al navegador no le hace falta.
+    // Owner IDs are needed server-side by the assistant, not by the browser.
     return (await sharedWith(sql, context.userId)).map((item) => ({
       id: item.id,
       kind: item.kind,
@@ -186,7 +192,7 @@ export const sharedWithMe = createServerFn({ method: "GET" })
     }));
   });
 
-/** El texto de un documento de algo compartido conmigo, al abrirlo (el árbol no lo trae). */
+/** Fetch shared document text on opening; tree payloads omit it. */
 export const sharedDocContent = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .validator((input: unknown) => z.object({ shareId: id, docId: id }).parse(input))
@@ -209,7 +215,7 @@ const sharedLink = z.object({
   anchor: sharedAnchor.optional(),
 });
 
-/** Vincula (o desvincula) un documento de un espacio o de un portafolio compartido. */
+/** Add/remove links on workspace or shared-portfolio documents. */
 export const setSharedLink = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
@@ -245,11 +251,12 @@ export const setSharedLink = createServerFn({ method: "POST" })
     });
   });
 
-/** Lo mismo por enlace público. No requiere sesión. */
+/** Equivalent public-link access without a session. */
 export const publicDocContent = createServerFn({ method: "GET" })
-  .validator((input: unknown) => z.object({ token: z.string().min(16).max(64), docId: id }).parse(input))
+  .validator((input: unknown) =>
+    z.object({ token: z.string().min(16).max(64), docId: id }).parse(input),
+  )
   .handler(async ({ data }) => {
     const { getSql } = await import("@/lib/db");
     return sharedDocText(await getSql(), { token: data.token }, data.docId);
   });
-
