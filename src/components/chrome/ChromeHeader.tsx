@@ -4,7 +4,11 @@ import { Command } from "cmdk";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { initials, useAccountProfile } from "@/app/account-profile";
 import { leaveApp } from "@/app/leave";
+import { exactPhraseFilter, findPassages } from "@/domain/search-text";
+import { useTableIndex } from "@/app/table-index";
 import { useVault } from "@/app/vault/store";
+import { Marked, PassageLines } from "@/components/vault/SearchPhrase";
+import { useContentSearch } from "@/components/vault/use-content-search";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { Mark } from "@/components/brand/Mark";
 import { t } from "@/app/i18n";
@@ -158,12 +162,25 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const userId = useCurrentUser()?.id;
   const documents = useVault((view) => view.documents);
+  const tableText = useTableIndex((state) => state.text);
+  const [query, setQuery] = useState("");
+  const indexed = useContentSearch(query);
 
   useEffect(() => {
     if (userId) useVault.getState().openVaultFor(userId);
   }, [userId]);
   const portfolios = useVault((view) => view.portfolios);
   const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
+  const known = new Set(documents.map((document) => document.id));
+  const localPassages = new Map(
+    documents.flatMap((document) => {
+      const found = findPassages(`${document.content}\n${tableText[document.id] ?? ""}`, query);
+      return found.items.length > 0 ? [[document.id, found] as const] : [];
+    }),
+  );
+  const beyond = indexed.filter(
+    (hit) => hit.passages.length > 0 && known.has(hit.id) && !localPassages.has(hit.id),
+  );
 
   const openNote = (id: string) => {
     useVault.getState().setActive(id);
@@ -176,6 +193,7 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
       <Command
         label={t("Buscar notas")}
         vimBindings={false}
+        filter={exactPhraseFilter}
         onMouseDown={(event) => event.stopPropagation()}
         data-ui="dialog"
         className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
@@ -184,33 +202,78 @@ function NoteSearch({ onClose }: { onClose: () => void }) {
           <Search className="size-4 text-faint" />
           <Command.Input
             autoFocus
-            placeholder={t("Buscar notas")}
+            placeholder={t("Buscar por título o contenido")}
+            onValueChange={setQuery}
             className="h-12 w-full bg-transparent text-sm text-fg outline-none placeholder:text-faint"
           />
         </div>
         <Command.List className="max-h-80 overflow-y-auto p-2">
           <Command.Empty className="px-3 py-8 text-center text-sm text-muted">{t("Sin resultados")}</Command.Empty>
           <Command.Group heading={t("Notas")}>
-            {documents.map((document) => (
-              <Command.Item
-                key={document.id}
-                value={`${document.title} ${portfolioName(document.portfolioId)} ${document.content.slice(0, 180)}`}
-                onSelect={() => openNote(document.id)}
-              >
-                <span className="flex h-11 items-center gap-2 px-2 text-sm">
-                  {document.kind === "file" ? (
-                    <File className="size-4 shrink-0 text-muted" />
-                  ) : (
-                    <FileText className="size-4 shrink-0 text-muted" />
-                  )}
-                  <span className="truncate">{document.title}</span>
-                  <span className="ml-auto shrink-0 text-xs text-faint">
-                    {document.kind === "file" ? t("archivo") : portfolioName(document.portfolioId)}
+            {documents.map((document) => {
+              const found = localPassages.get(document.id);
+              const around = found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ?? "";
+              return (
+                <Command.Item
+                  key={document.id}
+                  value={`${document.title} ${portfolioName(document.portfolioId)} ${around || document.content.slice(0, 180)}`}
+                  onSelect={() => openNote(document.id)}
+                >
+                  <span className="flex flex-col px-2 py-1.5 text-sm">
+                    <span className="flex h-8 items-center gap-2">
+                      {document.kind === "file" ? (
+                        <File className="size-4 shrink-0 text-muted" />
+                      ) : (
+                        <FileText className="size-4 shrink-0 text-muted" />
+                      )}
+                      <span className="truncate">
+                        <Marked text={document.title} query={query} />
+                      </span>
+                      <span className="ml-auto shrink-0 text-xs text-faint">
+                        {document.kind === "file" ? t("archivo") : portfolioName(document.portfolioId)}
+                      </span>
+                    </span>
+                    {found ? (
+                      <PassageLines
+                        passages={found.items}
+                        more={found.more}
+                        moreLabel={t("y {n} coincidencias más", { n: found.more })}
+                      />
+                    ) : null}
                   </span>
-                </span>
-              </Command.Item>
-            ))}
+                </Command.Item>
+              );
+            })}
           </Command.Group>
+          {beyond.length > 0 ? (
+            <Command.Group heading={t("En el contenido")}>
+              {beyond.map((hit) => (
+                <Command.Item
+                  key={`content-${hit.id}`}
+                  value={`${hit.title} ${hit.passages.map((item) => `${item.before}${item.match}${item.after}`).join(" ")}`}
+                  onSelect={() => openNote(hit.id)}
+                >
+                  <span className="flex flex-col px-2 py-1.5 text-sm">
+                    <span className="flex h-8 items-center gap-2">
+                      {hit.kind === "file" ? (
+                        <File className="size-4 shrink-0 text-muted" />
+                      ) : (
+                        <FileText className="size-4 shrink-0 text-muted" />
+                      )}
+                      <span className="truncate">
+                        <Marked text={hit.title} query={query} />
+                      </span>
+                    </span>
+                    <PassageLines
+                      passages={hit.passages}
+                      more={hit.more}
+                      moreLabel={t("y {n} coincidencias más", { n: hit.more })}
+                    />
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          ) : null}
         </Command.List>
       </Command>
     </div>

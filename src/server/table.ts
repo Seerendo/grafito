@@ -29,7 +29,6 @@ import {
 import { computeFormulas, type FormulaValue } from "@/domain/vault/formula";
 import { endFormLink, noteAccess, readTrail, retireExpired, type AccessHit, type GrantPeriod } from "@/server/access-trace";
 import type { Document, ManualLink } from "@/domain/vault/types";
-import { upsertElasticDoc } from "@/server/search";
 import { VaultError, nextRevision, pushChanges } from "./vault";
 
 /**
@@ -506,23 +505,8 @@ export async function indexTable(sql: Sql, ownerId: string, docId: string): Prom
     values (${ownerId}, ${docId}, '[]', ${search})
     on conflict (owner_id, doc_id) do update set search_text = excluded.search_text
   `;
-  const doc = await sql<{ title: string; kind: string; portfolio_id: string | null }>`
-    select title, kind, portfolio_id from vault_doc where user_id = ${ownerId} and id = ${docId} and not deleted limit 1
-  `;
-  if (!doc[0]) return;
-  await sql`
-    insert into doc_index (user_id, doc_id, title, kind, portfolio_id, body, links_json, updated_at)
-    values (${ownerId}, ${docId}, ${doc[0].title}, ${doc[0].kind}, ${doc[0].portfolio_id}, ${search}, '[]', now())
-    on conflict (user_id, doc_id) do update set body = excluded.body, title = excluded.title, updated_at = now()
-  `;
-  await upsertElasticDoc(ownerId, {
-    id: docId,
-    title: doc[0].title,
-    kind: doc[0].kind,
-    portfolioId: doc[0].portfolio_id,
-    body: search,
-    links: [],
-  });
+  // El proceso de fondo vuelve a armar el cuerpo (nota o archivo + celdas).
+  await sql`delete from content_index where user_id = ${ownerId} and doc_id = ${docId}`;
 }
 
 /** Textos ya indexados, para la búsqueda del navegador (la barra y la paleta). */

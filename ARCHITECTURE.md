@@ -206,7 +206,8 @@ The `vault/` pieces:
 | `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts` | REST API: authentication (token or session), responses and personal tokens |
 | `crypto.ts` | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`. `open()` also accepts `GRAFITO_ENCRYPTION_KEY_PREVIOUS` during a rotation and reports `stale`, so callers re-encrypt. |
 | `history.ts` / `history.functions.ts` | Version history (`recordVersion`, grouping, retention of 200 versions per note), editing shared notes with conflict detection (`editSharedDoc`), and the trash functions |
-| `ai/` | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses) |
+| `ai/` | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools, split into `tools/notes.ts` and `tools/tables.ts`), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses) |
+| `index/` / `index.functions.ts` | Background content index (`run.ts`) and the query used by search and by `search_notes` (`query.ts`). Monitorización → Indexación reads the status and can reindex. |
 | `ai.functions.ts` | Administration → AI, Account → AI, and chat state |
 | `orgs.ts` / `orgs.functions.ts` | Organizations: data and functions (`orgs.manage` permission) |
 | `auth.functions.ts` | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows) |
@@ -266,6 +267,7 @@ The `vault/` pieces:
 | `0014_last_seen_autosave.sql` | `app_profile.first_login_at` and `last_seen_at` (Users list), and `vault_doc_version.autosave` (only Office autosaves are grouped) |
 | `0015_ai_conversations.sql` | `ai_conversation`: saved AI chat conversations per user |
 | `0034_ai_memory.sql` | `ai_conversation.memory` and `memory_until`: compressed memory of a chat |
+| `0035_content_index.sql` | `content_index` (which revision of each document is indexed) and `index_run` (what the background pass is doing) |
 | `0016_mail.sql` | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql` | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor |
 | `0011_file_storage.sql` | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage) |
@@ -891,13 +893,24 @@ portfolio at that moment, and the note's text as the merge base).
   attachments (up to 6 MB, stored like any file) do not require a session
   and never return existing rows. Identifier and time are allowed on the
   public and invited pages; vault links, relations and formulas are not.
-- **Search:** `indexTable` writes cell text to `data_meta.search_text` and
-  `doc_index`, and upserts that one document in Elasticsearch when it is
-  configured. The sidebar and the command palette read the same text
-  (`tableSearchTexts`). `listDocs` matches it, so the AI's `search_notes`
-  does too. `syncDocuments` folds the text into the body it mirrors.
-- **AI:** `query_table`, `add_table_row`, `set_table_cell` in
-  `server/ai/tools.ts`, gated by `notes.read` / `notes.edit`.
+- **Search:** `indexTable` writes cell text to `data_meta.search_text`. A
+  background pass (`server/index/run.ts`, started with the session lease)
+  walks notes, tables and files one document at a time and stores their text
+  in `doc_index.body`, then in Elasticsearch (`grafito-docs`, BM25) when
+  `ELASTICSEARCH_URL` is set. The text is the note, the cells, or the file
+  itself: PDF, Word (`.docx`), Excel, PowerPoint and OpenDocument. The old
+  binary `.doc` format is left out. The client sync (`syncDocuments`)
+  refreshes title, kind, portfolio and links, and leaves that body alone.
+  The header search and the command palette ask `searchDocuments` for the
+  exact phrase. A note is listed only when that sequence is in the text you
+  open; a file, only when the extracted text has it. Each occurrence is shown
+  with the words around it. `search_notes` uses the same rule, limited to
+  what that person can open.
+  **Reindexar** under Monitorización y logs → Indexación clears the marks
+  and walks everything again. If Elasticsearch does not answer, the same
+  query runs on `doc_index` in Postgres.
+- **AI:** `query_table`, `add_table_row` and `set_table_cell` live in
+  `server/ai/tools/tables.ts`, gated by `notes.read` / `notes.edit`.
 - **Access** (`server/table.functions.ts`): one's own table, or one in
   something shared with edit (or read) access, with the same checks as a note
   (`editableTarget`, `grantedDocOwner`); reading needs `notes.read`, changing
@@ -1332,11 +1345,15 @@ to 8 steps.
 - **Tools:** only those the role allows, out of `list_portfolios`,
   `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
   `create_portfolio`, `query_table`, `add_table_row` and `set_table_cell`.
-  The read and edit tools accept an id, an exact title or a part of a title
-  that matches only one document. Portfolios are found by id, name or path
-  («Proyectos › Atlas»). On a miss, the tool returns the close matches or the
-  list of portfolios, so the model can retry. Two documents with the same
-  title are not collapsed to the first one: the tool asks for an id.
+  Notes and portfolios live in `server/ai/tools/notes.ts`; tables in
+  `server/ai/tools/tables.ts`. `search_notes` searches titles and the indexed
+  text of notes, tables and files (PDF, Word, Excel, PowerPoint,
+  OpenDocument) and returns a snippet. The read and edit tools accept an id,
+  an exact title or a part of a title that matches only one document.
+  Portfolios are found by id, name or path («Proyectos › Atlas»). On a miss,
+  the tool returns the close matches or the list of portfolios, so the model
+  can retry. Two documents with the same title are not collapsed to the
+  first one: the tool asks for an id.
 - **What it can open** (`server/ai/access.ts`, `server/ai/corpus.ts`): the
   person's own vault, items shared with them, and workspace folders granted
   to them. A document outside that set is reported as not found; the tools

@@ -88,8 +88,6 @@ Still open:
 
 ## 5. Search and API
 
-- Full-text search of note bodies in the search palette (Elasticsearch is
-  already indexing them).
 - API search endpoint, webhooks for note events, and tokens with an expiry and
   scopes.
 

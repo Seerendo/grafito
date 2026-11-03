@@ -178,6 +178,7 @@ docker compose up -d --scale app=4
 | The page doesn't load | `docker compose ps`, `docker compose logs --tail 100 app` | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`. |
 | Sign-in fails for everyone | `docker compose logs app \| grep -i auth` | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident. |
 | Search returns nothing | Administración → Monitorización y logs → Fuentes → Comprobar | Start Elasticsearch. Search falls back to Postgres meanwhile. |
+| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read. |
 | Everyone is signed out | Redis was restarted or flushed | Nothing to fix: session deadlines are recreated on the next sign-in. |
 | AI chat says the key can't be read | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect. |
 | Disk full | `docker system df`, `du -sh backups` | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`. |

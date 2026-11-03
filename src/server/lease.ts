@@ -130,5 +130,7 @@ export async function requireLease(userId: string): Promise<Sql> {
   // Sincronización con Git de los portafolios enlazados (si hay).
   const { startGitSync } = await import("@/server/git/sync");
   startGitSync();
+  const { startContentIndex } = await import("@/server/index/run");
+  startContentIndex();
   return sql;
 }

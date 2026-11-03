@@ -17,6 +17,7 @@ import {
   systemSnapshot as loadSnapshot,
   updateVaultUser,
 } from "@/server/admin.functions";
+import { indexStatus, reindexContent } from "@/server/index.functions";
 import { intl, t } from "@/app/i18n";
 
 export type AdminView = Extract<Awaited<ReturnType<typeof adminState>>, { isAdmin: true }>;
@@ -658,6 +659,92 @@ export function LogsBoard() {
         </li>
       ))}
     </ul>
+  );
+}
+
+export function IndexBoard() {
+  const [status, setStatus] = useState<Extract<Awaited<ReturnType<typeof indexStatus>>, { ok: true }> | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void indexStatus()
+        .then((result) => {
+          if (!alive) return;
+          if (!result.ok) setError(t("Sin permiso."));
+          else {
+            setError("");
+            setStatus(result);
+          }
+        })
+        .catch(() => {
+          if (alive) setError(t("No se pudo leer la indexación."));
+        });
+    };
+    load();
+    const timer = setInterval(load, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const reindex = () => {
+    setBusy(true);
+    setError("");
+    void reindexContent()
+      .then(async (result) => {
+        if (!result.ok) {
+          setError(t("Sin permiso."));
+          return;
+        }
+        const next = await indexStatus();
+        if (!next.ok) setError(t("Sin permiso."));
+        else setStatus(next);
+      })
+      .catch(() => setError(t("No se pudo reindexar.")))
+      .finally(() => setBusy(false));
+  };
+
+  if (!status && error) return <p className="text-sm text-danger">{error}</p>;
+  if (!status) return <p className="text-sm text-muted">{t("Leyendo…")}</p>;
+  const phase = status.pending > 0 ? t("Indexando…") : status.failed > 0 ? t("Con errores") : t("Al día");
+  const engine = status.engine === "elasticsearch" ? "Elasticsearch" : "Postgres";
+  const cards = [
+    [t("Indexados"), `${status.done} / ${status.total}`],
+    [t("Pendientes"), String(status.pending)],
+    [t("Con errores"), String(status.failed)],
+    [t("Motor"), engine],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-muted">
+          {phase}
+          {status.pending > 0 && status.current ? ` · ${status.current}` : ""}
+        </p>
+        <button
+          type="button"
+          onClick={reindex}
+          disabled={busy}
+          className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
+        >
+          {t("Reindexar")}
+        </button>
+      </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {status.lastError ? <p className="text-sm text-danger">{status.lastError}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {cards.map(([label, value]) => (
+          <div key={label} className="border border-line bg-surface p-4">
+            <p className="text-xs tracking-widest text-faint uppercase">{label}</p>
+            <p className="mt-1 font-serif text-3xl">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

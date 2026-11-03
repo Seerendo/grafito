@@ -13,9 +13,16 @@ const INDEX = "grafito-docs";
 
 async function ensureIndex(base: string): Promise<void> {
   const head = await fetch(`${base}/${INDEX}`, { method: "HEAD" });
-  if (head.ok || head.status === 404) {
-    if (head.ok) return;
+  if (head.ok) {
+    // El índice ya creado gana el campo nuevo sin rehacer los documentos.
+    await fetch(`${base}/${INDEX}/_mapping`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ properties: { portfolioId: { type: "keyword" } } }),
+    }).catch(() => undefined);
+    return;
   }
+  if (head.status !== 404) return;
   await fetch(`${base}/${INDEX}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -26,6 +33,7 @@ async function ensureIndex(base: string): Promise<void> {
           docId: { type: "keyword" },
           title: { type: "text" },
           kind: { type: "keyword" },
+          portfolioId: { type: "keyword" },
           body: { type: "text" },
           links: { type: "text" },
         },
@@ -54,6 +62,7 @@ export async function mirrorToElastic(userId: string, docs: IndexDoc[]): Promise
           docId: doc.id,
           title: doc.title,
           kind: doc.kind,
+          portfolioId: doc.portfolioId,
           body: doc.body,
           links: doc.links.map((link) => `${link.kind}:${link.targetId}`).join(" "),
         }),
@@ -72,12 +81,13 @@ export async function mirrorToElastic(userId: string, docs: IndexDoc[]): Promise
 }
 
 /** Una sola nota o tabla, sin borrar el resto del índice. */
-export async function upsertElasticDoc(userId: string, doc: IndexDoc): Promise<void> {
+export async function upsertElasticDoc(userId: string, doc: IndexDoc, refresh = false): Promise<void> {
   const base = elasticUrl();
   if (!base) return;
   try {
     await ensureIndex(base);
-    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${doc.id}`)}?refresh=true`, {
+    const query = refresh ? "?refresh=true" : "";
+    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${doc.id}`)}${query}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -85,6 +95,7 @@ export async function upsertElasticDoc(userId: string, doc: IndexDoc): Promise<v
         docId: doc.id,
         title: doc.title,
         kind: doc.kind,
+        portfolioId: doc.portfolioId,
         body: doc.body,
         links: doc.links.map((link) => `${link.kind}:${link.targetId}`).join(" "),
       }),
@@ -94,10 +105,26 @@ export async function upsertElasticDoc(userId: string, doc: IndexDoc): Promise<v
   }
 }
 
-export async function searchElastic(
-  userId: string,
-  query: string,
-): Promise<{ id: string; title: string; kind: string }[] | null> {
+/** Quita un documento del índice. No falla si Elasticsearch no está. */
+export async function deleteElasticDoc(userId: string, docId: string): Promise<void> {
+  const base = elasticUrl();
+  if (!base) return;
+  try {
+    await fetch(`${base}/${INDEX}/_doc/${encodeURIComponent(`${userId}:${docId}`)}`, { method: "DELETE" });
+  } catch {
+    /* El barrido lo intenta de nuevo con el siguiente documento. */
+  }
+}
+
+export type ElasticHit = {
+  id: string;
+  title: string;
+  kind: string;
+  portfolioId: string | null;
+  snippet: string;
+};
+
+export async function searchElastic(userId: string, query: string): Promise<ElasticHit[] | null> {
   const base = elasticUrl();
   if (!base) return null;
   try {
@@ -106,10 +133,15 @@ export async function searchElastic(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         size: 20,
+        _source: ["docId", "title", "kind", "portfolioId"],
         query: {
           bool: {
             filter: [{ term: { userId } }],
-            must: [{ multi_match: { query, fields: ["title^3", "body", "links"] } }],
+            should: [
+              { match_phrase: { title: { query } } },
+              { match_phrase: { body: { query } } },
+            ],
+            minimum_should_match: 1,
           },
         },
       }),
@@ -117,13 +149,19 @@ export async function searchElastic(
     });
     if (!response.ok) return null;
     const data = (await response.json()) as {
-      hits?: { hits?: { _source?: { docId?: string; title?: string; kind?: string } }[] };
+      hits?: {
+        hits?: {
+          _source?: { docId?: string; title?: string; kind?: string; portfolioId?: string | null };
+        }[];
+      };
     };
     return (data.hits?.hits ?? [])
       .map((hit) => ({
         id: hit._source?.docId ?? "",
         title: hit._source?.title ?? "",
         kind: hit._source?.kind ?? "markdown",
+        portfolioId: hit._source?.portfolioId ?? null,
+        snippet: "",
       }))
       .filter((hit) => hit.id);
   } catch {

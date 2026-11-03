@@ -1,12 +1,15 @@
 import { Command } from "cmdk";
-import { FilePlus, Link2, Network, RotateCcw, Search } from "lucide-react";
-import type { ReactNode } from "react";
+import { FilePlus, FileText, Link2, Network, RotateCcw, Search } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { exactPhraseFilter, findPassages } from "@/domain/search-text";
 import { extractTags } from "@/domain/vault/links";
 import { useTableIndex } from "@/app/table-index";
 import { useVault } from "@/app/vault/store";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
+import { Marked, PassageLines } from "./SearchPhrase";
+import { useContentSearch } from "./use-content-search";
 
 export function CommandPalette({
   onOpenNote,
@@ -32,6 +35,12 @@ export function CommandPalette({
   const selectedPortfolioId = useVault((state) => state.selectedPortfolioId);
   const activeId = useVault((state) => state.activeId);
   const tableText = useTableIndex((state) => state.text);
+  const [query, setQuery] = useState("");
+  const indexed = useContentSearch(open ? query : "");
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   if (!open) return null;
 
@@ -51,6 +60,16 @@ export function CommandPalette({
     close();
   };
   const portfolioName = (id: string | null) => portfolios.find((item) => item.id === id)?.name ?? t("Carpeta Personal");
+  const known = new Set(documents.map((document) => document.id));
+  const localPassages = new Map(
+    documents.flatMap((document) => {
+      const found = findPassages(`${document.content}\n${tableText[document.id] ?? ""}`, query);
+      return found.items.length > 0 ? [[document.id, found] as const] : [];
+    }),
+  );
+  const beyond = indexed.filter(
+    (hit) => hit.passages.length > 0 && known.has(hit.id) && !localPassages.has(hit.id),
+  );
 
   return (
     <div
@@ -61,6 +80,7 @@ export function CommandPalette({
       <Command
         label={t("Paleta de comandos")}
         vimBindings={false}
+        filter={exactPhraseFilter}
         onMouseDown={(event) => event.stopPropagation()}
         data-ui="dialog"
         className="w-full max-w-lg overflow-hidden rounded-lg border border-line bg-surface shadow-2xl"
@@ -69,7 +89,8 @@ export function CommandPalette({
           <Search className="size-4 text-faint" />
           <Command.Input
             autoFocus
-            placeholder={t("Buscar documentos o comandos")}
+            placeholder={t("Buscar por título, contenido o comandos")}
+            onValueChange={setQuery}
             className="h-12 w-full bg-transparent text-sm text-fg outline-none placeholder:text-faint"
           />
         </div>
@@ -123,21 +144,63 @@ export function CommandPalette({
             ) : null}
           </Command.Group>
           <Command.Group heading={t("Documentos")}>
-            {documents.map((document) => (
-              <Command.Item
-                key={document.id}
-                value={`${document.title} ${portfolioName(document.portfolioId)} ${document.kind} ${tableText[document.id] ?? ""}`}
-                keywords={[portfolioName(document.portfolioId), document.kind, tableText[document.id] ?? ""]}
-                onSelect={() => go(document.id)}
-              >
-                <Row
-                  icon={<span className="size-4" />}
-                  label={document.title}
-                  hint={document.kind === "file" ? "archivo" : portfolioName(document.portfolioId)}
-                />
-              </Command.Item>
-            ))}
+            {documents.map((document) => {
+              const found = localPassages.get(document.id);
+              const around = found?.items.map((item) => `${item.before}${item.match}${item.after}`).join(" ") ?? "";
+              return (
+                <Command.Item
+                  key={document.id}
+                  value={`${document.title} ${portfolioName(document.portfolioId)} ${document.kind} ${tableText[document.id] ?? ""} ${around}`}
+                  keywords={[portfolioName(document.portfolioId), document.kind, tableText[document.id] ?? ""]}
+                  onSelect={() => go(document.id)}
+                >
+                  <span className="flex flex-col px-2 py-1.5 text-sm">
+                    <span className="flex h-8 items-center gap-2">
+                      <span className="size-4" />
+                      <span className="truncate">
+                        <Marked text={document.title} query={query} />
+                      </span>
+                      <span className="ml-auto shrink-0 text-xs text-faint">
+                        {document.kind === "file" ? t("archivo") : portfolioName(document.portfolioId)}
+                      </span>
+                    </span>
+                    {found ? (
+                      <PassageLines
+                        passages={found.items}
+                        more={found.more}
+                        moreLabel={t("y {n} coincidencias más", { n: found.more })}
+                      />
+                    ) : null}
+                  </span>
+                </Command.Item>
+              );
+            })}
           </Command.Group>
+          {beyond.length > 0 ? (
+            <Command.Group heading={t("En el contenido")}>
+              {beyond.map((hit) => (
+                <Command.Item
+                  key={`content-${hit.id}`}
+                  value={`${hit.title} ${hit.passages.map((item) => `${item.before}${item.match}${item.after}`).join(" ")}`}
+                  onSelect={() => go(hit.id)}
+                >
+                  <span className="flex flex-col px-2 py-1.5 text-sm">
+                    <span className="flex h-8 items-center gap-2">
+                      <FileText className="size-4 shrink-0 text-muted" />
+                      <span className="truncate">
+                        <Marked text={hit.title} query={query} />
+                      </span>
+                    </span>
+                    <PassageLines
+                      passages={hit.passages}
+                      more={hit.more}
+                      moreLabel={t("y {n} coincidencias más", { n: hit.more })}
+                    />
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          ) : null}
           <Command.Group heading={t("Etiquetas")}>
             {[...tags.values()].map((tag) => (
               <Command.Item key={tag} value={`etiqueta ${tag}`} onSelect={() => setTag(tag)}>
@@ -151,7 +214,7 @@ export function CommandPalette({
   );
 }
 
-function Row({ icon, label, hint }: { icon: ReactNode; label: string; hint?: string }) {
+function Row({ icon, label, hint }: { icon: ReactNode; label: ReactNode; hint?: string }) {
   return (
     <span className="flex h-11 items-center gap-2 px-2 text-sm">
       <span className="text-muted">{icon}</span>

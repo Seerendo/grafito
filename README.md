@@ -511,6 +511,18 @@ work area.
 - Up to 100 columns and 20,000 rows per table. The table itself still can't
   be opened from a document's public share link; use the form link instead.
 
+### Search
+
+The header search and **Ctrl+K** match titles at once. After a short pause
+they also look for the exact phrase inside notes, tables and files (PDF,
+Word, Excel, PowerPoint and OpenDocument). Each time it appears, the search
+shows the surrounding words and marks the phrase in bold. A note is listed
+only when that phrase is in its text. Grafito indexes file text in the
+background, one document at a time, into Postgres and into Elasticsearch
+when it is configured. The old binary `.doc` format is not read.
+**Administración → Monitorización y logs → Indexación** shows how far the
+pass has got, and **Reindexar** walks every document again.
+
 ### Graph
 
 The graph button in the header, or **Ctrl+G**, shows notes and files as nodes
@@ -520,7 +532,7 @@ and links as edges. Click a node to open it.
 
 | Keys | Action |
 | --- | --- |
-| Ctrl+K | Search notes and tags |
+| Ctrl+K | Search notes, file contents and tags |
 | Ctrl+N | New note |
 | Ctrl+E | Switch view mode (read → edit → split) |
 | Ctrl+G | Toggle the graph |
@@ -767,8 +779,10 @@ you can open: your own vault, items shared with you, and workspace folders
 granted to you. Something you can view but not edit (a read-only share, or a
 workspace folder granted as read) can be read and cannot be changed. It does
 not open another person's private vault. It finds notes and portfolios by name
-as well as by id, and it reads the text of uploaded files: plain text, Word,
-Excel, PowerPoint, OpenDocument and PDFs with text (not scanned ones). The
+as well as by id. `search_notes` looks through titles and the indexed text of
+notes, tables and files, and can return a short snippet. It reads the text of
+uploaded files: plain text, Word, Excel, PowerPoint, OpenDocument and PDFs
+with text (not scanned ones, and not the old binary `.doc` format). The
 chat lists each tool it used, and you can click one to open the note.
 
 To try it with a local open model, install Ollama (or LM Studio and start its

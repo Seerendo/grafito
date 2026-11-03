@@ -5,7 +5,8 @@ import { removeUserFiles } from "@/server/files";
 import { requireLease, readTtl } from "@/server/lease";
 import { ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD, STRONG_PASSWORD, documentEngine, emailForUsername, fileEngine, relationalEngine } from "@/server/platform";
 import { allows, forgetRoleGrants, readUserProfile } from "@/server/profile";
-import { mirrorToElastic, probeElastic, searchElastic, type IndexDoc } from "@/server/search";
+import { probeElastic } from "@/server/search";
+import { canSearchOwner, queryContent } from "@/server/index/query";
 import { probeBucket } from "@/server/storage";
 
 type Sql = Awaited<ReturnType<typeof import("@/lib/db").getSql>>;
@@ -18,10 +19,6 @@ const docSchema = z.object({
   body: z.string().max(4000),
   links: z.array(z.object({ targetId: z.string().max(80), kind: z.enum(["referencia", "llama"]) })).max(80),
 });
-
-function likeTerm(value: string): string {
-  return `%${value.replace(/[\\%_]/g, "")}%`;
-}
 
 function flag(value: unknown): boolean {
   return value === true || value === "t" || value === "true" || value === 1;
@@ -393,16 +390,9 @@ export const syncDocuments = createServerFn({ method: "POST" })
     const sql = await requireLease(context.userId);
     const sources = await sql<{ enabled: unknown }>`select enabled from app_source where id = 'documents' limit 1`;
     if (sources[0] && !flag(sources[0].enabled)) return { indexed: 0, elastic: false };
-    await sql`delete from doc_index where user_id = ${context.userId}`;
-    const extras = await sql<{ doc_id: string; search_text: string }>`
-      select doc_id, search_text from data_meta where owner_id = ${context.userId} and search_text <> ''
-    `;
-    const extra = new Map(extras.map((row) => [row.doc_id, row.search_text]));
-    const mirrored = data.docs.map((doc) => {
-      const cells = extra.get(doc.id);
-      return cells ? { ...doc, body: `${doc.body}\n${cells}`.slice(0, 8000) } : doc;
-    });
-    for (const doc of mirrored) {
+    // No borra el índice: el cuerpo lo escribe el proceso de fondo. Aquí solo
+    // se adelanta el título, para que un renombre se vea antes de esa vuelta.
+    for (const doc of data.docs) {
       await sql`
         insert into doc_index (user_id, doc_id, title, kind, portfolio_id, body, links_json, updated_at)
         values (
@@ -415,32 +405,50 @@ export const syncDocuments = createServerFn({ method: "POST" })
           ${JSON.stringify(doc.links)},
           now()
         )
+        on conflict (user_id, doc_id) do update set
+          title = excluded.title,
+          kind = excluded.kind,
+          portfolio_id = excluded.portfolio_id,
+          links_json = excluded.links_json,
+          updated_at = now()
       `;
     }
-    const mirror = await mirrorToElastic(context.userId, mirrored as IndexDoc[]);
-    return { indexed: data.docs.length, elastic: mirror.ok };
+    return { indexed: data.docs.length, elastic: documentEngine() === "elasticsearch" };
   });
 
 export const searchDocuments = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((input: unknown) => z.object({ q: z.string().max(80) }).parse(input))
+  .validator((input: unknown) =>
+    z.object({ q: z.string().max(80), ownerId: z.string().max(80).optional() }).parse(input),
+  )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const q = data.q.trim();
-    if (!q) return { hits: [] as { id: string; title: string; kind: string }[], engine: documentEngine() };
-    const elasticHits = await searchElastic(context.userId, q);
-    if (elasticHits) return { hits: elasticHits, engine: "elasticsearch" as const };
-    const term = likeTerm(q);
-    const hits = await sql<{ doc_id: string; title: string; kind: string }>`
-      select doc_id, title, kind from doc_index
-      where user_id = ${context.userId}
-        and (title ilike ${term} or body ilike ${term} or links_json ilike ${term})
-      order by title
-      limit 20
-    `;
+    const empty = {
+      hits: [] as {
+        id: string;
+        title: string;
+        kind: string;
+        snippet: string;
+        passages: { before: string; match: string; after: string }[];
+        more: number;
+      }[],
+      engine: documentEngine(),
+    };
+    if (!q) return empty;
+    const ownerId = data.ownerId || context.userId;
+    if (!(await canSearchOwner(sql, context.userId, ownerId))) return empty;
+    const hits = await queryContent(sql, ownerId, q);
     return {
-      hits: hits.map((hit) => ({ id: hit.doc_id, title: hit.title, kind: hit.kind })),
-      engine: "postgres" as const,
+      hits: hits.map((hit) => ({
+        id: hit.id,
+        title: hit.title,
+        kind: hit.kind,
+        snippet: hit.snippet,
+        passages: hit.passages,
+        more: hit.more,
+      })),
+      engine: documentEngine(),
     };
   });
 

@@ -3,6 +3,7 @@ import type { Document } from "@/domain/vault/types";
 import { unpackTree } from "@/domain/share-pack";
 import { isTableName } from "@/domain/vault/table";
 import { fileText } from "@/server/files";
+import { queryContent } from "@/server/index/query";
 import {
   editableTarget,
   grantedDocOwner,
@@ -64,7 +65,7 @@ export type ToolResult = {
 
 type Opened = { ownerId: string; document: Document };
 
-function showDoc(doc: AiDoc) {
+function showDoc(doc: AiDoc, snippet = "") {
   return {
     id: doc.id,
     title: doc.title,
@@ -73,6 +74,7 @@ function showDoc(doc: AiDoc) {
     source: doc.source,
     access: doc.access,
     ...(doc.fileName ? { file: doc.fileName } : {}),
+    ...(snippet ? { snippet } : {}),
   };
 }
 
@@ -150,30 +152,63 @@ async function load(sql: Sql, userId: string, caps: VaultCaps): Promise<Assemble
   });
 }
 
+type Found = { doc: AiDoc; snippet: string };
+
+function remember(found: Map<string, Found>, doc: AiDoc, snippet = ""): void {
+  const key = `${doc.ownerId}:${doc.id}`;
+  const current = found.get(key);
+  if (!current) found.set(key, { doc, snippet });
+  else if (!current.snippet && snippet) current.snippet = snippet;
+}
+
+/**
+ * Título y contenido indexado (notas, celdas y texto de archivos). El índice
+ * no abre nada que esta persona no tenga en la vista, salvo sus propias notas
+ * que no cupieron en el lote.
+ */
 async function searchDocs(
   sql: Sql,
   userId: string,
   view: Assembled,
   caps: VaultCaps,
   query: string,
-): Promise<AiDoc[]> {
-  const found = new Map<string, AiDoc>();
-  const add = (doc: AiDoc) => found.set(`${doc.ownerId}:${doc.id}`, doc);
+): Promise<Found[]> {
+  const found = new Map<string, Found>();
+  const owners = new Set<string>([userId]);
+  for (const doc of view.docs) owners.add(doc.ownerId);
+  for (const ownerId of owners) {
+    const hits = await queryContent(sql, ownerId, query);
+    for (const hit of hits) {
+      const known = view.docs.find((doc) => doc.ownerId === ownerId && doc.id === hit.id);
+      if (known) remember(found, known, hit.snippet);
+      else if (ownerId === userId) {
+        remember(
+          found,
+          describeOwnDoc(userId, caps, view.folders, {
+            id: hit.id,
+            title: hit.title,
+            kind: hit.kind,
+            portfolioId: hit.portfolioId,
+            fileName: null,
+          }),
+          hit.snippet,
+        );
+      }
+    }
+  }
   const own = await listDocs(sql, userId, { query, limit: 500 });
   for (const hit of own) {
     const known = view.docs.find((doc) => doc.ownerId === userId && doc.id === hit.id);
-    add(known ?? describeOwnDoc(userId, caps, view.folders, ownInput(hit)));
+    remember(found, known ?? describeOwnDoc(userId, caps, view.folders, ownInput(hit)));
   }
   const lower = query.trim().toLowerCase();
   for (const doc of view.docs) {
-    if (doc.shareId && doc.title.toLowerCase().includes(lower)) add(doc);
+    if (doc.shareId && doc.title.toLowerCase().includes(lower)) remember(found, doc);
   }
-  const owners = new Set(
-    view.docs.filter((doc) => doc.ownerId !== userId).map((doc) => doc.ownerId),
-  );
   for (const ownerId of owners) {
+    if (ownerId === userId) continue;
     const hits = await listDocs(sql, ownerId, { query, limit: 500 });
-    for (const doc of takeVisible(hits, view.docs, ownerId)) add(doc);
+    for (const doc of takeVisible(hits, view.docs, ownerId)) remember(found, doc);
   }
   return [...found.values()];
 }
@@ -250,7 +285,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
       : [];
     return fail(label, {
       error: "No lo encontré entre lo que puedes abrir.",
-      ...(similar.length ? { similar: similar.map(showDoc) } : {}),
+      ...(similar.length ? { similar: similar.map((doc) => showDoc(doc)) } : {}),
     });
   };
 
@@ -261,7 +296,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     if (match.status === "choices") {
       return fail(label, {
         error: "Hay varios. Usa el id de uno de estos:",
-        matches: match.docs.map(showDoc),
+        matches: match.docs.map((doc) => showDoc(doc)),
       });
     }
     return notFound(seen, ref, label);
@@ -312,15 +347,16 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         !scope || (doc.ownerId === scope.ownerId && doc.portfolioId === scope.portfolioId);
       const query = input.query?.trim() ?? "";
       // Con texto, la búsqueda también alcanza notas propias que no entraron en
-      // el lote de 500. Sin texto, se lista lo ya filtrado por acceso.
-      const docs = query
-        ? (await searchDocs(sql, userId, seen, caps, query)).filter(inScope)
-        : seen.docs.filter(inScope);
+      // el lote de 500, y el texto indexado de los archivos. Sin texto, se
+      // lista lo ya filtrado por acceso.
+      const found = query ? (await searchDocs(sql, userId, seen, caps, query)).filter((item) => inScope(item.doc)) : null;
+      const docs = found ? found.map((item) => item.doc) : seen.docs.filter(inScope);
+      const snippets = new Map((found ?? []).map((item) => [`${item.doc.ownerId}:${item.doc.id}`, item.snippet]));
       // Sin un portafolio concreto, una bóveda grande no debe tapar lo compartido.
       const shown = scope ? docs.slice(0, LIST_CAP) : mixDocs(docs, LIST_CAP);
       return {
         result: {
-          documents: shown.map(showDoc),
+          documents: shown.map((doc) => showDoc(doc, snippets.get(`${doc.ownerId}:${doc.id}`) ?? "")),
           ...(docs.length > LIST_CAP ? { truncated: true, total: docs.length } : {}),
         },
         event: { label: `Listó ${shown.length} documentos`, ok: true },
@@ -334,7 +370,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
       const shown = found.slice(0, SEARCH_CAP);
       return {
         result: {
-          documents: shown.map(showDoc),
+          documents: shown.map((item) => showDoc(item.doc, item.snippet)),
           ...(found.length > SEARCH_CAP ? { truncated: true, total: found.length } : {}),
         },
         event: { label: `Buscó «${text}» (${shown.length})`, ok: true },

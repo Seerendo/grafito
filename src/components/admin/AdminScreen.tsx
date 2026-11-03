@@ -1,4 +1,4 @@
-import { Activity, Building2, ChevronRight, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
+import { Activity, Building2, ChevronRight, FileSearch, FolderOpen, PieChart, Clock, LayoutTemplate, Mail, Network, ShieldCheck, Sparkles, Database, HardDrive, KeyRound, Palette, Puzzle, ScrollText, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
@@ -18,7 +18,7 @@ import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { adminState, probeSources, setPluginEnabled, setSourceEnabled } from "@/server/admin.functions";
 import { setSessionTtl, storageReport } from "@/server/session.functions";
-import { LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
+import { IndexBoard, LogsBoard, MonitorBoard, RolesBoard, UsersBoard, type AdminView } from "./Boards";
 import { OrgsBoard } from "./OrgsBoard";
 import { QuotaBoard } from "./QuotaBoard";
 import { WorkspaceBoard } from "./WorkspaceBoard";
@@ -30,7 +30,7 @@ import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { t } from "@/app/i18n";
 
 type Section = "usuarios" | "autenticacion" | "ia" | "correo" | "plugins" | "apariencia" | "sesion" | "monitor";
-type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "espacio" | "fuentes" | "temas" | "diseno";
+type Leaf = "usuarios" | "roles" | "organizaciones" | "cuotas" | "cuotas-portafolio" | "espacios-trabajo" | "asignado" | "ldap" | "oauth" | "sso" | "monitor" | "logs" | "indexacion" | "espacio" | "fuentes" | "temas" | "diseno";
 type State = Awaited<ReturnType<typeof adminState>>;
 type StoreSpace = {
   id: string;
@@ -121,6 +121,7 @@ function leavesOf(view: AdminView, section: Section): { id: Leaf; label: string;
         ? [
             { id: "monitor" as const, label: "Monitor de sistema", icon: Activity },
             { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
+            { id: "indexacion" as const, label: "Indexación", icon: FileSearch },
           ]
         : []),
       ...(allowed(view, "admin.access") ? [{ id: "espacio" as const, label: "Espacio", icon: HardDrive }] : []),
@@ -365,6 +366,7 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "monitor" && leaf === "monitor" ? <MonitorBoard /> : null}
                 {current?.id === "monitor" && leaf === "logs" ? <LogsBoard /> : null}
+                {current?.id === "monitor" && leaf === "indexacion" ? <IndexBoard /> : null}
                 {current?.id === "monitor" && leaf === "espacio" ? <SpacePanel /> : null}
                 {current?.id === "monitor" && leaf === "asignado" ? <AssignedSpaceBoard /> : null}
                 {current?.id === "monitor" && leaf === "fuentes" ? (
@@ -419,6 +421,7 @@ function heading(view: AdminView, section: Section | null, leaf: Leaf | null, ro
   if (section === "apariencia") return t("Apariencia");
   if (section === "monitor" && leaf === "monitor") return t("Monitor de sistema");
   if (section === "monitor" && leaf === "logs") return t("Logs de sistema");
+  if (section === "monitor" && leaf === "indexacion") return t("Indexación");
   if (section === "monitor" && leaf === "espacio") return t("Espacio");
   if (section === "monitor" && leaf === "asignado") return t("Espacio asignado");
   if (section === "monitor" && leaf === "fuentes") return t("Fuentes");

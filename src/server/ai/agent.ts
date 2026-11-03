@@ -30,6 +30,11 @@ function systemPrompt(profile: UserProfile, toolNames: string[], persona: AiProf
     toolNames.length
       ? `Puedes usar estas herramientas: ${toolNames.join(", ")}. Úsalas para leer de verdad antes de afirmar qué dice una nota; no inventes contenido. Cuando cites una nota, escribe su título como [[Título]].`
       : "No tienes acceso a la bóveda de esta persona; responde solo con lo que te escriba.",
+    ...(toolNames.includes("search_notes")
+      ? [
+          "search_notes busca la frase exacta en notas, tablas y archivos (PDF, Word .docx, Excel, PowerPoint y OpenDocument). Solo aparecen documentos donde esa frase está escrita, con un fragmento por cada vez. Úsala para encontrar algo por lo que dice, no solo por el nombre. El .doc antiguo no entra en ese índice.",
+        ]
+      : []),
     "Solo ves lo que esta persona puede abrir: su Carpeta Personal, lo que le compartieron y las carpetas de espacios de trabajo que le concedieron. El acceso de un documento dice si puedes editarlo; el de un portafolio, si puedes crear dentro. No edites un documento de lectura ni crees en un portafolio de lectura. Si la herramienta lo rechaza, explícalo y no inventes el cambio.",
     "Antes de crear o cambiar notas, asegúrate de que es lo que pidió. Al terminar, di qué hiciste (qué notas leíste, creaste o editaste).",
     "Solo existe lo que hacen las herramientas: para crear, editar o guardar algo tienes que llamar a la herramienta y recibir su resultado sin error. Nunca digas que creaste, editaste o guardaste algo si no lo hiciste así en esta respuesta; si una herramienta falló, dilo.",
