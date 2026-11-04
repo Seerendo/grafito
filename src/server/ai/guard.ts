@@ -9,6 +9,7 @@ export const WRITE_TOOLS = new Set([
   "create_portfolio",
   "add_table_row",
   "set_table_cell",
+  "link_pdf_phrase",
 ]);
 
 /**
@@ -25,7 +26,7 @@ const SHORT_TOOL = 600;
  * Spanish verbs; distinguish completed creé from hypothetical cree.
  */
 export const CLAIMS_WRITE =
-  /(?<!\p{L})(creé|he creado|edité|he editado|actualicé|he actualizado|añadí|he añadido|guardé|he guardado|renombré|he renombrado|(?:está|están|quedó|quedaron|fue|fueron|ha sido|han sido)\s+(?:cread|guardad|actualizad|editad|añadid|renombrad)[oa]s?|i(?:'ve| have)? (?:created|updated|added|saved|renamed|edited)|(?:has been|have been|was|were) (?:created|updated|added|saved|renamed))(?!\p{L})/iu;
+  /(?<!\p{L})(creé|he creado|edité|he editado|actualicé|he actualizado|añadí|he añadido|guardé|he guardado|renombré|he renombrado|vinculé|he vinculado|(?:está|están|quedó|quedaron|fue|fueron|ha sido|han sido)\s+(?:cread|guardad|actualizad|editad|añadid|renombrad|vinculad)[oa]s?|i(?:'ve| have)? (?:created|updated|added|saved|renamed|edited|linked)|(?:has been|have been|was|were) (?:created|updated|added|saved|renamed|linked))(?!\p{L})/iu;
 
 /** Clip older tool results when the turn exceeds TOOL_BUDGET. */
 export function compactToolResults(messages: ChatMessage[]): void {

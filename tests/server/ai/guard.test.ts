@@ -15,6 +15,11 @@ test("reconoce cuando dice que creó, editó o guardó algo", () => {
     "Los portafolios están creados.",
     "Done! I've created the note.",
     "The note has been updated.",
+    "Vinculé la frase del PDF con el informe.",
+    "He vinculado «acta» con el informe.",
+    "La frase quedó vinculada.",
+    "I've linked the phrase in the PDF.",
+    "The phrase has been linked.",
   ]) {
     assert.ok(CLAIMS_WRITE.test(text), text);
   }
@@ -27,6 +32,9 @@ test("no confunde preguntas ni lecturas con haberlo hecho", () => {
     "Leí «Bienvenida»: habla del grafo.",
     "La nota se creó el 3 de marzo, según su historial.",
     "No encontré ese portafolio. ¿Lo creo?",
+    "¿Quieres que vincule esa frase?",
+    "Puedo vincular la frase si me lo confirmas.",
+    "Para vincular, selecciona el texto del PDF.",
   ]) {
     assert.ok(!CLAIMS_WRITE.test(text), text);
   }

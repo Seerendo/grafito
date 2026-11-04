@@ -1,5 +1,6 @@
 import { officeText } from "./office-text.ts";
 import type { Sql } from "@/lib/db";
+import { pagePlainText } from "@/domain/vault/pdf-text";
 import type { Document, VaultFile } from "@/domain/vault/types";
 import { deleteBlob, getBlob, putBlob, readBlob } from "./blobs";
 
@@ -155,6 +156,54 @@ function drawingText(bytes: Uint8Array): string | null {
   } catch {
     return null;
   }
+}
+
+type PdfProxy = {
+  numPages: number;
+  getPage: (page: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }>;
+  destroy: () => Promise<void> | void;
+};
+
+/**
+ * One string per PDF page, using the same item text as the viewer. Null when the file has no
+ * extractable text. Indexing still uses the merged string from pdfText.
+ */
+export async function pdfPageTexts(
+  bytes: Uint8Array,
+): Promise<{ page: number; text: string }[] | null> {
+  let document: PdfProxy | null = null;
+  try {
+    const { getDocumentProxy } = await import("unpdf");
+    document = await getDocumentProxy(new Uint8Array(bytes));
+    const pages: { page: number; text: string }[] = [];
+    for (let page = 1; page <= document.numPages; page += 1) {
+      const content = await (await document.getPage(page)).getTextContent();
+      pages.push({ page, text: pagePlainText(content.items) });
+    }
+    return pages.some((item) => item.text.trim()) ? pages : null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      await document?.destroy();
+    } catch {
+      /* The document is already closed. */
+    }
+  }
+}
+
+/** Page text of a stored PDF, or null when the bytes or the text are missing. */
+export async function documentPdfPages(
+  sql: Sql,
+  doc: Document,
+): Promise<{ page: number; text: string }[] | null> {
+  const file = doc.file;
+  if (!file) return null;
+  let bytes: Uint8Array | null = null;
+  if (file.key) bytes = await readBlob(sql, file.key);
+  else if (file.dataUrl) bytes = decodeDataUrl(file.dataUrl)?.bytes ?? null;
+  if (!bytes) return null;
+  return pdfPageTexts(bytes);
 }
 
 /** PDF.js text extraction through unpdf; null for textless scans. */

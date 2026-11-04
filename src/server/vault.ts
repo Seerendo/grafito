@@ -1,5 +1,6 @@
 import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
+import { withManualLink } from "@/domain/vault/manual-link";
 import { merge3 } from "@/domain/vault/merge";
 import { descendantIds } from "@/domain/vault/portfolios";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
@@ -537,6 +538,35 @@ export async function updateNote(
   };
   await writeDoc(sql, userId, doc, rev, false, input.separateVersion, input.actorId ?? userId);
   return doc;
+}
+
+/**
+ * Store a manual link on the owner's document and advance the revision. File bytes stay. A PDF
+ * does not gain a note version. "full" means the document already has the link limit.
+ */
+export async function attachManualLink(
+  sql: Sql,
+  userId: string,
+  docId: string,
+  link: ManualLink,
+  actor: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const current = await getDoc(sql, userId, docId);
+  if (!current) return { ok: false, error: "No lo encontré entre lo que puedes abrir." };
+  if (link.targetId === docId && link.target !== "portfolio") {
+    return { ok: false, error: "Un documento no se vincula consigo mismo." };
+  }
+  const links = withManualLink(current.links, link);
+  if (links === "full") return { ok: false, error: "Hay demasiados vínculos en este documento." };
+  const now = Date.now();
+  await writeDoc(
+    sql,
+    userId,
+    { ...current, links, updatedAt: now, updatedBy: actor },
+    await nextRevision(sql, userId),
+    false,
+  );
+  return { ok: true };
 }
 
 export async function deleteDoc(sql: Sql, userId: string, id: string): Promise<void> {

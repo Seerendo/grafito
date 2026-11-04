@@ -40,13 +40,13 @@ export async function executeAgent(input: AgentInput): Promise<void> {
           messages.push({
             role: "user",
             content:
-              "(Comprobación automática de Grafito, no la escribió la persona.) En esta respuesta no se creó ni se cambió nada: ninguna herramienta que escribe se llamó con éxito. Si la persona lo pidió, hazlo ahora llamando a la herramienta. Si no, responde de nuevo sin decir que lo hiciste.",
+              "(Comprobación automática de Grafito, no la escribió la persona.) En esta respuesta no se creó, ni se cambió, ni se vinculó nada: ninguna herramienta que escribe se llamó con éxito. Si la persona lo pidió, hazlo ahora llamando a la herramienta. Si no, responde de nuevo sin decir que lo hiciste.",
           });
           continue;
         }
         emit({
           type: "text",
-          text: `${text}\n\n> **Ojo:** en esta respuesta no se creó ni se cambió nada en la bóveda, aunque el texto lo diga.`,
+          text: `${text}\n\n> **Ojo:** en esta respuesta no se creó, ni se cambió, ni se vinculó nada en la bóveda, aunque el texto lo diga.`,
         });
         emit({ type: "done", changed });
         return;

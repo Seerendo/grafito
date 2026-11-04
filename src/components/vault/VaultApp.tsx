@@ -1,6 +1,7 @@
 import { FileText, Folder, Link2, Network, Plus, Search } from "lucide-react";
 import { clearStrayCaret, releaseFocus } from "@/app/blank-click";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Mark } from "@/components/brand/Mark";
 import { Modal } from "@/components/ui/Modal";
 import { AccountMenu } from "@/components/chrome/ChromeHeader";
@@ -553,56 +554,242 @@ function VaultWorkspace() {
         <ShareMirror />
         <NotePdfHost />
         <AiChat mobile={mobile} onOpenNote={openNote} />
+        <FileDropShield enabled={canAddFiles} />
       </div>
     </VisibilityProvider>
   );
 }
 
+type DropTarget =
+  | {
+      kind: "shared";
+      shareId: string;
+      portfolioId: string | null;
+      name: string;
+      ok: boolean;
+    }
+  | { kind: "personal"; portfolioId: string | null; name: string; ok: true };
+
+/** Destination of a file drop on the open workspace, shared with the fullscreen shield. */
+function dropDestination(): DropTarget {
+  const view = useSharedView.getState();
+  const tree = view.tree;
+  if (tree && tree.share.kind !== "portfolio") {
+    return {
+      kind: "shared",
+      shareId: tree.share.id,
+      portfolioId: null,
+      name: tree.share.title,
+      ok: false,
+    };
+  }
+  if (tree?.share.kind === "portfolio") {
+    const root =
+      tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
+    const fromDoc = view.docId
+      ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null)
+      : null;
+    const portfolioId = view.docId
+      ? fromDoc && tree.portfolios.some((portfolio) => portfolio.id === fromDoc)
+        ? fromDoc
+        : root
+      : view.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === view.portfolioId)
+        ? view.portfolioId
+        : root;
+    const name =
+      tree.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? tree.share.title;
+    return {
+      kind: "shared",
+      shareId: tree.share.id,
+      portfolioId,
+      name,
+      ok: canEditSharedPortfolio(tree, portfolioId),
+    };
+  }
+  const state = useVault.getState();
+  const active = state.documents.find((document) => document.id === state.activeId);
+  const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
+  const name =
+    state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ??
+    t("Carpeta Personal");
+  return { kind: "personal", portfolioId, name, ok: true };
+}
+
+/** Read the drop at once: webkitGetAsEntry is cleared after the handler yields. */
+function ingestAt(data: DataTransfer) {
+  const target = dropDestination();
+  void readDroppedEntries(data).then((files) => {
+    if (files.length === 0) return;
+    if (target.kind === "shared") {
+      if (!target.ok) {
+        report(t("No puedes añadir nada a ese portafolio."));
+        return;
+      }
+      void uploadFolderToShared(target.shareId, target.portfolioId, files).then(report);
+      return;
+    }
+    void ingestExternalFiles(files, target.portfolioId);
+  });
+}
+
+/**
+ * Full-viewport drop target. Large windows and fullscreen leave the document, its iframe and
+ * transformed text layers as the hit target, so the drag never reaches the workspace. The shield
+ * is portaled to body, outside backdrop-filter panes, and steps aside over the directory so a
+ * folder drop still lands there.
+ */
+function FileDropShield({ enabled }: { enabled: boolean }) {
+  const [root, setRoot] = useState<HTMLElement | null>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
+  useEffect(() => {
+    setRoot(document.body);
+  }, []);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node || !root) return;
+    let hideTimer = 0;
+
+    const show = (visible: boolean) => {
+      if (visible) {
+        node.classList.remove("hidden", "invisible");
+        node.classList.add("grid");
+      } else {
+        node.classList.add("hidden");
+        node.classList.remove("grid", "invisible");
+        node.style.pointerEvents = "none";
+      }
+    };
+
+    const arm = () => {
+      window.clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(() => show(false), 300);
+    };
+
+    const placeLabel = () => {
+      const target = dropDestination();
+      const label = labelRef.current;
+      if (!label) return;
+      label.textContent = target.ok
+        ? `${t("Soltar para agregar a")} ${target.name}`
+        : t("No puedes añadir nada a ese portafolio.");
+    };
+
+    // Hit-test with the shield out of the way, then cover everything except the directory.
+    const overTree = (x: number, y: number) => {
+      node.style.pointerEvents = "none";
+      const hit = document.elementFromPoint(x, y);
+      const tree =
+        hit instanceof Element &&
+        Boolean(
+          hit.closest("[data-ui='sidebar']") ||
+            (hit.closest("[data-ui='rail']") && !hit.closest("[data-ui='context-slot']")),
+        );
+      if (tree) {
+        node.style.pointerEvents = "none";
+        node.classList.add("invisible");
+      } else {
+        node.style.pointerEvents = "auto";
+        node.classList.remove("invisible");
+      }
+      return tree;
+    };
+
+    const external = (event: globalThis.DragEvent) =>
+      Boolean(event.dataTransfer && isExternalFileDrag(event.dataTransfer));
+
+    const onEnter = (event: globalThis.DragEvent) => {
+      if (!external(event)) return;
+      if (!enabledRef.current) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      show(true);
+      placeLabel();
+      arm();
+      if (!overTree(event.clientX, event.clientY)) event.stopPropagation();
+    };
+
+    const onOver = (event: globalThis.DragEvent) => {
+      if (!external(event)) return;
+      event.preventDefault();
+      if (!enabledRef.current) return;
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      show(true);
+      placeLabel();
+      arm();
+      if (!overTree(event.clientX, event.clientY)) event.stopPropagation();
+    };
+
+    const onLeave = (event: globalThis.DragEvent) => {
+      const outside =
+        event.clientX <= 0 ||
+        event.clientY <= 0 ||
+        event.clientX >= window.innerWidth ||
+        event.clientY >= window.innerHeight;
+      if (!outside) return;
+      window.clearTimeout(hideTimer);
+      show(false);
+    };
+
+    const onDrop = (event: globalThis.DragEvent) => {
+      if (!external(event) || !event.dataTransfer) return;
+      window.clearTimeout(hideTimer);
+      const aside = node.style.pointerEvents === "none";
+      show(false);
+      if (!enabledRef.current) {
+        event.preventDefault();
+        return;
+      }
+      if (aside) return;
+      event.preventDefault();
+      event.stopPropagation();
+      ingestAt(event.dataTransfer);
+    };
+
+    const onEnd = () => {
+      window.clearTimeout(hideTimer);
+      show(false);
+    };
+
+    document.addEventListener("dragenter", onEnter, true);
+    document.addEventListener("dragover", onOver, true);
+    document.addEventListener("dragleave", onLeave, true);
+    document.addEventListener("drop", onDrop, true);
+    document.addEventListener("dragend", onEnd, true);
+    return () => {
+      window.clearTimeout(hideTimer);
+      document.removeEventListener("dragenter", onEnter, true);
+      document.removeEventListener("dragover", onOver, true);
+      document.removeEventListener("dragleave", onLeave, true);
+      document.removeEventListener("drop", onDrop, true);
+      document.removeEventListener("dragend", onEnd, true);
+    };
+  }, [root]);
+
+  if (!root) return null;
+  return createPortal(
+    <div
+      ref={nodeRef}
+      data-ui="drop-shield"
+      className="pointer-events-none fixed inset-0 z-[45] hidden place-items-center bg-bg/80 p-6 text-center text-sm text-fg"
+    >
+      <div className="pointer-events-none max-w-md rounded-lg border-2 border-dashed border-accent bg-bg px-4 py-3">
+        <span ref={labelRef} />
+      </div>
+    </div>,
+    root,
+  );
+}
+
 function FileDrop({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   const [over, setOver] = useState(false);
-  const place = () => {
-    const view = useSharedView.getState();
-    const tree = view.tree;
-    if (tree && tree.share.kind !== "portfolio") {
-      return {
-        kind: "shared" as const,
-        shareId: tree.share.id,
-        portfolioId: null,
-        name: tree.share.title,
-        ok: false,
-      };
-    }
-    if (tree?.share.kind === "portfolio") {
-      const root =
-        tree.portfolios.find((portfolio) => portfolio.parentId === rootParent(tree))?.id ?? null;
-      const fromDoc = view.docId
-        ? (tree.documents.find((document) => document.id === view.docId)?.portfolioId ?? null)
-        : null;
-      const portfolioId = view.docId
-        ? fromDoc && tree.portfolios.some((portfolio) => portfolio.id === fromDoc)
-          ? fromDoc
-          : root
-        : view.portfolioId && tree.portfolios.some((portfolio) => portfolio.id === view.portfolioId)
-          ? view.portfolioId
-          : root;
-      const name =
-        tree.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ?? tree.share.title;
-      return {
-        kind: "shared" as const,
-        shareId: tree.share.id,
-        portfolioId,
-        name,
-        ok: canEditSharedPortfolio(tree, portfolioId),
-      };
-    }
-    const state = useVault.getState();
-    const active = state.documents.find((document) => document.id === state.activeId);
-    const portfolioId = active ? active.portfolioId : state.selectedPortfolioId;
-    const name =
-      state.portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ??
-      t("Carpeta Personal");
-    return { kind: "personal" as const, portfolioId, name, ok: true };
-  };
+  const place = dropDestination;
 
   return (
     <div
@@ -627,19 +814,7 @@ function FileDrop({ enabled, children }: { enabled: boolean; children: ReactNode
         event.preventDefault();
         event.stopPropagation();
         setOver(false);
-        const target = place();
-        void readDroppedEntries(event.dataTransfer).then((files) => {
-          if (files.length === 0) return;
-          if (target.kind === "shared") {
-            if (!target.ok) {
-              report(t("No puedes añadir nada a ese portafolio."));
-              return;
-            }
-            void uploadFolderToShared(target.shareId, target.portfolioId, files).then(report);
-            return;
-          }
-          void ingestExternalFiles(files, target.portfolioId);
-        });
+        ingestAt(event.dataTransfer);
       }}
     >
       {children}

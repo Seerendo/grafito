@@ -77,6 +77,111 @@ export function linkKey(link: { targetId: string; anchor?: TextAnchor }): string
     : link.targetId;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Keep a match whose stored phrase would still fit an anchor. */
+function limitedSpan(
+  pageText: string,
+  start: number,
+  end: number,
+): { start: number; end: number } | null {
+  if (end <= start || end - start > MAX_EXACT) return null;
+  if (!pageText.slice(start, end).trim()) return null;
+  return { start, end };
+}
+
+function exactSpan(
+  pageText: string,
+  phrase: string,
+  flags: string,
+): { start: number; end: number } | null {
+  const match = new RegExp(escapeRegExp(phrase), flags).exec(pageText);
+  if (!match || match.index === undefined) return null;
+  return limitedSpan(pageText, match.index, match.index + match[0].length);
+}
+
+/** Match tokens with optional whitespace so a line break or a missing space still hits. */
+function flexibleSpan(
+  pageText: string,
+  phrase: string,
+  flags: string,
+): { start: number; end: number } | null {
+  const tokens = phrase.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const pattern = new RegExp(tokens.map(escapeRegExp).join("\\s*"), flags);
+  for (const match of pageText.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    const span = limitedSpan(pageText, start, start + match[0].length);
+    if (span) return span;
+  }
+  return null;
+}
+
+/**
+ * First occurrence of a phrase in one page. Prefer the exact characters, then flexible
+ * whitespace, then the same two searches without case. The returned slice is the page's own
+ * text, so the stored anchor keeps the PDF's casing and spacing.
+ */
+export function phraseSpan(
+  pageText: string,
+  phrase: string,
+): { start: number; end: number } | null {
+  const needle = phrase.trim();
+  if (!needle || needle.length > MAX_EXACT) return null;
+  const at = pageText.indexOf(needle);
+  if (at >= 0) return limitedSpan(pageText, at, at + needle.length);
+  return (
+    flexibleSpan(pageText, needle, "gu") ??
+    exactSpan(pageText, needle, "iu") ??
+    flexibleSpan(pageText, needle, "giu")
+  );
+}
+
+export type PhraseLocation =
+  | { ok: true; anchor: TextAnchor }
+  | { ok: false; error: "empty" | "too-long" | "no-text" | "missing" }
+  | { ok: false; error: "bad-page"; page: number; total: number }
+  | { ok: false; error: "missing-page"; page: number }
+  | { ok: false; error: "ambiguous"; pages: number[] };
+
+/**
+ * Build an anchor for a phrase across PDF pages. A given page is the only page searched. Without
+ * a page, one hit is linked and several pages are reported so the caller can choose.
+ */
+export function locatePhrase(
+  pages: readonly { page: number; text: string }[],
+  phrase: string,
+  page?: number,
+): PhraseLocation {
+  const needle = phrase.trim();
+  if (!needle) return { ok: false, error: "empty" };
+  if (needle.length > MAX_EXACT) return { ok: false, error: "too-long" };
+  if (!pages.some((item) => item.text.trim())) return { ok: false, error: "no-text" };
+  const total = pages.reduce((max, item) => Math.max(max, item.page), 0);
+  if (page !== undefined) {
+    if (!Number.isInteger(page) || page < 1 || !pages.some((item) => item.page === page)) {
+      return { ok: false, error: "bad-page", page, total };
+    }
+    const chosen = pages.find((item) => item.page === page)!;
+    const span = phraseSpan(chosen.text, needle);
+    const anchor = span ? anchorAt(chosen.text, page, span.start, span.end) : null;
+    return anchor ? { ok: true, anchor } : { ok: false, error: "missing-page", page };
+  }
+  const hits: { page: number; text: string; span: { start: number; end: number } }[] = [];
+  for (const item of pages) {
+    const span = phraseSpan(item.text, needle);
+    if (span) hits.push({ page: item.page, text: item.text, span });
+  }
+  const found = [...new Set(hits.map((hit) => hit.page))];
+  if (found.length === 0) return { ok: false, error: "missing" };
+  if (found.length > 1) return { ok: false, error: "ambiguous", pages: found };
+  const hit = hits[0]!;
+  const anchor = anchorAt(hit.text, hit.page, hit.span.start, hit.span.end);
+  return anchor ? { ok: true, anchor } : { ok: false, error: "missing" };
+}
+
 /** Validate persisted anchors from caches and server requests. */
 export function isTextAnchor(value: unknown): value is TextAnchor {
   if (!value || typeof value !== "object") return false;

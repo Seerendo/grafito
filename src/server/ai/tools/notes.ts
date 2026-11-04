@@ -1,6 +1,24 @@
 import { PERMISSION } from "@/domain/permissions";
+import type { ManualKind } from "@/domain/vault/types";
 import { text } from "./args.ts";
 import type { Tool } from "./tool.ts";
+
+/** Page argument: omitted, a page number, or rejected. */
+function pageArg(value: unknown): number | undefined | "bad" {
+  if (value === undefined || value === null || value === "") return undefined;
+  const raw = typeof value === "number" ? value : typeof value === "string" ? value.trim() : null;
+  if (raw === null || raw === "") return raw === "" ? undefined : "bad";
+  const page = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isInteger(page) || page < 1) return "bad";
+  return page;
+}
+
+function linkKind(value: string): ManualKind | null {
+  const kind = value.trim().toLowerCase();
+  if (!kind || kind === "referencia") return "referencia";
+  if (kind === "llama") return "llama";
+  return null;
+}
 
 /** Note, file and portfolio tools; search uses the content index. */
 export const noteTools: Tool[] = [
@@ -75,7 +93,7 @@ export const noteTools: Tool[] = [
     spec: {
       name: "create_note",
       description:
-        "Crea una nota Markdown donde esta persona puede editar (su bóveda, un compartido con edición, o una carpeta de espacio concedida en edición). Si el acceso es de lectura, no la crea. Usa [[Título]] para enlazar.",
+        "Crea una nota Markdown donde esta persona puede editar (su bóveda, un compartido con edición, o una carpeta de espacio concedida en edición). Si el acceso es de lectura, no la crea. Usa [[Título]] para enlazar notas entre sí. Para vincular una frase de un PDF no crees una nota: usa link_pdf_phrase.",
       parameters: {
         type: "object",
         properties: {
@@ -149,5 +167,55 @@ export const noteTools: Tool[] = [
     },
     run: (vault, args) =>
       vault.createPortfolio({ name: text(args, "name"), parent: text(args, "parent_id") }),
+  },
+  {
+    permission: PERMISSION.linksManage,
+    writes: true,
+    spec: {
+      name: "link_pdf_phrase",
+      description:
+        "Vincula una frase o palabra de un PDF con otro documento. El vínculo queda en el PDF, en esa frase, igual que al seleccionarla a mano. No crea una nota. Si la frase está en varias páginas, indica page. Solo PDF con texto.",
+      parameters: {
+        type: "object",
+        properties: {
+          pdf: { type: "string", description: "Id o título del PDF de origen" },
+          phrase: { type: "string", description: "Frase o palabra tal como está en el PDF" },
+          target: { type: "string", description: "Id o título del documento destino" },
+          page: {
+            type: "string",
+            description:
+              "Número de página si la frase aparece en más de una; vacío cuando basta la única",
+          },
+          kind: {
+            type: "string",
+            description: "referencia (por defecto) o llama",
+          },
+        },
+        required: ["pdf", "phrase", "target"],
+      },
+    },
+    run: (vault, args) => {
+      const kind = linkKind(text(args, "kind"));
+      if (!kind) {
+        return Promise.resolve({
+          result: { error: "kind es referencia o llama." },
+          event: { label: "No vinculó", ok: false },
+        });
+      }
+      const page = pageArg(args.page);
+      if (page === "bad") {
+        return Promise.resolve({
+          result: { error: "page tiene que ser un número de página." },
+          event: { label: "No vinculó", ok: false },
+        });
+      }
+      return vault.linkPdfPhrase({
+        pdf: text(args, "pdf"),
+        phrase: text(args, "phrase"),
+        target: text(args, "target"),
+        page,
+        kind,
+      });
+    },
   },
 ];

@@ -3,6 +3,8 @@ import { create } from "zustand";
 import type { AiProviderId } from "@/domain/ai";
 import { clipSummary, planContext, type ContextMemory } from "@/domain/ai-context";
 import { bearerHeader } from "@/lib/auth/bearer";
+import { fetchSharedTree } from "@/app/shared-open";
+import { useSharedView } from "@/app/shared-view";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
 import {
@@ -356,8 +358,23 @@ export const useAiChat = create<ChatState>((set, get) => {
         patch({ pending: false });
         if (get().controller === controller) set({ busy: false, controller: null });
         void persist(conversationId, turns, savedMemory);
-        // AI changed the server vault; fetch the changes immediately.
-        if (changed) void syncVault(userId);
+        // AI changed the server vault; fetch the changes immediately. A shared PDF lives in
+        // its owner's vault, so the open shared tree is refreshed as well.
+        if (changed) {
+          void syncVault(userId);
+          const shareId = useSharedView.getState().tree?.share.id;
+          if (shareId) {
+            void fetchSharedTree(shareId, true)
+              .then((fresh) => {
+                if (!fresh) return;
+                const current = useSharedView.getState();
+                if (current.tree?.share.id !== shareId) return;
+                if (current.docId) current.openShared(fresh, current.docId);
+                else current.openSharedPortfolio(fresh, current.portfolioId);
+              })
+              .catch(() => undefined);
+          }
+        }
       }
     },
   };

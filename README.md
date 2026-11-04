@@ -808,10 +808,13 @@ Right-click anywhere in an administration page gives the actions of its buttons:
      typing is still there when you open it again.
 
 The assistant can list portfolios, search, read, create and edit notes, and
-read or edit tables, within the permissions of your role. It only sees what
-you can open: your own vault, items shared with you, and workspace folders
-granted to you. Something you can view but not edit (a read-only share, or a
-workspace folder granted as read) can be read and cannot be changed. It does
+read or edit tables, within the permissions of your role. A phrase or word
+inside a PDF is linked to another document with the same anchor as selecting
+that text by hand; that link stays on the PDF and does not create an extra
+note. It only sees what you can open: your own vault, items shared with you,
+and workspace folders granted to you. Something you can view but not edit
+(a read-only share, or a workspace folder granted as read) can be read and
+cannot be changed. It does
 not open another person's private vault. It finds notes and portfolios by name
 as well as by id. `search_notes` looks through titles and the indexed text of
 notes, tables and files, and can return a short snippet. It reads the text of

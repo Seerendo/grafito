@@ -1,8 +1,10 @@
 import type { Sql } from "@/lib/db";
-import type { Document } from "@/domain/vault/types";
+import { locatePhrase, MAX_EXACT, type PhraseLocation } from "@/domain/vault/anchor";
+import type { Document, ManualKind, ManualLink } from "@/domain/vault/types";
 import { unpackTree } from "@/domain/share-pack";
+import { isPdfFile } from "@/domain/signature-box";
 import { isTableName } from "@/domain/vault/table";
-import { fileText } from "@/server/files";
+import { documentPdfPages, fileText } from "@/server/files";
 import { queryContent } from "@/server/index/query";
 import {
   editableTarget,
@@ -13,7 +15,9 @@ import {
 } from "@/server/share";
 import { addNamedRow, queryRows, readFields, updateCell } from "@/server/table";
 import { uploadTarget } from "@/server/upload-target";
+import { changeSharedLink } from "@/server/shared-link";
 import {
+  attachManualLink,
   createNote as saveNote,
   createPortfolio as savePortfolio,
   getDoc,
@@ -89,6 +93,33 @@ function showFolder(folder: AiFolder) {
 
 function fail(label: string, result: unknown): ToolResult {
   return { result, event: { label, ok: false } };
+}
+
+function pageList(pages: number[]): string {
+  if (pages.length <= 1) return pages.join("");
+  return `${pages.slice(0, -1).join(", ")} y ${pages[pages.length - 1]}`;
+}
+
+/** Spanish explanation when a PDF phrase cannot become an anchor. */
+function phraseError(location: Exclude<PhraseLocation, { ok: true }>, phrase: string): string {
+  switch (location.error) {
+    case "empty":
+      return "Escribe la frase o la palabra del PDF.";
+    case "too-long":
+      return `La frase puede tener hasta ${MAX_EXACT} caracteres.`;
+    case "no-text":
+      return "Ese PDF no tiene texto que se pueda vincular (puede ser un escaneo).";
+    case "bad-page":
+      return location.total > 0
+        ? `Esa página no existe. El PDF tiene ${location.total} páginas.`
+        : "Esa página no existe en el PDF.";
+    case "missing-page":
+      return `No encontré «${phrase}» en la página ${location.page}.`;
+    case "missing":
+      return `No encontré «${phrase}» en el PDF.`;
+    case "ambiguous":
+      return `Esa frase está en las páginas ${pageList(location.pages)}. Indica page con una de ellas.`;
+  }
 }
 
 function ownInput(doc: {
@@ -584,6 +615,90 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
           label: `Editó «${picked.doc.title}»`,
           ok: true,
           docId: picked.doc.id,
+          changed: true,
+        },
+      };
+    },
+    async linkPdfPhrase(input: {
+      pdf: string;
+      phrase: string;
+      target: string;
+      page?: number;
+      kind: ManualKind;
+    }): Promise<ToolResult> {
+      const phrase = input.phrase.trim();
+      if (!phrase) return fail("No vinculó", { error: "Escribe la frase o la palabra del PDF." });
+      if (phrase.length > MAX_EXACT) {
+        return fail("No vinculó", { error: `La frase puede tener hasta ${MAX_EXACT} caracteres.` });
+      }
+      const sourcePick = await pickDoc(input.pdf, "No encontró el PDF");
+      if (!("doc" in sourcePick)) return sourcePick;
+      const source = sourcePick.doc;
+      const refused = writeRefusal(source);
+      if (refused) return fail("No puede vincularlo", { error: refused });
+      const ownerId = await writableOwner(sql, userId, source);
+      if (!ownerId) return fail("No puede vincularlo", { error: "Ya no puedes editarlo." });
+      const opened = await openReadable(sql, userId, source);
+      const file = opened?.document.file;
+      if (!opened || !file || !isPdfFile(file.name, file.mime)) {
+        return fail("No es un PDF", {
+          error:
+            "Solo se puede vincular una frase dentro de un PDF. Para notas, usa [[Título]] en la nota.",
+        });
+      }
+      const targetPick = await pickDoc(input.target, "No encontró el destino");
+      if (!("doc" in targetPick)) return targetPick;
+      const target = targetPick.doc;
+      if (target.id === source.id) {
+        return fail("No vinculó", { error: "Un documento no se vincula consigo mismo." });
+      }
+      if (source.shareId && target.shareId !== source.shareId) {
+        return fail("No vinculó", { error: "Ese destino no está en este espacio." });
+      }
+      const pages = await documentPdfPages(sql, opened.document);
+      if (!pages) {
+        return fail("No vinculó", {
+          error: "Ese PDF no tiene texto que se pueda vincular (puede ser un escaneo).",
+        });
+      }
+      const located = locatePhrase(pages, phrase, input.page);
+      if (!located.ok) return fail("No vinculó", { error: phraseError(located, phrase) });
+      const anchor = located.anchor;
+      if (source.shareId) {
+        const saved = await changeSharedLink(sql, {
+          userId,
+          actor,
+          canLink: true,
+          shareId: source.shareId,
+          docId: source.id,
+          add: { targetId: target.id, kind: input.kind, anchor },
+        });
+        if (!saved.ok) return fail("No vinculó", { error: saved.error });
+      } else {
+        const link: ManualLink = {
+          targetId: target.id,
+          kind: input.kind,
+          anchor,
+          ...(target.shareId ? { shareId: target.shareId } : {}),
+        };
+        const saved = await attachManualLink(sql, ownerId, source.id, link, actor);
+        if (!saved.ok) return fail("No vinculó", { error: saved.error });
+      }
+      invalidate();
+      return {
+        result: {
+          id: source.id,
+          title: source.title,
+          phrase: anchor.exact,
+          page: anchor.page,
+          targetId: target.id,
+          targetTitle: target.title,
+          kind: input.kind,
+        },
+        event: {
+          label: `Vinculó «${anchor.exact}» en «${source.title}»`,
+          ok: true,
+          docId: source.id,
           changed: true,
         },
       };

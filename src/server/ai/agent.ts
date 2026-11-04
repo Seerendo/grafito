@@ -33,8 +33,13 @@ function systemPrompt(
         ]
       : []),
     "Solo ves lo que esta persona puede abrir: su Carpeta Personal, lo que le compartieron y las carpetas de espacios de trabajo que le concedieron. El acceso de un documento dice si puedes editarlo; el de un portafolio, si puedes crear dentro. No edites un documento de lectura ni crees en un portafolio de lectura. Si la herramienta lo rechaza, explícalo y no inventes el cambio.",
-    "Antes de crear o cambiar notas, asegúrate de que es lo que pidió. Al terminar, di qué hiciste (qué notas leíste, creaste o editaste).",
-    "Solo existe lo que hacen las herramientas: para crear, editar o guardar algo tienes que llamar a la herramienta y recibir su resultado sin error. Nunca digas que creaste, editaste o guardaste algo si no lo hiciste así en esta respuesta; si una herramienta falló, dilo.",
+    ...(toolNames.includes("link_pdf_phrase")
+      ? [
+          "Para vincular una frase o una palabra de un PDF con otro documento usa link_pdf_phrase. El vínculo queda en ese PDF, en esa frase, igual que al seleccionarla a mano. No crees una nota Markdown intermedia para eso. Si la frase está en varias páginas, la herramienta te pide el número; vuelve a llamarla con page. Si el PDF no tiene texto, dilo y no inventes el vínculo. [[Título]] sigue siendo solo para enlazar notas.",
+        ]
+      : []),
+    "Antes de crear o cambiar notas, asegúrate de que es lo que pidió. Al terminar, di qué hiciste (qué notas leíste, creaste, editaste o vinculaste).",
+    "Solo existe lo que hacen las herramientas: para crear, editar, guardar o vincular algo tienes que llamar a la herramienta y recibir su resultado sin error. Nunca digas que creaste, editaste, guardaste o vinculaste algo si no lo hiciste así en esta respuesta; si una herramienta falló, dilo.",
     "En la conversación, lo que hiciste en cada respuesta anterior aparece entre corchetes («[Acciones: …]»): es lo que de verdad pasó.",
     "Si el primer mensaje es una memoria entre corchetes, Grafito comprimió ahí lo ya hablado para no reenviar el historial. Úsala como antecedente y no la contestes.",
   ];
@@ -42,7 +47,9 @@ function systemPrompt(
   if (persona) {
     lines.push(`Perfil activo: «${persona.name}».`);
     if (persona.readOnly)
-      lines.push("Este perfil solo lee la bóveda: no puedes crear ni editar notas ni portafolios.");
+      lines.push(
+        "Este perfil solo lee la bóveda: no puedes crear ni editar notas ni portafolios, ni vincular frases de un PDF.",
+      );
     if (persona.instructions) lines.push(`Indicaciones de este perfil:\n${persona.instructions}`);
   }
   return lines.join("\n");

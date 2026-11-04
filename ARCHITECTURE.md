@@ -1337,8 +1337,8 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
       `runAgent` loads it for that user and adds its instructions after the
       assistant's own, so they shape tone, format and focus.
     - A read-only profile drops the tools marked `writes` (`create_note`,
-      `update_note`, `create_portfolio`, `add_table_row`, `set_table_cell`)
-      on top of what the role allows.
+      `update_note`, `create_portfolio`, `add_table_row`, `set_table_cell`,
+      `link_pdf_phrase`) on top of what the role allows.
     - A deleted profile is ignored, and the chat falls back to **General**.
 
 | Provider           | Protocol                                                | Address                                            | Key                                 |
@@ -1358,7 +1358,8 @@ to 8 steps.
 
 - **Tools:** only those the role allows, out of `list_portfolios`,
   `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
-  `create_portfolio`, `query_table`, `add_table_row` and `set_table_cell`.
+  `create_portfolio`, `query_table`, `add_table_row`, `set_table_cell` and
+  `link_pdf_phrase`.
   Notes and portfolios live in `server/ai/tools/notes.ts`; tables in
   `server/ai/tools/tables.ts`. `search_notes` searches titles and the indexed
   text of notes, tables and files (PDF, Word, Excel, PowerPoint,
@@ -1367,7 +1368,12 @@ to 8 steps.
   Portfolios are found by id, name or path («Proyectos › Atlas»). On a miss,
   the tool returns the close matches or the list of portfolios, so the model
   can retry. Two documents with the same title are not collapsed to the
-  first one: the tool asks for an id.
+  first one: the tool asks for an id. `link_pdf_phrase` (permission
+  `links.manage`) links a phrase or word inside a PDF to another document.
+  The anchor is the same one the viewer stores when that phrase is selected
+  by hand: it lives on the PDF, not in a new Markdown note. The phrase is
+  taken from each page's PDF.js text. If it appears on more than one page,
+  the tool asks for the page. A PDF without text (a scan) is refused.
 - **What it can open** (`server/ai/access.ts`, `server/ai/corpus.ts`): the
   person's own vault, items shared with them, and workspace folders granted
   to them. A document outside that set is reported as not found; the tools
@@ -1387,7 +1393,7 @@ to 8 steps.
 - **Response:** streamed as NDJSON. The chat shows each tool used, and you can
   click one to open the note.
 - **Not claiming what it didn't do** (`server/ai/guard.ts`): if the final
-  answer says it created, edited or saved something (`CLAIMS_WRITE`) but no
+  answer says it created, edited, saved or linked something (`CLAIMS_WRITE`) but no
   write tool succeeded in that answer, the agent asks the model once more to
   do it with the tool or to correct itself; if it still claims it, the answer
   ends with a visible warning that nothing changed in the vault.

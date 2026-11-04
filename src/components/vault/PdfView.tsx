@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, MessageSquare, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PageViewport, PDFDocumentProxy } from "pdfjs-dist";
 import { anchorAt, linkKey, locate, type TextAnchor } from "@/domain/vault/anchor";
+import { pagePlainText } from "@/domain/vault/pdf-text";
 import { placePopup } from "@/domain/vault/popup";
 import type { ManualLink } from "@/domain/vault/types";
 import { useContextMenu } from "@/components/ui/use-context-menu";
@@ -96,18 +97,6 @@ type EmbeddedNote = PdfNote & { rect: number[] };
 /** Annotation types that are not comments, such as links and form fields. */
 const NOT_NOTES = new Set(["Link", "Widget", "Popup"]);
 const NO_COMMENTS: DocComment[] = [];
-
-/** PDF.js page text with item-marked line breaks. */
-function pagePlainText(items: readonly unknown[]): string {
-  let text = "";
-  for (const item of items) {
-    if (!item || typeof item !== "object" || !("str" in item)) continue;
-    const piece = item as { str: string; hasEOL?: boolean };
-    text += piece.str;
-    if (piece.hasEOL) text += "\n";
-  }
-  return text;
-}
 
 /**
  * Clamp selection to the text layer under the pointer. Anchors cannot span pages, even when the
