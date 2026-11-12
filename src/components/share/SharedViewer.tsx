@@ -61,7 +61,9 @@ import { treeVersion, useGraphAvailable, usePublicGraph } from "@/app/graph";
  * index=false and docId/onOpenDoc. Edit access plus onChange enables editing and history,
  * returning the updated tree after saving. Graph and context navigation also work on public
  * links. With onOpenPortfolio and no document, show the selected portfolio's children and
- * recent items.
+ * recent items. signedIn (implied by onChange) marks a viewer with a session: its files are
+ * opened through the share, so PDF signatures, comments and tables reach the server; a public
+ * link has no session and gets none of them.
  */
 export function SharedViewer({
   tree,
@@ -70,6 +72,7 @@ export function SharedViewer({
   onOpenDoc,
   onOpenPortfolio,
   onChange,
+  signedIn = Boolean(onChange),
   index = true,
 }: {
   tree: SharedTree;
@@ -79,6 +82,7 @@ export function SharedViewer({
   onOpenPortfolio?: (id: string | null) => void;
   /** An optional docId also opens that document after creation. */
   onChange?: (tree: SharedTree, docId?: string) => void;
+  signedIn?: boolean;
   index?: boolean;
 }) {
   const ordered = useMemo(() => orderDocuments(tree), [tree]);
@@ -725,7 +729,7 @@ export function SharedViewer({
             file={active.file}
             docId={active.id}
             links={active.file}
-            shareId={onChange ? tree.share.id : undefined}
+            shareId={signedIn ? tree.share.id : undefined}
             canEdit={writable && Boolean(onChange)}
             manual={{
               links: active.links ?? [],

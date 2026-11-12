@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchSharedTree } from "@/app/shared-open";
 import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
+import { useSignatures } from "@/app/signatures";
+import { signatureBoxes, signedMark as markOf } from "@/domain/signature-view";
 import { t } from "@/app/i18n";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
@@ -13,7 +15,7 @@ import {
   signPdf,
   signaturePeople,
 } from "@/server/signature.functions";
-import { PdfView, type PdfSignBox, type PdfViewProps } from "./PdfView";
+import { PdfView, type PdfViewProps } from "./PdfView";
 import { SignatureBar } from "./SignatureDialog";
 
 type Box = { page: number; x: number; y: number; w: number; h: number };
@@ -31,8 +33,6 @@ export function PdfSignatures({
   const [version, setVersion] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
   const [placing, setPlacing] = useState(false);
-  const [boxes, setBoxes] = useState<PdfSignBox[]>([]);
-  const [canPlace, setCanPlace] = useState(false);
   const [draft, setDraft] = useState<Box | null>(null);
   const [people, setPeople] = useState<
     { id: string; name: string; loginName: string; self?: boolean }[] | null
@@ -46,6 +46,9 @@ export function PdfSignatures({
   const signedMark = useRef<{ docId: string; mark: string }>({ docId: "", mark: "" });
   const [certificate, setCertificate] = useState<{ id: string; data: string } | null>(null);
   const [password, setPassword] = useState("");
+  const load = useSignatures(docId, shareId, { poll: true, version });
+  const boxes = useMemo(() => signatureBoxes(load.rows), [load.rows]);
+  const canPlace = load.canRequest;
 
   useEffect(() => {
     if (!placing) return;
@@ -68,6 +71,17 @@ export function PdfSignatures({
     if (tree && view.tree?.share.id === shareId && view.docId === docId)
       view.openShared(tree, docId);
   };
+
+  // A stamp made elsewhere (another person or session) changes the PDF: load it again.
+  const mark = load.status === "ready" ? markOf(load.rows) : null;
+  useEffect(() => {
+    if (mark === null) return;
+    const previous = signedMark.current;
+    signedMark.current = { docId, mark };
+    if (previous.docId === docId && previous.mark !== mark) void refreshFile();
+    // refreshFile reads the current share and document when it runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, mark]);
 
   const assign = async () => {
     if (!draft || !picked) {
@@ -172,40 +186,9 @@ export function PdfSignatures({
       <SignatureBar
         docId={docId}
         shareId={shareId}
-        version={version}
+        load={load}
         placing={placing}
         onPlace={() => setPlacing((value) => !value)}
-        onState={(state) => {
-          setCanPlace(state.canRequest);
-          setBoxes(
-            state.rows.flatMap((row) =>
-              row.page != null && row.x != null && row.y != null && row.w != null && row.h != null
-                ? [
-                    {
-                      id: row.id,
-                      page: row.page,
-                      x: row.x,
-                      y: row.y,
-                      w: row.w,
-                      h: row.h,
-                      signerName: row.signerName,
-                      status: row.status,
-                      mine: row.mine,
-                      stale: row.stale,
-                    },
-                  ]
-                : [],
-            ),
-          );
-          const mark = state.rows
-            .filter((row) => row.status === "signed")
-            .map((row) => row.id)
-            .sort()
-            .join(",");
-          const previous = signedMark.current;
-          signedMark.current = { docId, mark };
-          if (previous.docId === docId && previous.mark !== mark) void refreshFile();
-        }}
       />
       {placing ? (
         <p className="shrink-0 px-4 py-1.5 text-xs text-muted">

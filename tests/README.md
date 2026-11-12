@@ -14,3 +14,8 @@ Use deterministic fakes for provider calls and temporary directories for files.
 Do not require real credentials or a running external service in unit tests.
 Test observable behavior, permissions, failures and cancellation rather than
 implementation details. Live provider checks belong in explicitly invoked scripts.
+
+`tests/e2e/` holds browser tests that need the local test stack, a running dev
+server and Playwright (not a project dependency), so `npm test` does not run
+them. `pdf-signatures.e2e.mjs` explains how to start them; it seeds and resets
+its own `e2esig-` rows.

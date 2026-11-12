@@ -1290,6 +1290,8 @@ export const en: Record<string, string> = {
     "Share the document with {0} before asking them to sign.",
   "No se pudieron pedir las firmas.": "Couldn't request the signatures.",
   "No se pudieron leer las firmas.": "Couldn't load the signatures.",
+  "Sin acceso a las firmas de este documento.": "No access to this document's signatures.",
+  Reintentar: "Retry",
   "Pedir firmas": "Request signatures",
   "Pedir firmas…": "Request signatures…",
   "{n} firmadas": "{n} signed",

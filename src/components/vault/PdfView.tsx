@@ -1177,6 +1177,7 @@ function PdfPage({
         <div
           key={box.id}
           data-ui="pdf-sign"
+          data-status={box.status}
           className={`absolute ${box.status === "signed" && !box.stale ? "pointer-events-none" : "bg-accent/5"}`}
           style={{
             left: `${box.x * 100}%`,
@@ -1192,7 +1193,7 @@ function PdfPage({
               ? t("Firmada · el documento cambió después")
               : box.status === "signed"
                 ? box.signerName
-                : `${box.signerName} · ${t("Pendiente")}`}
+                : `${box.signerName} · ${box.status === "declined" ? t("Rechazada") : t("Pendiente")}`}
           </span>
           {box.status === "pending" ? (
             <span className="absolute inset-x-0 bottom-0 flex justify-end gap-1 p-0.5">

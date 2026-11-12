@@ -72,7 +72,7 @@ export function SharedItemScreen({ shareId }: { shareId: string }) {
   const tree = useTree(() => fetchSharedTree(shareId), shareId);
   return (
     <AppFrame>
-      <TreeState tree={tree} missing={t("No existe o ya no está compartido contigo.")} />
+      <TreeState tree={tree} signedIn missing={t("No existe o ya no está compartido contigo.")} />
     </AppFrame>
   );
 }
@@ -130,11 +130,19 @@ function useTree(load: () => Promise<SharedTree | null>, key: string): TreeLoad 
   return tree;
 }
 
-function TreeState({ tree, missing }: { tree: TreeLoad; missing: string }) {
+function TreeState({
+  tree,
+  missing,
+  signedIn = false,
+}: {
+  tree: TreeLoad;
+  missing: string;
+  signedIn?: boolean;
+}) {
   if (tree === "loading") return <Centered>{t("Cargando…")}</Centered>;
   if (tree === "error") return <Centered>{t("No se pudo abrir.")}</Centered>;
   if (!tree) return <Centered>{missing}</Centered>;
-  return <SharedViewer tree={tree} />;
+  return <SharedViewer tree={tree} signedIn={signedIn} />;
 }
 
 function Centered({ children }: { children: ReactNode }) {

@@ -1,32 +1,16 @@
 import { useEffect, useState } from "react";
 import { fetchSharedTree } from "@/app/shared-open";
 import { useSharedView } from "@/app/shared-view";
-import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
 import { Modal } from "@/components/ui/Modal";
-import { myPendingSignatures, signatureState } from "@/server/signature.functions";
+import { loadSignatures, useSignatures } from "@/app/signatures";
+import type { SignatureLoad } from "@/domain/signature-view";
+import { myPendingSignatures } from "@/server/signature.functions";
 
 /**
  * PDF signature rectangles and stamping status. Signature images are not stored; this is not
  * certificate signing.
  */
-
-type Row = {
-  id: string;
-  signerName: string;
-  status: string;
-  requestedByName: string;
-  requestedAt: number;
-  decidedAt: number | null;
-  note: string;
-  stale: boolean;
-  mine: boolean;
-  page: number | null;
-  x: number | null;
-  y: number | null;
-  w: number | null;
-  h: number | null;
-};
 
 export function SignatureDialog({
   docId,
@@ -37,18 +21,8 @@ export function SignatureDialog({
   shareId?: string;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [canRequest, setCanRequest] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    void signatureState({ data: { docId, shareId } })
-      .then((result) => {
-        setRows(result.rows);
-        setCanRequest(result.canRequest);
-      })
-      .catch(() => setError(t("No se pudieron leer las firmas.")));
-  }, [docId, shareId]);
+  const load = useSignatures(docId, shareId);
+  const rows = load.status === "loading" ? null : load.rows;
 
   return (
     <Modal title={t("Firmas")} onClose={onClose}>
@@ -59,7 +33,7 @@ export function SignatureDialog({
       </p>
       <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto">
         {rows === null ? <li className="text-sm text-muted">{t("Cargando…")}</li> : null}
-        {rows && rows.length === 0 ? (
+        {load.status === "ready" && load.rows.length === 0 ? (
           <li className="text-sm text-muted">{t("Nadie ha firmado todavía.")}</li>
         ) : null}
         {rows?.map((row) => (
@@ -78,12 +52,19 @@ export function SignatureDialog({
           </li>
         ))}
       </ul>
-      {canRequest ? (
+      {load.canRequest ? (
         <p className="mt-3 text-sm text-muted">
           {t("Dibuja el recuadro en la página. Luego elige a quién corresponde.")}
         </p>
       ) : null}
-      {error ? <p className="mt-3 text-sm text-danger">{t(error)}</p> : null}
+      {load.status === "error" ? (
+        <p className="mt-3 text-sm text-danger">{t("No se pudieron leer las firmas.")}</p>
+      ) : null}
+      {load.status === "denied" ? (
+        <p className="mt-3 text-sm text-danger">
+          {t("Sin acceso a las firmas de este documento.")}
+        </p>
+      ) : null}
       <div className="mt-4 flex justify-end">
         <button
           type="button"
@@ -97,73 +78,71 @@ export function SignatureDialog({
   );
 }
 
-/** PDF signature status and, for editors, rectangle placement controls. */
+/**
+ * PDF signature status and, for editors, rectangle placement controls. Every state is visible:
+ * loading, a failed request (with retry), refused access, no signatures, and the counts.
+ */
 export function SignatureBar({
   docId,
   shareId,
-  version = 0,
+  load,
   placing = false,
   onPlace,
-  onState,
 }: {
   docId: string;
   shareId?: string;
-  version?: number;
+  load: SignatureLoad;
   placing?: boolean;
   onPlace?: () => void;
-  onState?: (state: { rows: Row[]; canRequest: boolean }) => void;
 }) {
-  const setDialog = useVault((state) => state.setDialog);
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [canRequest, setCanRequest] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      void signatureState({ data: { docId, shareId } })
-        .then((result) => {
-          if (cancelled || !result.ok) return;
-          setRows(result.rows);
-          setCanRequest(result.canRequest);
-          onState?.({ rows: result.rows, canRequest: result.canRequest });
-        })
-        .catch(() => undefined);
-    };
-    load();
-    // Refresh signatures stamped by other viewers.
-    const timer = window.setInterval(load, 20_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-    // The parent's onState callback changes on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, shareId, version]);
-
-  const mine = rows?.find((row) => row.mine && row.status === "pending");
-  const signed = rows?.filter((row) => row.status === "signed").length ?? 0;
-  const pending = rows?.filter((row) => row.status === "pending").length ?? 0;
-  if (!rows || (rows.length === 0 && !canRequest)) return null;
+  // Opened here rather than through the vault's dialogs: the bar also shows outside the vault.
+  const [open, setOpen] = useState(false);
+  const rows = load.rows;
+  const mine = rows.find((row) => row.mine && row.status === "pending");
+  const signed = rows.filter((row) => row.status === "signed").length;
+  const pending = rows.filter((row) => row.status === "pending").length;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-sm sm:px-5">
+    <div
+      data-ui="pdf-signatures"
+      data-state={load.status}
+      className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-sm sm:px-5"
+    >
       <button
         type="button"
-        onClick={() => setDialog({ type: "signatures", docId, shareId })}
+        onClick={() => setOpen(true)}
         className="font-medium text-fg hover:text-accent"
       >
         {t("Firmas")}
       </button>
-      <span className="text-muted">
-        {signed > 0 ? t("{n} firmadas", { n: signed }) : t("Sin firmas")}
-        {pending > 0 ? ` · ${t("{n} pendientes", { n: pending })}` : ""}
-      </span>
+      {load.status === "loading" ? <span className="text-muted">{t("Cargando…")}</span> : null}
+      {load.status === "denied" ? (
+        <span className="text-muted">{t("Sin acceso a las firmas de este documento.")}</span>
+      ) : null}
+      {load.status === "error" ? (
+        <>
+          <span className="text-danger">{t("No se pudieron leer las firmas.")}</span>
+          <button
+            type="button"
+            onClick={() => void loadSignatures(docId, shareId)}
+            className="h-8 rounded-md px-2 text-xs text-muted hover:bg-elevated hover:text-fg"
+          >
+            {t("Reintentar")}
+          </button>
+        </>
+      ) : null}
+      {load.status === "ready" ? (
+        <span className="text-muted">
+          {signed > 0 ? t("{n} firmadas", { n: signed }) : t("Sin firmas")}
+          {pending > 0 ? ` · ${t("{n} pendientes", { n: pending })}` : ""}
+        </span>
+      ) : null}
       {mine ? (
         <span className="text-muted">
           {t("Sube una imagen o un certificado .p12 en el recuadro.")}
         </span>
       ) : null}
-      {canRequest && onPlace ? (
+      {load.canRequest && onPlace ? (
         <button
           type="button"
           onClick={onPlace}
@@ -171,6 +150,9 @@ export function SignatureBar({
         >
           {placing ? t("Cancelar espacio") : t("Añadir espacio de firma")}
         </button>
+      ) : null}
+      {open ? (
+        <SignatureDialog docId={docId} shareId={shareId} onClose={() => setOpen(false)} />
       ) : null}
     </div>
   );
