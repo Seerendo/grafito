@@ -936,6 +936,7 @@ export function GraphBoard() {
   const cards = [
     [t("Bóvedas al día"), `${status.synced} / ${status.vaults}`],
     [t("Pendientes"), String(status.pending)],
+    [t("Con comunidades"), `${status.analyzed} / ${status.vaults}`],
     [t("Motor"), status.version ? `Grafeno ${status.version}` : "Grafeno"],
   ] as const;
   return (

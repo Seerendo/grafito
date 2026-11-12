@@ -5,7 +5,7 @@ import type { GraphEdge, ManualKind } from "@/domain/vault/types";
 import type { TextAnchor } from "@/domain/vault/anchor";
 import { graphEdges, graphIncoming, graphState, publicGraph } from "@/server/graph.functions";
 import { usePermissions } from "@/app/permissions";
-import { unpackEdges } from "@/domain/graph-pack";
+import { unpackAnalysis, unpackEdges, type NodeAnalysis } from "@/domain/graph-pack";
 
 /**
  * The graph and mentions come from Grafeno through the server. While the Grafo plugin is paused,
@@ -85,14 +85,27 @@ export function useGraphAvailable(active = true): boolean {
   return active && plugin && can(PERMISSION.graphView) && state === true;
 }
 
-type EdgeResult = { off: boolean; ready: boolean; edges: GraphLink[] };
+type EdgeResult = {
+  off: boolean;
+  ready: boolean;
+  edges: GraphLink[];
+  /** Community and importance per document, once Grafeno has analysed the vault. */
+  analysis: Map<string, NodeAnalysis>;
+};
+
+const NO_ANALYSIS = new Map<string, NodeAnalysis>();
 
 async function fetchEdges(scope: GraphScope): Promise<EdgeResult> {
   const result = scope.token
     ? await publicGraph({ data: { token: scope.token } })
     : await graphEdges({ data: scope.shareId ? { shareId: scope.shareId } : {} });
-  if (!result.ok) return { off: result.off, ready: false, edges: [] };
-  return { off: false, ready: result.ready, edges: unpackEdges(result.edges) };
+  if (!result.ok) return { off: result.off, ready: false, edges: [], analysis: NO_ANALYSIS };
+  return {
+    off: false,
+    ready: result.ready,
+    edges: unpackEdges(result.edges),
+    analysis: unpackAnalysis(result.analysis),
+  };
 }
 
 /**
@@ -103,7 +116,12 @@ export function useGraphEdges(
   scope: GraphScope,
   version: string,
   enabled: boolean,
-): { edges: GraphLink[]; loading: boolean; ready: boolean } {
+): {
+  edges: GraphLink[];
+  analysis: Map<string, NodeAnalysis>;
+  loading: boolean;
+  ready: boolean;
+} {
   const [state, setState] = useState<{ key: string; result: EdgeResult } | null>(null);
   const key = `${scope.token ?? ""}|${scope.shareId ?? ""}`;
   useEffect(() => {
@@ -130,6 +148,7 @@ export function useGraphEdges(
   const current = state?.key === key ? state.result : null;
   return {
     edges: current?.edges ?? [],
+    analysis: current?.analysis ?? NO_ANALYSIS,
     loading: enabled && current === null,
     ready: current?.ready ?? false,
   };

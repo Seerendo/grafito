@@ -6,6 +6,9 @@ import { after, before, test } from "node:test";
 import { Grafeno } from "@grafenodb/client";
 import {
   ALL_EDGES,
+  ANALYSIS_STEPS,
+  READ_ANALYSIS,
+  analysisRows,
   docNode,
   docOps,
   edgeRows,
@@ -16,7 +19,7 @@ import {
 
 /**
  * The graph queries against a real engine (`grafeno serve --memory`). GRAFENO_BIN names the
- * binary; without one installed the test is skipped.
+ * binary, or GRAFENO_TEST_URL an engine already running; without either the test is skipped.
  */
 
 const candidates = [
@@ -43,7 +46,15 @@ function freePort(): Promise<number> {
   });
 }
 
+/** An engine already running (GRAFENO_TEST_URL, with GRAFENO_TEST_TOKEN) instead of a binary. */
+const running = process.env.GRAFENO_TEST_URL;
+const available = Boolean(running || binary);
+
 before(async () => {
+  if (running) {
+    client = new Grafeno({ url: running, token: process.env.GRAFENO_TEST_TOKEN });
+    return;
+  }
   if (!binary) return;
   const port = await freePort();
   child = spawn(binary, ["serve", "--memory", "--addr", `127.0.0.1:${port}`, "--token", TOKEN], {
@@ -73,7 +84,7 @@ const doc = (id: string, title: string, content = "", links: GraphDoc["links"] =
   links,
 });
 
-test("aristas, menciones y reemplazo en un Grafeno real", { skip: !binary }, async () => {
+test("aristas, menciones y reemplazo en un Grafeno real", { skip: !available }, async () => {
   const ns = client!.namespace(`grafito-test-${Date.now()}`);
   await ns.batch([
     ...docOps(doc("a", "Alfa", "ver [[Beta]] y [[Plan]]", [{ targetId: "c", kind: "referencia" }])),
@@ -128,4 +139,41 @@ test("aristas, menciones y reemplazo en un Grafeno real", { skip: !binary }, asy
   await ns.batch(docOps(doc("n", "Nuevo")));
   const later = edgeRows((await ns.query(ALL_EDGES)).rows as unknown[][]);
   assert.ok(later.some((edge) => edge.from === "d" && edge.to === "n" && edge.kind === "wiki"));
+});
+
+test("comunidades e importancia en un Grafeno real", { skip: !available }, async (t) => {
+  const ns = client!.namespace(`grafito-analysis-${Date.now()}`);
+  // Two tight groups joined by one link; "hub" is linked from every note of the first group
+  // and links nowhere, so no single note inherits its whole score.
+  const docs = [
+    doc("hub", "Hub"),
+    doc("a1", "A1", "[[Hub]] [[A2]]"),
+    doc("a2", "A2", "[[Hub]] [[A1]]"),
+    doc("a3", "A3", "[[Hub]] [[B1]]"),
+    doc("b1", "B1", "[[B2]] [[B3]]"),
+    doc("b2", "B2", "[[B1]] [[B3]]"),
+    doc("b3", "B3", "[[B1]] [[B2]]"),
+  ];
+  await ns.batch(docs.flatMap(docOps));
+  try {
+    for (const step of ANALYSIS_STEPS) await ns.query(step);
+  } catch (error) {
+    // An engine before graph algorithms with write mode.
+    t.skip(`motor sin algoritmos: ${(error as Error).message.slice(0, 80)}`);
+    return;
+  }
+  const analysis = analysisRows((await ns.query(READ_ANALYSIS)).rows as unknown[][]);
+  const of = (id: string) => analysis.ids.indexOf(id);
+  assert.equal(analysis.ids.length, docs.length);
+  const community = (id: string) => analysis.community[of(id)];
+  assert.equal(community("a1"), community("hub"));
+  assert.equal(community("b2"), community("b1"));
+  assert.notEqual(community("a1"), community("b1"));
+  // Importance lands on documents, and the most linked one of its group scores highest.
+  const rank = (id: string) => analysis.rank[of(id)]!;
+  for (const other of ["a1", "a2", "a3"]) assert.ok(rank("hub") > rank(other), other);
+  // Running it again replaces the derived links instead of adding to them.
+  for (const step of ANALYSIS_STEPS) await ns.query(step);
+  const linked = await ns.query("MATCH ()-[l:linked]->() RETURN count(l)");
+  assert.equal(linked.rows[0]?.[0], 12);
 });

@@ -12,6 +12,7 @@ import {
 } from "./grafeno";
 import { chunkOps, docOps, portfolioOps, removeOps } from "./model";
 import { onGraphNudge } from "./nudge";
+import { analysisPass, clearAnalyses } from "./analysis";
 
 /**
  * Copies vaults from Postgres into Grafeno. Postgres stays the source of truth; Grafeno holds
@@ -222,6 +223,8 @@ export async function graphPass(sql: Sql): Promise<void> {
           }
         }
       }
+      // Communities and importance follow, at their own slower pace.
+      await analysisPass(sql);
     } finally {
       await release(sql);
     }
@@ -258,6 +261,7 @@ export function startGraphSync(): void {
 /** Copy every vault again (Administración → Monitorización → Grafo). */
 export async function requestGraphRebuild(sql: Sql): Promise<void> {
   await sql`delete from graph_sync`;
+  await clearAnalyses(sql);
   lastHeal = 0;
 }
 
@@ -271,6 +275,8 @@ export type GraphSyncStatus = {
   lastError: string;
   lastSyncedAt: number | null;
   version: string;
+  /** Vaults with communities and importance computed. */
+  analyzed: number;
 };
 
 export async function readGraphStatus(sql: Sql): Promise<GraphSyncStatus> {
@@ -282,6 +288,9 @@ export async function readGraphStatus(sql: Sql): Promise<GraphSyncStatus> {
   `;
   const errors = await sql<{ last_error: string }>`
     select last_error from graph_sync where last_error <> '' order by synced_at desc limit 1
+  `;
+  const analyzed = await sql<{ n: unknown }>`
+    select count(*) as n from graph_analysis where rev >= 0
   `;
   const vaults = Number(counts?.vaults ?? 0);
   const synced = Number(counts?.synced ?? 0);
@@ -296,5 +305,6 @@ export async function readGraphStatus(sql: Sql): Promise<GraphSyncStatus> {
     lastError: errors[0]?.last_error ?? "",
     lastSyncedAt: last > 0 ? last : null,
     version: grafenoVersion(),
+    analyzed: Number(analyzed[0]?.n ?? 0),
   };
 }

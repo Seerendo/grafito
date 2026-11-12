@@ -1,6 +1,7 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { Graph } from "@cosmos.gl/graph";
 import { graphClickIntent, type GraphNode } from "@/domain/vault/graph";
+import type { NodeAnalysis } from "@/domain/graph-pack";
 import type { GraphKind } from "@/domain/vault/types";
 import { t } from "@/app/i18n";
 
@@ -63,6 +64,15 @@ function rgba(color: string, alpha = 1): Rgba {
   return [parts[0]! / 255, parts[1]! / 255, parts[2]! / 255, (parts[3] ?? 1) * alpha];
 }
 
+/** Twelve hues, lighter on a dark page and darker on a light one. */
+const HUES = [205, 145, 330, 45, 265, 175, 15, 95, 295, 230, 120, 355];
+
+function communityPalette(): Rgba[] {
+  const background = rgba(cssColor("--color-bg", "#141210"));
+  const light = 0.2126 * background[0] + 0.7152 * background[1] + 0.0722 * background[2] > 0.5;
+  return HUES.map((hue) => rgba(`hsl(${hue} ${light ? 55 : 50}% ${light ? 42 : 62}%)`));
+}
+
 function readPaint(): Paint {
   const accent = cssColor("--color-accent", "#e0a14a");
   return {
@@ -86,6 +96,7 @@ export function GraphGpu({
   onZoom,
   onInspect,
   onOpen,
+  analysis,
 }: {
   nodes: GraphNode[];
   edges: Edge[];
@@ -96,6 +107,8 @@ export function GraphGpu({
   onZoom: (percent: number) => void;
   onInspect: (id: string) => void;
   onOpen: (id: string) => void;
+  /** Community and importance per document; empty to draw every node alike. */
+  analysis: Map<string, NodeAnalysis>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLCanvasElement>(null);
@@ -118,11 +131,14 @@ export function GraphGpu({
     onZoom,
     onInspect,
     onOpen,
+    analysis,
+    clusterKey: "",
     drawLabels: () => undefined as void,
   });
   live.current.onZoom = onZoom;
   live.current.onInspect = onInspect;
   live.current.onOpen = onOpen;
+  live.current.analysis = analysis;
 
   // One cosmos.gl instance for the life of the view.
   useEffect(() => {
@@ -319,8 +335,15 @@ export function GraphGpu({
     const colors = new Float32Array(state.nodes.length * 4);
     const strokes = new Float32Array(state.nodes.length * 4);
     const sizes = new Float32Array(state.nodes.length);
+    const palette = communityPalette();
     state.nodes.forEach((node, index) => {
-      const fill = index === active ? paint.accent : paint.elevated;
+      const found = state.analysis.get(node.id);
+      // The largest communities get a colour each; the rest stay neutral.
+      const tint =
+        found && found.community >= 0 && found.community < palette.length
+          ? palette[found.community]!
+          : paint.elevated;
+      const fill = index === active ? paint.accent : tint;
       colors.set(fill, index * 4);
       // Shared targets have a fainter border.
       const stroke =
@@ -330,7 +353,9 @@ export function GraphGpu({
             ? ([paint.faint[0], paint.faint[1], paint.faint[2], 0.45] as Rgba)
             : paint.faint;
       strokes.set(stroke, index * 4);
-      sizes[index] = index === active ? 20 : node.pinned ? 15 : 12;
+      // Importance (PageRank, 0–1000) grows the node; without it every node is alike.
+      const base = found ? 9 + 15 * Math.sqrt(found.rank / 1000) : node.pinned ? 15 : 12;
+      sizes[index] = index === active ? Math.max(20, base + 4) : base;
     });
     const linkColors = new Float32Array(state.edges.length * 4);
     state.edges.forEach((edge, index) => {
@@ -344,6 +369,26 @@ export function GraphGpu({
     graph.setConfigPartial({ focusedPointIndex: active });
     graph.render();
     state.drawLabels();
+  }
+
+  /**
+   * Nodes of one community pull together in the layout, so each group sits apart and not only
+   * in its own colour. Without communities (or with them turned off) there is no such force.
+   */
+  /** Returns whether the groups changed since the last call. */
+  function applyClusters(graph: Graph): boolean {
+    const state = live.current;
+    const clusters = state.nodes.map((node) => {
+      const community = state.analysis.get(node.id)?.community;
+      return community !== undefined && community >= 0 ? community : undefined;
+    });
+    const key = clusters.map((value) => value ?? "").join(",");
+    if (key === state.clusterKey) return false;
+    state.clusterKey = key;
+    const clustered = clusters.some((value) => value !== undefined);
+    graph.setPointClusters(clustered ? clusters : []);
+    graph.setConfigPartial({ simulationCluster: clustered ? 0.25 : 0 });
+    return true;
   }
 
   /** New nodes or links: keep known positions, place new nodes around the centre. */
@@ -393,6 +438,7 @@ export function GraphGpu({
     graph.setLinks(links.subarray(0, at * 2));
     graph.setLinkStyles(styles.subarray(0, at));
     neighboursOf(state.activeId);
+    applyClusters(graph);
     paintGraph(graph);
     graph.start(fresh ? 1 : 0.3);
   }
@@ -416,6 +462,18 @@ export function GraphGpu({
     // load reads the current nodes and edges; signature says when they changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
+
+  // Communities and importance arrived or were turned on or off.
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    const moved = applyClusters(graph);
+    paintGraph(graph);
+    if (!moved) return;
+    // The groups move together: let the layout settle again, following it as before.
+    live.current.steered = false;
+    graph.start(0.4);
+  }, [analysis]);
 
   // Selection: recolour and keep the labels of the new neighbourhood.
   useEffect(() => {

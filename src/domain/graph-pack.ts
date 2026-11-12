@@ -74,3 +74,50 @@ export function unpackEdges(packed: PackedEdges): WireEdge[] {
   }
   return out;
 }
+
+/**
+ * Community and importance of the shown documents. Importance is PageRank scaled to 0–1000
+ * against the most important document shown; communities are numbered by size, largest first.
+ */
+export type PackedAnalysis = {
+  /** Record ids, one per line. */
+  ids: string;
+  /** Comma separated, one per id; -1 for none. */
+  community: string;
+  /** Comma separated, one per id, 0 to 1000. */
+  rank: string;
+};
+
+export type NodeAnalysis = { community: number; rank: number };
+
+export function packAnalysis(
+  analysis: { ids: string[]; community: number[]; rank: number[] } | null,
+  keep?: (id: string) => boolean,
+): PackedAnalysis {
+  const ids: string[] = [];
+  const community: number[] = [];
+  const raw: number[] = [];
+  if (analysis) {
+    analysis.ids.forEach((id, index) => {
+      if (keep && !keep(id)) return;
+      ids.push(id);
+      community.push(analysis.community[index] ?? -1);
+      raw.push(analysis.rank[index] ?? 0);
+    });
+  }
+  const top = raw.reduce((max, value) => (value > max ? value : max), 0);
+  const rank = raw.map((value) => (top > 0 ? Math.round((value / top) * 1000) : 0));
+  return { ids: ids.join(LINE), community: community.join(","), rank: rank.join(",") };
+}
+
+export function unpackAnalysis(packed: PackedAnalysis | undefined): Map<string, NodeAnalysis> {
+  const out = new Map<string, NodeAnalysis>();
+  if (!packed?.ids) return out;
+  const ids = packed.ids.split(LINE);
+  const community = packed.community.split(",").map(Number);
+  const rank = packed.rank.split(",").map(Number);
+  ids.forEach((id, index) => {
+    out.set(id, { community: community[index] ?? -1, rank: rank[index] ?? 0 });
+  });
+  return out;
+}

@@ -538,6 +538,11 @@ the rest of the services. While Grafeno is not answering, or **Grafo** is
 paused in **Plugins**, both hide and everything else works as usual. See
 [docs/GRAPH.md](docs/GRAPH.md).
 
+Colours show communities, groups of documents linked mostly among
+themselves, and larger nodes are the most important ones by the links they
+receive. Grafeno computes both in the background. **Comunidades** in the
+graph's toolbar turns them off or on.
+
 ### Keyboard shortcuts
 
 | Keys   | Action                                               |

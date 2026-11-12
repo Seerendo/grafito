@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { GraphGpu, type GraphApi } from "./GraphGpu";
 import { gpuGraphSupported } from "@/app/webgl";
+import type { NodeAnalysis } from "@/domain/graph-pack";
 import { Locate, Minus, Plus } from "lucide-react";
 import { graphClickIntent, type GraphNode } from "@/domain/vault/graph";
 import { useGraphEdges, vaultVersion, type GraphScope } from "@/app/graph";
@@ -111,11 +112,23 @@ export function GraphView({
   const [local, setLocal] = useState(false);
   // The GPU draws the graph when the browser has WebGL2; the 2D canvas otherwise.
   const [gpu] = useState(gpuGraphSupported);
+  // Colour by community and size by importance, remembered in this browser.
+  const [tint, setTint] = useState(readTint);
+  const toggleTint = () => {
+    setTint((value) => {
+      try {
+        localStorage.setItem(TINT_KEY, value ? "0" : "1");
+      } catch {
+        // Private windows may refuse storage; the choice still applies now.
+      }
+      return !value;
+    });
+  };
   const [seed, setSeed] = useState(0);
   const [zoom, setZoom] = useState(100);
 
   // Links come from Grafeno; only those between nodes shown here are drawn.
-  const { edges: links } = useGraphEdges(
+  const { edges: links, analysis } = useGraphEdges(
     source?.scope ?? {},
     source ? source.version : vaultVersion(ownDocuments, ownPortfolios),
     true,
@@ -829,6 +842,16 @@ export function GraphView({
               <Locate className="size-4" />
             </button>
           </div>
+          {gpu && analysis.size > 0 ? (
+            <button
+              type="button"
+              aria-pressed={tint}
+              onClick={toggleTint}
+              className={`h-10 rounded-md px-3 text-sm ${tint ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"}`}
+            >
+              {t("Comunidades")}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setSeed((value) => value + 1)}
@@ -859,6 +882,7 @@ export function GraphView({
                 selectRef.current(id);
               }}
               onOpen={(id) => openRef.current(id)}
+              analysis={tint ? analysis : NO_TINT}
             />
           ) : (
             <canvas
@@ -874,6 +898,17 @@ export function GraphView({
 }
 
 type Extra = { node: GraphNode; open?: () => void };
+
+const TINT_KEY = "grafito.graph.communities";
+const NO_TINT = new Map<string, NodeAnalysis>();
+
+function readTint(): boolean {
+  try {
+    return localStorage.getItem(TINT_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Extra owned-vault graph nodes: portfolios with incoming/outgoing links and visible shared

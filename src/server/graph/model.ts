@@ -259,3 +259,44 @@ export function edgeRows(rows: unknown[][]): GraphEdgeRow[] {
   }
   return out;
 }
+
+/**
+ * Communities and importance. Links go through Title and Ref nodes, so PageRank would score
+ * those instead of the documents: each analysis first writes direct `linked` edges between the
+ * documents (as resolved now), then runs Louvain and PageRank on them and stores the results on
+ * the nodes.
+ */
+export const EDGE_LINKED = "linked";
+const DOCUMENT_LABELS = "['Note', 'File', 'Portfolio']";
+export const ANALYSIS_STEPS = [
+  `MATCH ()-[l:${EDGE_LINKED}]->() DELETE l`,
+  `MATCH (a)-[:wiki]->(:Title)<-[:titled]-(b) WHERE a <> b MERGE (a)-[:${EDGE_LINKED}]->(b)`,
+  `MATCH (a)-[:referencia|llama]->(:Ref)<-[:is]-(b) WHERE a <> b MERGE (a)-[:${EDGE_LINKED}]->(b)`,
+  `CALL algo.louvain({labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', write: 'community'}) YIELD nodes RETURN nodes`,
+  `CALL algo.pageRank({labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', write: 'rank'}) YIELD nodes RETURN nodes`,
+];
+export const READ_ANALYSIS = `MATCH (n) WHERE n.rank IS NOT NULL AND n.gid IS NOT NULL RETURN n.gid, n.community, n.rank`;
+
+/** Per document: its community (numbered by size, largest first) and its PageRank score. */
+export type Analysis = { ids: string[]; community: number[]; rank: number[] };
+
+export function analysisRows(rows: unknown[][]): Analysis {
+  const items: { id: string; community: number; rank: number }[] = [];
+  for (const [id, community, rank] of rows) {
+    if (typeof id !== "string" || typeof rank !== "number") continue;
+    items.push({ id, community: typeof community === "number" ? community : -1, rank });
+  }
+  // Renumber communities by size so colours stay stable for the largest groups.
+  const sizes = new Map<number, number>();
+  for (const item of items) sizes.set(item.community, (sizes.get(item.community) ?? 0) + 1);
+  const order = [...sizes.entries()]
+    .filter(([community]) => community >= 0)
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .map(([community]) => community);
+  const renumber = new Map(order.map((community, index) => [community, index]));
+  return {
+    ids: items.map((item) => item.id),
+    community: items.map((item) => renumber.get(item.community) ?? -1),
+    rank: items.map((item) => item.rank),
+  };
+}

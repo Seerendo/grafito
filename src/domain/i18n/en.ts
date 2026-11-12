@@ -1404,4 +1404,6 @@ export const en: Record<string, string> = {
   Reconstruir: "Rebuild",
   "No se pudo leer el estado del grafo.": "Could not read the graph status.",
   "No se pudo reconstruir el grafo.": "Could not rebuild the graph.",
+  Comunidades: "Communities",
+  "Con comunidades": "With communities",
 };

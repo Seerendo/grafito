@@ -41,6 +41,21 @@ export function grafeno(): Grafeno | null {
   return client;
 }
 
+const SLOW_MS = 120_000;
+let slow: Grafeno | null | undefined;
+
+/** A client for the background analysis, whose queries take seconds on a large vault. */
+export function grafenoSlow(): Grafeno | null {
+  if (slow !== undefined) return slow;
+  const url = grafenoUrl();
+  const timed: typeof fetch = (input, init) =>
+    fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(SLOW_MS) });
+  slow = url
+    ? new Grafeno({ url, token: process.env.GRAFENO_TOKEN?.trim() || undefined, fetch: timed })
+    : null;
+  return slow;
+}
+
 /** Whether the engine answers, checked at most every 10 s. */
 export async function grafenoReachable(): Promise<boolean> {
   const engine = grafeno();

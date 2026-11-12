@@ -93,6 +93,35 @@ A link to something in another person's share points at a `Ref` with the
 `share` property; the browser resolves it with the shared trees it already
 has, as before.
 
+## Communities and importance
+
+Grafeno also analyses each vault (`src/server/graph/analysis.ts`):
+
+- **Communities:** Louvain finds groups of documents linked more among
+  themselves than with the rest. The twelve largest each get a colour in the
+  graph, and the layout pulls each group together.
+- **Importance:** PageRank scores each document by the links it receives and
+  by how important their sources are. More important documents are drawn
+  larger.
+
+Links go through `Title` and `Ref` nodes, so PageRank on them would score
+those nodes instead of the documents. Each analysis first writes direct
+`linked` edges between documents (as resolved at that moment), then runs
+Louvain and PageRank on them in Grafeno and stores the result on the nodes.
+Grafito keeps the result in `graph_analysis` (migration 0039), so every app
+instance shows the same one and a document written since keeps its colour
+until the next analysis.
+
+A vault is analysed again only when it changed and at most every 30 s,
+during the background pass. On 8,000 documents and 25,000 links an analysis
+takes about five seconds, most of it writing the `linked` edges. A share or
+public link only receives the communities of the documents it shows.
+
+**Comunidades** in the graph's toolbar turns the colours and sizes off or on
+in that browser. **Administración → Monitorización y logs → Grafo** shows how
+many vaults have been analysed; **Reconstruir** also analyses them again.
+The 2D canvas used without WebGL2 draws every node alike.
+
 ## Drawing
 
 The browser draws the graph on the GPU with cosmos.gl (WebGL2,

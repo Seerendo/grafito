@@ -838,6 +838,13 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   on top. `GraphView` keeps the toolbar, the node card and the 2D canvas as
   the fallback without WebGL2 (`app/webgl.ts`). Its graph data is memoized,
   because zooming re-renders it many times a second.
+- **Communities and importance:** `server/graph/analysis.ts` writes direct
+  `linked` edges in Grafeno and runs Louvain and PageRank on them, at most
+  every 30 s per changed vault, and keeps the result in `graph_analysis`
+  (migration 0039). `graphEdges` sends it packed with the links
+  (`packAnalysis`), only for the records the reader sees. `GraphGpu` colours
+  the twelve largest communities, sizes nodes by PageRank and pulls each
+  community together with cosmos.gl's cluster force.
 
 ## Editor colors
 

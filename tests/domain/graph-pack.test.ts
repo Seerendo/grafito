@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { packEdges, unpackEdges, type WireEdge } from "../../src/domain/graph-pack.ts";
+import {
+  packAnalysis,
+  packEdges,
+  unpackAnalysis,
+  unpackEdges,
+  type WireEdge,
+} from "../../src/domain/graph-pack.ts";
 
 /** Graph links on the wire: each id once, five numbers per link. */
 
@@ -17,4 +23,17 @@ test("los vínculos llegan iguales y cada id viaja una vez", () => {
   assert.equal(packed.edges.split(",").length, edges.length * 5);
   assert.deepEqual(unpackEdges(packed), edges);
   assert.deepEqual(unpackEdges({ ids: "", shares: "", edges: "" }), []);
+});
+
+test("comunidad e importancia viajan solo para lo visible, escaladas a 0–1000", () => {
+  const packed = packAnalysis(
+    { ids: ["a", "b", "c"], community: [0, 1, 0], rank: [0.5, 0.25, 0.1] },
+    (id) => id !== "c",
+  );
+  const back = unpackAnalysis(packed);
+  assert.deepEqual([...back.keys()], ["a", "b"]);
+  assert.deepEqual(back.get("a"), { community: 0, rank: 1000 });
+  assert.deepEqual(back.get("b"), { community: 1, rank: 500 });
+  assert.equal(unpackAnalysis(packAnalysis(null)).size, 0);
+  assert.equal(unpackAnalysis(undefined).size, 0);
 });

@@ -14,7 +14,8 @@ import {
 import { readGraphStatus, requestGraphRebuild, startGraphSync } from "@/server/graph/sync";
 import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
-import { packEdges, type PackedEdges } from "@/domain/graph-pack";
+import { packAnalysis, packEdges, type PackedEdges } from "@/domain/graph-pack";
+import { readAnalysis } from "@/server/graph/analysis";
 import type { IncomingLink } from "@/server/graph/read";
 import { publicTokenOwner, publicTreeFor, sharedTreeForUser, shareForUser } from "@/server/share";
 
@@ -67,6 +68,7 @@ export const graphEdges = createServerFn({ method: "POST" })
         return {
           ok: true as const,
           edges: packEdges(await vaultEdges(sql, context.userId)),
+          analysis: packAnalysis(await readAnalysis(sql, context.userId)),
           ready: await graphReady(sql, context.userId),
         };
       }
@@ -75,9 +77,12 @@ export const graphEdges = createServerFn({ method: "POST" })
         ? await sharedTreeForUser(sql, context.userId, data.shareId, false)
         : null;
       if (!share || !response) return { ok: false as const, off: false as const };
+      const visible = visibleIds(treeOf(response));
       return {
         ok: true as const,
-        edges: packEdges(await edgesWithin(sql, share.ownerId, visibleIds(treeOf(response)))),
+        edges: packEdges(await edgesWithin(sql, share.ownerId, visible)),
+        // Only what the reader sees: a share does not reveal the rest of its owner's vault.
+        analysis: packAnalysis(await readAnalysis(sql, share.ownerId), (id) => visible.has(id)),
         ready: await graphReady(sql, share.ownerId),
       };
     } catch (error) {
@@ -141,6 +146,7 @@ export const publicGraph = createServerFn({ method: "POST" })
         return {
           ok: true as const,
           edges: EMPTY,
+          analysis: packAnalysis(null),
           items: await incomingLinks(sql, owner, { kind: "doc", id: data.id }, visible),
           ready: true,
         };
@@ -148,6 +154,7 @@ export const publicGraph = createServerFn({ method: "POST" })
       return {
         ok: true as const,
         edges: packEdges(await edgesWithin(sql, owner, visible)),
+        analysis: packAnalysis(await readAnalysis(sql, owner), (id) => visible.has(id)),
         items: [] as IncomingLink[],
         ready: await graphReady(sql, owner),
       };
