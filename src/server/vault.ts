@@ -9,6 +9,7 @@ import { ensureFileBaseline, recordFileVersion, recordVersion, versionKeys } fro
 import { noteChange } from "./notify";
 import { purgeComments } from "./comments";
 import { purgeSignatures } from "./signature";
+import { nudgeGraph } from "./graph/nudge";
 
 /**
  * Authoritative per-user server vault for browser synchronization, REST API and AI. Each
@@ -87,6 +88,8 @@ export async function nextRevision(sql: Sql, userId: string): Promise<number> {
     on conflict (user_id) do update set revision = vault_state.revision + 1
     returning revision
   `;
+  // Every vault write reserves a revision first: the graph follows from here.
+  nudgeGraph(userId);
   return Number(rows[0]!.revision);
 }
 

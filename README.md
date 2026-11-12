@@ -533,6 +533,11 @@ pass has got, and **Reindexar** walks every document again.
 The graph button in the header, or **Ctrl+G**, shows notes and files as nodes
 and links as edges. Click a node to open it.
 
+The graph and **Menciones** come from Grafeno, the graph engine started with
+the rest of the services. While Grafeno is not answering, or **Grafo** is
+paused in **Plugins**, both hide and everything else works as usual. See
+[docs/GRAPH.md](docs/GRAPH.md).
+
 ### Keyboard shortcuts
 
 | Keys   | Action                                               |
@@ -901,6 +906,7 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `GRAFITO_ENCRYPTION_KEY_PREVIOUS`                             | Previous key during a rotation                                                                                | —                                                                                                 |
 | `BETTER_AUTH_TRUSTED_ORIGINS`                                 | Other sites allowed to send sign-ins, comma-separated                                                         | The address each request was sent to, `BETTER_AUTH_URL` and localhost                             |
 | `COLLABORA_URL`, `COLLABORA_INTERNAL_URL`, `GRAFITO_WOPI_URL` | Office editor (see [docs/OFFICE.md](docs/OFFICE.md))                                                          | Editor off                                                                                        |
+| `GRAFENO_URL`, `GRAFENO_TOKEN`                                | Graph engine (see [docs/GRAPH.md](docs/GRAPH.md))                                                             | `http://grafeno:7810` with Docker Compose; graph off without it                                   |
 | `GRAFITO_GIT_HOSTS`, `GRAFITO_GIT_SYNC_MINUTES`               | Git servers allowed besides github.com and gitlab.com; minutes between syncs (see [docs/GIT.md](docs/GIT.md)) | Only github.com and gitlab.com; 2                                                                 |
 | `NODE_EXTRA_CA_CERTS`                                         | CA file for a Git server with a certificate from your own authority                                           | Public authorities only                                                                           |
 | `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_SSL_TERMINATION`          | Only for a `COLLABORA_URL` on an address of its own (see [docs/OFFICE.md](docs/OFFICE.md#servers-and-https))  | `localhost:*`; `false`                                                                            |
@@ -947,6 +953,8 @@ docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --packa
   and licensing.
 - [docs/MAIL.md](docs/MAIL.md): email (SMTP), new users' one-time access and
   change notifications.
+- [docs/GRAPH.md](docs/GRAPH.md): the graph engine (Grafeno), how vaults are
+  copied into it and how to rebuild it.
 - [docs/GIT.md](docs/GIT.md): syncing portfolios with GitHub or GitLab,
   including a self-hosted (institutional) GitLab.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,

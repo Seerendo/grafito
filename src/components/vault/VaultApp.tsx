@@ -49,6 +49,7 @@ import { NotePdfHost } from "./NotePdf";
 import { ingestExternalFiles, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { t } from "@/app/i18n";
 import { useFullscreen, watchFullscreen } from "@/app/fullscreen";
+import { treeVersion, useGraphAvailable } from "@/app/graph";
 
 type Pane = "files" | "note" | "graph" | "links";
 
@@ -122,7 +123,13 @@ function VaultWorkspace() {
   const setPalette = useVault((state) => state.setPalette);
   const createDocument = useVault((state) => state.createDocument);
   const selectedPortfolioId = useVault((state) => state.selectedPortfolioId);
-  const canGraph = useCan(PERMISSION.graphView);
+  // The graph needs the permission, the Grafo plugin and Grafeno answering.
+  const canGraph = useGraphAvailable();
+  const graphOnRef = useRef(canGraph);
+  graphOnRef.current = canGraph;
+  useEffect(() => {
+    if (!canGraph && useVault.getState().graph) setGraph(false);
+  }, [canGraph, setGraph]);
   const canCreate = useCan(PERMISSION.notesCreate);
   const canAddFiles = useCan(PERMISSION.filesUpload) || canCreate;
 
@@ -147,6 +154,8 @@ function VaultWorkspace() {
         portfolios: sharedTree.portfolios,
         activeId: sharedDoc,
         onSelect: (id) => useSharedView.getState().openShared(sharedTree, id),
+        scope: { shareId: sharedTree.share.id },
+        version: treeVersion(sharedTree),
       }}
     />
   ) : (
@@ -290,6 +299,7 @@ function VaultWorkspace() {
         useAiChat.getState().toggle();
       } else if (key === "g") {
         event.preventDefault();
+        if (!graphOnRef.current) return;
         useVault.getState().toggleGraph();
         setPane(useVault.getState().graph ? "graph" : "note");
       }

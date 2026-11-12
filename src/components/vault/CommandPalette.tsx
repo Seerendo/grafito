@@ -10,6 +10,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { t } from "@/app/i18n";
 import { Marked, PassageLines } from "./SearchPhrase";
 import { useContentSearch } from "./use-content-search";
+import { useGraphAvailable } from "@/app/graph";
 
 export function CommandPalette({
   onOpenNote,
@@ -27,6 +28,7 @@ export function CommandPalette({
   const setActive = useVault((state) => state.setActive);
   const createDocument = useVault((state) => state.createDocument);
   const toggleGraph = useVault((state) => state.toggleGraph);
+  const graphOn = useGraphAvailable();
   const setMode = useVault((state) => state.setMode);
   const mode = useVault((state) => state.mode);
   const setDialog = useVault((state) => state.setDialog);
@@ -124,7 +126,7 @@ export function CommandPalette({
                 <Row icon={<Link2 className="size-4" />} label={t("Vincular")} />
               </Command.Item>
             ) : null}
-            {can(PERMISSION.graphView) ? (
+            {graphOn ? (
               <Command.Item
                 value="abrir grafo"
                 onSelect={() => {

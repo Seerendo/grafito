@@ -31,6 +31,7 @@ import { linkKey, type TextAnchor } from "@/domain/vault/anchor";
 import { asDocuments, canEditSharedPortfolio } from "@/components/share/shared-tree";
 import { SharedContext } from "@/components/share/SharedContext";
 import { Comments } from "./Comments";
+import { treeVersion, useGraphAvailable, useIncomingLinks, vaultVersion } from "@/app/graph";
 
 const KIND_LABEL: Record<ManualKind, string> = {
   referencia: "referencia",
@@ -111,6 +112,14 @@ export function ContextPane({
     sharedTree && sharedDocId
       ? sharedTree.documents.find((item) => item.id === sharedDocId)
       : undefined;
+  // Mentions come from Grafeno; without the graph the section is hidden.
+  const graphOn = useGraphAvailable();
+  const incoming = useIncomingLinks(
+    !sharedDoc && document ? { id: document.id } : null,
+    {},
+    vaultVersion(documents, portfolios),
+    graphOn,
+  );
   if (sharedTree && sharedDoc) {
     const sharedDocuments = asDocuments(sharedTree.documents).map((item) =>
       sharedBody && item.id === sharedBody.id
@@ -143,6 +152,8 @@ export function ContextPane({
             document={opened}
             documents={sharedDocuments}
             portfolios={sharedTree.portfolios}
+            scope={{ shareId: sharedTree.share.id }}
+            version={treeVersion(sharedTree)}
             onOpen={openSharedTarget}
             onLink={
               canLinkShared
@@ -200,39 +211,43 @@ export function ContextPane({
     link,
     target: resolveLink(link, documents, portfolios, trees),
   }));
-  const incomingWiki = documents
-    .filter((item) => item.id !== document.id && item.kind === "markdown")
-    .flatMap((item) => {
-      const hit = extractWikiLinks(item.content).some(
-        (title) => title.toLowerCase() === document.title.toLowerCase(),
-      );
-      if (!hit) return [];
-      return [
-        {
-          id: item.id,
-          title: item.title,
-          detail: backlinkLine(item.content, document.title),
-          via: "wiki" as const,
-        },
-      ];
-    });
-  const incomingManual = documents
-    .filter((item) => item.id !== document.id)
-    .flatMap((item) =>
-      item.links
-        .filter((entry) => entry.targetId === document.id)
-        .map((link) => ({
-          id: item.id,
-          title: item.title,
-          // Source PDF phrase and page.
-          detail: link.anchor
-            ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»`
-            : KIND_LABEL[link.kind],
-          via: link.kind,
-          key: linkKey(link),
-          anchor: link.anchor,
-        })),
-    );
+  const byId = new Map(documents.map((item) => [item.id, item]));
+  const incomingWiki = (incoming ?? []).flatMap((entry) => {
+    const item = entry.kind === "wiki" ? byId.get(entry.source) : undefined;
+    if (!item || item.id === document.id) return [];
+    return [
+      {
+        id: item.id,
+        title: item.title,
+        detail: backlinkLine(item.content, document.title),
+        via: "wiki" as const,
+      },
+    ];
+  });
+  const incomingManual = (incoming ?? []).flatMap((entry) => {
+    const item = entry.kind === "wiki" ? undefined : byId.get(entry.source);
+    if (!item || item.id === document.id || entry.kind === "wiki") return [];
+    const anchor = entry.anchor ? JSON.stringify(entry.anchor) : "";
+    const link = item.links.find(
+      (candidate) =>
+        candidate.targetId === document.id &&
+        candidate.kind === entry.kind &&
+        (candidate.anchor ? JSON.stringify(candidate.anchor) : "") === anchor,
+    ) ?? { targetId: document.id, kind: entry.kind, anchor: entry.anchor };
+    return [
+      {
+        id: item.id,
+        title: item.title,
+        // Source PDF phrase and page.
+        detail: link.anchor
+          ? `${t("pág. {0}", { 0: link.anchor.page })} · «${link.anchor.exact}»`
+          : KIND_LABEL[link.kind],
+        via: link.kind,
+        key: linkKey(link),
+        anchor: link.anchor,
+      },
+    ];
+  });
   const tags = document.kind === "markdown" ? extractTags(document.content) : [];
 
   const jump = (id: string) => {
@@ -393,44 +408,46 @@ export function ContextPane({
         </Section>
       ) : null}
 
-      <Section
-        title={t("Menciones")}
-        icon={<ArrowDownLeft className="size-3.5" />}
-        count={incomingWiki.length + incomingManual.length}
-        fold={{ open: openSections.menciones, onToggle: () => toggleSection("menciones") }}
-      >
-        {incomingWiki.length + incomingManual.length === 0 ? (
-          <Empty>{t("Nadie apunta a este documento.")}</Empty>
-        ) : (
-          <ul className="space-y-1">
-            {[...incomingManual, ...incomingWiki].map((item) => (
-              <li key={`${item.via}-${item.id}-${"key" in item ? item.key : ""}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Navigate to the linked PDF phrase after opening.
-                    if ("anchor" in item && item.anchor && !holdGraph)
-                      setFocusAnchor({ docId: item.id, anchor: item.anchor });
-                    choose(item.id);
-                  }}
-                  onDoubleClick={() => onOpenNote(item.id)}
-                  className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated"
-                >
-                  <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm text-fg">{item.title}</span>
-                    {item.detail ? (
-                      <span className="mt-0.5 line-clamp-2 block text-xs text-faint">
-                        {t(item.detail)}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+      {graphOn ? (
+        <Section
+          title={t("Menciones")}
+          icon={<ArrowDownLeft className="size-3.5" />}
+          count={incomingWiki.length + incomingManual.length}
+          fold={{ open: openSections.menciones, onToggle: () => toggleSection("menciones") }}
+        >
+          {incomingWiki.length + incomingManual.length === 0 ? (
+            <Empty>{t("Nadie apunta a este documento.")}</Empty>
+          ) : (
+            <ul className="space-y-1">
+              {[...incomingManual, ...incomingWiki].map((item) => (
+                <li key={`${item.via}-${item.id}-${"key" in item ? item.key : ""}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Navigate to the linked PDF phrase after opening.
+                      if ("anchor" in item && item.anchor && !holdGraph)
+                        setFocusAnchor({ docId: item.id, anchor: item.anchor });
+                      choose(item.id);
+                    }}
+                    onDoubleClick={() => onOpenNote(item.id)}
+                    className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated"
+                  >
+                    <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm text-fg">{item.title}</span>
+                      {item.detail ? (
+                        <span className="mt-0.5 line-clamp-2 block text-xs text-faint">
+                          {t(item.detail)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      ) : null}
 
       <Section
         title={t("Comentarios")}

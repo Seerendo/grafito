@@ -4,6 +4,7 @@ import type { TextAnchor } from "@/domain/vault/anchor";
 import { backlinkLine, extractHeadings, extractWikiLinks, findByTitle } from "@/domain/vault/links";
 import type { Document, ManualKind, ManualLink } from "@/domain/vault/types";
 import { t } from "@/app/i18n";
+import { useGraphAvailable, useIncomingLinks, usePublicGraph, type GraphScope } from "@/app/graph";
 
 const KIND_LABEL: Record<ManualKind, string> = { referencia: "Referencia", llama: "Invoca" };
 
@@ -24,6 +25,8 @@ export function SharedContext({
   onOpen,
   onLink,
   onUnlink,
+  scope,
+  version,
 }: {
   document: Document;
   documents: Document[];
@@ -31,7 +34,16 @@ export function SharedContext({
   onOpen: (id: string, anchor?: TextAnchor) => void;
   onLink?: () => void;
   onUnlink?: (link: ManualLink) => void;
+  /** The share or public link the document belongs to, for its mentions. */
+  scope: GraphScope;
+  /** Changes when the share's content changes. */
+  version: string;
 }) {
+  // Mentions come from Grafeno: members ask with their session, a public link with its token.
+  const memberGraph = useGraphAvailable(!scope.token);
+  const publicGraphOn = usePublicGraph(scope.token);
+  const graphOn = scope.token ? publicGraphOn : memberGraph;
+  const mentions = useIncomingLinks({ id: document.id }, scope, version, graphOn);
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const outgoing = [
     ...(document.kind === "markdown"
@@ -62,29 +74,23 @@ export function SharedContext({
         : [];
     }),
   ];
-  const incoming = documents
-    .filter((item) => item.id !== document.id)
-    .flatMap((item) => {
-      const wiki =
-        item.kind === "markdown" &&
-        extractWikiLinks(item.content).some(
-          (title) => title.toLowerCase() === document.title.toLowerCase(),
-        );
-      const manual = item.links.find((link) => link.targetId === document.id);
-      if (!wiki && !manual) return [];
-      return [
-        {
-          id: item.id,
-          title: item.title,
-          detail: wiki
-            ? backlinkLine(item.content, document.title)
-            : manual
-              ? t(KIND_LABEL[manual.kind])
-              : "",
-          anchor: manual?.anchor,
-        },
-      ];
+  const byId = new Map(documents.map((item) => [item.id, item]));
+  const incoming: { id: string; title: string; detail: string; anchor?: TextAnchor }[] = [];
+  const listed = new Set<string>();
+  for (const entry of mentions ?? []) {
+    const item = byId.get(entry.source);
+    if (!item || item.id === document.id || listed.has(item.id)) continue;
+    listed.add(item.id);
+    incoming.push({
+      id: item.id,
+      title: item.title,
+      detail:
+        entry.kind === "wiki"
+          ? backlinkLine(item.content, document.title)
+          : t(KIND_LABEL[entry.kind]),
+      anchor: entry.anchor,
     });
+  }
 
   const jump = (id: string) =>
     window.document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -160,27 +166,29 @@ export function SharedContext({
           </ul>
         )}
       </Block>
-      <Block
-        title={t("Menciones")}
-        icon={<ArrowDownLeft className="size-3.5" />}
-        count={incoming.length}
-      >
-        {incoming.length === 0 ? (
-          <Empty>{t("Nadie apunta a este documento.")}</Empty>
-        ) : (
-          <ul>
-            {incoming.map((item) => (
-              <li key={item.id}>
-                <Row
-                  onClick={() => onOpen(item.id, item.anchor)}
-                  title={item.title}
-                  detail={item.detail}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Block>
+      {graphOn ? (
+        <Block
+          title={t("Menciones")}
+          icon={<ArrowDownLeft className="size-3.5" />}
+          count={incoming.length}
+        >
+          {incoming.length === 0 ? (
+            <Empty>{t("Nadie apunta a este documento.")}</Empty>
+          ) : (
+            <ul>
+              {incoming.map((item) => (
+                <li key={item.id}>
+                  <Row
+                    onClick={() => onOpen(item.id, item.anchor)}
+                    title={item.title}
+                    detail={item.detail}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Block>
+      ) : null}
     </div>
   );
 }

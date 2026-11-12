@@ -139,5 +139,7 @@ export async function requireLease(userId: string): Promise<Sql> {
   startGitSync();
   const { startContentIndex } = await import("@/server/index/run");
   startContentIndex();
+  const { startGraphSync } = await import("@/server/graph/sync");
+  startGraphSync();
   return sql;
 }

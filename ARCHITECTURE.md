@@ -21,6 +21,7 @@ Contributor folder conventions and the architecture review are in
 | Search              | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres                      |
 | Files               | MinIO / S3 (`S3_*`), or the `file_blob` table in Postgres                         |
 | Sessions            | Redis (`REDIS_URL`) holds session deadlines, or Postgres does                     |
+| Graph               | Grafeno (`GRAFENO_URL`); without it the graph and mentions are off                |
 | Build               | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel)         |
 
 Every external service is optional. When its variable is missing, Grafito falls
@@ -187,7 +188,7 @@ The `vault/` pieces:
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `vault/types.ts`      | Model types (Document, Portfolio, VaultFile, GraphEdge…)                                                                         |
 | `vault/links.ts`      | `[[wiki]]` links, tags, headings, word count                                                                                     |
-| `vault/graph.ts`      | Graph edges and click intent                                                                                                     |
+| `vault/graph.ts`      | Graph node type and click intent (links come from Grafeno, see `server/graph/`)                                                  |
 | `vault/portfolios.ts` | Portfolio tree                                                                                                                   |
 | `vault/migrate.ts`    | Migrates old vaults: the v1 format and `nestSamplePortfolios` (moves the sample portfolios into «Documentación», once)           |
 | `session.ts`          | Allowed session lengths                                                                                                          |
@@ -231,6 +232,7 @@ The `vault/` pieces:
 | `comments.ts` / `comments.functions.ts`                                               | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`)                                                                                                                                                                                                                                                                                                   |
 | `signature.ts` / `signature.functions.ts` / `signature-stamp.ts` / `signature-p12.ts` | PDF signature rectangles (`doc_signature`, migrations 0030 and 0033). An image is stamped with pdf-lib, or a `.p12` writes a detached PKCS#7 signature once the owner types its password. The rectangle shows a QR code and the certificate name. Neither the image, the certificate, nor the password is stored. Not a qualified signature. See [Signature trail](#signature-trail). |
 | `zip.ts` / `export.ts` / `export.functions.ts`                                        | A streamed `.zip` writer without dependencies (stored entries, data descriptors, UTF-8 names), a portfolio or the whole vault as its entries, and the signed five-minute link to download it                                                                                                                                                                                          |
+| `graph/` / `graph.functions.ts`                                                       | The graph in Grafeno: the vault model (`model.ts`), the background copy from Postgres (`sync.ts`, `graph_sync`), reads with access checks (`read.ts`), and the server functions for the graph, mentions, public links and Monitorización → Grafo. See [docs/GRAPH.md](docs/GRAPH.md).                                                                                                 |
 | `git/` / `git.functions.ts`                                                           | Git sync: GitHub and GitLab REST clients (`git/providers.ts`), the sync engine and its timer (`git/sync.ts`), and the dialog's server functions                                                                                                                                                                                                                                       |
 
 ### `src/lib/`
@@ -439,8 +441,8 @@ or sends their text:
   and the others take it, so every instance sends the same body and ETag and
   a browser re-downloads the tree only when it really changed.
 - Documents arrive `lazy` (empty `content`): `SharedViewer` asks for the text
-  when one is opened (`sharedDocContent`, `publicDocContent`), and the graph
-  and mentions use `wikiLinks`. The directory reuses a tree read less than
+  when one is opened (`sharedDocContent`, `publicDocContent`); the links
+  panel uses `wikiLinks`, and the graph and mentions come from Grafeno. The directory reuses a tree read less than
   30 s ago when opening a document.
 - `portfolioAccess` asks for one person's level in one query (it used to build
   the full member list, with every member of each invited organization), and
@@ -787,7 +789,9 @@ says there is no access (`fetchSharedTree` returns `null`) or the target is no
 longer in the share. A network error never prunes. In the graph
 (`graphExtras` in `GraphView`), portfolios with or behind a link are
 diamonds and shared targets have a dashed border; `[[wiki]]` links still
-only resolve to the owner's own notes.
+only resolve to the owner's own notes. The edges themselves come from
+Grafeno (`useGraphEdges` in `app/graph.ts`); the browser only adds these
+nodes.
 
 An editable document or note inside a workspace or another shared portfolio
 can be linked the same way, when the role has `links.manage` and the person
@@ -798,6 +802,37 @@ viewer's `shareId`. `linkKept` keeps a portfolio target in the published tree
 (a portfolio id is not a document id). A public `/p/` viewer has no
 **Vincular**. The shared graph draws document-to-document edges; portfolio
 targets show in the context pane.
+
+## Graph (Grafeno)
+
+The graph, the links between documents and **Menciones** are read from
+Grafeno, a graph engine, instead of being computed in the browser from every
+document. Postgres stays the source of truth; Grafeno holds one namespace per
+vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
+
+- **Copy:** `nextRevision` (every vault write) nudges `server/graph/sync.ts`,
+  which writes the records whose `rev` is newer than `graph_sync.rev`
+  (migration 0038), re-reading 20 revisions back because a revision is
+  reserved before its rows are written. One replica copies at a time
+  (`claimJob`). A vault Grafeno lost is copied again, and namespaces of
+  deleted owners are dropped, every five minutes.
+- **Model:** ids become UUIDs (`nodeId`); links point at a `Title` node
+  (wiki) or a `Ref` node (manual), and each document points at its own
+  `Title` (`titled`) and `Ref` (`is`), so a link resolves whenever its target
+  appears, is renamed or comes back from the trash.
+- **Reads:** a vault's edges are one GQ query (`ALL_EDGES`), kept per owner
+  until `graph_sync` moves. A share's edges are its owner's, filtered to the
+  records the reader's tree shows: asking Grafeno for thousands of ids is far
+  slower than reading the whole namespace. Mentions read adjacency
+  (`neighbors` into the `Ref` and the `Title`). Edges travel packed
+  (`domain/graph-pack.ts`).
+- **Off:** with the **Grafo** plugin paused, no `GRAFENO_URL`, or the engine
+  not answering (health checked every 10 s), `useGraphAvailable` is false:
+  the graph button, **Ctrl+G**, the graph of shares and public links and the
+  **Menciones** section hide. A failed query keeps the graph; only a network
+  failure turns it off.
+- These server functions are POST: a GET server function carries the
+  session token in its URL.
 
 ## Editor colors
 

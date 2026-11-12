@@ -18,6 +18,7 @@ import {
   updateVaultUser,
 } from "@/server/admin.functions";
 import { indexStatus, reindexContent } from "@/server/index.functions";
+import { graphStatus, rebuildGraph } from "@/server/graph.functions";
 import { intl, t } from "@/app/i18n";
 
 export type AdminView = Extract<Awaited<ReturnType<typeof adminState>>, { isAdmin: true }>;
@@ -856,6 +857,98 @@ export function IndexBoard() {
           className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
         >
           {t("Reindexar")}
+        </button>
+      </div>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {status.lastError ? <p className="text-sm text-danger">{status.lastError}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {cards.map(([label, value]) => (
+          <div key={label} className="border border-line bg-surface p-4">
+            <p className="text-xs tracking-widest text-faint uppercase">{label}</p>
+            <p className="mt-1 font-serif text-3xl">{value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Grafeno, the graph engine, and how far the vaults are copied into it. */
+export function GraphBoard() {
+  const [status, setStatus] = useState<Extract<
+    Awaited<ReturnType<typeof graphStatus>>,
+    { ok: true }
+  > | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void graphStatus()
+        .then((result) => {
+          if (!alive) return;
+          if (!result.ok) setError(t("Sin permiso."));
+          else {
+            setError("");
+            setStatus(result);
+          }
+        })
+        .catch(() => {
+          if (alive) setError(t("No se pudo leer el estado del grafo."));
+        });
+    };
+    load();
+    const timer = setInterval(load, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const rebuild = () => {
+    setBusy(true);
+    setError("");
+    void rebuildGraph()
+      .then(async (result) => {
+        if (!result.ok) {
+          setError(t("Sin permiso."));
+          return;
+        }
+        const next = await graphStatus();
+        if (next.ok) setStatus(next);
+      })
+      .catch(() => setError(t("No se pudo reconstruir el grafo.")))
+      .finally(() => setBusy(false));
+  };
+
+  if (!status && error) return <p className="text-sm text-danger">{error}</p>;
+  if (!status) return <p className="text-sm text-muted">{t("Leyendo…")}</p>;
+  const phase = !status.configured
+    ? t("Grafeno no está configurado")
+    : !status.plugin
+      ? t("Grafo pausado en Plugins")
+      : !status.reachable
+        ? t("Grafeno no responde")
+        : status.pending > 0
+          ? t("Copiando bóvedas…")
+          : t("Al día");
+  const cards = [
+    [t("Bóvedas al día"), `${status.synced} / ${status.vaults}`],
+    [t("Pendientes"), String(status.pending)],
+    [t("Motor"), status.version ? `Grafeno ${status.version}` : "Grafeno"],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-muted">{phase}</p>
+        <button
+          type="button"
+          onClick={rebuild}
+          disabled={busy || !status.configured}
+          className="ml-auto h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
+        >
+          {t("Reconstruir")}
         </button>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}

@@ -1396,4 +1396,12 @@ export const en: Record<string, string> = {
     "The certificate and its password are used once to sign this PDF and are not kept. Download the PDF to check the signature in a reader.",
   "Este PDF ya tiene una firma con certificado. Una imagen la invalidaría.":
     "This PDF already has a certificate signature. An image would invalidate it.",
+  "Grafeno no está configurado": "Grafeno is not configured",
+  "Grafo pausado en Plugins": "Graph paused in Plugins",
+  "Grafeno no responde": "Grafeno is not answering",
+  "Copiando bóvedas…": "Copying vaults…",
+  "Bóvedas al día": "Vaults up to date",
+  Reconstruir: "Rebuild",
+  "No se pudo leer el estado del grafo.": "Could not read the graph status.",
+  "No se pudo reconstruir el grafo.": "Could not rebuild the graph.",
 };

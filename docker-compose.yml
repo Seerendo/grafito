@@ -140,6 +140,10 @@ services:
       # host machine through host.docker.internal. Any other reachable address
       # (LAN IP, hostname) works as is. An empty value turns the alias off.
       GRAFITO_LOCALHOST_ALIAS: ${GRAFITO_LOCALHOST_ALIAS-host.docker.internal}
+      # Grafeno, the graph engine (the grafeno service below). An empty
+      # GRAFENO_URL turns the graph off; another address uses an engine of your own.
+      GRAFENO_URL: ${GRAFENO_URL-http://grafeno:7810}
+      GRAFENO_TOKEN: ${GRAFENO_TOKEN:-grafito-grafeno-cambia-esto}
       # Time zone for dates in emails (e.g. America/Lima). See docs/MAIL.md.
       TZ: ${TZ:-UTC}
       # Git sync (optional plugin). Servers besides github.com and gitlab.com,
@@ -266,6 +270,20 @@ services:
     volumes:
       - grafito_clamav:/var/lib/clamav
 
+  # Grafeno, the graph engine: the graph, the links between documents and the
+  # mentions. Grafito copies each vault into it (src/server/graph) and can copy
+  # them again at any time (Administración → Monitorización → Grafo), so its
+  # data is never the only copy. Its port is not published. Without it, the
+  # graph is off and the rest of Grafito works as usual.
+  grafeno:
+    build: ./docker/grafeno
+    image: grafito-grafeno:0.2.1
+    restart: unless-stopped
+    environment:
+      GRAFENO_TOKEN: ${GRAFENO_TOKEN:-grafito-grafeno-cambia-esto}
+    volumes:
+      - grafito_grafeno:/data
+
   # The front door: Grafito and the Office editor on one port (docker/gateway.conf).
   # Point your reverse proxy, or the browser, at this port.
   gateway:
@@ -286,3 +304,4 @@ volumes:
   grafito_s3:
   grafito_redis:
   grafito_clamav:
+  grafito_grafeno:

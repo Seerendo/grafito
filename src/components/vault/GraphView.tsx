@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Locate, Minus, Plus } from "lucide-react";
-import { graphClickIntent, graphEdges, type GraphNode } from "@/domain/vault/graph";
+import { graphClickIntent, type GraphNode } from "@/domain/vault/graph";
+import { useGraphEdges, vaultVersion, type GraphScope } from "@/app/graph";
 import { sharedTarget, useSharedTrees } from "@/app/shared-links";
 import { useSharedView } from "@/app/shared-view";
 import { extractHeadings, extractWikiLinks } from "@/domain/vault/links";
@@ -55,6 +56,10 @@ export type GraphSource = {
   portfolios: Portfolio[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** Where the links come from: a share or a public link. */
+  scope: GraphScope;
+  /** Changes when the shown content changes, so the links are asked again. */
+  version: string;
 };
 
 export function GraphView({
@@ -110,7 +115,16 @@ export function GraphView({
   const [seed, setSeed] = useState(0);
   const [zoom, setZoom] = useState(100);
 
-  const edges: Edge[] = graphEdges(documents);
+  // Links come from Grafeno; only those between nodes shown here are drawn.
+  const { edges: links } = useGraphEdges(
+    source?.scope ?? {},
+    source ? source.version : vaultVersion(ownDocuments, ownPortfolios),
+    true,
+  );
+  const nodeIds = new Set(documents.map((node) => node.id));
+  const edges: Edge[] = links
+    .filter((link) => nodeIds.has(link.from) && nodeIds.has(link.to))
+    .map(({ from, to, kind }) => ({ from, to, kind }));
 
   const neighborIds = new Set<string>();
   if (activeId) {

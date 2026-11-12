@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FileClock,
   FileSearch,
+  Waypoints,
   FolderOpen,
   PieChart,
   Clock,
@@ -47,6 +48,7 @@ import {
 import { setSessionTtl, storageReport } from "@/server/session.functions";
 import { AuditBoard } from "./AuditBoard";
 import {
+  GraphBoard,
   IndexBoard,
   LogsBoard,
   MonitorBoard,
@@ -90,6 +92,7 @@ type Leaf =
   | "logs"
   | "auditoria"
   | "indexacion"
+  | "grafo"
   | "espacio"
   | "fuentes"
   | "temas"
@@ -202,6 +205,7 @@ function leavesOf(
             { id: "logs" as const, label: "Logs de sistema", icon: ScrollText },
             { id: "auditoria" as const, label: "Auditoría", icon: FileClock },
             { id: "indexacion" as const, label: "Indexación", icon: FileSearch },
+            { id: "grafo" as const, label: "Grafo", icon: Waypoints },
           ]
         : []),
       ...(allowed(view, "admin.access")
@@ -489,6 +493,7 @@ export function AdminScreen() {
                 {current?.id === "monitor" && leaf === "logs" ? <LogsBoard /> : null}
                 {current?.id === "monitor" && leaf === "auditoria" ? <AuditBoard /> : null}
                 {current?.id === "monitor" && leaf === "indexacion" ? <IndexBoard /> : null}
+                {current?.id === "monitor" && leaf === "grafo" ? <GraphBoard /> : null}
                 {current?.id === "monitor" && leaf === "espacio" ? <SpacePanel /> : null}
                 {current?.id === "monitor" && leaf === "asignado" ? <AssignedSpaceBoard /> : null}
                 {current?.id === "monitor" && leaf === "fuentes" ? (
@@ -557,6 +562,7 @@ function heading(
   if (section === "monitor" && leaf === "logs") return t("Logs de sistema");
   if (section === "monitor" && leaf === "auditoria") return t("Auditoría");
   if (section === "monitor" && leaf === "indexacion") return t("Indexación");
+  if (section === "monitor" && leaf === "grafo") return t("Grafo");
   if (section === "monitor" && leaf === "espacio") return t("Espacio");
   if (section === "monitor" && leaf === "asignado") return t("Espacio asignado");
   if (section === "monitor" && leaf === "fuentes") return t("Fuentes");

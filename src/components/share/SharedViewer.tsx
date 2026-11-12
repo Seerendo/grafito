@@ -54,6 +54,7 @@ import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 import { useCan } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
+import { treeVersion, useGraphAvailable, usePublicGraph } from "@/app/graph";
 
 /**
  * Shared viewer with an index and selected document. Embedded mode uses the vault directory via
@@ -158,7 +159,11 @@ export function SharedViewer({
   const documents = useMemo(() => asDocuments(ordered), [ordered]);
   const [view, setView] = useState<"doc" | "graph">("doc");
   const [contextOpen, setContextOpen] = useState(true);
-  const graphable = ordered.length > 1;
+  // The graph needs Grafeno: members ask with their session, a public link with its token.
+  const memberGraph = useGraphAvailable(!tree.share.token);
+  const publicGraphOn = usePublicGraph(tree.share.token);
+  const graphScope = tree.share.token ? { token: tree.share.token } : { shareId: tree.share.id };
+  const graphable = ordered.length > 1 && (tree.share.token ? publicGraphOn : memberGraph);
   const showGraph = view === "graph" && graphable;
   const openDoc = (id: string) => {
     setActiveId(id);
@@ -695,6 +700,8 @@ export function SharedViewer({
                 portfolios: tree.portfolios,
                 activeId: active?.id ?? null,
                 onSelect: setActiveId,
+                scope: graphScope,
+                version: treeVersion(tree),
               }}
             />
           </div>
@@ -788,6 +795,8 @@ export function SharedViewer({
               }}
               documents={documents}
               portfolios={tree.portfolios}
+              scope={graphScope}
+              version={treeVersion(tree)}
               onOpen={(id, anchor) => {
                 if (anchor) useVault.getState().setFocusAnchor({ docId: id, anchor });
                 if (ordered.some((item) => item.id === id)) openDoc(id);

@@ -968,6 +968,17 @@ export async function grantedDocOwner(
   return item.owner_id;
 }
 
+/** Owner of a live public link, without recording an access (the graph asks on every view). */
+export async function publicTokenOwner(sql: Sql, token: string): Promise<string | null> {
+  const rows = await sql<{ owner_id: string }>`
+    select owner_id from share_item
+    where public_token = ${token} and visibility = 'public' and link_revoked_at is null
+      and (link_expires_at is null or link_expires_at > ${Date.now()})
+    limit 1
+  `;
+  return rows[0]?.owner_id ?? null;
+}
+
 /** Resolve docId's owner when a public token covers it. */
 export async function publicDocOwner(
   sql: Sql,
