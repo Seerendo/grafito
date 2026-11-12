@@ -41,6 +41,11 @@ import {
   updateNote,
 } from "@/server/vault";
 import { grantWorkspaceFolders, workspaceByOwner } from "@/server/workspace";
+import { neighbourhood, shortestPath } from "@/domain/vault/graph";
+import { readAnalysis } from "@/server/graph/analysis";
+import { edgesWithin, graphOnline, relatedDocs, vaultEdges } from "@/server/graph/read";
+import type { GraphEdgeRow } from "@/server/graph/model";
+import { vaultIndex } from "@/server/vault-index";
 import {
   assembleView,
   cleanRef,
@@ -840,6 +845,168 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         },
       };
     },
+    async graphOverview(ref: string): Promise<ToolResult> {
+      const scope = await graphScopeOf(ref);
+      if ("result" in scope) return scope;
+      const { edges, name, ids } = scope;
+      const analysis = await readAnalysis(sql, scope.ownerId);
+      const linked = new Set<string>();
+      for (const edge of edges) {
+        linked.add(edge.from);
+        linked.add(edge.to);
+      }
+      const docs = [...ids].filter((id) => scope.isDoc(id));
+      const orphans = docs.filter((id) => !linked.has(id));
+      const at = new Map((analysis?.ids ?? []).map((id, index) => [id, index]));
+      const rank = (id: string) => analysis?.rank[at.get(id) ?? -1] ?? 0;
+      const groups = new Map<number, string[]>();
+      for (const id of docs) {
+        const community = analysis?.community[at.get(id) ?? -1] ?? -1;
+        if (community < 0) continue;
+        const list = groups.get(community);
+        if (list) list.push(id);
+        else groups.set(community, [id]);
+      }
+      const communities = [...groups.values()]
+        .filter((members) => members.length > 1)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 8)
+        .map((members) => ({
+          documents: members.length,
+          main: members
+            .sort((a, b) => rank(b) - rank(a))
+            .slice(0, 4)
+            .map(name),
+        }));
+      const bridges = docs
+        .map((id) => ({ id, score: analysis?.bridge?.[at.get(id) ?? -1] ?? 0 }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map((item) => name(item.id));
+      return {
+        result: {
+          scope: scope.label,
+          documents: docs.length,
+          links: edges.length,
+          analysed: Boolean(analysis),
+          communities,
+          bridges,
+          orphans: { count: orphans.length, sample: orphans.slice(0, 10).map(name) },
+        },
+        event: { label: `Miró el grafo de ${scope.label}`, ok: true },
+      };
+    },
+    async graphNeighbors(ref: string, depth: number): Promise<ToolResult> {
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const scope = await graphScopeOf(picked.doc);
+      if ("result" in scope) return scope;
+      const levels = Math.min(3, Math.max(1, Math.round(depth) || 1));
+      const near = neighbourhood(scope.edges, picked.doc.id, levels);
+      // Distance of each document, breadth first like neighbourhood.
+      const distance = new Map<string, number>([[picked.doc.id, 0]]);
+      for (let level = 1; level <= levels; level += 1) {
+        for (const edge of scope.edges) {
+          for (const [a, b] of [
+            [edge.from, edge.to],
+            [edge.to, edge.from],
+          ] as const) {
+            if (distance.get(a) === level - 1 && !distance.has(b) && near.has(b))
+              distance.set(b, level);
+          }
+        }
+      }
+      const direct = scope.edges.filter(
+        (edge) => edge.from === picked.doc.id || edge.to === picked.doc.id,
+      );
+      const around = [...distance.entries()]
+        .filter(([id]) => id !== picked.doc.id)
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, 40)
+        .map(([id, steps]) => ({
+          ...scope.name(id),
+          distance: steps,
+          ...(steps === 1
+            ? {
+                links: direct
+                  .filter((edge) => edge.from === id || edge.to === id)
+                  .map((edge) => describeLink(edge, picked.doc.id)),
+              }
+            : {}),
+        }));
+      return {
+        result: {
+          document: showDoc(picked.doc),
+          depth: levels,
+          found: distance.size - 1,
+          shown: around.length,
+          around,
+        },
+        event: { label: `Recorrió el entorno de «${picked.doc.title}»`, ok: true },
+      };
+    },
+    async graphPath(fromRef: string, toRef: string): Promise<ToolResult> {
+      const from = await pickDoc(fromRef, "No encontró el primer documento");
+      if (!("doc" in from)) return from;
+      const to = await pickDoc(toRef, "No encontró el segundo documento");
+      if (!("doc" in to)) return to;
+      if (from.doc.ownerId !== to.doc.ownerId || from.doc.shareId !== to.doc.shareId) {
+        return fail("No buscó el camino", {
+          error:
+            "Están en sitios distintos (tu Carpeta Personal y un compartido, o dos compartidos): sus vínculos no se cruzan.",
+        });
+      }
+      const scope = await graphScopeOf(from.doc);
+      if ("result" in scope) return scope;
+      const chain = shortestPath(scope.edges, from.doc.id, to.doc.id);
+      if (!chain) {
+        return {
+          result: { connected: false, from: from.doc.title, to: to.doc.title },
+          event: { label: `No hay camino de «${from.doc.title}» a «${to.doc.title}»`, ok: true },
+        };
+      }
+      const steps = chain.map((id, index) => {
+        const next = chain[index + 1];
+        const link = next
+          ? scope.edges.find(
+              (edge) =>
+                (edge.from === id && edge.to === next) || (edge.from === next && edge.to === id),
+            )
+          : undefined;
+        return { ...scope.name(id), ...(link ? { next: describeLink(link, id) } : {}) };
+      });
+      return {
+        result: { connected: true, hops: chain.length - 1, steps },
+        event: {
+          label: `Halló un camino de ${chain.length - 1} pasos de «${from.doc.title}» a «${to.doc.title}»`,
+          ok: true,
+        },
+      };
+    },
+    async graphRelated(ref: string): Promise<ToolResult> {
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const scope = await graphScopeOf(picked.doc);
+      if ("result" in scope) return scope;
+      const rows = await relatedDocs(
+        scope.ownerId,
+        { kind: "doc", id: picked.doc.id },
+        picked.doc.shareId ? scope.ids : undefined,
+      );
+      return {
+        result: {
+          document: showDoc(picked.doc),
+          related: rows.map((row) => scope.name(row.id)),
+          ...(rows.length === 0
+            ? {
+                note: "Sin sugerencias: no comparte vecinos con otros documentos, o aún no se analizó.",
+              }
+            : {}),
+        },
+        event: { label: `Buscó relacionadas con «${picked.doc.title}»`, ok: true },
+      };
+    },
     async createDataTable(input: {
       title: string;
       portfolio?: string;
@@ -908,6 +1075,83 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     return fail("Pidió confirmación antes de eliminar", {
       error: `La persona no confirmó eliminar «${name}»: tu pregunta no lo nombraba. Pregunta por «${name}» con su sitio y espera su respuesta.`,
     });
+  }
+
+  /**
+   * The links the assistant may walk around a document: the person's own vault, or the share it
+   * came from limited to what that person sees. A ref names a document (its scope) or nothing
+   * (the Carpeta Personal).
+   */
+  async function graphScopeOf(target: AiDoc | string): Promise<
+    | ToolResult
+    | {
+        ownerId: string;
+        label: string;
+        edges: GraphEdgeRow[];
+        ids: Set<string>;
+        isDoc: (id: string) => boolean;
+        name: (id: string) => { id: string; title: string };
+      }
+  > {
+    if (!(await graphOnline(sql))) {
+      return fail("El grafo no está disponible", {
+        error: "El grafo está apagado o Grafeno no responde: no puedo recorrer los vínculos ahora.",
+      });
+    }
+    let doc: AiDoc | null = null;
+    if (typeof target === "string") {
+      if (cleanRef(target)) {
+        const picked = await pickDoc(target, "No encontró el documento");
+        if (!("doc" in picked)) return picked;
+        doc = picked.doc;
+      }
+    } else doc = target;
+    const seen = await view();
+    const shareId = doc?.shareId ?? null;
+    const ownerId = doc?.ownerId ?? userId;
+    const index = await vaultIndex(sql, ownerId);
+    const titles = new Map<string, string>();
+    const docIds = new Set<string>();
+    if (!shareId) {
+      for (const item of index?.documents ?? []) {
+        titles.set(item.id, item.title);
+        docIds.add(item.id);
+      }
+      for (const folder of index?.portfolios ?? []) titles.set(folder.id, folder.name);
+    } else {
+      for (const item of seen.docs) {
+        if (item.shareId !== shareId) continue;
+        titles.set(item.id, item.title);
+        docIds.add(item.id);
+      }
+      for (const folder of seen.folders) {
+        if (folder.shareId === shareId && folder.id) titles.set(folder.id, folder.name);
+      }
+    }
+    const ids = new Set(titles.keys());
+    const edges = shareId
+      ? await edgesWithin(sql, ownerId, ids)
+      : (await vaultEdges(sql, ownerId)).filter(
+          (edge) => !edge.shareId && ids.has(edge.from) && ids.has(edge.to),
+        );
+    const label = shareId
+      ? `«${seen.folders.find((folder) => folder.shareId === shareId && folder.id === null)?.name ?? doc?.place ?? "lo compartido"}»`
+      : "tu Carpeta Personal";
+    return {
+      ownerId,
+      label,
+      edges,
+      ids,
+      isDoc: (id) => docIds.has(id),
+      name: (id) => ({ id, title: titles.get(id) ?? id }),
+    };
+  }
+
+  /** How one link reads from a document's side: who links to whom, and how. */
+  function describeLink(edge: GraphEdgeRow, from: string) {
+    const kind =
+      edge.kind === "wiki" ? "[[enlace]]" : edge.kind === "llama" ? "invoca" : "referencia";
+    return edge.from === from ? `enlaza (${kind})` : `la enlaza (${kind})`;
   }
 
   async function pickTable(ref: string, writing: boolean): Promise<{ doc: AiDoc } | ToolResult> {

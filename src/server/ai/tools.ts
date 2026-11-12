@@ -6,6 +6,7 @@ import { openCorpus, type ToolResult } from "./corpus.ts";
 import type { VaultCaps } from "./access.ts";
 import { noteTools } from "./tools/notes.ts";
 import { tableTools } from "./tools/tables.ts";
+import { graphTools } from "./tools/graph.ts";
 import type { Tool } from "./tools/tool.ts";
 import type { ToolContext } from "./engine.ts";
 import type { ToolCall } from "./types.ts";
@@ -38,7 +39,7 @@ export function vaultTools(
 } {
   const readOnly = options.readOnly ?? false;
   const corpus = openCorpus(sql, userId, capsFor(profile, readOnly), `${profile.displayName} (IA)`);
-  const tools: Tool[] = [...noteTools, ...tableTools];
+  const tools: Tool[] = [...noteTools, ...tableTools, ...graphTools];
 
   const allowed = tools.filter(
     (tool) =>

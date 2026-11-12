@@ -843,6 +843,11 @@ granted as read) can be read and cannot be changed. It does
 not open another person's private vault. It finds notes and portfolios by name
 as well as by id. `search_notes` looks through titles and the indexed text of
 notes, tables and files, and returns a short snippet, not the file.
+With the graph on, it also answers how documents relate: `graph_overview`
+(topics, bridge and orphan documents), `graph_neighbors` (what surrounds a
+document, up to three links away), `graph_path` (the chain of links between
+two documents) and `graph_related` (documents worth linking). They only read,
+within what you can open.
 `read_note` returns at most a few thousand characters; when the file is
 already indexed, that text comes from the index. It can still extract plain
 text, Word, Excel, PowerPoint, OpenDocument and PDFs with text (not scanned

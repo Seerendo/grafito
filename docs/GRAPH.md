@@ -143,6 +143,28 @@ Migration 0040 steps every stored analysis one revision back, so vaults
 analysed before bridges existed are analysed again while their colours keep
 showing.
 
+## The assistant
+
+The AI assistant has four read-only graph tools (`server/ai/tools/graph.ts`),
+offered with the role's **Ver el grafo**:
+
+| Tool              | Answers                                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `graph_overview`  | The main communities with their most important documents, the top bridges and the orphans, of the Carpeta Personal or of a share |
+| `graph_neighbors` | What is 1 to 3 links from a document, and for the direct ones who links to whom and how                                          |
+| `graph_path`      | The shortest chain of links between two documents, each step with its kind and direction                                         |
+| `graph_related`   | Documents worth linking to one (link prediction)                                                                                 |
+
+They go through the assistant's corpus, so a document is found by id or title
+and a share or workspace only shows what that person sees. Without the graph
+they say it is unavailable, and the assistant falls back to search.
+
+Grafeno also ships an MCP server, but it is not wired to the assistant: it
+runs over stdin and opens the database file itself, which the running
+`grafeno` service already holds; its tools write agent memories, while here
+Grafeno is a copy rebuilt from Postgres; and it knows namespaces, not
+Grafito's shares and workspace grants.
+
 ## Neighbourhood and paths
 
 - **Entorno** shows the selected document and what is 1, 2 or 3 links away

@@ -43,6 +43,11 @@ function systemPrompt(
           "Para vincular una frase o una palabra de un PDF con otro documento usa link_pdf_phrase. El vínculo queda en ese PDF, en esa frase, igual que al seleccionarla a mano. No crees una nota Markdown intermedia para eso. Si la frase está en varias páginas, la herramienta te pide el número; vuelve a llamarla con page. Si el PDF no tiene texto, dilo y no inventes el vínculo. [[Título]] sigue siendo solo para enlazar notas.",
         ]
       : []),
+    ...(toolNames.includes("graph_neighbors")
+      ? [
+          "Para preguntas sobre cómo se relacionan los documentos usa las herramientas de grafo: graph_overview (temas, notas puente y huérfanas), graph_neighbors (qué rodea a un documento), graph_path (cómo se llega de uno a otro) y graph_related (qué convendría enlazar). Son de lectura: solo dicen lo que hay. Cita cada documento como [[Título]]. Si dicen que el grafo no está disponible, explícalo y responde con search_notes y read_note.",
+        ]
+      : []),
     ...(toolNames.some((name) => name.startsWith("delete_"))
       ? [
           "Para eliminar una nota, un archivo, una tabla o un portafolio, primero di el título, el sitio y que irá a la papelera (si es un portafolio, también lo que contiene) y pregunta si lo confirma. No llames a delete_note, delete_file ni delete_portfolio en ese turno. Solo llámalas cuando la persona lo confirme en un mensaje posterior. Si la herramienta pide confirmación, obedece y no digas que ya se eliminó.",
