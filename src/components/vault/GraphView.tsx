@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { GraphGpu, type GraphApi } from "./GraphGpu";
+import { Graph3d } from "./Graph3d";
 import { gpuGraphSupported } from "@/app/webgl";
 import type { NodeAnalysis } from "@/domain/graph-pack";
 import { Locate, Minus, Plus, X } from "lucide-react";
@@ -124,6 +125,18 @@ export function GraphView({
   const [mark, setMark] = useState<"orphans" | "bridges" | null>(null);
   // The GPU draws the graph when the browser has WebGL2; the 2D canvas otherwise.
   const [gpu] = useState(gpuGraphSupported);
+  // The 3D view, remembered in this browser.
+  const [depth3d, setDepth3d] = useState(readThree);
+  const toggleThree = () => {
+    setDepth3d((value) => {
+      try {
+        localStorage.setItem(THREE_KEY, value ? "0" : "1");
+      } catch {
+        // Private windows may refuse storage; the choice still applies now.
+      }
+      return !value;
+    });
+  };
   // Colour by community and size by importance, remembered in this browser.
   const [tint, setTint] = useState(readTint);
   const toggleTint = () => {
@@ -949,6 +962,16 @@ export function GraphView({
               {t("Comunidades")}
             </button>
           ) : null}
+          {gpu ? (
+            <button
+              type="button"
+              aria-pressed={depth3d}
+              onClick={toggleThree}
+              className={`h-10 rounded-md px-3 text-sm ${depth3d ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"}`}
+            >
+              3D
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setSeed((value) => value + 1)}
@@ -980,7 +1003,28 @@ export function GraphView({
           onKeyDown={onStageKey}
           className="relative min-h-0 flex-1 outline-none select-none"
         >
-          {gpu ? (
+          {gpu && depth3d ? (
+            <Graph3d
+              nodes={visibleNotes}
+              edges={visibleEdges}
+              signature={signature}
+              activeId={activeId}
+              apiRef={apiRef}
+              onZoom={(percent) => setZoom((prev) => (prev === percent ? prev : percent))}
+              onInspect={(id) => {
+                skipReveal.current = true;
+                selectRef.current(id);
+              }}
+              onOpen={(id) => openRef.current(id)}
+              analysis={tint ? analysis : NO_TINT}
+              path={path}
+              marked={marked}
+              onPathTo={(id) => {
+                setPathOpen(true);
+                setPathTo(id);
+              }}
+            />
+          ) : gpu ? (
             <GraphGpu
               nodes={visibleNotes}
               edges={visibleEdges}
@@ -1128,6 +1172,15 @@ function PathBar({
 }
 
 const TINT_KEY = "grafito.graph.communities";
+const THREE_KEY = "grafito.graph.3d";
+
+function readThree(): boolean {
+  try {
+    return localStorage.getItem(THREE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 const NO_TINT = new Map<string, NodeAnalysis>();
 
 function readTint(): boolean {

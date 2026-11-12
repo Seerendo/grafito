@@ -23,6 +23,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The same Grafeno SDK the Docker image installs: its latest release.
+      - run: npm install --no-save --no-audit --no-fund @grafenodb/client@latest
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm run lint

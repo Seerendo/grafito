@@ -5,6 +5,9 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
+# Grafeno's SDK follows its latest release at every build instead of the lockfile's version.
+# The app checks at runtime that it speaks the engine's API (server/graph/grafeno.ts).
+RUN npm install --no-save --no-audit --no-fund @grafenodb/client@latest
 
 COPY . .
 # Without DATABASE_URL, build-time migrations are skipped.

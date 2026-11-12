@@ -5,10 +5,12 @@ import { parseLinks } from "@/server/vault-index";
 import {
   grafeno,
   grafenoReachable,
+  grafenoProblem,
   grafenoVersion,
   markGrafenoDown,
   namespacePrefix,
   ownerNamespace,
+  sdkVersion,
 } from "./grafeno";
 import { chunkOps, docOps, portfolioOps, removeOps } from "./model";
 import { onGraphNudge } from "./nudge";
@@ -277,6 +279,9 @@ export type GraphSyncStatus = {
   version: string;
   /** Vaults with communities and importance computed. */
   analyzed: number;
+  /** The SDK version in this build, and why the engine is not used if it answers but cannot be. */
+  sdk: string;
+  problem: string;
 };
 
 export async function readGraphStatus(sql: Sql): Promise<GraphSyncStatus> {
@@ -306,5 +311,7 @@ export async function readGraphStatus(sql: Sql): Promise<GraphSyncStatus> {
     lastSyncedAt: last > 0 ? last : null,
     version: grafenoVersion(),
     analyzed: Number(analyzed[0]?.n ?? 0),
+    sdk: sdkVersion(),
+    problem: grafenoProblem(),
   };
 }

@@ -938,6 +938,7 @@ export function GraphBoard() {
     [t("Pendientes"), String(status.pending)],
     [t("Con comunidades"), `${status.analyzed} / ${status.vaults}`],
     [t("Motor"), status.version ? `Grafeno ${status.version}` : "Grafeno"],
+    ["SDK", status.sdk],
   ] as const;
   return (
     <div className="space-y-4">
@@ -953,6 +954,7 @@ export function GraphBoard() {
         </button>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {status.problem ? <p className="text-sm text-danger">{status.problem}</p> : null}
       {status.lastError ? <p className="text-sm text-danger">{status.lastError}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         {cards.map(([label, value]) => (

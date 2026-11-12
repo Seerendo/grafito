@@ -1,4 +1,4 @@
-import { Grafeno } from "@grafenodb/client";
+import { CLIENT_VERSION, Grafeno } from "@grafenodb/client";
 import { namespaceFor } from "./model.ts";
 
 /**
@@ -11,7 +11,7 @@ const HEALTH_MS = 10_000;
 const TIMEOUT_MS = 5_000;
 
 let client: Grafeno | null | undefined;
-let health: { at: number; ok: boolean; version: string } | null = null;
+let health: { at: number; ok: boolean; version: string; problem: string } | null = null;
 let probing: Promise<boolean> | null = null;
 
 export function grafenoUrl(): string | null {
@@ -56,19 +56,35 @@ export function grafenoSlow(): Grafeno | null {
   return slow;
 }
 
-/** Whether the engine answers, checked at most every 10 s. */
+/**
+ * Whether the engine answers and speaks an API version this SDK speaks, checked at most every
+ * 10 s. The image installs the latest SDK at every build (Dockerfile), so a future SDK that no
+ * longer speaks the running engine's API turns the graph off with a reason instead of failing
+ * queries one by one.
+ */
 export async function grafenoReachable(): Promise<boolean> {
   const engine = grafeno();
   if (!engine) return false;
   if (health && Date.now() - health.at < HEALTH_MS) return health.ok;
   probing ??= engine
-    .health()
-    .then((result) => {
-      health = { at: Date.now(), ok: result.status === "ok", version: result.version };
-      return health.ok;
+    .connect()
+    .then((about) => {
+      health = { at: Date.now(), ok: true, version: about.version, problem: "" };
+      return true;
     })
-    .catch(() => {
-      health = { at: Date.now(), ok: false, version: "" };
+    .catch((error: unknown) => {
+      const incompatible =
+        error instanceof Error &&
+        "code" in error &&
+        (error as { code: string }).code === "incompatible";
+      health = {
+        at: Date.now(),
+        ok: false,
+        version: health?.version ?? "",
+        problem: incompatible
+          ? `El SDK de Grafeno ${CLIENT_VERSION} no es compatible con este motor: ${error.message}`
+          : "",
+      };
       return false;
     })
     .finally(() => {
@@ -82,7 +98,17 @@ export function grafenoVersion(): string {
   return health?.version ?? "";
 }
 
+/** Why the engine is not used although it answers (an SDK that does not speak its API), or "". */
+export function grafenoProblem(): string {
+  return health?.problem ?? "";
+}
+
+/** The SDK version this build carries. */
+export function sdkVersion(): string {
+  return CLIENT_VERSION;
+}
+
 /** A failed call marks the engine down until the next check. */
 export function markGrafenoDown(): void {
-  health = { at: Date.now(), ok: false, version: health?.version ?? "" };
+  health = { at: Date.now(), ok: false, version: health?.version ?? "", problem: "" };
 }

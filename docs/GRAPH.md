@@ -41,6 +41,18 @@ build of a Grafeno release and checks it against the checksums written in the
 Dockerfile. To move to another release, change `GRAFENO_VERSION` and both
 checksums there (the `.sha256` files of that release).
 
+### The SDK
+
+Grafito talks to Grafeno through its TypeScript SDK, `@grafenodb/client`. It
+follows the SDK's latest release without anyone changing the code:
+`package.json` asks for `latest`, and the app image and CI install the latest
+published version at every build (the lockfile only fixes it for local
+development). At runtime Grafito checks with `connect()` that the SDK and the
+engine share an API version. If a future SDK no longer speaks the running
+engine's API, the graph turns off and **Monitorización y logs → Grafo** says
+why, with the SDK version in this build; the rest of Grafito keeps working.
+The engine image itself stays on the release pinned in its Dockerfile.
+
 ## How vaults get there
 
 - Each vault is one namespace in Grafeno (`grafito-<owner id>`).
@@ -199,6 +211,27 @@ fluid. On an RTX 4060 laptop, 8,000 documents and 25,000 links draw at
   browser compiles its shaders (about a second); the browser keeps them.
 - Without WebGL2 (some virtual machines or remote desktops), the former 2D
   canvas draws the graph.
+
+## 3D
+
+**3D** in the graph's toolbar shows the same graph in three dimensions
+(`components/vault/Graph3d.tsx`, three.js). Drag to orbit, right-drag or
+Shift+drag to pan, the wheel to zoom. The choice is remembered in that
+browser.
+
+- The force layout runs in a Web Worker (`graph3d.worker.ts`, d3-force-3d):
+  documents repel, links pull, and the documents of one community pull
+  towards their group's centre, so each community takes its own region of
+  space.
+- Notes are spheres, files and tables cubes, portfolios octahedra; each kind
+  is one instanced mesh, and all links are one line geometry, so a large
+  vault is a handful of draw calls. On an RTX 4060 laptop, 8,000 documents
+  and 23,000 links draw at about 58 frames per second, settling in about 20 s
+  without slowing the page.
+- Communities, importance, the selected document, Camino, Huérfanas,
+  Puentes, Entorno, clicks, Shift+click and the camera buttons work as in 2D.
+- three.js and the worker load only when 3D is turned on. If a new version
+  was deployed while the tab stayed open, the view says to reload the page.
 
 ## What reads it
 

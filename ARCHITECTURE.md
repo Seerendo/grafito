@@ -831,6 +831,10 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   the graph button, **Ctrl+G**, the graph of shares and public links and the
   **Menciones** section hide. A failed query keeps the graph; only a network
   failure turns it off.
+- **SDK:** `@grafenodb/client` is `latest` in `package.json`, and the
+  Dockerfile and CI install its latest release after `npm ci`.
+  `grafenoReachable` uses `connect()`, so an SDK that does not speak the
+  engine's API turns the graph off with a reason (`grafenoProblem`).
 - These server functions are POST: a GET server function carries the
   session token in its URL.
 - **Drawing:** `GraphGpu` (cosmos.gl, WebGL2) runs the force layout and the
@@ -845,6 +849,11 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   (`packAnalysis`), only for the records the reader sees. `GraphGpu` colours
   the twelve largest communities, sizes nodes by PageRank and pulls each
   community together with cosmos.gl's cluster force.
+- **3D:** `Graph3d` (three.js) draws notes, files and portfolios as three
+  instanced meshes and every link as one `LineSegments`; `graph3d.worker.ts`
+  runs d3-force-3d with a community pull off the main thread and posts
+  positions back as a `Float32Array`. Colours come from `graph-paint.ts`,
+  shared with `GraphGpu`. Both load on demand.
 - **Orphans, bridges, related:** orphans are counted in `GraphView` from the
   links it has. The analysis also runs betweenness (sampled) and stores it as
   `bridge`; `GraphView` highlights the top 2 % with `highlightedPointIndices`.

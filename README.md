@@ -552,6 +552,9 @@ ones that join groups most. **Relacionadas**, under **Menciones** in the
 details panel, suggests up to five documents worth linking to the open one:
 they share neighbours with it and are not linked yet.
 
+**3D** shows the graph in three dimensions, each community in its own region
+of space: drag to turn it, right-drag to move it, the wheel to zoom.
+
 **Entorno** shows the selected document and what is 1, 2 or 3 links away.
 **Camino** finds the shortest chain of links to another document, picked by
 title or with Shift+click, and highlights it.

@@ -1418,4 +1418,7 @@ export const en: Record<string, string> = {
   Resaltar: "Highlight",
   Huérfanas: "Orphans",
   Puentes: "Bridges",
+  "Grafo de documentos en 3D": "Document graph in 3D",
+  "No se pudo cargar la vista 3D. Recarga la página.":
+    "The 3D view could not load. Reload the page.",
 };
