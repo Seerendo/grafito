@@ -1178,6 +1178,48 @@ On the test stack (`grafito-e2e`), real Chrome on an RTX 4060 laptop, an
 | Public link with the Grafo plugin off, and on again                                   | ✅ hidden; shown again; pages already open check again          |
 | `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                         | ✅ 223 tests pass, no lint warnings                             |
 
+## Round 39: PDF signature rectangles for every signed-in viewer
+
+Reported: a shared PDF opened without its signature rectangles for some people.
+Cause: `/compartidos/<shareId>` (the link in the share email and in «Compartidos
+conmigo») showed the file without the share id, so the viewer mounted the PDF
+without signatures. The vault sidebar and the pending-signatures list worked.
+
+Dev server on the test stack's Postgres and MinIO (`grafito-e2e`), automated
+browser engines through Playwright 1.60 (`tests/e2e/pdf-signatures.e2e.mjs`):
+Chromium, Firefox, WebKit, and the installed Google Chrome, on Windows. No
+other operating system or real device was used.
+
+| Check                                                                                | Result                                                                    |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| Same person and PDF: vault sidebar vs `/compartidos/<shareId>`, before the fix       | ❌ 5 rectangles vs 0                                                      |
+| Owner draws a rectangle and assigns it to the shared person                          | ✅ all four browsers                                                      |
+| Shared person: pending list, sidebar, another document and back                      | ✅                                                                        |
+| Direct link, reload, a second session at the same time, session only by bearer token | ✅                                                                        |
+| Signature request failing on the network, then «Reintentar»                          | ✅ shows the error, then the rectangles                                   |
+| Window at 1600, 820 and 390 px wide; pixel density 1.25 and 2                        | ✅ each rectangle within 0.4 % of its place on its page, on top           |
+| Rectangles on pages 1, 2 and 3 (A4 and Letter), pending, signed and declined         | ✅ «Firmar» only on the viewer's own pending one; declined says Rechazada |
+| Signing with an image, declining                                                     | ✅ state changes in place                                                 |
+| Person without access: link, signatureState, sign and decline called directly        | ✅ nothing shown, every call refused                                      |
+| Access withdrawn while the PDF is open                                               | ✅ rectangles removed, says there is no access                            |
+| `/compartidos` link test with the fix reverted                                       | ❌ as expected (the test catches the bug)                                 |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, `npm run build`       | ✅ 237 tests pass                                                         |
+
+## Round 40: no public sign-up
+
+Found while testing round 39: `POST /api/auth/sign-up/email` created an account
+and a session for anyone. Such an account had no role, but it could claim a
+username (or `admin` before setup) so that the administrator, the initial setup
+or the directory could no longer create it. Accounts are now created only by
+Grafito on the server; the HTTP endpoint is refused.
+
+| Check                                                                                         | Result                                  |
+| --------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Sign-up over HTTP: plain, trailing `/`, `//`, upper case, `%2F`                               | ✅ 403 every time, no account created   |
+| Administrator creates a user (`createVaultUser`)                                              | ✅ account with its role and a password |
+| Sign-in with a password, round 39 browser test with accounts written by its seed (4 browsers) | ✅ 32 of 32                             |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, `npm run build`                | ✅ 240 tests pass                       |
+
 ## Useful commands
 
 ```bash
