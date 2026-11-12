@@ -1133,6 +1133,28 @@ docs/SECURITY.md.
 | `install-secrets` unit tests (public values replaced, created once and kept, own secrets untouched, data encrypted with the old example key still opens after upgrading with an empty key)             | ✅ 4 tests                                                                                                                                                                                                    |
 | `npm run typecheck`, `eslint`, `npm test`                                                                                                                                                              | ✅ no errors; 72 tests                                                                                                                                                                                        |
 
+## Round 37: graph on Grafeno and the GPU, file drops in full screen
+
+On the test stack (`grafito-e2e`) with Grafeno 0.2.1, real Chrome on an RTX
+4060 laptop and real Firefox 160.
+
+| Check                                                                                            | Result                                                                                   |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Links from Grafeno against the former in-browser computation, six vaults (14 to 8,000 documents) | ✅ the same links in every vault: 23,996 in the 8,000-document workspace                 |
+| All links of the 8,000-document workspace                                                        | ✅ 1.2 s the first time, 130 ms from cache, 697 KB packed (4.3 MB before packing)        |
+| A new `[[link]]` written in Postgres                                                             | ✅ in Grafeno within 4 s                                                                 |
+| A note to the trash and back                                                                     | ✅ its 4 mentions disappear and come back                                                |
+| Grafo paused in Plugins; Grafeno stopped; Grafeno started again                                  | ✅ graph and Menciones hide; hide; come back by themselves                               |
+| A namespace dropped in Grafeno                                                                   | ✅ copied again at the next start (54 nodes, 64 edges, as before)                        |
+| Graph of 8,013 documents and 25,622 links, WebGL2                                                | ✅ 61 fps once laid out (2 fps with the former 2D canvas)                                |
+| Without WebGL2                                                                                   | ✅ the 2D canvas draws the graph                                                         |
+| Communities and importance, 8,000 documents in 10 topics                                         | ✅ 10 groups, each coloured and pulled together; analysis about 5 s in the background    |
+| Path from Nota 0 to Nota 4005                                                                    | ✅ 10 steps across topics, highlighted                                                   |
+| Entorno at levels 1, 2 and 3                                                                     | ✅ 16, 40 and 140 documents                                                              |
+| A file dropped straight onto an open Word document: normal window, large window, full screen     | ❌→✅ nothing was uploaded in any of the three; now uploaded to the document's portfolio |
+| Engine integration tests against Grafeno 0.2.1 (`GRAFENO_TEST_URL`)                              | ✅ 2 tests                                                                               |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                                    | ✅ no errors; 229 tests                                                                  |
+
 ## Useful commands
 
 ```bash

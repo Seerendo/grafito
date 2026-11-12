@@ -845,6 +845,10 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   (`packAnalysis`), only for the records the reader sees. `GraphGpu` colours
   the twelve largest communities, sizes nodes by PageRank and pulls each
   community together with cosmos.gl's cluster force.
+- **Entorno and Camino:** `neighbourhood` and `shortestPath` in
+  `domain/vault/graph.ts` walk the links the browser already has, in either
+  direction (breadth first). `GraphGpu` highlights a path with cosmos.gl's
+  `highlightedPointIndices` and `highlightedLinkIndices`.
 
 ## Editor colors
 

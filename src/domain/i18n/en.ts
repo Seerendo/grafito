@@ -1406,4 +1406,12 @@ export const en: Record<string, string> = {
   "No se pudo reconstruir el grafo.": "Could not rebuild the graph.",
   Comunidades: "Communities",
   "Con comunidades": "With communities",
+  "Niveles del entorno": "Neighbourhood levels",
+  Camino: "Path",
+  hasta: "to",
+  "Documento de destino": "Target document",
+  "Título, o Mayús+clic en el grafo": "Title, or Shift+click in the graph",
+  "Cerrar camino": "Close path",
+  "{0} saltos": "{0} steps",
+  "No hay vínculos que unan estos documentos.": "No links connect these documents.",
 };

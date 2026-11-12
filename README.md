@@ -258,7 +258,9 @@ After that, the start screen is a normal sign-in.
 - **Full screen:** the ⤢ button of a note or file hides the top bar and both
   panels, and asks the browser for full screen. Esc closes an open dialog
   first, then leaves full screen (in Chrome and Edge; elsewhere the browser
-  leaves full screen on the first Esc).
+  leaves full screen on the first Esc). Files and folders dropped on it,
+  also on a Word, Excel or PowerPoint document, go to that document's
+  portfolio.
 - **On phones,** a bottom bar switches between Notes, Note, Graph and Links.
 
 ### Notes
@@ -531,7 +533,9 @@ pass has got, and **Reindexar** walks every document again.
 ### Graph
 
 The graph button in the header, or **Ctrl+G**, shows notes and files as nodes
-and links as edges. Click a node to open it.
+and links as edges. Click a node to see it, double-click to open it. The
+graph is drawn on the GPU (WebGL2), so tens of thousands of documents stay
+fluid; a browser without WebGL2 gets a simpler drawing.
 
 The graph and **Menciones** come from Grafeno, the graph engine started with
 the rest of the services. While Grafeno is not answering, or **Grafo** is
@@ -542,6 +546,10 @@ Colours show communities, groups of documents linked mostly among
 themselves, and larger nodes are the most important ones by the links they
 receive. Grafeno computes both in the background. **Comunidades** in the
 graph's toolbar turns them off or on.
+
+**Entorno** shows the selected document and what is 1, 2 or 3 links away.
+**Camino** finds the shortest chain of links to another document, picked by
+title or with Shift+click, and highlights it.
 
 ### Keyboard shortcuts
 
@@ -754,19 +762,19 @@ The last two sections only appear if your role allows them.
 Open the avatar menu → **Administración**. It is only visible to roles with
 admin permissions. The section sidebar collapses to an icon rail.
 
-| Section                                      | What it does                                                                                                                                                                                                                                                                                   |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Usuarios y permisos**                      | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one. |
-| **Autenticación**                            | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains.                                                                                    |
-| **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                           |
-| **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                   |
-| **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                |
-| **Plugins**                                  | Turn the graph, Mermaid, links and Git sync on or off (Git is off by default)                                                                                                                                                                                                                  |
-| **Organizaciones**                           | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization.     |
-| **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user.                                                                                                                  |
-| **Apariencia**                               | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs.                          |
-| **Sesión**                                   | Session length. Changing it signs everyone out.                                                                                                                                                                                                                                                |
-| **Monitorización y logs**                    | System monitor, the short log, **Auditoría** (who did what, with CSV and JSON export and a retention of 7 to 3650 days), indexing, storage usage and backend health checks. **Fuentes → Comprobar** also says whether ClamAV is off, answering, or down.                                       |
+| Section                                      | What it does                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Usuarios y permisos**                      | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one.                                                                |
+| **Autenticación**                            | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains.                                                                                                                                                   |
+| **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                                                                                          |
+| **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                                                                                  |
+| **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                                                                               |
+| **Plugins**                                  | Turn the graph (it needs Grafeno), Mermaid, links and Git sync on or off (Git is off by default)                                                                                                                                                                                                                                                              |
+| **Organizaciones**                           | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization.                                                                    |
+| **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user.                                                                                                                                                                                 |
+| **Apariencia**                               | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs.                                                                                         |
+| **Sesión**                                   | Session length. Changing it signs everyone out.                                                                                                                                                                                                                                                                                                               |
+| **Monitorización y logs**                    | System monitor, the short log, **Auditoría** (who did what, with CSV and JSON export and a retention of 7 to 3650 days), indexing, **Grafo** (whether Grafeno answers, how many vaults it holds and has analysed, and **Reconstruir**), storage usage and backend health checks. **Fuentes → Comprobar** also says whether ClamAV is off, answering, or down. |
 
 Role changes take effect within a few seconds, without signing in again. The
 initial administrator always keeps every permission.

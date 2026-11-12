@@ -97,6 +97,8 @@ export function GraphGpu({
   onInspect,
   onOpen,
   analysis,
+  path,
+  onPathTo,
 }: {
   nodes: GraphNode[];
   edges: Edge[];
@@ -109,6 +111,10 @@ export function GraphGpu({
   onOpen: (id: string) => void;
   /** Community and importance per document; empty to draw every node alike. */
   analysis: Map<string, NodeAnalysis>;
+  /** A chain of documents to highlight, from the active one; null for none. */
+  path: string[] | null;
+  /** Shift+click picks the other end of a path. */
+  onPathTo: (id: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<HTMLCanvasElement>(null);
@@ -133,12 +139,16 @@ export function GraphGpu({
     onOpen,
     analysis,
     clusterKey: "",
+    path: null as string[] | null,
+    onPathTo,
     drawLabels: () => undefined as void,
   });
   live.current.onZoom = onZoom;
   live.current.onInspect = onInspect;
   live.current.onOpen = onOpen;
   live.current.analysis = analysis;
+  live.current.path = path;
+  live.current.onPathTo = onPathTo;
 
   // One cosmos.gl instance for the life of the view.
   useEffect(() => {
@@ -173,7 +183,7 @@ export function GraphGpu({
           shown.set(index, position);
         }
         // The active node, its neighbours and the hovered node always get a label.
-        const wanted = [...state.neighbours];
+        const wanted = [...state.neighbours, ...pathIndices()];
         if (state.hover !== undefined) wanted.push(state.hover);
         if (wanted.length > 0) {
           graph.trackPointPositionsByIndices(wanted);
@@ -280,9 +290,13 @@ export function GraphGpu({
           // A dragged node stays where it was dropped, as before.
           if (state.hover !== undefined) graph.setPinnedPoint(state.hover, true);
         },
-        onPointClick: (index) => {
+        onPointClick: (index, _position, event) => {
           const node = state.nodes[index];
           if (!node) return;
+          if (event.shiftKey) {
+            state.onPathTo(node.id);
+            return;
+          }
           const moved = Date.now() - state.draggedAt < 250;
           const intent = graphClickIntent(state.lastClick, node.id, Date.now(), moved);
           if (intent === "open") {
@@ -357,25 +371,49 @@ export function GraphGpu({
       const base = found ? 9 + 15 * Math.sqrt(found.rank / 1000) : node.pinned ? 15 : 12;
       sizes[index] = index === active ? Math.max(20, base + 4) : base;
     });
+    // A path greys out the rest and draws its links in the accent colour.
+    const steps = new Set<string>();
+    const chain = state.path;
+    if (chain) {
+      for (let at = 1; at < chain.length; at += 1) {
+        steps.add(`${chain[at - 1]}|${chain[at]}`);
+        steps.add(`${chain[at]}|${chain[at - 1]}`);
+      }
+    }
+    const pathLinks: number[] = [];
     const linkColors = new Float32Array(state.edges.length * 4);
     state.edges.forEach((edge, index) => {
-      const hot = edge.from === state.activeId || edge.to === state.activeId;
+      const step = steps.has(`${edge.from}|${edge.to}`);
+      if (step) pathLinks.push(index);
+      const hot = step || (!chain && (edge.from === state.activeId || edge.to === state.activeId));
       linkColors.set(hot ? paint.accent : paint.line, index * 4);
     });
     graph.setPointColors(colors);
     graph.setPointStrokeColors(strokes);
     graph.setPointSizes(sizes);
     graph.setLinkColors(linkColors);
-    graph.setConfigPartial({ focusedPointIndex: active });
+    graph.setConfigPartial({
+      focusedPointIndex: active,
+      highlightedPointIndices: chain ? pathIndices() : undefined,
+      highlightedLinkIndices: chain ? pathLinks : undefined,
+    });
     graph.render();
     state.drawLabels();
+  }
+
+  /** Indices of the documents on the highlighted path. */
+  function pathIndices(): number[] {
+    const state = live.current;
+    return (state.path ?? [])
+      .map((id) => state.index.get(id))
+      .filter((index): index is number => index !== undefined);
   }
 
   /**
    * Nodes of one community pull together in the layout, so each group sits apart and not only
    * in its own colour. Without communities (or with them turned off) there is no such force.
+   * Returns whether the groups changed since the last call.
    */
-  /** Returns whether the groups changed since the last call. */
   function applyClusters(graph: Graph): boolean {
     const state = live.current;
     const clusters = state.nodes.map((node) => {
@@ -463,6 +501,21 @@ export function GraphGpu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
+  // A path was found or cleared: highlight it and frame it.
+  const pathKey = path?.join(",") ?? "";
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    paintGraph(graph);
+    const indices = pathIndices();
+    if (indices.length > 1) {
+      live.current.steered = true;
+      graph.fitViewByPointIndices(indices, 500, 0.25);
+    }
+    // paintGraph and its helpers read the live values; these effects run on what changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathKey]);
+
   // Communities and importance arrived or were turned on or off.
   useEffect(() => {
     const graph = graphRef.current;
@@ -473,6 +526,8 @@ export function GraphGpu({
     // The groups move together: let the layout settle again, following it as before.
     live.current.steered = false;
     graph.start(0.4);
+    // paintGraph and its helpers read the live values; these effects run on what changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysis]);
 
   // Selection: recolour and keep the labels of the new neighbourhood.
@@ -482,6 +537,8 @@ export function GraphGpu({
     if (!graph) return;
     neighboursOf(activeId);
     paintGraph(graph);
+    // paintGraph and its helpers read the live values; these effects run on what changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
   apiRef.current = {

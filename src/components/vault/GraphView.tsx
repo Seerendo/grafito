@@ -2,8 +2,13 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { GraphGpu, type GraphApi } from "./GraphGpu";
 import { gpuGraphSupported } from "@/app/webgl";
 import type { NodeAnalysis } from "@/domain/graph-pack";
-import { Locate, Minus, Plus } from "lucide-react";
-import { graphClickIntent, type GraphNode } from "@/domain/vault/graph";
+import { Locate, Minus, Plus, X } from "lucide-react";
+import {
+  graphClickIntent,
+  neighbourhood,
+  shortestPath,
+  type GraphNode,
+} from "@/domain/vault/graph";
 import { useGraphEdges, vaultVersion, type GraphScope } from "@/app/graph";
 import { sharedTarget, useSharedTrees } from "@/app/shared-links";
 import { useSharedView } from "@/app/shared-view";
@@ -110,6 +115,11 @@ export function GraphView({
   openRef.current = openNode;
   selectRef.current = selectInGraph;
   const [local, setLocal] = useState(false);
+  // How many links away "Entorno" reaches.
+  const [depth, setDepth] = useState(1);
+  // The other end of a path from the active node, and whether the path bar is open.
+  const [pathTo, setPathTo] = useState<string | null>(null);
+  const [pathOpen, setPathOpen] = useState(false);
   // The GPU draws the graph when the browser has WebGL2; the 2D canvas otherwise.
   const [gpu] = useState(gpuGraphSupported);
   // Colour by community and size by importance, remembered in this browser.
@@ -140,17 +150,20 @@ export function GraphView({
       .map(({ from, to, kind }) => ({ from, to, kind }));
   }, [documents, links]);
 
+  // The shortest chain of links from the active node to the chosen one, over every link.
+  const path = useMemo(
+    () =>
+      activeId && pathTo && activeId !== pathTo ? shortestPath(edges, activeId, pathTo) : null,
+    [edges, activeId, pathTo],
+  );
+
   // Only "Entorno" depends on the active node; "Todo" keeps its layout when it changes.
   const focusId = local ? activeId : null;
+  const pathKey = local && path ? path.join(",") : "";
   const { visibleNotes, visibleEdges, signature } = useMemo(() => {
-    const neighborIds = new Set<string>();
-    if (focusId) {
-      neighborIds.add(focusId);
-      for (const edge of edges) {
-        if (edge.from === focusId) neighborIds.add(edge.to);
-        if (edge.to === focusId) neighborIds.add(edge.from);
-      }
-    }
+    const neighborIds = focusId ? neighbourhood(edges, focusId, depth) : new Set<string>();
+    // A path stays whole in "Entorno", however far it goes.
+    if (pathKey) for (const id of pathKey.split(",")) neighborIds.add(id);
     const notes = local ? documents.filter((note) => neighborIds.has(note.id)) : documents;
     const ids = new Set(notes.map((note) => note.id));
     const shown = edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to));
@@ -161,7 +174,7 @@ export function GraphView({
         .map((edge) => `${edge.kind}:${edge.from}-${edge.to}`)
         .join(",")}|${seed}`,
     };
-  }, [documents, edges, focusId, local, seed]);
+  }, [documents, edges, focusId, local, seed, depth, pathKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -808,6 +821,38 @@ export function GraphView({
           >
             {t("Entorno")}
           </button>
+          {local ? (
+            <div
+              role="group"
+              aria-label={t("Niveles del entorno")}
+              className="flex rounded-md border border-line"
+            >
+              {[1, 2, 3].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  aria-pressed={depth === level}
+                  onClick={() => setDepth(level)}
+                  className={`h-10 w-9 text-sm ${depth === level ? "bg-elevated text-fg" : "text-muted hover:text-fg"}`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {activeId ? (
+            <button
+              type="button"
+              aria-pressed={pathOpen}
+              onClick={() => {
+                setPathOpen((open) => !open);
+                setPathTo(null);
+              }}
+              className={`h-10 rounded-md px-3 text-sm ${pathOpen ? "bg-elevated text-fg" : "text-muted hover:bg-elevated hover:text-fg"}`}
+            >
+              {t("Camino")}
+            </button>
+          ) : null}
           <div className="flex items-center rounded-md border border-line">
             <button
               type="button"
@@ -861,6 +906,20 @@ export function GraphView({
           </button>
         </div>
       </div>
+      {pathOpen && activeId ? (
+        <PathBar
+          documents={documents}
+          fromId={activeId}
+          toId={pathTo}
+          path={path}
+          onPick={setPathTo}
+          onOpen={(id) => selectInGraph(id)}
+          onClose={() => {
+            setPathOpen(false);
+            setPathTo(null);
+          }}
+        />
+      ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <NodeCard source={source} />
         <div
@@ -883,6 +942,11 @@ export function GraphView({
               }}
               onOpen={(id) => openRef.current(id)}
               analysis={tint ? analysis : NO_TINT}
+              path={path}
+              onPathTo={(id) => {
+                setPathOpen(true);
+                setPathTo(id);
+              }}
             />
           ) : (
             <canvas
@@ -898,6 +962,117 @@ export function GraphView({
 }
 
 type Extra = { node: GraphNode; open?: () => void };
+
+const MAX_MATCHES = 8;
+
+/** From the active node to one chosen by title (or Shift+click in the graph), and the result. */
+function PathBar({
+  documents,
+  fromId,
+  toId,
+  path,
+  onPick,
+  onOpen,
+  onClose,
+}: {
+  documents: GraphNode[];
+  fromId: string;
+  toId: string | null;
+  path: string[] | null;
+  onPick: (id: string | null) => void;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const byId = useMemo(() => new Map(documents.map((node) => [node.id, node])), [documents]);
+  const from = byId.get(fromId);
+  const to = toId ? byId.get(toId) : undefined;
+  const needle = query.trim().toLowerCase();
+  const matches = needle
+    ? documents
+        .filter((node) => node.id !== fromId && node.title.toLowerCase().includes(needle))
+        .slice(0, MAX_MATCHES)
+    : [];
+  return (
+    <div className="relative shrink-0 border-b border-line px-3 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted">{t("Desde")}</span>
+        <span className="max-w-48 truncate text-fg">{from?.title ?? ""}</span>
+        <span className="text-muted">{t("hasta")}</span>
+        <input
+          value={to && !query ? to.title : query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            if (toId) onPick(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && matches[0]) {
+              onPick(matches[0].id);
+              setQuery("");
+            } else if (event.key === "Escape") onClose();
+          }}
+          aria-label={t("Documento de destino")}
+          placeholder={t("Título, o Mayús+clic en el grafo")}
+          className="h-9 min-w-56 flex-1 rounded-md border border-line bg-surface px-2 text-fg outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          aria-label={t("Cerrar camino")}
+          onClick={onClose}
+          className="grid h-9 w-9 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      {matches.length > 0 ? (
+        <ul
+          role="listbox"
+          className="absolute top-full right-3 left-3 z-20 mt-1 max-h-72 overflow-y-auto rounded-md border border-line bg-surface p-1 shadow-xl"
+        >
+          {matches.map((node) => (
+            <li key={node.id}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                onClick={() => {
+                  onPick(node.id);
+                  setQuery("");
+                }}
+                className="w-full truncate rounded px-2 py-1.5 text-left hover:bg-elevated"
+              >
+                {node.title}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {to ? (
+        path ? (
+          <ol className="mt-2 flex flex-wrap items-center gap-1 text-xs">
+            {path.map((id, index) => (
+              <li key={id} className="flex items-center gap-1">
+                {index > 0 ? <span className="text-faint">→</span> : null}
+                <button
+                  type="button"
+                  onClick={() => onOpen(id)}
+                  className="max-w-48 truncate rounded px-1.5 py-0.5 text-fg hover:bg-elevated"
+                >
+                  {byId.get(id)?.title ?? id}
+                </button>
+              </li>
+            ))}
+            <li className="text-faint">· {t("{0} saltos", { 0: path.length - 1 })}</li>
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs text-muted">
+            {t("No hay vínculos que unan estos documentos.")}
+          </p>
+        )
+      ) : null}
+    </div>
+  );
+}
 
 const TINT_KEY = "grafito.graph.communities";
 const NO_TINT = new Map<string, NodeAnalysis>();

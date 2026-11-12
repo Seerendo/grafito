@@ -122,6 +122,21 @@ in that browser. **Administración → Monitorización y logs → Grafo** shows 
 many vaults have been analysed; **Reconstruir** also analyses them again.
 The 2D canvas used without WebGL2 draws every node alike.
 
+## Neighbourhood and paths
+
+- **Entorno** shows the selected document and what is 1, 2 or 3 links away
+  from it, following links in either direction.
+- **Camino** finds the shortest chain of links from the selected document to
+  another one, chosen by title or with Shift+click in the graph. The chain is
+  listed above the graph (each step opens its document) and highlighted in
+  the graph, with the rest dimmed. In **Entorno** the whole chain stays shown,
+  however far it goes.
+
+Both work in the browser on the links the graph already received from
+Grafeno, so they answer at once and always match what is drawn. Asking the
+engine instead would cost a round trip and, through the `Title` nodes, find
+false shortcuts between notes that only link to the same title.
+
 ## Drawing
 
 The browser draws the graph on the GPU with cosmos.gl (WebGL2,
