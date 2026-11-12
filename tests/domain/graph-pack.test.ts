@@ -27,13 +27,14 @@ test("los vínculos llegan iguales y cada id viaja una vez", () => {
 
 test("comunidad e importancia viajan solo para lo visible, escaladas a 0–1000", () => {
   const packed = packAnalysis(
-    { ids: ["a", "b", "c"], community: [0, 1, 0], rank: [0.5, 0.25, 0.1] },
+    { ids: ["a", "b", "c"], community: [0, 1, 0], rank: [0.5, 0.25, 0.1], bridge: [0, 40, 80] },
     (id) => id !== "c",
   );
   const back = unpackAnalysis(packed);
   assert.deepEqual([...back.keys()], ["a", "b"]);
-  assert.deepEqual(back.get("a"), { community: 0, rank: 1000 });
-  assert.deepEqual(back.get("b"), { community: 1, rank: 500 });
+  // Scaled against what is shown: c, the top bridge, is left out.
+  assert.deepEqual(back.get("a"), { community: 0, rank: 1000, bridge: 0 });
+  assert.deepEqual(back.get("b"), { community: 1, rank: 500, bridge: 1000 });
   assert.equal(unpackAnalysis(packAnalysis(null)).size, 0);
   assert.equal(unpackAnalysis(undefined).size, 0);
 });

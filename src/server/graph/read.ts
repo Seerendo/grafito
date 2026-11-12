@@ -4,7 +4,16 @@ import type { SharedTree } from "@/domain/shared-tree";
 import type { TextAnchor } from "@/domain/vault/anchor";
 import { vaultIndex } from "@/server/vault-index";
 import { grafeno, grafenoReachable, markGrafenoDown, ownerNamespace } from "./grafeno";
-import { ALL_EDGES, edgeRows, readIncoming, type GraphEdgeRow } from "./model";
+import {
+  ALL_EDGES,
+  RELATED,
+  docNode,
+  edgeRows,
+  portfolioNode,
+  readIncoming,
+  relatedRows,
+  type GraphEdgeRow,
+} from "./model";
 import { graphPluginOn } from "./sync";
 
 /**
@@ -112,6 +121,34 @@ function parseAnchor(text: string | undefined): TextAnchor | undefined {
     return JSON.parse(text) as TextAnchor;
   } catch {
     return undefined;
+  }
+}
+
+const RELATED_SHOWN = 5;
+
+/**
+ * Documents worth linking to this one: they share neighbours with it and are not linked to it
+ * yet (Grafeno's link prediction on the links of the last analysis). Only visible ones when a
+ * share is read. Empty before the first analysis.
+ */
+export async function relatedDocs(
+  ownerId: string,
+  target: { kind: "doc" | "portfolio"; id: string },
+  visible?: Set<string>,
+): Promise<{ id: string; score: number }[]> {
+  const engine = grafeno();
+  if (!engine) throw new Error("Grafeno no está configurado.");
+  const node = target.kind === "doc" ? docNode(target.id) : portfolioNode(target.id);
+  try {
+    const result = await engine.namespace(ownerNamespace(ownerId)).query(RELATED, { id: node });
+    return relatedRows(result.rows as unknown[][], target.id)
+      .filter((row) => !visible || visible.has(row.id))
+      .slice(0, RELATED_SHOWN);
+  } catch (error) {
+    // A document not copied yet, or an engine without link prediction: nothing to suggest.
+    if (error instanceof Error && "status" in error) return [];
+    noteFailure(error);
+    throw error;
   }
 }
 

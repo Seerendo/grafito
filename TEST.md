@@ -1138,22 +1138,25 @@ docs/SECURITY.md.
 On the test stack (`grafito-e2e`) with Grafeno 0.2.1, real Chrome on an RTX
 4060 laptop and real Firefox 160.
 
-| Check                                                                                            | Result                                                                                   |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Links from Grafeno against the former in-browser computation, six vaults (14 to 8,000 documents) | ✅ the same links in every vault: 23,996 in the 8,000-document workspace                 |
-| All links of the 8,000-document workspace                                                        | ✅ 1.2 s the first time, 130 ms from cache, 697 KB packed (4.3 MB before packing)        |
-| A new `[[link]]` written in Postgres                                                             | ✅ in Grafeno within 4 s                                                                 |
-| A note to the trash and back                                                                     | ✅ its 4 mentions disappear and come back                                                |
-| Grafo paused in Plugins; Grafeno stopped; Grafeno started again                                  | ✅ graph and Menciones hide; hide; come back by themselves                               |
-| A namespace dropped in Grafeno                                                                   | ✅ copied again at the next start (54 nodes, 64 edges, as before)                        |
-| Graph of 8,013 documents and 25,622 links, WebGL2                                                | ✅ 61 fps once laid out (2 fps with the former 2D canvas)                                |
-| Without WebGL2                                                                                   | ✅ the 2D canvas draws the graph                                                         |
-| Communities and importance, 8,000 documents in 10 topics                                         | ✅ 10 groups, each coloured and pulled together; analysis about 5 s in the background    |
-| Path from Nota 0 to Nota 4005                                                                    | ✅ 10 steps across topics, highlighted                                                   |
-| Entorno at levels 1, 2 and 3                                                                     | ✅ 16, 40 and 140 documents                                                              |
-| A file dropped straight onto an open Word document: normal window, large window, full screen     | ❌→✅ nothing was uploaded in any of the three; now uploaded to the document's portfolio |
-| Engine integration tests against Grafeno 0.2.1 (`GRAFENO_TEST_URL`)                              | ✅ 2 tests                                                                               |
-| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                                    | ✅ no errors; 229 tests                                                                  |
+| Check                                                                                                                  | Result                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Links from Grafeno against the former in-browser computation, six vaults (14 to 8,000 documents)                       | ✅ the same links in every vault: 23,996 in the 8,000-document workspace                 |
+| All links of the 8,000-document workspace                                                                              | ✅ 1.2 s the first time, 130 ms from cache, 697 KB packed (4.3 MB before packing)        |
+| A new `[[link]]` written in Postgres                                                                                   | ✅ in Grafeno within 4 s                                                                 |
+| A note to the trash and back                                                                                           | ✅ its 4 mentions disappear and come back                                                |
+| Grafo paused in Plugins; Grafeno stopped; Grafeno started again                                                        | ✅ graph and Menciones hide; hide; come back by themselves                               |
+| A namespace dropped in Grafeno                                                                                         | ✅ copied again at the next start (54 nodes, 64 edges, as before)                        |
+| Graph of 8,013 documents and 25,622 links, WebGL2                                                                      | ✅ 61 fps once laid out (2 fps with the former 2D canvas)                                |
+| Without WebGL2                                                                                                         | ✅ the 2D canvas draws the graph                                                         |
+| Communities and importance, 8,000 documents in 10 topics                                                               | ✅ 10 groups, each coloured and pulled together; analysis about 5 s in the background    |
+| Path from Nota 0 to Nota 4005                                                                                          | ✅ 10 steps across topics, highlighted                                                   |
+| Entorno at levels 1, 2 and 3                                                                                           | ✅ 16, 40 and 140 documents                                                              |
+| Relacionadas of Nota 120                                                                                               | ✅ 5 documents of its own topic, not linked to it yet                                    |
+| Puentes; Huérfanas                                                                                                     | ✅ 50 documents joining topics highlighted; the 7 documents without links highlighted    |
+| Stored analyses after migration 0040                                                                                   | ✅ analysed again with bridges, colours kept meanwhile                                   |
+| A file dropped straight onto an open Word document: normal window, large window, full screen                           | ❌→✅ nothing was uploaded in any of the three; now uploaded to the document's portfolio |
+| Engine integration tests against Grafeno 0.2.1 (`GRAFENO_TEST_URL`), with communities, importance, bridges and related | ✅ 2 tests                                                                               |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                                                          | ✅ no errors; 229 tests                                                                  |
 
 ## Useful commands
 

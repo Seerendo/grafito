@@ -261,10 +261,11 @@ export function edgeRows(rows: unknown[][]): GraphEdgeRow[] {
 }
 
 /**
- * Communities and importance. Links go through Title and Ref nodes, so PageRank would score
- * those instead of the documents: each analysis first writes direct `linked` edges between the
- * documents (as resolved now), then runs Louvain and PageRank on them and stores the results on
- * the nodes.
+ * Communities, importance and bridges. Links go through Title and Ref nodes, so PageRank would
+ * score those instead of the documents: each analysis first writes direct `linked` edges between
+ * the documents (as resolved now), then runs Louvain, PageRank and betweenness on them and
+ * stores the results on the nodes. Betweenness (how many shortest paths cross a document) finds
+ * the documents that join groups; it is sampled so it stays fast on large vaults.
  */
 export const EDGE_LINKED = "linked";
 const DOCUMENT_LABELS = "['Note', 'File', 'Portfolio']";
@@ -274,17 +275,26 @@ export const ANALYSIS_STEPS = [
   `MATCH (a)-[:referencia|llama]->(:Ref)<-[:is]-(b) WHERE a <> b MERGE (a)-[:${EDGE_LINKED}]->(b)`,
   `CALL algo.louvain({labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', write: 'community'}) YIELD nodes RETURN nodes`,
   `CALL algo.pageRank({labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', write: 'rank'}) YIELD nodes RETURN nodes`,
+  `CALL algo.betweenness({labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', direction: 'both', sample: 1024, seed: 1, write: 'bridge'}) YIELD nodes RETURN nodes`,
 ];
-export const READ_ANALYSIS = `MATCH (n) WHERE n.rank IS NOT NULL AND n.gid IS NOT NULL RETURN n.gid, n.community, n.rank`;
+export const READ_ANALYSIS = `MATCH (n) WHERE n.rank IS NOT NULL AND n.gid IS NOT NULL RETURN n.gid, n.community, n.rank, n.bridge`;
 
-/** Per document: its community (numbered by size, largest first) and its PageRank score. */
-export type Analysis = { ids: string[]; community: number[]; rank: number[] };
+/**
+ * Per document: its community (numbered by size, largest first), its PageRank score and its
+ * betweenness. An analysis stored before bridges existed has no `bridge`.
+ */
+export type Analysis = { ids: string[]; community: number[]; rank: number[]; bridge?: number[] };
 
 export function analysisRows(rows: unknown[][]): Analysis {
-  const items: { id: string; community: number; rank: number }[] = [];
-  for (const [id, community, rank] of rows) {
+  const items: { id: string; community: number; rank: number; bridge: number }[] = [];
+  for (const [id, community, rank, bridge] of rows) {
     if (typeof id !== "string" || typeof rank !== "number") continue;
-    items.push({ id, community: typeof community === "number" ? community : -1, rank });
+    items.push({
+      id,
+      community: typeof community === "number" ? community : -1,
+      rank,
+      bridge: typeof bridge === "number" ? bridge : 0,
+    });
   }
   // Renumber communities by size so colours stay stable for the largest groups.
   const sizes = new Map<number, number>();
@@ -298,5 +308,21 @@ export function analysisRows(rows: unknown[][]): Analysis {
     ids: items.map((item) => item.id),
     community: items.map((item) => renumber.get(item.community) ?? -1),
     rank: items.map((item) => item.rank),
+    bridge: items.map((item) => item.bridge),
   };
+}
+
+/**
+ * Documents a vault would gain by linking: two links away through shared neighbours and not
+ * linked yet, scored by Adamic-Adar (a shared neighbour with few links counts more).
+ */
+export const RELATED = `CALL algo.linkPrediction($id, {labels: ${DOCUMENT_LABELS}, edgeLabels: '${EDGE_LINKED}', metric: 'adamicAdar', limit: 12}) YIELD other, score RETURN other.gid, score`;
+
+export function relatedRows(rows: unknown[][], self: string): { id: string; score: number }[] {
+  const out: { id: string; score: number }[] = [];
+  for (const [id, score] of rows) {
+    if (typeof id !== "string" || id === self || typeof score !== "number" || score <= 0) continue;
+    out.push({ id, score });
+  }
+  return out;
 }

@@ -76,8 +76,9 @@ export function unpackEdges(packed: PackedEdges): WireEdge[] {
 }
 
 /**
- * Community and importance of the shown documents. Importance is PageRank scaled to 0–1000
- * against the most important document shown; communities are numbered by size, largest first.
+ * Community, importance and bridging of the shown documents. Importance (PageRank) and bridging
+ * (betweenness) are scaled to 0–1000 against the highest document shown; communities are
+ * numbered by size, largest first.
  */
 export type PackedAnalysis = {
   /** Record ids, one per line. */
@@ -86,28 +87,40 @@ export type PackedAnalysis = {
   community: string;
   /** Comma separated, one per id, 0 to 1000. */
   rank: string;
+  /** Comma separated, one per id, 0 to 1000. */
+  bridge: string;
 };
 
-export type NodeAnalysis = { community: number; rank: number };
+export type NodeAnalysis = { community: number; rank: number; bridge: number };
+
+function scaled(values: number[]): number[] {
+  const top = values.reduce((max, value) => (value > max ? value : max), 0);
+  return values.map((value) => (top > 0 ? Math.round((value / top) * 1000) : 0));
+}
 
 export function packAnalysis(
-  analysis: { ids: string[]; community: number[]; rank: number[] } | null,
+  analysis: { ids: string[]; community: number[]; rank: number[]; bridge?: number[] } | null,
   keep?: (id: string) => boolean,
 ): PackedAnalysis {
   const ids: string[] = [];
   const community: number[] = [];
-  const raw: number[] = [];
+  const rank: number[] = [];
+  const bridge: number[] = [];
   if (analysis) {
     analysis.ids.forEach((id, index) => {
       if (keep && !keep(id)) return;
       ids.push(id);
       community.push(analysis.community[index] ?? -1);
-      raw.push(analysis.rank[index] ?? 0);
+      rank.push(analysis.rank[index] ?? 0);
+      bridge.push(analysis.bridge?.[index] ?? 0);
     });
   }
-  const top = raw.reduce((max, value) => (value > max ? value : max), 0);
-  const rank = raw.map((value) => (top > 0 ? Math.round((value / top) * 1000) : 0));
-  return { ids: ids.join(LINE), community: community.join(","), rank: rank.join(",") };
+  return {
+    ids: ids.join(LINE),
+    community: community.join(","),
+    rank: scaled(rank).join(","),
+    bridge: scaled(bridge).join(","),
+  };
 }
 
 export function unpackAnalysis(packed: PackedAnalysis | undefined): Map<string, NodeAnalysis> {
@@ -116,8 +129,13 @@ export function unpackAnalysis(packed: PackedAnalysis | undefined): Map<string, 
   const ids = packed.ids.split(LINE);
   const community = packed.community.split(",").map(Number);
   const rank = packed.rank.split(",").map(Number);
+  const bridge = packed.bridge ? packed.bridge.split(",").map(Number) : [];
   ids.forEach((id, index) => {
-    out.set(id, { community: community[index] ?? -1, rank: rank[index] ?? 0 });
+    out.set(id, {
+      community: community[index] ?? -1,
+      rank: rank[index] ?? 0,
+      bridge: bridge[index] ?? 0,
+    });
   });
   return out;
 }

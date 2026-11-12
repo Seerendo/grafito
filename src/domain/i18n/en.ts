@@ -1414,4 +1414,8 @@ export const en: Record<string, string> = {
   "Cerrar camino": "Close path",
   "{0} saltos": "{0} steps",
   "No hay vínculos que unan estos documentos.": "No links connect these documents.",
+  Relacionadas: "Related",
+  Resaltar: "Highlight",
+  Huérfanas: "Orphans",
+  Puentes: "Bridges",
 };

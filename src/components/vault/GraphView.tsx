@@ -120,6 +120,8 @@ export function GraphView({
   // The other end of a path from the active node, and whether the path bar is open.
   const [pathTo, setPathTo] = useState<string | null>(null);
   const [pathOpen, setPathOpen] = useState(false);
+  // Highlight documents without links, or the ones joining groups.
+  const [mark, setMark] = useState<"orphans" | "bridges" | null>(null);
   // The GPU draws the graph when the browser has WebGL2; the 2D canvas otherwise.
   const [gpu] = useState(gpuGraphSupported);
   // Colour by community and size by importance, remembered in this browser.
@@ -156,6 +158,30 @@ export function GraphView({
       activeId && pathTo && activeId !== pathTo ? shortestPath(edges, activeId, pathTo) : null,
     [edges, activeId, pathTo],
   );
+
+  // Documents without any link, in or out (portfolios and shared targets only show with one).
+  const orphans = useMemo(() => {
+    const linked = new Set<string>();
+    for (const edge of edges) {
+      linked.add(edge.from);
+      linked.add(edge.to);
+    }
+    return documents
+      .filter((node) => node.kind !== "portfolio" && !node.shared && !linked.has(node.id))
+      .map((node) => node.id);
+  }, [documents, edges]);
+
+  // The documents that join groups most (Grafeno's betweenness): the top 2 %, from 3 to 50.
+  const bridges = useMemo(() => {
+    const scored = documents
+      .map((node) => ({ id: node.id, score: analysis.get(node.id)?.bridge ?? 0 }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+    const keep = Math.min(50, Math.max(3, Math.round(documents.length * 0.02)));
+    return scored.slice(0, keep).map((item) => item.id);
+  }, [documents, analysis]);
+
+  const marked = mark === "orphans" ? orphans : mark === "bridges" ? bridges : null;
 
   // Only "Entorno" depends on the active node; "Todo" keeps its layout when it changes.
   const focusId = local ? activeId : null;
@@ -853,6 +879,32 @@ export function GraphView({
               {t("Camino")}
             </button>
           ) : null}
+          {gpu ? (
+            <div
+              role="group"
+              aria-label={t("Resaltar")}
+              className="flex rounded-md border border-line"
+            >
+              <button
+                type="button"
+                aria-pressed={mark === "orphans"}
+                onClick={() => setMark((value) => (value === "orphans" ? null : "orphans"))}
+                className={`h-10 px-3 text-sm ${mark === "orphans" ? "bg-elevated text-fg" : "text-muted hover:text-fg"}`}
+              >
+                {t("Huérfanas")} <span className="text-faint">{orphans.length}</span>
+              </button>
+              {bridges.length > 0 ? (
+                <button
+                  type="button"
+                  aria-pressed={mark === "bridges"}
+                  onClick={() => setMark((value) => (value === "bridges" ? null : "bridges"))}
+                  className={`h-10 px-3 text-sm ${mark === "bridges" ? "bg-elevated text-fg" : "text-muted hover:text-fg"}`}
+                >
+                  {t("Puentes")} <span className="text-faint">{bridges.length}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex items-center rounded-md border border-line">
             <button
               type="button"
@@ -943,6 +995,7 @@ export function GraphView({
               onOpen={(id) => openRef.current(id)}
               analysis={tint ? analysis : NO_TINT}
               path={path}
+              marked={marked}
               onPathTo={(id) => {
                 setPathOpen(true);
                 setPathTo(id);

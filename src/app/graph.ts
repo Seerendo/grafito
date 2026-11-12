@@ -154,14 +154,17 @@ export function useGraphEdges(
   };
 }
 
+/** What links to a document, and documents worth linking to it (most suggested first). */
+export type DocumentGraph = { items: IncomingLink[]; related: string[] };
+
 /** What links to a document, asked again when version changes. */
 export function useIncomingLinks(
   target: { id: string; kind?: "doc" | "portfolio" } | null,
   scope: GraphScope,
   version: string,
   enabled: boolean,
-): IncomingLink[] | null {
-  const [state, setState] = useState<{ key: string; items: IncomingLink[] } | null>(null);
+): DocumentGraph | null {
+  const [state, setState] = useState<({ key: string } & DocumentGraph) | null>(null);
   const key = target
     ? `${target.kind ?? "doc"}:${target.id}|${scope.token ?? ""}|${scope.shareId ?? ""}`
     : "";
@@ -184,10 +187,14 @@ export function useIncomingLinks(
             if (cancelled) return;
             if (!result.ok) {
               if (result.off && !scope.token) reportOff();
-              setState({ key, items: [] });
+              setState({ key, items: [], related: [] });
               return;
             }
-            setState({ key, items: result.items as IncomingLink[] });
+            setState({
+              key,
+              items: result.items as IncomingLink[],
+              related: result.related.map((row) => row.id),
+            });
           })
           .catch(() => undefined);
       },
@@ -200,7 +207,7 @@ export function useIncomingLinks(
     // target and scope are read through key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, version, enabled]);
-  return state?.key === key ? state.items : null;
+  return state?.key === key ? { items: state.items, related: state.related } : null;
 }
 
 const publicChecks = new Map<string, { at: number; available: Promise<boolean> }>();

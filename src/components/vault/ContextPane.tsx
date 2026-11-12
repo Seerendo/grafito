@@ -9,6 +9,7 @@ import {
   Link2,
   ListTree,
   MessageSquare,
+  Sparkles,
   Plus,
   X,
 } from "lucide-react";
@@ -38,7 +39,8 @@ const KIND_LABEL: Record<ManualKind, string> = {
   llama: "invoca",
 };
 
-type SectionKey = "esquema" | "vinculos" | "escritos" | "menciones" | "comentarios";
+type SectionKey =
+  "esquema" | "vinculos" | "escritos" | "menciones" | "relacionadas" | "comentarios";
 
 type OutlineNode = {
   id: string;
@@ -94,6 +96,7 @@ export function ContextPane({
     esquema: true,
     vinculos: true,
     escritos: true,
+    relacionadas: true,
     menciones: true,
     comentarios: true,
   });
@@ -114,7 +117,7 @@ export function ContextPane({
       : undefined;
   // Mentions come from Grafeno; without the graph the section is hidden.
   const graphOn = useGraphAvailable();
-  const incoming = useIncomingLinks(
+  const docGraph = useIncomingLinks(
     !sharedDoc && document ? { id: document.id } : null,
     {},
     vaultVersion(documents, portfolios),
@@ -212,7 +215,7 @@ export function ContextPane({
     target: resolveLink(link, documents, portfolios, trees),
   }));
   const byId = new Map(documents.map((item) => [item.id, item]));
-  const incomingWiki = (incoming ?? []).flatMap((entry) => {
+  const incomingWiki = (docGraph?.items ?? []).flatMap((entry) => {
     const item = entry.kind === "wiki" ? byId.get(entry.source) : undefined;
     if (!item || item.id === document.id) return [];
     return [
@@ -224,7 +227,12 @@ export function ContextPane({
       },
     ];
   });
-  const incomingManual = (incoming ?? []).flatMap((entry) => {
+  // Not linked yet but sharing neighbours with this document (Grafeno's link prediction).
+  const related = (docGraph?.related ?? []).flatMap((id) => {
+    const item = byId.get(id);
+    return item && item.id !== document.id ? [{ id: item.id, title: item.title }] : [];
+  });
+  const incomingManual = (docGraph?.items ?? []).flatMap((entry) => {
     const item = entry.kind === "wiki" ? undefined : byId.get(entry.source);
     if (!item || item.id === document.id || entry.kind === "wiki") return [];
     const anchor = entry.anchor ? JSON.stringify(entry.anchor) : "";
@@ -446,6 +454,34 @@ export function ContextPane({
               ))}
             </ul>
           )}
+        </Section>
+      ) : null}
+
+      {graphOn && related.length > 0 ? (
+        <Section
+          title={t("Relacionadas")}
+          icon={<Sparkles className="size-3.5" />}
+          count={related.length}
+          fold={{
+            open: openSections.relacionadas,
+            onToggle: () => toggleSection("relacionadas"),
+          }}
+        >
+          <ul className="space-y-1">
+            {related.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => choose(item.id)}
+                  onDoubleClick={() => onOpenNote(item.id)}
+                  className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left hover:bg-elevated"
+                >
+                  <FileText className="mt-0.5 size-3.5 shrink-0 text-faint" />
+                  <span className="block min-w-0 truncate text-sm text-fg">{item.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </Section>
       ) : null}
 

@@ -8,7 +8,9 @@ import {
   ALL_EDGES,
   ANALYSIS_STEPS,
   READ_ANALYSIS,
+  RELATED,
   analysisRows,
+  relatedRows,
   docNode,
   docOps,
   edgeRows,
@@ -172,6 +174,17 @@ test("comunidades e importancia en un Grafeno real", { skip: !available }, async
   // Importance lands on documents, and the most linked one of its group scores highest.
   const rank = (id: string) => analysis.rank[of(id)]!;
   for (const other of ["a1", "a2", "a3"]) assert.ok(rank("hub") > rank(other), other);
+  // a3 is the only document joining the two groups: the top bridge.
+  const bridge = (id: string) => analysis.bridge![of(id)]!;
+  for (const other of analysis.ids.filter((id) => id !== "a3"))
+    assert.ok(bridge("a3") > bridge(other), other);
+  // Worth linking to a3: what shares its neighbours, never what it already links.
+  const related = relatedRows(
+    (await ns.query(RELATED, { id: docNode("a3") })).rows as unknown[][],
+    "a3",
+  ).map((row) => row.id);
+  assert.ok(related.includes("a1") && related.includes("a2"), related.join(","));
+  assert.ok(!related.includes("hub") && !related.includes("b1"), related.join(","));
   // Running it again replaces the derived links instead of adding to them.
   for (const step of ANALYSIS_STEPS) await ns.query(step);
   const linked = await ns.query("MATCH ()-[l:linked]->() RETURN count(l)");

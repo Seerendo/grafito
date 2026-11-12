@@ -845,6 +845,12 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   (`packAnalysis`), only for the records the reader sees. `GraphGpu` colours
   the twelve largest communities, sizes nodes by PageRank and pulls each
   community together with cosmos.gl's cluster force.
+- **Orphans, bridges, related:** orphans are counted in `GraphView` from the
+  links it has. The analysis also runs betweenness (sampled) and stores it as
+  `bridge`; `GraphView` highlights the top 2 % with `highlightedPointIndices`.
+  `graphIncoming` returns `related` beside the mentions: `RELATED` runs
+  `algo.linkPrediction` (Adamic-Adar) on the `linked` edges for one document.
+  Migration 0040 makes stored analyses run again to gain `bridge`.
 - **Entorno and Camino:** `neighbourhood` and `shortestPath` in
   `domain/vault/graph.ts` walk the links the browser already has, in either
   direction (breadth first). `GraphGpu` highlights a path with cosmos.gl's

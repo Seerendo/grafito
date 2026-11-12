@@ -1,4 +1,4 @@
-import { ArrowDownLeft, FileText, Link2, ListTree, Plus, X } from "lucide-react";
+import { ArrowDownLeft, FileText, Link2, ListTree, Plus, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TextAnchor } from "@/domain/vault/anchor";
 import { backlinkLine, extractHeadings, extractWikiLinks, findByTitle } from "@/domain/vault/links";
@@ -43,7 +43,7 @@ export function SharedContext({
   const memberGraph = useGraphAvailable(!scope.token);
   const publicGraphOn = usePublicGraph(scope.token);
   const graphOn = scope.token ? publicGraphOn : memberGraph;
-  const mentions = useIncomingLinks({ id: document.id }, scope, version, graphOn);
+  const docGraph = useIncomingLinks({ id: document.id }, scope, version, graphOn);
   const headings = document.kind === "markdown" ? extractHeadings(document.content) : [];
   const outgoing = [
     ...(document.kind === "markdown"
@@ -77,7 +77,7 @@ export function SharedContext({
   const byId = new Map(documents.map((item) => [item.id, item]));
   const incoming: { id: string; title: string; detail: string; anchor?: TextAnchor }[] = [];
   const listed = new Set<string>();
-  for (const entry of mentions ?? []) {
+  for (const entry of docGraph?.items ?? []) {
     const item = byId.get(entry.source);
     if (!item || item.id === document.id || listed.has(item.id)) continue;
     listed.add(item.id);
@@ -91,6 +91,11 @@ export function SharedContext({
       anchor: entry.anchor,
     });
   }
+  // Not linked yet but sharing neighbours with this document (Grafeno's link prediction).
+  const related = (docGraph?.related ?? []).flatMap((id) => {
+    const item = byId.get(id);
+    return item && item.id !== document.id ? [{ id: item.id, title: item.title }] : [];
+  });
 
   const jump = (id: string) =>
     window.document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -187,6 +192,21 @@ export function SharedContext({
               ))}
             </ul>
           )}
+        </Block>
+      ) : null}
+      {graphOn && related.length > 0 ? (
+        <Block
+          title={t("Relacionadas")}
+          icon={<Sparkles className="size-3.5" />}
+          count={related.length}
+        >
+          <ul>
+            {related.map((item) => (
+              <li key={item.id}>
+                <Row onClick={() => onOpen(item.id)} title={item.title} detail="" />
+              </li>
+            ))}
+          </ul>
         </Block>
       ) : null}
     </div>

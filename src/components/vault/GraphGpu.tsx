@@ -98,6 +98,7 @@ export function GraphGpu({
   onOpen,
   analysis,
   path,
+  marked,
   onPathTo,
 }: {
   nodes: GraphNode[];
@@ -113,6 +114,8 @@ export function GraphGpu({
   analysis: Map<string, NodeAnalysis>;
   /** A chain of documents to highlight, from the active one; null for none. */
   path: string[] | null;
+  /** Documents to highlight without a path (orphans or bridges); null for none. */
+  marked: string[] | null;
   /** Shift+click picks the other end of a path. */
   onPathTo: (id: string) => void;
 }) {
@@ -140,6 +143,7 @@ export function GraphGpu({
     analysis,
     clusterKey: "",
     path: null as string[] | null,
+    marked: null as string[] | null,
     onPathTo,
     drawLabels: () => undefined as void,
   });
@@ -148,6 +152,7 @@ export function GraphGpu({
   live.current.onOpen = onOpen;
   live.current.analysis = analysis;
   live.current.path = path;
+  live.current.marked = marked;
   live.current.onPathTo = onPathTo;
 
   // One cosmos.gl instance for the life of the view.
@@ -183,7 +188,13 @@ export function GraphGpu({
           shown.set(index, position);
         }
         // The active node, its neighbours and the hovered node always get a label.
-        const wanted = [...state.neighbours, ...pathIndices()];
+        const marks = markedIndices();
+        const wanted = [
+          ...state.neighbours,
+          ...pathIndices(),
+          // A few marked documents get a label each; many would only overlap.
+          ...(marks.length <= 60 ? marks : []),
+        ];
         if (state.hover !== undefined) wanted.push(state.hover);
         if (wanted.length > 0) {
           graph.trackPointPositionsByIndices(wanted);
@@ -394,11 +405,20 @@ export function GraphGpu({
     graph.setLinkColors(linkColors);
     graph.setConfigPartial({
       focusedPointIndex: active,
-      highlightedPointIndices: chain ? pathIndices() : undefined,
-      highlightedLinkIndices: chain ? pathLinks : undefined,
+      // A path wins over orphans or bridges.
+      highlightedPointIndices: chain ? pathIndices() : state.marked ? markedIndices() : undefined,
+      highlightedLinkIndices: chain ? pathLinks : state.marked ? [] : undefined,
     });
     graph.render();
     state.drawLabels();
+  }
+
+  /** Indices of the marked documents shown here. */
+  function markedIndices(): number[] {
+    const state = live.current;
+    return (state.marked ?? [])
+      .map((id) => state.index.get(id))
+      .filter((index): index is number => index !== undefined);
   }
 
   /** Indices of the documents on the highlighted path. */
@@ -515,6 +535,21 @@ export function GraphGpu({
     // paintGraph and its helpers read the live values; these effects run on what changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathKey]);
+
+  // Orphans or bridges were marked or cleared: highlight them and frame them.
+  const markedKey = marked?.join(",") ?? "";
+  useEffect(() => {
+    const graph = graphRef.current;
+    if (!graph) return;
+    paintGraph(graph);
+    const indices = markedIndices();
+    if (indices.length > 0 && !live.current.path) {
+      live.current.steered = true;
+      graph.fitViewByPointIndices(indices, 500, 0.2);
+    }
+    // paintGraph and its helpers read the live values; these effects run on what changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markedKey]);
 
   // Communities and importance arrived or were turned on or off.
   useEffect(() => {

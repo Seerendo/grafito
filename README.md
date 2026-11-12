@@ -253,7 +253,7 @@ After that, the start screen is a normal sign-in.
 - **Center: the open note.** On the Carpeta Personal page, right-click a recent document
   (or the empty space) for the same menu as in the directory.
 - **Right: the details panel.** It shows the outline, manual links, links
-  written in the text, mentions (backlinks) and comments. Collapse it with the
+  written in the text, mentions (backlinks), related documents and comments. Collapse it with the
   » arrow.
 - **Full screen:** the ⤢ button of a note or file hides the top bar and both
   panels, and asks the browser for full screen. Esc closes an open dialog
@@ -546,6 +546,11 @@ Colours show communities, groups of documents linked mostly among
 themselves, and larger nodes are the most important ones by the links they
 receive. Grafeno computes both in the background. **Comunidades** in the
 graph's toolbar turns them off or on.
+
+**Huérfanas** highlights the documents without any link, and **Puentes** the
+ones that join groups most. **Relacionadas**, under **Menciones** in the
+details panel, suggests up to five documents worth linking to the open one:
+they share neighbours with it and are not linked yet.
 
 **Entorno** shows the selected document and what is 1, 2 or 3 links away.
 **Camino** finds the shortest chain of links to another document, picked by

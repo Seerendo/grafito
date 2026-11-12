@@ -7,6 +7,7 @@ import {
   graphOnline,
   graphReady,
   incomingLinks,
+  relatedDocs,
   treeOf,
   vaultEdges,
   visibleIds,
@@ -108,6 +109,7 @@ export const graphIncoming = createServerFn({ method: "POST" })
         return {
           ok: true as const,
           items: await incomingLinks(sql, context.userId, { kind: data.kind, id: data.id }),
+          related: await relatedDocs(context.userId, { kind: data.kind, id: data.id }),
         };
       }
       const share = await shareForUser(sql, context.userId, data.shareId);
@@ -119,6 +121,7 @@ export const graphIncoming = createServerFn({ method: "POST" })
       return {
         ok: true as const,
         items: await incomingLinks(sql, share.ownerId, { kind: data.kind, id: data.id }, visible),
+        related: await relatedDocs(share.ownerId, { kind: data.kind, id: data.id }, visible),
       };
     } catch (error) {
       return failed(error);
@@ -148,6 +151,7 @@ export const publicGraph = createServerFn({ method: "POST" })
           edges: EMPTY,
           analysis: packAnalysis(null),
           items: await incomingLinks(sql, owner, { kind: "doc", id: data.id }, visible),
+          related: await relatedDocs(owner, { kind: "doc", id: data.id }, visible),
           ready: true,
         };
       }
@@ -156,6 +160,7 @@ export const publicGraph = createServerFn({ method: "POST" })
         edges: packEdges(await edgesWithin(sql, owner, visible)),
         analysis: packAnalysis(await readAnalysis(sql, owner), (id) => visible.has(id)),
         items: [] as IncomingLink[],
+        related: [] as { id: string; score: number }[],
         ready: await graphReady(sql, owner),
       };
     } catch (error) {

@@ -122,6 +122,27 @@ in that browser. **Administración → Monitorización y logs → Grafo** shows 
 many vaults have been analysed; **Reconstruir** also analyses them again.
 The 2D canvas used without WebGL2 draws every node alike.
 
+## Orphans, bridges and related documents
+
+- **Huérfanas** in the graph's toolbar highlights the notes and files with
+  no link at all, in or out, and dims the rest. They are counted in the
+  browser from the links it already has.
+- **Puentes** highlights the documents that join groups most: Grafeno's
+  betweenness (how many shortest paths between documents cross each one),
+  computed in the background analysis with a sample of 1,024 starting
+  documents so it stays fast on large vaults. The top 2 % are shown, from 3
+  to 50.
+- **Relacionadas**, in the details panel under **Menciones**, lists up to
+  five documents worth linking to the open one: they share neighbours with
+  it and are not linked to it yet (Grafeno's link prediction, Adamic-Adar,
+  on the links of the last analysis). It comes with the mentions, in the
+  same request, and in a share lists only what the reader can see. A vault
+  not analysed yet has no suggestions.
+
+Migration 0040 steps every stored analysis one revision back, so vaults
+analysed before bridges existed are analysed again while their colours keep
+showing.
+
 ## Neighbourhood and paths
 
 - **Entorno** shows the selected document and what is 1, 2 or 3 links away
