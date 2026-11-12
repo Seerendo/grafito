@@ -1047,6 +1047,11 @@ portfolio at that moment, and the note's text as the merge base).
 - It locks Escape with `navigator.keyboard.lock` where supported (Chrome,
   Edge). The page then gets Esc: the first one closes a dialog, the next one
   leaves full screen.
+- Dropping files: `FileDropShield` in `VaultApp` covers the window while
+  files are dragged, so the open document never keeps the drop. The Office
+  editor's frame covers the whole window in full screen and a drag can enter
+  it directly; the shield also listens inside that frame (same address as
+  Grafito through the gateway) and rises from there.
 
 ## Version history and trash
 

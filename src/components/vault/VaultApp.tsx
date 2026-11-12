@@ -767,6 +767,49 @@ function FileDropShield({ enabled }: { enabled: boolean }) {
       show(false);
     };
 
+    // A drag that enters straight into the Office editor's frame never reaches this document,
+    // which is how fullscreen loses drops: the frame covers the whole window. The editor is on
+    // Grafito's own address, so the frame's document can raise the shield; once it covers the
+    // frame, the rest of the drag and the drop come here.
+    const fromFrame = (event: globalThis.DragEvent) => {
+      if (!external(event)) return;
+      event.preventDefault();
+      if (!enabledRef.current) return;
+      show(true);
+      placeLabel();
+      arm();
+      node.style.pointerEvents = "auto";
+    };
+    const watched = new WeakSet<Document>();
+    const hook = (frame: HTMLIFrameElement) => {
+      try {
+        const inner = frame.contentDocument;
+        if (!inner || watched.has(inner)) return;
+        watched.add(inner);
+        inner.addEventListener("dragenter", fromFrame, true);
+        inner.addEventListener("dragover", fromFrame, true);
+      } catch {
+        // An editor on an address of its own cannot be reached; the window edges still work.
+      }
+    };
+    const frames = new Set<HTMLIFrameElement>();
+    const watch = (frame: HTMLIFrameElement) => {
+      if (frames.has(frame)) return;
+      frames.add(frame);
+      frame.addEventListener("load", () => hook(frame));
+      hook(frame);
+    };
+    document.querySelectorAll("iframe").forEach(watch);
+    const added = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach((added) => {
+          if (added instanceof HTMLIFrameElement) watch(added);
+          else if (added instanceof Element) added.querySelectorAll("iframe").forEach(watch);
+        });
+      }
+    });
+    added.observe(document.body, { childList: true, subtree: true });
+
     document.addEventListener("dragenter", onEnter, true);
     document.addEventListener("dragover", onOver, true);
     document.addEventListener("dragleave", onLeave, true);
@@ -774,6 +817,7 @@ function FileDropShield({ enabled }: { enabled: boolean }) {
     document.addEventListener("dragend", onEnd, true);
     return () => {
       window.clearTimeout(hideTimer);
+      added.disconnect();
       document.removeEventListener("dragenter", onEnter, true);
       document.removeEventListener("dragover", onOver, true);
       document.removeEventListener("dragleave", onLeave, true);
