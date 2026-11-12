@@ -93,6 +93,26 @@ A link to something in another person's share points at a `Ref` with the
 `share` property; the browser resolves it with the shared trees it already
 has, as before.
 
+## Drawing
+
+The browser draws the graph on the GPU with cosmos.gl (WebGL2,
+`components/vault/GraphGpu.tsx`): the force layout and the drawing of points
+and links run in shaders, so a graph of tens of thousands of documents stays
+fluid. On an RTX 4060 laptop, 8,000 documents and 25,000 links draw at
+60 frames per second once laid out, where the former 2D canvas drew 2.
+
+- Notes are circles, files and tables squares, portfolios diamonds; a shared
+  target has a fainter border. **referencia** links are dashed and **invoca**
+  links dotted.
+- Labels are drawn on a 2D canvas on top, only for the points cosmos.gl
+  samples on screen, plus the selected document and its neighbours.
+- While the layout settles the view follows the selected document and its
+  neighbours, as before, until you zoom or pan.
+- The library loads only when the graph opens. The first opening in a
+  browser compiles its shaders (about a second); the browser keeps them.
+- Without WebGL2 (some virtual machines or remote desktops), the former 2D
+  canvas draws the graph.
+
 ## What reads it
 
 | Where                               | Server function             |

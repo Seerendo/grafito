@@ -21,7 +21,7 @@ Contributor folder conventions and the architecture review are in
 | Search              | Elasticsearch (`ELASTICSEARCH_URL`), or an index in Postgres                      |
 | Files               | MinIO / S3 (`S3_*`), or the `file_blob` table in Postgres                         |
 | Sessions            | Redis (`REDIS_URL`) holds session deadlines, or Postgres does                     |
-| Graph               | Grafeno (`GRAFENO_URL`); without it the graph and mentions are off                |
+| Graph               | Grafeno (`GRAFENO_URL`) stores the links; cosmos.gl draws them on the GPU         |
 | Build               | Vite 8 and Nitro (`node-server` preset; `NITRO_PRESET=vercel` for Vercel)         |
 
 Every external service is optional. When its variable is missing, Grafito falls
@@ -833,6 +833,11 @@ vault with the links already resolved. Details: [docs/GRAPH.md](docs/GRAPH.md).
   failure turns it off.
 - These server functions are POST: a GET server function carries the
   session token in its URL.
+- **Drawing:** `GraphGpu` (cosmos.gl, WebGL2) runs the force layout and the
+  drawing on the GPU and labels a sample of the visible points on a 2D canvas
+  on top. `GraphView` keeps the toolbar, the node card and the 2D canvas as
+  the fallback without WebGL2 (`app/webgl.ts`). Its graph data is memoized,
+  because zooming re-renders it many times a second.
 
 ## Editor colors
 

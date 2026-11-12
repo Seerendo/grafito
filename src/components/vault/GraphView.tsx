@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { GraphGpu, type GraphApi } from "./GraphGpu";
+import { gpuGraphSupported } from "@/app/webgl";
 import { Locate, Minus, Plus } from "lucide-react";
 import { graphClickIntent, type GraphNode } from "@/domain/vault/graph";
 import { useGraphEdges, vaultVersion, type GraphScope } from "@/app/graph";
@@ -26,14 +28,6 @@ type SimNode = {
 type Edge = { from: string; to: string; kind: GraphKind };
 type Camera = { x: number; y: number; k: number };
 type Target = { x: number; y: number; k: number };
-
-type GraphApi = {
-  zoom: (factor: number) => void;
-  fit: () => void;
-  focus: () => void;
-  reveal: () => void;
-  pan: (dx: number, dy: number) => void;
-};
 
 const MIN_K = 0.22;
 const MAX_K = 3.2;
@@ -75,13 +69,16 @@ export function GraphView({
   const ownSelect = useVault((state) => state.selectInGraph);
   const trees = useSharedTrees((state) => state.trees);
   // Owned-vault graphs also include linked portfolios and linked shared targets.
-  const extras = source
-    ? new Map<string, Extra>()
-    : graphExtras(ownDocuments, ownPortfolios, trees);
-  const documents: GraphNode[] = source?.documents ?? [
-    ...ownDocuments,
-    ...[...extras.values()].map((extra) => extra.node),
-  ];
+  // Built once per change of the vault: zooming re-renders this view many times a second.
+  const extras = useMemo(
+    () => (source ? new Map<string, Extra>() : graphExtras(ownDocuments, ownPortfolios, trees)),
+    [source, ownDocuments, ownPortfolios, trees],
+  );
+  const documents: GraphNode[] = useMemo(
+    () =>
+      source?.documents ?? [...ownDocuments, ...[...extras.values()].map((extra) => extra.node)],
+    [source?.documents, ownDocuments, extras],
+  );
   const activeId = source ? source.activeId : ownActiveId;
   const extrasRef = useRef(extras);
   extrasRef.current = extras;
@@ -112,6 +109,8 @@ export function GraphView({
   openRef.current = openNode;
   selectRef.current = selectInGraph;
   const [local, setLocal] = useState(false);
+  // The GPU draws the graph when the browser has WebGL2; the 2D canvas otherwise.
+  const [gpu] = useState(gpuGraphSupported);
   const [seed, setSeed] = useState(0);
   const [zoom, setZoom] = useState(100);
 
@@ -121,25 +120,35 @@ export function GraphView({
     source ? source.version : vaultVersion(ownDocuments, ownPortfolios),
     true,
   );
-  const nodeIds = new Set(documents.map((node) => node.id));
-  const edges: Edge[] = links
-    .filter((link) => nodeIds.has(link.from) && nodeIds.has(link.to))
-    .map(({ from, to, kind }) => ({ from, to, kind }));
+  const edges: Edge[] = useMemo(() => {
+    const nodeIds = new Set(documents.map((node) => node.id));
+    return links
+      .filter((link) => nodeIds.has(link.from) && nodeIds.has(link.to))
+      .map(({ from, to, kind }) => ({ from, to, kind }));
+  }, [documents, links]);
 
-  const neighborIds = new Set<string>();
-  if (activeId) {
-    neighborIds.add(activeId);
-    for (const edge of edges) {
-      if (edge.from === activeId) neighborIds.add(edge.to);
-      if (edge.to === activeId) neighborIds.add(edge.from);
+  // Only "Entorno" depends on the active node; "Todo" keeps its layout when it changes.
+  const focusId = local ? activeId : null;
+  const { visibleNotes, visibleEdges, signature } = useMemo(() => {
+    const neighborIds = new Set<string>();
+    if (focusId) {
+      neighborIds.add(focusId);
+      for (const edge of edges) {
+        if (edge.from === focusId) neighborIds.add(edge.to);
+        if (edge.to === focusId) neighborIds.add(edge.from);
+      }
     }
-  }
-  const visibleNotes = local ? documents.filter((note) => neighborIds.has(note.id)) : documents;
-  const visibleIds = new Set(visibleNotes.map((note) => note.id));
-  const visibleEdges = edges.filter((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to));
-  const signature = `${visibleNotes.map((note) => note.id).join(",")}|${visibleEdges
-    .map((edge) => `${edge.kind}:${edge.from}-${edge.to}`)
-    .join(",")}|${seed}`;
+    const notes = local ? documents.filter((note) => neighborIds.has(note.id)) : documents;
+    const ids = new Set(notes.map((note) => note.id));
+    const shown = edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to));
+    return {
+      visibleNotes: notes,
+      visibleEdges: shown,
+      signature: `${notes.map((note) => note.id).join(",")}|${shown
+        .map((edge) => `${edge.kind}:${edge.from}-${edge.to}`)
+        .join(",")}|${seed}`,
+    };
+  }, [documents, edges, focusId, local, seed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -337,9 +346,10 @@ export function GraphView({
           }
         }
       }
+      const byId = new Map(list.map((node) => [node.id, node]));
       for (const edge of visibleEdges) {
-        const a = list.find((node) => node.id === edge.from);
-        const b = list.find((node) => node.id === edge.to);
+        const a = byId.get(edge.from);
+        const b = byId.get(edge.to);
         if (!a || !b) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
@@ -836,11 +846,27 @@ export function GraphView({
           onKeyDown={onStageKey}
           className="relative min-h-0 flex-1 outline-none select-none"
         >
-          <canvas
-            ref={canvasRef}
-            aria-label={t("Grafo de documentos")}
-            className="h-full w-full cursor-grab touch-none"
-          />
+          {gpu ? (
+            <GraphGpu
+              nodes={visibleNotes}
+              edges={visibleEdges}
+              signature={signature}
+              activeId={activeId}
+              apiRef={apiRef}
+              onZoom={(percent) => setZoom((prev) => (prev === percent ? prev : percent))}
+              onInspect={(id) => {
+                skipReveal.current = true;
+                selectRef.current(id);
+              }}
+              onOpen={(id) => openRef.current(id)}
+            />
+          ) : (
+            <canvas
+              ref={canvasRef}
+              aria-label={t("Grafo de documentos")}
+              className="h-full w-full cursor-grab touch-none"
+            />
+          )}
         </div>
       </div>
     </div>
