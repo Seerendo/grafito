@@ -360,7 +360,7 @@ export function GraphView({
     };
 
     const draw = () => {
-      const { accent, fg, muted, faint, line, elevated, ink } = readPaint();
+      const { accent, muted, faint, line, elevated, ink } = readPaint();
       const cam = cameraRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -693,6 +693,9 @@ export function GraphView({
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("wheel", onWheel);
     };
+    // signature names the visible nodes and edges; rebuilding the simulation on any other
+    // render would reset the layout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
 
   useEffect(() => {

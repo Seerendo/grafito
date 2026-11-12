@@ -1338,7 +1338,8 @@ Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
       assistant's own, so they shape tone, format and focus.
     - A read-only profile drops the tools marked `writes` (`create_note`,
       `update_note`, `create_portfolio`, `add_table_row`, `set_table_cell`,
-      `link_pdf_phrase`) on top of what the role allows.
+      `link_pdf_phrase`, `create_table`, `delete_note`, `delete_file`,
+      `delete_portfolio`) on top of what the role allows.
     - A deleted profile is ignored, and the chat falls back to **General**.
 
 | Provider           | Protocol                                                | Address                                            | Key                                 |
@@ -1358,7 +1359,8 @@ to 8 steps.
 
 - **Tools:** only those the role allows, out of `list_portfolios`,
   `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
-  `create_portfolio`, `query_table`, `add_table_row`, `set_table_cell` and
+  `create_portfolio`, `delete_note`, `delete_file`, `delete_portfolio`,
+  `query_table`, `add_table_row`, `set_table_cell`, `create_table` and
   `link_pdf_phrase`.
   Notes and portfolios live in `server/ai/tools/notes.ts`; tables in
   `server/ai/tools/tables.ts`. `search_notes` searches titles and the indexed
@@ -1374,6 +1376,16 @@ to 8 steps.
   by hand: it lives on the PDF, not in a new Markdown note. The phrase is
   taken from each page's PDF.js text. If it appears on more than one page,
   the tool asks for the page. A PDF without text (a scan) is refused.
+  `delete_note` (`notes.delete`), `delete_file` (`files.delete`, including a
+  `.tabla`) and `delete_portfolio` (`portfolios.manage`) move the item to the
+  trash. They do not run in the same turn as the request: the previous
+  assistant message has to ask about deleting, and the person's next message
+  has to agree (`deletionConfirmed` in `server/ai/guard.ts`). A shared delete
+  follows the same rules as the app: a portfolio share, edit access on every
+  descendant, and the share root itself stays. Carpeta Personal cannot be
+  deleted. `create_table` (`files.upload`) writes an empty `.tabla` and can
+  add text columns from a comma-separated list. In a shared portfolio the
+  destination is the same upload target as a file upload.
 - **What it can open** (`server/ai/access.ts`, `server/ai/corpus.ts`): the
   person's own vault, items shared with them, and workspace folders granted
   to them. A document outside that set is reported as not found; the tools
@@ -1386,17 +1398,29 @@ to 8 steps.
   folder, as when they create it from the app. The pure rules are tested in
   `access.test.ts`. `scripts/ai-access-lmstudio.ts` runs the same gate against
   a local LM Studio (not part of `npm test`).
-- **Files:** `read_note` returns the text of uploaded files
+- **How much text reaches the model:** `search_notes` and a `list_notes`
+  query read the index (`doc_index.body`, or `data_meta.search_text` for a
+  table) and return at most four short passages, not the file.
+  `read_note` returns at most 4,000 characters (`domain/ai-read.ts`). For a
+  file that is already indexed, that window is taken from the index; otherwise
+  the text is extracted and cut the same way. `index_capped` means the stored
+  text stopped at the index limit (24,000 characters). A table is refused and
+  the model is told to use `query_table`. Older tool results in the same
+  answer are still clipped once they pass about 40,000 characters.
+- **Files:** `read_note` can also extract text that is not indexed yet
   (`server/files.ts` → `fileText`): plain text, Office and OpenDocument
   (`server/office-text.ts`, a small ZIP reader without dependencies) and PDF
-  (`unpdf`). Images and scanned PDFs give no text.
+  (`unpdf`). Images and scanned PDFs give no text. The old binary `.doc`
+  format is not indexed.
 - **Response:** streamed as NDJSON. The chat shows each tool used, and you can
   click one to open the note.
 - **Not claiming what it didn't do** (`server/ai/guard.ts`): if the final
-  answer says it created, edited, saved or linked something (`CLAIMS_WRITE`) but no
-  write tool succeeded in that answer, the agent asks the model once more to
-  do it with the tool or to correct itself; if it still claims it, the answer
-  ends with a visible warning that nothing changed in the vault.
+  answer says it created, edited, saved, linked or deleted something
+  (`CLAIMS_WRITE`) but no write tool succeeded in that answer, the agent asks
+  the model once more to do it with the tool or to correct itself. A delete
+  still has to wait for the person's confirmation. If it still claims a
+  change, the answer ends with a visible warning that nothing changed in the
+  vault.
 - **Context within an answer:** when the tool results of one answer pass
   about 40,000 characters, the older ones are shortened (the last two stay
   whole). Ollama gets `num_ctx` sized to the conversation (8,192 to 32,768

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CLAIMS_WRITE, compactToolResults } from "../../../src/server/ai/guard.ts";
+import {
+  CLAIMS_WRITE,
+  compactToolResults,
+  deletionConfirmed,
+  deletionQuestion,
+  namedInQuestion,
+} from "../../../src/server/ai/guard.ts";
 import { contextSize } from "../../../src/server/ai/ollama.ts";
 import type { ChatMessage } from "../../../src/server/ai/types.ts";
 
@@ -20,6 +26,12 @@ test("reconoce cuando dice que creó, editó o guardó algo", () => {
     "La frase quedó vinculada.",
     "I've linked the phrase in the PDF.",
     "The phrase has been linked.",
+    "Listo, eliminé la nota «Acta».",
+    "He eliminado el archivo.",
+    "Borré el portafolio Proyectos.",
+    "La nota quedó eliminada.",
+    "I've deleted the note.",
+    "The file has been removed.",
   ]) {
     assert.ok(CLAIMS_WRITE.test(text), text);
   }
@@ -35,9 +47,99 @@ test("no confunde preguntas ni lecturas con haberlo hecho", () => {
     "¿Quieres que vincule esa frase?",
     "Puedo vincular la frase si me lo confirmas.",
     "Para vincular, selecciona el texto del PDF.",
+    "¿Quieres que elimine la nota?",
+    "Puedo borrar el archivo si me lo confirmas.",
+    "Para eliminar, dime el título y el sitio.",
   ]) {
     assert.ok(!CLAIMS_WRITE.test(text), text);
   }
+});
+
+test("solo elimina si la persona confirma después de una pregunta", () => {
+  const ask = "¿Elimino «Acta» de Actas? Irá a la papelera.";
+  assert.equal(
+    deletionConfirmed([
+      { role: "user", content: "Elimina la nota Acta" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "1", name: "delete_note", arguments: {} }],
+      },
+    ]),
+    false,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: ask },
+      { role: "user", content: "sí" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "1", name: "delete_note", arguments: {} }],
+      },
+    ]),
+    true,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: "¿Quieres que cree la nota?" },
+      { role: "user", content: "sí" },
+    ]),
+    false,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: "No pude eliminar." },
+      { role: "user", content: "ok" },
+    ]),
+    false,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: ask },
+      { role: "user", content: "si puedes, elimínala" },
+    ]),
+    false,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: ask },
+      { role: "user", content: "sí, elimínala" },
+    ]),
+    true,
+  );
+  assert.equal(
+    deletionConfirmed([
+      { role: "assistant", content: ask },
+      { role: "user", content: "sí" },
+      {
+        role: "user",
+        content:
+          "(Comprobación automática de Grafito, no la escribió la persona.) pregunta primero",
+      },
+    ]),
+    true,
+  );
+});
+
+test("un sí solo cubre lo que nombraba la pregunta", () => {
+  const ask = "¿Elimino «Acta  de marzo» de Actas? Irá a la papelera.";
+  const question = deletionQuestion([
+    { role: "assistant", content: ask },
+    { role: "user", content: "sí" },
+  ]);
+  assert.equal(question, ask);
+  assert.ok(namedInQuestion(ask, "acta de marzo"));
+  assert.ok(namedInQuestion(ask, "Actas"));
+  assert.ok(!namedInQuestion(ask, "Presupuesto"));
+  assert.ok(!namedInQuestion(ask, "   "));
+  assert.equal(
+    deletionQuestion([
+      { role: "assistant", content: "¿Quieres que cree la nota?" },
+      { role: "user", content: "sí" },
+    ]),
+    null,
+  );
 });
 
 test("recorta los resultados viejos de herramientas al pasarse, no los últimos", () => {

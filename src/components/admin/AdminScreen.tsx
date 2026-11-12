@@ -274,6 +274,8 @@ export function AdminScreen() {
   useEffect(() => {
     if (!user?.id) return;
     load();
+    // Reload only when the signed-in user changes; load is rebuilt on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   useEffect(() => {

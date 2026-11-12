@@ -1,11 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   changePassword,
   signInDetailed,
@@ -26,12 +19,6 @@ import {
   sessionProfile,
 } from "@/server/admin.functions";
 import { getLocale, setLocale, t } from "@/app/i18n";
-
-const AppAdminContext = createContext(false);
-
-export function useAppAdmin(): boolean {
-  return useContext(AppAdminContext);
-}
 
 type Install = { installed: boolean; loginName: string; mustChangePassword: boolean };
 type Account = {
@@ -174,11 +161,11 @@ export function AccessGate({ children }: { children: ReactNode }) {
     user.id !== account.userId;
 
   if (live && !live.mustChangePassword) {
-    return <AppAdminContext.Provider value={live.isAdmin}>{children}</AppAdminContext.Provider>;
+    return <>{children}</>;
   }
 
   if (heldVault) {
-    return <AppAdminContext.Provider value={true}>{children}</AppAdminContext.Provider>;
+    return <>{children}</>;
   }
 
   if (live?.mustChangePassword) {

@@ -269,14 +269,16 @@ export function SharedViewer({
   }, [active?.id]);
 
   // The surrounding vault panel renders the outline in embedded mode.
+  const bodyId = active?.id;
+  const bodyContent = active?.content;
   useEffect(() => {
     if (index) return;
-    if (!active) {
+    if (bodyId === undefined || bodyContent === undefined) {
       useSharedView.getState().setBody(null);
       return;
     }
-    useSharedView.getState().setBody({ id: active.id, content: active.content });
-  }, [index, active?.id, active?.content]);
+    useSharedView.getState().setBody({ id: bodyId, content: bodyContent });
+  }, [index, bodyId, bodyContent]);
 
   const patchDoc = (id: string, patch: Partial<PublishedDoc>) => {
     const { content, updatedAt, updatedBy } = patch;

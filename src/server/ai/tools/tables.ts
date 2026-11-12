@@ -5,6 +5,36 @@ import type { Tool } from "./tool.ts";
 /** Table tools read rows and add/update cells when the document is editable. */
 export const tableTools: Tool[] = [
   {
+    permission: PERMISSION.filesUpload,
+    writes: true,
+    spec: {
+      name: "create_table",
+      description:
+        "Crea una tabla (.tabla) vacía donde esta persona puede añadir archivos. columns son nombres de columnas de texto separados por comas; vacío deja la tabla sin columnas. Si el sitio es de solo lectura, no la crea.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Título de la tabla" },
+          portfolio_id: {
+            type: "string",
+            description: "Id, nombre o ruta del portafolio; vacío para la Carpeta Personal",
+          },
+          columns: {
+            type: "string",
+            description: 'Nombres separados por comas, por ejemplo "Estado, Importe, Fecha"',
+          },
+        },
+        required: ["title"],
+      },
+    },
+    run: (vault, args) =>
+      vault.createDataTable({
+        title: text(args, "title"),
+        portfolio: text(args, "portfolio_id") || text(args, "portfolio"),
+        columns: text(args, "columns"),
+      }),
+  },
+  {
     permission: PERMISSION.notesRead,
     spec: {
       name: "query_table",

@@ -112,3 +112,27 @@ export async function canSearchOwner(
   `;
   return org.length > 0;
 }
+
+/**
+ * Text already stored for search. Tables prefer their cell text. Empty when the document is not
+ * indexed yet, so the caller can extract it once.
+ */
+export async function indexedBody(
+  sql: Sql,
+  ownerId: string,
+  docId: string,
+): Promise<string | null> {
+  const rows = await sql<{ body: string }>`
+    select case
+      when d.file_name ilike '%.tabla' then coalesce(nullif(m.search_text, ''), nullif(i.body, ''), '')
+      else coalesce(nullif(i.body, ''), '')
+    end as body
+    from vault_doc d
+    left join doc_index i on i.user_id = d.user_id and i.doc_id = d.id
+    left join data_meta m on m.owner_id = d.user_id and m.doc_id = d.id
+    where d.user_id = ${ownerId} and d.id = ${docId} and not d.deleted
+    limit 1
+  `;
+  const body = rows[0]?.body.trim() ?? "";
+  return body || null;
+}

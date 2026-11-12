@@ -178,7 +178,7 @@ export function Sidebar({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [picked, setDialog]);
+  }, [picked, setDialog, setPicked, setAnchor]);
 
   // Remove deleted or externally removed items from selection.
   useEffect(() => {
@@ -189,7 +189,7 @@ export function Sidebar({
         : portfolios.some((portfolio) => portfolio.id === key.slice(5));
     if (picked.every(alive)) return;
     setPicked((current) => current.filter(alive));
-  }, [picked, documents, portfolios]);
+  }, [picked, documents, portfolios, setPicked]);
 
   const onPick = (event: MouseEvent, key: PickKey): boolean => {
     const toggle = event.ctrlKey || event.metaKey;

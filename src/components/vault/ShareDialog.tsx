@@ -11,14 +11,14 @@ import {
   User,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { publicUrl, setMyShares, shareOf, useMyShares } from "@/app/shares";
 import { useVault } from "@/app/vault/store";
-import { AccessTrail, chosenExpiry, ExpiryField, utcDay } from "@/components/vault/AccessWindow";
+import { AccessTrail, ExpiryField } from "@/components/vault/AccessWindow";
+import { chosenExpiry, utcDay, type ExpiryChoice } from "@/domain/access-window";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import { orgPath } from "@/domain/orgs";
-import type { ExpiryChoice } from "@/domain/access-window";
 import type { ShareKind, Visibility } from "@/domain/share";
 import {
   revokePublicShare,
@@ -97,11 +97,11 @@ export function ShareDialog({
     setLinkDate(linkExisting ? utcDay(linkExisting) : "");
   }, [linkExisting, linkTouched]);
 
-  const loadTrail = () => {
+  const loadTrail = useCallback(() => {
     void shareTrail({ data: { kind, targetId: id } })
       .then(setTrail)
       .catch(() => setTrail({ periods: [], events: [] }));
-  };
+  }, [kind, id]);
 
   useEffect(() => {
     void shareUsers()
@@ -111,7 +111,7 @@ export function ShareDialog({
       .then(setOrgs)
       .catch(() => setOrgs([]));
     loadTrail();
-  }, [kind, id]);
+  }, [loadTrail]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();

@@ -798,8 +798,8 @@ Right-click anywhere in an administration page gives the actions of its buttons:
      their own in **Gestionar perfiles**, inside the chat:
      - a name;
      - instructions the assistant follows (tone, format, focus);
-     - **Solo lectura**, so that profile can read the vault but not create or
-       edit notes.
+     - **Solo lectura**, so that profile can read the vault but not create,
+       edit or delete notes, files, tables or portfolios.
 
      **General** is the assistant without a profile. The chosen profile is
      remembered in that browser.
@@ -807,20 +807,24 @@ Right-click anywhere in an administration page gives the actions of its buttons:
    - Clicking outside the chat minimizes it to its button. What you were
      typing is still there when you open it again.
 
-The assistant can list portfolios, search, read, create and edit notes, and
-read or edit tables, within the permissions of your role. A phrase or word
-inside a PDF is linked to another document with the same anchor as selecting
-that text by hand; that link stays on the PDF and does not create an extra
-note. It only sees what you can open: your own vault, items shared with you,
-and workspace folders granted to you. Something you can view but not edit
-(a read-only share, or a workspace folder granted as read) can be read and
-cannot be changed. It does
+The assistant can list portfolios, search, read, create and edit notes, create
+tables, and move notes, files or portfolios to the trash, within the
+permissions of your role. A delete waits until you confirm it in a later
+message: the assistant names the item and says it goes to the trash, and only
+then calls the tool. A phrase or word inside a PDF is linked to another
+document with the same anchor as selecting that text by hand; that link stays
+on the PDF and does not create an extra note. It only sees what you can open:
+your own vault, items shared with you, and workspace folders granted to you.
+Something you can view but not edit (a read-only share, or a workspace folder
+granted as read) can be read and cannot be changed. It does
 not open another person's private vault. It finds notes and portfolios by name
 as well as by id. `search_notes` looks through titles and the indexed text of
-notes, tables and files, and can return a short snippet. It reads the text of
-uploaded files: plain text, Word, Excel, PowerPoint, OpenDocument and PDFs
-with text (not scanned ones, and not the old binary `.doc` format). The
-chat lists each tool it used, and you can click one to open the note.
+notes, tables and files, and returns a short snippet, not the file.
+`read_note` returns at most a few thousand characters; when the file is
+already indexed, that text comes from the index. It can still extract plain
+text, Word, Excel, PowerPoint, OpenDocument and PDFs with text (not scanned
+ones, and not the old binary `.doc` format). The chat lists each tool it
+used, and you can click one to open the note.
 
 To try it with a local open model, install Ollama (or LM Studio and start its
 server), download a model, allow the provider in administration, and connect

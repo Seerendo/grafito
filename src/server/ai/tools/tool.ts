@@ -1,4 +1,5 @@
 import { openCorpus, type ToolResult } from "../corpus.ts";
+import type { ToolContext } from "../engine.ts";
 import type { ToolSpec } from "../types.ts";
 
 export type ToolEvent = ToolResult["event"];
@@ -12,5 +13,6 @@ export type Tool = {
   run: (
     corpus: ReturnType<typeof openCorpus>,
     args: Record<string, unknown>,
+    context: ToolContext,
   ) => Promise<ToolResult>;
 };

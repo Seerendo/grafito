@@ -7,6 +7,7 @@ import type { VaultCaps } from "./access.ts";
 import { noteTools } from "./tools/notes.ts";
 import { tableTools } from "./tools/tables.ts";
 import type { Tool } from "./tools/tool.ts";
+import type { ToolContext } from "./engine.ts";
 import type { ToolCall } from "./types.ts";
 
 /**
@@ -33,7 +34,7 @@ export function vaultTools(
   options: { readOnly?: boolean } = {},
 ): {
   specs: Tool["spec"][];
-  run: (call: ToolCall) => Promise<{ content: string; event: ToolEvent }>;
+  run: (call: ToolCall, context?: ToolContext) => Promise<{ content: string; event: ToolEvent }>;
 } {
   const readOnly = options.readOnly ?? false;
   const corpus = openCorpus(sql, userId, capsFor(profile, readOnly), `${profile.displayName} (IA)`);
@@ -46,7 +47,7 @@ export function vaultTools(
   );
   return {
     specs: allowed.map((tool) => tool.spec),
-    run: async (call) => {
+    run: async (call, context) => {
       const tool = allowed.find((item) => item.spec.name === call.name);
       if (!tool) {
         return {
@@ -55,7 +56,7 @@ export function vaultTools(
         };
       }
       try {
-        const { result, event } = await tool.run(corpus, call.arguments);
+        const { result, event } = await tool.run(corpus, call.arguments, context ?? {});
         return { content: JSON.stringify(result), event };
       } catch (error) {
         const message =

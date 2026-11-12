@@ -1,30 +1,7 @@
 import { intl, t } from "@/app/i18n";
-import { expiryAt, type ExpiryChoice } from "@/domain/access-window";
+import type { ExpiryChoice } from "@/domain/access-window";
 
 /** Expiry chosen in sharing and form dialogs. */
-
-export function utcDay(at: number): string {
-  const date = new Date(at);
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${month}-${day}`;
-}
-
-/**
- * Payload for saving. undefined preserves each grant's existing expiry when values differ and
- * the control was untouched.
- */
-export function chosenExpiry(
-  touched: boolean,
-  mixed: boolean,
-  mode: ExpiryChoice,
-  date: string,
-  existing: number | null,
-): number | null | undefined {
-  if (!touched) return mixed ? undefined : existing;
-  return expiryAt(mode, date, Date.now());
-}
-
 export function ExpiryField({
   mode,
   date,

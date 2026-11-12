@@ -408,6 +408,8 @@ export function TableView({
       )
       .join("\n");
     rememberTableText(docId, text);
+    // cellOf, labelOf and rowTitle only read formulas, labels and names, which are listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, rows, fields, labels, names, formulas]);
 
   const setCell = async (row: TableRow, field: TableField, value: CellValue) => {
@@ -1723,13 +1725,15 @@ function SelectEditor({
   onCommit: (value: CellValue, move?: "down" | "right") => void;
   onCancel: () => void;
 }) {
-  const choices = field.choices ?? [];
   const current = typeof value === "string" ? value : "";
-  const options = [
-    { value: "", label: t("Ninguna") },
-    ...choices.map((choice) => ({ value: choice, label: choice })),
-    ...(current && !choices.includes(current) ? [{ value: current, label: current }] : []),
-  ];
+  const choices = useMemo(() => field.choices ?? [], [field.choices]);
+  const options = useMemo(() => {
+    return [
+      { value: "", label: t("Ninguna") },
+      ...choices.map((choice) => ({ value: choice, label: choice })),
+      ...(current && !choices.includes(current) ? [{ value: current, label: current }] : []),
+    ];
+  }, [choices, current]);
   const anchor = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState(() =>
@@ -1973,17 +1977,18 @@ function RelationPicker({
   const box = useRef<HTMLDivElement>(null);
   const latest = useRef(chosen);
   latest.current = chosen;
+  const { docId, shareId } = where;
   useEffect(() => {
     if (!tableId) return;
     const timer = window.setTimeout(() => {
-      void tableRowChoices({ data: { ...where, tableId, query } })
+      void tableRowChoices({ data: { docId, ...(shareId ? { shareId } : {}), tableId, query } })
         .then((result) => {
           if (result.ok) setOptions(result.rows);
         })
         .catch(() => undefined);
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [tableId, query, where.docId, where.shareId]);
+  }, [tableId, query, docId, shareId]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (!box.current?.contains(event.target as Node))

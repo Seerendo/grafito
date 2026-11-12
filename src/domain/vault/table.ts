@@ -12,6 +12,18 @@ export function isTableName(name: string): boolean {
   return /\.tabla$/i.test(name);
 }
 
+/** Column names for a new table, split on commas, without duplicates. */
+export function tableColumnNames(value: string, limit = 30): string[] {
+  const names: string[] = [];
+  for (const part of value.split(",")) {
+    const name = part.trim().replace(/\s+/g, " ").slice(0, 120);
+    if (!name || names.some((item) => item.toLowerCase() === name.toLowerCase())) continue;
+    names.push(name);
+    if (names.length >= limit) break;
+  }
+  return names;
+}
+
 /** File content only identifies a table; its data is stored separately. */
 export function emptyTableFile(): string {
   return JSON.stringify({ type: "grafito-table", version: 1 });

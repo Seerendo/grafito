@@ -47,7 +47,7 @@ import { VisibilityMark } from "./visibility";
 import { MarkdownView } from "./MarkdownView";
 import { HighlightLayer } from "./HighlightLayer";
 import { emptyHistory, record, redo, undo, type UndoHistory } from "@/domain/vault/undo";
-import { requestNotePdf } from "./NotePdf";
+import { requestNotePdf } from "@/app/note-pdf";
 import { intl, t } from "@/app/i18n";
 
 function wrapSelection(value: string, start: number, end: number, before: string, after: string) {

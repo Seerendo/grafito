@@ -2,23 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useVault } from "@/app/vault/store";
 import { MarkdownView } from "./MarkdownView";
 import { t } from "@/app/i18n";
-
-type PdfJob = { title: string; content: string };
-
-type Handler = (job: PdfJob) => void;
-
-let handler: Handler | null = null;
-
-export function requestNotePdf(job: PdfJob) {
-  handler?.(job);
-}
-
-function bindNotePdf(next: Handler) {
-  handler = next;
-  return () => {
-    if (handler === next) handler = null;
-  };
-}
+import { bindNotePdf, type PdfJob } from "@/app/note-pdf";
 
 function fileName(title: string) {
   const clean =

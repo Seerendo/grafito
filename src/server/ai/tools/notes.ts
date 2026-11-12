@@ -76,16 +76,35 @@ export const noteTools: Tool[] = [
     spec: {
       name: "read_note",
       description:
-        "Lee una nota o un archivo que esta persona puede abrir, por id o por título. Si hay varios con el mismo título, pide el id. Devuelve el texto de las notas y de los archivos de texto, Office, OpenDocument y PDF con texto.",
+        "Lee un tramo de una nota o un archivo que esta persona puede abrir, por id o por título. No devuelve el archivo entero: como mucho unos miles de caracteres. Si truncated es true, vuelve a llamarla con offset = next_offset. Los archivos salen del índice cuando ya está; si no, se extrae el texto y se recorta igual. Si index_capped es true, no hay más texto guardado. Para buscar una frase usa search_notes, que solo devuelve fragmentos. Una tabla se lee con query_table.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Id de la nota o archivo, o su título" },
+          offset: {
+            type: "string",
+            description: "Desde qué carácter continuar; vacío o 0 para el principio",
+          },
         },
         required: ["id"],
       },
     },
-    run: (vault, args) => vault.readNote(text(args, "id")),
+    run: (vault, args) => {
+      const raw = args.offset;
+      const parsed =
+        raw === undefined || raw === null || raw === ""
+          ? 0
+          : typeof raw === "number"
+            ? raw
+            : Number(String(raw).trim());
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        return Promise.resolve({
+          result: { error: "offset tiene que ser un número de carácter, desde 0." },
+          event: { label: "No leyó el documento", ok: false },
+        });
+      }
+      return vault.readNote(text(args, "id"), parsed);
+    },
   },
   {
     permission: PERMISSION.notesCreate,
@@ -167,6 +186,60 @@ export const noteTools: Tool[] = [
     },
     run: (vault, args) =>
       vault.createPortfolio({ name: text(args, "name"), parent: text(args, "parent_id") }),
+  },
+  {
+    permission: PERMISSION.notesDelete,
+    writes: true,
+    spec: {
+      name: "delete_note",
+      description:
+        "Manda una nota a la papelera. No la llames en el mismo turno en que la persona pidió borrarla: primero dile el título y el sitio y espera a que confirme en su siguiente mensaje. Si hay varios títulos, pide el id.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Id de la nota, o su título" },
+        },
+        required: ["id"],
+      },
+    },
+    run: (vault, args, context) =>
+      vault.deleteDocument(text(args, "id"), "markdown", context.deleteQuestion ?? ""),
+  },
+  {
+    permission: PERMISSION.filesDelete,
+    writes: true,
+    spec: {
+      name: "delete_file",
+      description:
+        "Manda un archivo o una tabla a la papelera. No la llames hasta que la persona confirme en su siguiente mensaje, después de decirle el título y el sitio. Si hay varios títulos, pide el id.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Id del archivo o de la tabla, o su título" },
+        },
+        required: ["id"],
+      },
+    },
+    run: (vault, args, context) =>
+      vault.deleteDocument(text(args, "id"), "file", context.deleteQuestion ?? ""),
+  },
+  {
+    permission: PERMISSION.portfoliosManage,
+    writes: true,
+    spec: {
+      name: "delete_portfolio",
+      description:
+        "Manda un portafolio a la papelera, con los portafolios y documentos que contiene. No borra la Carpeta Personal ni la raíz de un compartido. No la llames hasta que la persona confirme en su siguiente mensaje. Dile antes el nombre, el sitio y que también se irá lo de dentro.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Id, nombre o ruta del portafolio" },
+        },
+        required: ["id"],
+      },
+    },
+    run: (vault, args, context) =>
+      vault.deletePortfolio(text(args, "id"), context.deleteQuestion ?? ""),
   },
   {
     permission: PERMISSION.linksManage,

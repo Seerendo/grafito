@@ -1,28 +1,43 @@
+import { randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
+import { readSlice } from "@/domain/ai-read";
+import { namedInQuestion } from "./guard.ts";
+import { INDEX_CAP } from "@/domain/search-text";
 import { locatePhrase, MAX_EXACT, type PhraseLocation } from "@/domain/vault/anchor";
 import type { Document, ManualKind, ManualLink } from "@/domain/vault/types";
 import { unpackTree } from "@/domain/share-pack";
 import { isPdfFile } from "@/domain/signature-box";
-import { isTableName } from "@/domain/vault/table";
+import { isTableName, tableColumnNames } from "@/domain/vault/table";
 import { documentPdfPages, fileText } from "@/server/files";
-import { queryContent } from "@/server/index/query";
+import { indexedBody, queryContent } from "@/server/index/query";
 import {
   editableTarget,
   grantedDocOwner,
+  mayWriteInPortfolio,
   sharedTreeForUser,
   sharedWith,
   shareForUser,
 } from "@/server/share";
-import { addNamedRow, queryRows, readFields, updateCell } from "@/server/table";
+import { subtree } from "@/server/space";
+import {
+  addNamedRow,
+  createTable as saveTable,
+  queryRows,
+  readFields,
+  saveField,
+  updateCell,
+} from "@/server/table";
 import { uploadTarget } from "@/server/upload-target";
 import { changeSharedLink } from "@/server/shared-link";
 import {
   attachManualLink,
   createNote as saveNote,
   createPortfolio as savePortfolio,
+  deleteDoc,
   getDoc,
   listDocs,
   listPortfolios,
+  trashPortfolio,
   updateNote,
 } from "@/server/vault";
 import { grantWorkspaceFolders, workspaceByOwner } from "@/server/workspace";
@@ -47,7 +62,6 @@ import {
  * write through editableTarget/uploadTarget; the response snapshot alone is insufficient.
  */
 
-const MAX_NOTE = 30_000;
 const LIST_CAP = 100;
 const SEARCH_CAP = 30;
 
@@ -408,28 +422,50 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         event: { label: `Buscó «${text}» (${shown.length})`, ok: true },
       };
     },
-    async readNote(ref: string): Promise<ToolResult> {
+    async readNote(ref: string, offset = 0): Promise<ToolResult> {
       const picked = await pickDoc(ref, "No encontró el documento");
       if (!("doc" in picked)) return picked;
+      if (picked.doc.fileName && isTableName(picked.doc.fileName)) {
+        return fail("Es una tabla", {
+          error: "Eso es una tabla. Usa query_table para ver filas, no leas el archivo entero.",
+          ...showDoc(picked.doc),
+        });
+      }
       const opened = await openReadable(sql, userId, picked.doc);
       if (!opened)
         return fail("No encontró el documento", {
           error: "No lo encontré entre lo que puedes abrir.",
         });
       const { document } = opened;
-      const body =
-        document.kind === "markdown"
-          ? document.content.length > MAX_NOTE
-            ? `${document.content.slice(0, MAX_NOTE)}\n…(recortado)`
-            : document.content
-          : ((await fileText(sql, document)) ??
-            `(archivo ${document.file?.mime ?? ""} sin texto legible: una imagen, un PDF escaneado o un formato no soportado)`);
+      let source: "nota" | "índice" | "extracción" = "nota";
+      let text = "";
+      let indexCapped = false;
+      if (document.kind === "markdown") text = document.content;
+      else {
+        const indexed = await indexedBody(sql, opened.ownerId, document.id);
+        if (indexed) {
+          text = indexed;
+          source = "índice";
+          indexCapped = indexed.length >= INDEX_CAP;
+        } else {
+          text =
+            (await fileText(sql, document, INDEX_CAP)) ??
+            `(archivo ${document.file?.mime ?? ""} sin texto legible: una imagen, un PDF escaneado o un formato no soportado)`;
+          source = "extracción";
+          // fileText appends a marker past the cap, so a longer string is a cut extract.
+          indexCapped = text.length > INDEX_CAP;
+        }
+      }
+      const slice = readSlice(text, offset);
       return {
         result: {
           ...showDoc(picked.doc),
           updated: new Date(document.updatedAt).toISOString(),
           updated_by: document.updatedBy,
-          content: body,
+          source,
+          ...slice,
+          ...(indexCapped ? { index_capped: true } : {}),
+          ...(slice.truncated ? { next_offset: slice.offset + slice.content.length } : {}),
         },
         event: { label: `Leyó «${document.title}»`, ok: true, docId: document.id },
       };
@@ -703,7 +739,176 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         },
       };
     },
+    async deleteDocument(
+      ref: string,
+      kind: "markdown" | "file",
+      question: string,
+    ): Promise<ToolResult> {
+      const picked = await pickDoc(
+        ref,
+        kind === "file" ? "No encontró el archivo" : "No encontró la nota",
+      );
+      if (!("doc" in picked)) return picked;
+      const doc = picked.doc;
+      if (doc.kind !== kind) {
+        return fail("No eliminó", {
+          error:
+            doc.kind === "file"
+              ? "Eso es un archivo. Usa delete_file."
+              : "Eso es una nota. Usa delete_note.",
+        });
+      }
+      if (!namedInQuestion(question, doc.title)) return unconfirmed(doc.title);
+      if (doc.shareId) {
+        const share = await shareForUser(sql, userId, doc.shareId);
+        if (!share || share.kind !== "portfolio")
+          return fail("No eliminó", { error: "No puedes eliminar aquí." });
+        if (
+          !doc.portfolioId ||
+          !(await subtree(sql, share.ownerId, share.targetId)).includes(doc.portfolioId)
+        ) {
+          return fail("No eliminó", { error: "Ese documento no es parte de lo compartido." });
+        }
+        if (!(await mayWriteInPortfolio(sql, share, userId, doc.portfolioId)))
+          return fail("No eliminó", { error: "No puedes eliminar aquí." });
+        await deleteDoc(sql, share.ownerId, doc.id);
+      } else {
+        if (!(await getDoc(sql, userId, doc.id)))
+          return fail("No encontró el documento", { error: "Ya no está." });
+        await deleteDoc(sql, userId, doc.id);
+      }
+      invalidate();
+      return {
+        result: {
+          id: doc.id,
+          title: doc.title,
+          kind: doc.kind,
+          place: doc.place,
+          trash: true,
+        },
+        event: {
+          label: `Eliminó «${doc.title}»`,
+          ok: true,
+          docId: doc.id,
+          changed: true,
+        },
+      };
+    },
+    async deletePortfolio(ref: string, question: string): Promise<ToolResult> {
+      const picked = await pickFolder(ref, "No encontró el portafolio");
+      if (!("folder" in picked)) return picked;
+      const folder = picked.folder;
+      if (!folder.id) return fail("No eliminó", { error: "La Carpeta Personal no se elimina." });
+      if (!namedInQuestion(question, folder.name)) return unconfirmed(folder.name);
+      let ownerId = userId;
+      if (folder.shareId) {
+        const share = await shareForUser(sql, userId, folder.shareId);
+        if (!share || share.kind !== "portfolio")
+          return fail("No eliminó", { error: "No puedes eliminar aquí." });
+        const inside = await subtree(sql, share.ownerId, share.targetId);
+        if (folder.id === share.targetId || !inside.includes(folder.id)) {
+          return fail("No eliminó", {
+            error:
+              folder.id === share.targetId
+                ? "Ese portafolio es la raíz de lo compartido y no se elimina."
+                : "Ese portafolio no se puede eliminar aquí.",
+          });
+        }
+        const folders = await subtree(sql, share.ownerId, folder.id);
+        for (const id of folders) {
+          if (!(await mayWriteInPortfolio(sql, share, userId, id)))
+            return fail("No eliminó", { error: "No puedes eliminar aquí." });
+        }
+        ownerId = share.ownerId;
+      }
+      const trashed = await trashPortfolio(sql, ownerId, folder.id);
+      if (!trashed) return fail("No encontró el portafolio", { error: "Ya no está." });
+      invalidate();
+      return {
+        result: {
+          id: folder.id,
+          name: folder.name,
+          place: folder.place,
+          portfolios: trashed.portfolios,
+          documents: trashed.documents,
+          trash: true,
+        },
+        event: {
+          label: `Eliminó el portafolio «${folder.name}»`,
+          ok: true,
+          changed: true,
+        },
+      };
+    },
+    async createDataTable(input: {
+      title: string;
+      portfolio?: string;
+      columns?: string;
+    }): Promise<ToolResult> {
+      const title = input.title.trim();
+      if (!title) return fail("No creó la tabla", { error: "Escribe un título." });
+      const picked = await pickFolder(input.portfolio ?? "", "No encontró el portafolio");
+      if (!("folder" in picked)) return picked;
+      const columns = tableColumnNames(input.columns ?? "");
+      const write = async (ownerId: string, portfolioId: string | null) => {
+        const saved = await saveTable(sql, ownerId, { title, portfolioId, actor });
+        const created: string[] = [];
+        for (const name of columns) {
+          const field = await saveField(sql, ownerId, saved.id, {
+            id: randomUUID(),
+            name,
+            type: "text",
+          });
+          if (!field.ok) return { saved, columns: created, error: field.error };
+          created.push(name);
+        }
+        return { saved, columns: created };
+      };
+      const made = picked.folder.shareId
+        ? await createShared(picked.folder, write)
+        : await write(userId, picked.folder.id);
+      if (typeof made === "string") return fail("No puede crear ahí", { error: made });
+      if ("error" in made && made.error) {
+        invalidate();
+        return {
+          result: {
+            error: made.error,
+            id: made.saved.id,
+            title: made.saved.title,
+            columns: made.columns,
+          },
+          event: {
+            label: "No creó la columna",
+            ok: false,
+            docId: made.saved.id,
+            changed: true,
+          },
+        };
+      }
+      invalidate();
+      return {
+        result: {
+          id: made.saved.id,
+          title: made.saved.title,
+          place: picked.folder.place,
+          columns: made.columns,
+        },
+        event: {
+          label: `Creó la tabla «${made.saved.title}»`,
+          ok: true,
+          docId: made.saved.id,
+          changed: true,
+        },
+      };
+    },
   };
+
+  /** The yes was for something else: ask again about this one. */
+  function unconfirmed(name: string): ToolResult {
+    return fail("Pidió confirmación antes de eliminar", {
+      error: `La persona no confirmó eliminar «${name}»: tu pregunta no lo nombraba. Pregunta por «${name}» con su sitio y espera su respuesta.`,
+    });
+  }
 
   async function pickTable(ref: string, writing: boolean): Promise<{ doc: AiDoc } | ToolResult> {
     const picked = await pickDoc(ref, "No encontró la tabla");

@@ -1,11 +1,12 @@
 import { Building2, User } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { uploadVaultFile } from "@/app/files";
 import { intl, t } from "@/app/i18n";
 import { useSharedView } from "@/app/shared-view";
 import { useVault } from "@/app/vault/store";
 import { Mark } from "@/components/brand/Mark";
-import { AccessTrail, chosenExpiry, ExpiryField, utcDay } from "@/components/vault/AccessWindow";
+import { AccessTrail, ExpiryField } from "@/components/vault/AccessWindow";
+import { chosenExpiry, utcDay, type ExpiryChoice } from "@/domain/access-window";
 import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import type {
@@ -15,7 +16,6 @@ import type {
   TableForm,
   TableRow,
 } from "@/domain/vault/table";
-import type { ExpiryChoice } from "@/domain/access-window";
 import { orgPath } from "@/domain/orgs";
 import { isPublicField } from "@/domain/vault/table";
 import {
@@ -113,20 +113,21 @@ export function FormDialog({
     setLinkDate(linkExisting ? utcDay(linkExisting) : "");
   }, [linkExisting, linkTouched]);
 
-  const loadTrail = () => {
+  const { docId, shareId } = where;
+  const loadTrail = useCallback(() => {
     if (!editable) return;
-    void tableFormActivity({ data: where })
+    void tableFormActivity({ data: { docId, ...(shareId ? { shareId } : {}) } })
       .then(setTrail)
       .catch(() => setTrail({ periods: [], events: [] }));
-  };
+  }, [docId, shareId, editable]);
 
   useEffect(() => {
     loadTrail();
-  }, [where.docId, where.shareId, editable]);
+  }, [loadTrail]);
 
   useEffect(() => {
     if (!editable) return;
-    void tableFormPeople({ data: where })
+    void tableFormPeople({ data: { docId, ...(shareId ? { shareId } : {}) } })
       .then((result) => {
         setPeople(result.users);
         setOrgs(result.orgs);
@@ -135,7 +136,7 @@ export function FormDialog({
         setPeople([]);
         setOrgs([]);
       });
-  }, [where.docId, where.shareId, editable]);
+  }, [docId, shareId, editable]);
 
   const filteredPeople = useMemo(() => {
     const needle = who.trim().toLowerCase();
@@ -735,13 +736,14 @@ function RelationInput({
   onChange: (value: CellValue) => void;
 }) {
   const [options, setOptions] = useState<{ id: string; label: string }[]>([]);
+  const { docId, shareId } = where;
   useEffect(() => {
-    void tableRowChoices({ data: { ...where, tableId } })
+    void tableRowChoices({ data: { docId, ...(shareId ? { shareId } : {}), tableId } })
       .then((result) => {
         if (result.ok) setOptions(result.rows);
       })
       .catch(() => undefined);
-  }, [where.docId, where.shareId, tableId]);
+  }, [docId, shareId, tableId]);
   const current = Array.isArray(value)
     ? value.find((ref) => ref && typeof ref === "object" && "rowId" in ref)
     : null;

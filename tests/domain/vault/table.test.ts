@@ -8,6 +8,7 @@ import {
   isPublicField,
   isTableName,
   parseCsv,
+  tableColumnNames,
   toCsv,
 } from "../../../src/domain/vault/table.ts";
 
@@ -16,6 +17,16 @@ import {
 test("una tabla se reconoce por su extensión", () => {
   assert.ok(isTableName("Inventario.tabla"));
   assert.ok(!isTableName("Inventario.csv"));
+});
+
+test("las columnas nuevas salen de una lista separada por comas", () => {
+  assert.deepEqual(tableColumnNames(" Estado, Importe, estado , Fecha "), [
+    "Estado",
+    "Importe",
+    "Fecha",
+  ]);
+  assert.deepEqual(tableColumnNames("   "), []);
+  assert.equal(tableColumnNames("A,B,C", 2).length, 2);
 });
 
 test("cada tipo guarda solo lo que le corresponde", () => {

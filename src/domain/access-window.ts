@@ -15,3 +15,27 @@ export function expiryAt(choice: ExpiryChoice, date: string, now: number): numbe
   const days = choice === "1" ? 1 : choice === "7" ? 7 : choice === "30" ? 30 : 90;
   return now + days * DAY;
 }
+
+/** YYYY-MM-DD of a timestamp in UTC, for the date input. */
+export function utcDay(at: number): string {
+  const date = new Date(at);
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${month}-${day}`;
+}
+
+/**
+ * Payload for saving. undefined preserves each grant's existing expiry when values differ and
+ * the control was untouched.
+ */
+export function chosenExpiry(
+  touched: boolean,
+  mixed: boolean,
+  mode: ExpiryChoice,
+  date: string,
+  existing: number | null,
+  now = Date.now(),
+): number | null | undefined {
+  if (!touched) return mixed ? undefined : existing;
+  return expiryAt(mode, date, now);
+}

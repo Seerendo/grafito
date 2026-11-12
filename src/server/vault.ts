@@ -580,6 +580,32 @@ export async function deleteDoc(sql: Sql, userId: string, id: string): Promise<v
   });
 }
 
+/**
+ * Move a portfolio, its nested portfolios and the documents inside them to the trash. Bytes stay
+ * until purge. Null when the portfolio is already gone.
+ */
+export async function trashPortfolio(
+  sql: Sql,
+  userId: string,
+  portfolioId: string,
+): Promise<{ portfolios: number; documents: number } | null> {
+  const portfolios = await listPortfolios(sql, userId);
+  if (!portfolios.some((portfolio) => portfolio.id === portfolioId)) return null;
+  const folderIds = [...descendantIds(portfolios, portfolioId)];
+  const documents = await sql<{ id: string }>`
+    select id from vault_doc
+    where user_id = ${userId} and not deleted
+      and portfolio_id = any(string_to_array(${folderIds.join(",")}, ","))
+  `;
+  await pushChanges(sql, userId, {
+    docs: [],
+    deletedDocs: documents.map((row) => row.id),
+    portfolios: [],
+    deletedPortfolios: folderIds,
+  });
+  return { portfolios: folderIds.length, documents: documents.length };
+}
+
 export async function createPortfolio(
   sql: Sql,
   userId: string,

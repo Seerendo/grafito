@@ -687,7 +687,7 @@ function FileDropShield({ enabled }: { enabled: boolean }) {
         hit instanceof Element &&
         Boolean(
           hit.closest("[data-ui='sidebar']") ||
-            (hit.closest("[data-ui='rail']") && !hit.closest("[data-ui='context-slot']")),
+          (hit.closest("[data-ui='rail']") && !hit.closest("[data-ui='context-slot']")),
         );
       if (tree) {
         node.style.pointerEvents = "none";

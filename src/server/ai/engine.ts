@@ -1,12 +1,21 @@
-import { CLAIMS_WRITE, compactToolResults, WRITE_TOOLS } from "./guard.ts";
+import {
+  CLAIMS_WRITE,
+  compactToolResults,
+  DELETE_TOOLS,
+  deletionQuestion,
+  WRITE_TOOLS,
+} from "./guard.ts";
 import type { AgentEvent, ToolEvent } from "./events.ts";
 import type { ChatMessage, Completion, ToolCall, ToolSpec } from "./types.ts";
 
 /** Ports keep the execution loop independent of SQL, HTTP and provider credentials. */
 export type AgentTools = {
   specs: ToolSpec[];
-  run: (call: ToolCall) => Promise<{ content: string; event: ToolEvent }>;
+  run: (call: ToolCall, context?: ToolContext) => Promise<{ content: string; event: ToolEvent }>;
 };
+
+/** What the engine knows about the turn that a tool may need, such as the confirmed question. */
+export type ToolContext = { deleteQuestion?: string };
 
 export type AgentInput = {
   messages: ChatMessage[];
@@ -40,13 +49,13 @@ export async function executeAgent(input: AgentInput): Promise<void> {
           messages.push({
             role: "user",
             content:
-              "(Comprobación automática de Grafito, no la escribió la persona.) En esta respuesta no se creó, ni se cambió, ni se vinculó nada: ninguna herramienta que escribe se llamó con éxito. Si la persona lo pidió, hazlo ahora llamando a la herramienta. Si no, responde de nuevo sin decir que lo hiciste.",
+              "(Comprobación automática de Grafito, no la escribió la persona.) En esta respuesta no se creó, ni se cambió, ni se vinculó, ni se eliminó nada: ninguna herramienta que escribe se llamó con éxito. Si la persona lo pidió, hazlo ahora llamando a la herramienta. Si pidió eliminar, pregunta primero y espera su confirmación; no digas que ya se eliminó.",
           });
           continue;
         }
         emit({
           type: "text",
-          text: `${text}\n\n> **Ojo:** en esta respuesta no se creó, ni se cambió, ni se vinculó nada en la bóveda, aunque el texto lo diga.`,
+          text: `${text}\n\n> **Ojo:** en esta respuesta no se creó, ni se cambió, ni se vinculó, ni se eliminó nada en la bóveda, aunque el texto lo diga.`,
         });
         emit({ type: "done", changed });
         return;
@@ -59,7 +68,21 @@ export async function executeAgent(input: AgentInput): Promise<void> {
     for (const call of completion.toolCalls) {
       // Cancellation must also stop the remaining writes in a multi-tool response.
       signal?.throwIfAborted();
-      const { content, event } = await tools.run(call);
+      const question = DELETE_TOOLS.has(call.name) ? deletionQuestion(messages) : null;
+      if (DELETE_TOOLS.has(call.name) && !question) {
+        const content = JSON.stringify({
+          error:
+            "No se eliminó nada. Di qué borrarías (título y sitio) y que irá a la papelera, y pregunta si lo confirma. No vuelvas a llamar esta herramienta hasta que lo confirme en su siguiente mensaje.",
+        });
+        const event = { label: "Pidió confirmación antes de eliminar", ok: false as const };
+        emit({ type: "tool", tool: call.name, event });
+        messages.push({ role: "tool", toolCallId: call.id, name: call.name, content });
+        continue;
+      }
+      const { content, event } = await tools.run(
+        call,
+        question ? { deleteQuestion: question } : undefined,
+      );
       if (event.changed) changed = true;
       if (event.ok && WRITE_TOOLS.has(call.name)) wrote += 1;
       emit({ type: "tool", tool: call.name, event });
