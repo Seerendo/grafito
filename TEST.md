@@ -1162,6 +1162,22 @@ On the test stack (`grafito-e2e`) with Grafeno 0.2.1, real Chrome on an RTX
 | Engine integration tests against Grafeno 0.2.1 (`GRAFENO_TEST_URL`), with communities, importance, bridges and related                                                                                                              | ✅ 2 tests                                                                                                                                                          |
 | `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                                                                                                                                                                       | ✅ no errors; 229 tests                                                                                                                                             |
 
+## Round 38: graph fixes
+
+On the test stack (`grafito-e2e`), real Chrome on an RTX 4060 laptop, an
+8,020-document workspace with 23,392 links.
+
+| Check                                                                                 | Result                                                          |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 2D: opening the graph the first time                                                  | ✅ every link on the first opening; framed once, then one glide |
+| 2D and 3D: Entorno, then Todo                                                         | ✅ no camera jumps                                              |
+| 2D: dragging a document                                                               | ✅ it moves and stays where it is dropped                       |
+| 3D: wheel zoom 2, 3, 5 and 8 s after opening                                          | ✅ no long tasks; frames of 17–18 ms                            |
+| Administrator session pulse after 12 s                                                | ✅ no longer re-renders the whole vault                         |
+| Grafo plugin turned off and on in Administración, back to the vault without reloading | ✅ the graph button hides and returns                           |
+| Public link with the Grafo plugin off, and on again                                   | ✅ hidden; shown again; pages already open check again          |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                         | ✅ 223 tests pass, no lint warnings                             |
+
 ## Useful commands
 
 ```bash

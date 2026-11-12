@@ -127,6 +127,11 @@ scope.onmessage = (event: MessageEvent<LayoutIn>) => {
       .alphaDecay(0.02)
       .alpha(message.alpha)
       .stop();
+    // A new layout settles most of the way before it is first shown: no shrinking to watch.
+    if (message.alpha >= 0.5) {
+      const started = performance.now();
+      while (simulation.alpha() > 0.25 && performance.now() - started < 1500) simulation.tick();
+    }
     run();
   } else if (message.type === "communities") {
     communities = message.communities;

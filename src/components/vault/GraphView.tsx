@@ -209,9 +209,7 @@ export function GraphView({
     return {
       visibleNotes: notes,
       visibleEdges: shown,
-      signature: `${notes.map((note) => note.id).join(",")}|${shown
-        .map((edge) => `${edge.kind}:${edge.from}-${edge.to}`)
-        .join(",")}|${seed}`,
+      signature: graphSignature(notes, shown, seed),
     };
   }, [documents, edges, focusId, local, seed, depth, pathKey]);
 
@@ -1056,6 +1054,34 @@ export function GraphView({
       </div>
     </div>
   );
+}
+
+/**
+ * A fingerprint of the shown documents and links: equal content gives an equal value, so asking
+ * for the same links again does not lay the graph out again. A hash instead of one long string:
+ * with tens of thousands of links that string took a noticeable pause to build.
+ */
+function graphSignature(
+  notes: readonly { id: string }[],
+  edges: readonly { from: string; to: string; kind: string }[],
+  seed: number,
+): string {
+  let hash = 0x811c9dc5;
+  const mix = (text: string) => {
+    for (let at = 0; at < text.length; at += 1) {
+      hash ^= text.charCodeAt(at);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    hash ^= 0x2c;
+    hash = Math.imul(hash, 0x01000193);
+  };
+  for (const note of notes) mix(note.id);
+  for (const edge of edges) {
+    mix(edge.kind);
+    mix(edge.from);
+    mix(edge.to);
+  }
+  return `${notes.length}:${edges.length}:${(hash >>> 0).toString(36)}:${seed}`;
 }
 
 type Extra = { node: GraphNode; open?: () => void };

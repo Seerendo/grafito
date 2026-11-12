@@ -22,8 +22,12 @@ export function cssColor(name: string, fallback: string): string {
 }
 
 /** Any CSS color as RGBA floats, read back through a 2D context. */
+let probeContext: CanvasRenderingContext2D | null = null;
+
 export function rgba(color: string, alpha = 1): Rgba {
-  const probe = document.createElement("canvas").getContext("2d");
+  // One small canvas reads every colour; a new one per colour was slow when repainting often.
+  probeContext ??= document.createElement("canvas").getContext("2d");
+  const probe = probeContext;
   if (!probe) return [1, 1, 1, alpha];
   probe.fillStyle = "#000";
   probe.fillStyle = color;
@@ -57,7 +61,8 @@ export function readPaint(): Paint {
     fg: rgba(cssColor("--color-fg", "#f3eee6")),
     muted: cssColor("--color-muted", "#a89b8c"),
     faint: rgba(cssColor("--color-faint", "#746a5e")),
-    line: rgba(cssColor("--color-line", "#3a342c"), 0.85),
+    // Links in the faint text colour: the border colour vanished on dark themes.
+    line: rgba(cssColor("--color-faint", "#746a5e"), 0.55),
     elevated: rgba(cssColor("--color-elevated", "#26231d")),
     ink: cssColor("--color-accent-fg", "#1c1408"),
     accentText: accent,

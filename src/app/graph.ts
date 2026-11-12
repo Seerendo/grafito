@@ -82,6 +82,11 @@ export function useGraphAvailable(active = true): boolean {
       window.clearInterval(timer);
     };
   }, [active]);
+  // Turning the Grafo plugin back on shows the graph at once: ask the server again instead of
+  // waiting for the next minute's check (turning it off already hides it through the flag).
+  useEffect(() => {
+    if (active && plugin) void refreshGraphState(true);
+  }, [active, plugin]);
   return active && plugin && can(PERMISSION.graphView) && state === true;
 }
 
@@ -131,7 +136,10 @@ export function useGraphEdges(
       fetchEdges(scope)
         .then((result) => {
           if (cancelled) return;
-          if (result.off && !scope.token) reportOff();
+          if (result.off) {
+            if (scope.token) setPublic(scope.token, false);
+            else reportOff();
+          }
           setState({ key, result });
           // A vault still being copied into Grafeno fills in shortly.
           if (!result.off && !result.ready) timer = window.setTimeout(load, SETTLE_MS * 2);
@@ -186,7 +194,10 @@ export function useIncomingLinks(
           .then((result) => {
             if (cancelled) return;
             if (!result.ok) {
-              if (result.off && !scope.token) reportOff();
+              if (result.off) {
+                if (scope.token) setPublic(scope.token, false);
+                else reportOff();
+              }
               setState({ key, items: [], related: [] });
               return;
             }
@@ -210,29 +221,50 @@ export function useIncomingLinks(
   return state?.key === key ? { items: state.items, related: state.related } : null;
 }
 
-const publicChecks = new Map<string, { at: number; available: Promise<boolean> }>();
+/** Public links' graph state: shared by every component of the page, asked again regularly. */
+const PUBLIC_MS = 30_000;
+const publicState = new Map<string, boolean>();
+const publicAsked = new Map<string, number>();
+const publicListeners = new Set<() => void>();
 
-/** Whether a public link's graph is usable; public pages have no session to ask with. */
+function setPublic(token: string, available: boolean) {
+  if (publicState.get(token) === available) return;
+  publicState.set(token, available);
+  for (const listener of publicListeners) listener();
+}
+
+function askPublic(token: string) {
+  // Several components ask at once; one request serves them.
+  if (Date.now() - (publicAsked.get(token) ?? 0) < 2_000) return;
+  publicAsked.set(token, Date.now());
+  void publicGraph({ data: { token } })
+    .then((result) => setPublic(token, result.ok))
+    .catch(() => setPublic(token, false));
+}
+
+/**
+ * Whether a public link's graph is usable; public pages have no session to ask with. Asked again
+ * every 30 s and when the page comes back to the front, so pausing the Grafo plugin also hides
+ * it from pages already open.
+ */
 export function usePublicGraph(token: string | undefined): boolean {
-  const [available, setAvailable] = useState(false);
+  const available = useSyncExternalStore(
+    (listener) => {
+      publicListeners.add(listener);
+      return () => publicListeners.delete(listener);
+    },
+    () => (token ? (publicState.get(token) ?? false) : false),
+    () => false,
+  );
   useEffect(() => {
     if (!token) return;
-    let cancelled = false;
-    let check = publicChecks.get(token);
-    if (!check || Date.now() - check.at > CHECK_MS) {
-      check = {
-        at: Date.now(),
-        available: publicGraph({ data: { token } })
-          .then((result) => result.ok)
-          .catch(() => false),
-      };
-      publicChecks.set(token, check);
-    }
-    void check.available.then((value) => {
-      if (!cancelled) setAvailable(value);
-    });
+    askPublic(token);
+    const onFocus = () => askPublic(token);
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => askPublic(token), PUBLIC_MS);
     return () => {
-      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
     };
   }, [token]);
   return available;

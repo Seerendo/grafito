@@ -72,7 +72,6 @@ export function Graph3d({
     positions: new Float32Array(0) as Float32Array,
     hover: -1,
     steered: false,
-    followedAt: 0,
     lastClick: null as { id: string; at: number } | null,
     /** Set by the scene once it exists. */
     load: () => undefined as void,
@@ -158,11 +157,14 @@ export function Graph3d({
     const lineMaterial = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.85,
     });
     const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
     scene.add(lines);
     let linkEnds = new Int32Array(0);
+    let lineEnds = new Float32Array(0);
+    // Nothing needs exact bounds: everything stays drawn, and picking recomputes its own.
+    lines.frustumCulled = false;
     let sizes = new Float32Array(0);
 
     const worker = new Worker(new URL("./graph3d.worker.ts", import.meta.url), {
@@ -208,13 +210,22 @@ export function Graph3d({
       }
       const dimming = highlight.size > 0;
       // Theme colours are sRGB; three.js works in linear light.
-      const mix = (color: Rgba, keep: number) =>
-        new THREE.Color().setRGB(
-          color[0] * keep + background[0] * (1 - keep),
-          color[1] * keep + background[1] * (1 - keep),
-          color[2] * keep + background[2] * (1 - keep),
-          THREE.SRGBColorSpace,
-        );
+      // A handful of distinct colours: each is worked out once, not once per node or link.
+      const mixed = new Map<string, Three.Color>();
+      const mix = (color: Rgba, keep: number) => {
+        const key = `${color[0]},${color[1]},${color[2]},${keep}`;
+        let found = mixed.get(key);
+        if (!found) {
+          found = new THREE.Color().setRGB(
+            color[0] * keep + background[0] * (1 - keep),
+            color[1] * keep + background[1] * (1 - keep),
+            color[2] * keep + background[2] * (1 - keep),
+            THREE.SRGBColorSpace,
+          );
+          mixed.set(key, found);
+        }
+        return found;
+      };
       sizes = new Float32Array(state.nodes.length);
       state.nodes.forEach((node, index) => {
         const found = state.analysis.get(node.id);
@@ -255,7 +266,10 @@ export function Graph3d({
         const onPath = steps.has(`${from}|${to}`);
         const hot = onPath || (!chain && (a === active || b === active));
         const color = mix(hot ? paint.accent : paint.line, hot ? 1 : dimming ? DIM : 0.9);
-        colors.set([color.r, color.g, color.b, color.r, color.g, color.b], at * 6);
+        const out = at * 6;
+        colors[out] = colors[out + 3] = color.r;
+        colors[out + 1] = colors[out + 4] = color.g;
+        colors[out + 2] = colors[out + 5] = color.b;
       }
       lineGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
       placeNodes();
@@ -280,26 +294,28 @@ export function Graph3d({
       });
       for (const { mesh } of meshes) {
         mesh.instanceMatrix.needsUpdate = true;
-        mesh.computeBoundingSphere();
+        // Recomputed only when a click needs it (pick), not on every layout step.
+        mesh.boundingSphere = null;
       }
-      const ends = new Float32Array((linkEnds.length / 2) * 6);
+      const size = (linkEnds.length / 2) * 6;
+      if (lineEnds.length !== size) {
+        lineEnds = new Float32Array(size);
+        lineGeometry.setAttribute("position", new THREE.BufferAttribute(lineEnds, 3));
+      }
+      const ends = lineEnds;
       for (let at = 0; at < linkEnds.length / 2; at += 1) {
         const a = linkEnds[at * 2]! * 3;
         const b = linkEnds[at * 2 + 1]! * 3;
-        ends.set(
-          [
-            positions[a]!,
-            positions[a + 1]!,
-            positions[a + 2]!,
-            positions[b]!,
-            positions[b + 1]!,
-            positions[b + 2]!,
-          ],
-          at * 6,
-        );
+        const out = at * 6;
+        ends[out] = positions[a]!;
+        ends[out + 1] = positions[a + 1]!;
+        ends[out + 2] = positions[a + 2]!;
+        ends[out + 3] = positions[b]!;
+        ends[out + 4] = positions[b + 1]!;
+        ends[out + 5] = positions[b + 2]!;
       }
-      lineGeometry.setAttribute("position", new THREE.BufferAttribute(ends, 3));
-      lineGeometry.computeBoundingSphere();
+      const attribute = lineGeometry.getAttribute("position");
+      if (attribute) attribute.needsUpdate = true;
       dirty = true;
     };
 
@@ -349,9 +365,21 @@ export function Graph3d({
       };
     };
 
+    let zoomShown = 0;
+    let zoomAt = 0;
+    let zoomTimer = 0;
     const publishZoom = () => {
       const distance = camera.position.distanceTo(controls.target) || 1;
-      state.onZoom(Math.round((referenceDistance / distance) * 100));
+      const percent = Math.round((referenceDistance / distance) * 100);
+      if (percent === zoomShown) return;
+      const send = () => {
+        zoomShown = percent;
+        zoomAt = performance.now();
+        state.onZoom(percent);
+      };
+      window.clearTimeout(zoomTimer);
+      if (performance.now() - zoomAt > 120) send();
+      else zoomTimer = window.setTimeout(send, 120);
     };
 
     const drawLabels = () => {
@@ -386,10 +414,14 @@ export function Graph3d({
       // Small graphs label everything; larger ones the most important documents.
       if (state.nodes.length <= 150) state.nodes.forEach((_, index) => add(index));
       else {
-        [...state.analysis.entries()]
-          .sort((a, b) => b[1].rank - a[1].rank)
-          .slice(0, 25)
-          .forEach(([id]) => add(state.index.get(id)));
+        if (topRankedOf !== state.analysis) {
+          topRankedOf = state.analysis;
+          topRanked = [...state.analysis.entries()]
+            .sort((a, b) => b[1].rank - a[1].rank)
+            .slice(0, 25)
+            .map(([id]) => id);
+        }
+        for (const id of topRanked) add(state.index.get(id));
       }
       context.font = "12px Outfit, sans-serif";
       context.textAlign = "center";
@@ -423,8 +455,35 @@ export function Graph3d({
       }
     };
 
+    let topRanked: string[] = [];
+    let topRankedOf: Map<string, NodeAnalysis> | null = null;
+    /** Positions from the worker wait for the next frame: several can arrive within one. */
+    let pending: Float32Array | null = null;
+    let framed = false;
+    let paintAsked = false;
+    const askPaint = () => {
+      paintAsked = true;
+    };
+    /** Shaders compiled: until then nothing draws, so the first frame does not stall. */
+    let ready = false;
     const loop = () => {
       raf = requestAnimationFrame(loop);
+      // Colour changes asked for during the last frame are applied once here: data, selection,
+      // communities and a path often all change in the same moment.
+      if (paintAsked) {
+        paintAsked = false;
+        paintColors();
+      }
+      if (pending) {
+        state.positions = pending;
+        pending = null;
+        placeNodes();
+        // The first positions of a layout are framed at once, without a camera move.
+        if (!framed) {
+          framed = true;
+          if (!state.steered) frameDefault(0);
+        }
+      }
       if (fly) {
         const progress = Math.min(1, (performance.now() - fly.start) / fly.duration);
         const ease = 1 - (1 - progress) ** 3;
@@ -434,7 +493,7 @@ export function Graph3d({
         dirty = true;
       }
       const moved = controls.update();
-      if (moved || dirty) {
+      if (ready && (moved || dirty)) {
         renderer.render(scene, camera);
         drawLabels();
         publishZoom();
@@ -449,15 +508,12 @@ export function Graph3d({
 
     worker.onmessage = (event: MessageEvent<LayoutOut>) => {
       const message = event.data;
-      if (message.type === "tick") {
-        state.positions = message.positions;
-        placeNodes();
-        // While the layout settles the camera follows it, until the person moves it.
-        if (!state.steered && performance.now() - state.followedAt > 600) {
-          state.followedAt = performance.now();
-          frameDefault(500);
-        }
-      } else if (!state.steered) frameDefault(500);
+      if (message.type === "tick") pending = message.positions;
+      // One gentle framing once it settles, unless the person moved the camera meanwhile.
+      else {
+        remember();
+        if (!state.steered) frameDefault(reduced ? 0 : 900);
+      }
     };
 
     /** The active node and its neighbours, or the whole graph without one. */
@@ -479,13 +535,20 @@ export function Graph3d({
       });
 
     /** New nodes or links: rebuild the meshes, keep known positions, restart the layout. */
-    const load = () => {
-      const previous = new Map<string, [number, number, number]>();
+    const memory = new Map<string, [number, number, number]>();
+    const remember = () => {
+      const p = state.positions;
+      // A small view (Entorno, a short path) has its own layout; keeping it would misplace those
+      // documents when the whole graph comes back.
+      if (state.index.size < memory.size * 0.5) return;
       state.index.forEach((index, id) => {
-        const p = state.positions;
         if (p.length >= (index + 1) * 3)
-          previous.set(id, [p[index * 3]!, p[index * 3 + 1]!, p[index * 3 + 2]!]);
+          memory.set(id, [p[index * 3]!, p[index * 3 + 1]!, p[index * 3 + 2]!]);
       });
+    };
+    const load = () => {
+      remember();
+      const previous = memory;
       state.index = new Map(state.nodes.map((node, index) => [node.id, index]));
       for (const { mesh } of meshes) {
         scene.remove(mesh);
@@ -498,6 +561,8 @@ export function Graph3d({
         if (list.length === 0) return [];
         const mesh = new THREE.InstancedMesh(geometries[KINDS[kind]!], material, list.length);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        // Always drawn: culling would need its bounds on every frame.
+        mesh.frustumCulled = false;
         mesh.setColorAt(0, new THREE.Color(1, 1, 1));
         scene.add(mesh);
         return [{ mesh, nodes: list }];
@@ -520,8 +585,11 @@ export function Graph3d({
         const known = previous.get(node.id);
         if (known) seed.set(known, index * 3);
       });
-      const fresh = previous.size === 0;
+      const unknown = state.nodes.filter((node) => !previous.has(node.id)).length;
+      const fresh = unknown > state.nodes.length * 0.3;
       state.positions = new Float32Array(0);
+      pending = null;
+      framed = false;
       state.steered = false;
       const start: LayoutIn = {
         type: "start",
@@ -529,10 +597,20 @@ export function Graph3d({
         links: linkEnds,
         communities: communitiesArray(),
         positions: seed,
-        alpha: fresh ? 1 : 0.4,
+        alpha: fresh ? 1 : 0.2,
       };
       worker.postMessage(start);
-      paintColors();
+      // Compile the shaders in the background (parallel compilation where the browser has it)
+      // before the first frame draws: compiling on that frame froze the page for a moment.
+      ready = false;
+      void renderer
+        .compileAsync(scene, camera)
+        .catch(() => undefined)
+        .finally(() => {
+          ready = true;
+          dirty = true;
+        });
+      askPaint();
     };
 
     // Picking: a click without dragging lands on the instance under the pointer.
@@ -545,6 +623,7 @@ export function Graph3d({
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(pointer, camera);
+      for (const { mesh } of meshes) if (!mesh.boundingSphere) mesh.computeBoundingSphere();
       const hits = raycaster.intersectObjects(
         meshes.map((entry) => entry.mesh),
         false,
@@ -597,11 +676,11 @@ export function Graph3d({
     renderer.domElement.addEventListener("pointermove", onMove);
 
     // A theme change recolours the scene.
-    const themes = new MutationObserver(() => paintColors());
+    const themes = new MutationObserver(() => askPaint());
     themes.observe(document.documentElement, { attributes: true });
 
     state.load = load;
-    state.paint = paintColors;
+    state.paint = askPaint;
     state.frame = frame;
     state.clusters = (communities) =>
       worker.postMessage({ type: "communities", communities } satisfies LayoutIn);
@@ -609,8 +688,20 @@ export function Graph3d({
       zoom: (factor) => {
         state.steered = true;
         const offset = camera.position.clone().sub(controls.target).divideScalar(factor);
-        camera.position.copy(controls.target).add(offset);
-        dirty = true;
+        const to = controls.target.clone().add(offset);
+        if (reduced) {
+          camera.position.copy(to);
+          dirty = true;
+          return;
+        }
+        fly = {
+          from: camera.position.clone(),
+          to,
+          target0: controls.target.clone(),
+          target1: controls.target.clone(),
+          start: performance.now(),
+          duration: 260,
+        };
       },
       pan: (dx, dy) => {
         state.steered = true;

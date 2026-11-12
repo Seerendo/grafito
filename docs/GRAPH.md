@@ -205,8 +205,13 @@ fluid. On an RTX 4060 laptop, 8,000 documents and 25,000 links draw at
   links dotted.
 - Labels are drawn on a 2D canvas on top, only for the points cosmos.gl
   samples on screen, plus the selected document and its neighbours.
-- While the layout settles the view follows the selected document and its
-  neighbours, as before, until you zoom or pan.
+- A mostly new layout is computed on the GPU before its first frame and
+  framed once; when it settles, the camera glides once to the selected
+  document and its neighbours, unless you zoomed or panned meanwhile. Todo,
+  Entorno and Camino keep where each document was, so switching between them
+  does not jump the camera.
+- Drag a document to move it; it stays where it is dropped. Links use the
+  faint text colour, so they read on dark themes.
 - The library loads only when the graph opens. The first opening in a
   browser compiles its shaders (about a second); the browser keeps them.
 - Without WebGL2 (some virtual machines or remote desktops), the former 2D
@@ -230,6 +235,9 @@ browser.
   without slowing the page.
 - Communities, importance, the selected document, Camino, Huérfanas,
   Puentes, Entorno, clicks, Shift+click and the camera buttons work as in 2D.
+- A new layout settles most of the way in the worker before it is first
+  shown, is framed once, and glides once to the selected document when it
+  settles. The zoom buttons glide too; the wheel zooms at full frame rate.
 - three.js and the worker load only when 3D is turned on. If a new version
   was deployed while the tab stayed open, the view says to reload the page.
 

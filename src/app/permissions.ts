@@ -21,10 +21,12 @@ function emit(): void {
 
 export function setPermissions(next: { isAdmin: boolean; permissions: readonly string[] }): void {
   const keys = new Set(next.permissions);
+  // Administrators hold every permission whatever keys come along: the session pulse sends
+  // none and the profile sends all, and treating that as a change re-rendered the whole vault.
   const same =
     grants.all === next.isAdmin &&
-    grants.keys.size === keys.size &&
-    [...keys].every((key) => grants.keys.has(key));
+    (next.isAdmin ||
+      (grants.keys.size === keys.size && [...keys].every((key) => grants.keys.has(key))));
   if (same) return;
   grants = { all: next.isAdmin, keys };
   emit();

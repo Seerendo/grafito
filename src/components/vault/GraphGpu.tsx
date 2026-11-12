@@ -26,6 +26,8 @@ const SHAPE = { markdown: 0, file: 1, portfolio: 3 } as const;
 const STYLE: Record<GraphKind, number> = { wiki: 0, referencia: 1, llama: 2 };
 /** Most labels drawn at once; more would only overlap. */
 const MAX_LABELS = 300;
+/** Layout steps computed before a mostly new graph is first shown. */
+const PRE_STEPS = 220;
 
 export function GraphGpu({
   nodes,
@@ -66,6 +68,11 @@ export function GraphGpu({
   const live = useRef({
     nodes,
     edges,
+    /** The latest props: load() copies them in, even when cosmos.gl loads after they changed. */
+    next: { nodes, edges },
+    /** Where each document was last placed, kept across Todo, Entorno and Camino. */
+    memory: new Map<string, [number, number]>(),
+    dragging: undefined as number | undefined,
     index: new Map<string, number>(),
     activeId,
     hover: undefined as number | undefined,
@@ -75,7 +82,6 @@ export function GraphGpu({
     draggedAt: 0,
     /** The person zoomed or panned: the camera stops following the layout. */
     steered: false,
-    followedAt: 0,
     lastClick: null as { id: string; at: number } | null,
     onZoom,
     onInspect,
@@ -87,6 +93,7 @@ export function GraphGpu({
     onPathTo,
     drawLabels: () => undefined as void,
   });
+  live.current.next = { nodes, edges };
   live.current.onZoom = onZoom;
   live.current.onInspect = onInspect;
   live.current.onOpen = onOpen;
@@ -186,7 +193,7 @@ export function GraphGpu({
         pointDefaultStrokeColor: paint.faint,
         pointDefaultStrokeWidth: 1.5,
         linkDefaultColor: paint.line,
-        linkDefaultWidth: 1,
+        linkDefaultWidth: 1.6,
         linkDashLength: 6,
         linkDashGap: 4,
         renderHoveredPointRing: true,
@@ -196,24 +203,19 @@ export function GraphGpu({
         linkGreyoutOpacity: 0.12,
         enableDrag: true,
         fitViewOnInit: false,
-        transitionDuration: reduced ? 0 : 300,
+        // Data changes snap; motion comes from the layout alone.
+        transitionDuration: 0,
         simulationGravity: 0.1,
         simulationRepulsion: 1.6,
         simulationLinkSpring: 0.6,
         simulationLinkDistance: 30,
         simulationFriction: 0.85,
         simulationDecay: reduced ? 1000 : 4000,
-        // While the layout settles the camera follows it, as the 2D graph did, until the person
-        // zooms or pans.
-        onSimulationTick: () => {
-          if (!state.steered && Date.now() - state.followedAt > 500) {
-            state.followedAt = Date.now();
-            frameView(graph, 450);
-          }
-          drawLabels();
-        },
+        onSimulationTick: () => drawLabels(),
+        // One gentle framing once it settles, unless the person moved the camera meanwhile.
         onSimulationEnd: () => {
-          if (!state.steered) frameView(graph, 450);
+          remember(graph);
+          if (!state.steered) frameView(graph, reduced ? 0 : 900);
           drawLabels();
         },
         onTransition: () => drawLabels(),
@@ -236,10 +238,17 @@ export function GraphGpu({
           host.style.cursor = "";
           drawLabels();
         },
+        onDragStart: () => {
+          state.dragging = state.hover;
+          state.steered = true;
+          // A settled layout is paused; dragging needs it running to move the node.
+          if (!graph.isSimulationRunning) graph.start(0.12);
+        },
         onDragEnd: () => {
           state.draggedAt = Date.now();
           // A dragged node stays where it was dropped, as before.
-          if (state.hover !== undefined) graph.setPinnedPoint(state.hover, true);
+          if (state.dragging !== undefined) graph.setPinnedPoint(state.dragging, true);
+          state.dragging = undefined;
         },
         onPointClick: (index, _position, event) => {
           const node = state.nodes[index];
@@ -390,21 +399,30 @@ export function GraphGpu({
   }
 
   /** New nodes or links: keep known positions, place new nodes around the centre. */
+  function remember(graph: Graph) {
+    const state = live.current;
+    // A small view (Entorno, a short path) has its own layout; keeping it would misplace those
+    // documents when the whole graph comes back.
+    if (state.index.size === 0 || state.index.size < state.memory.size * 0.5) return;
+    const positions = graph.getPointPositions();
+    for (const [id, index] of state.index) {
+      const x = positions[index * 2];
+      const y = positions[index * 2 + 1];
+      if (x !== undefined && y !== undefined && Number.isFinite(x)) state.memory.set(id, [x, y]);
+    }
+  }
+
   function load(graph: Graph) {
     const state = live.current;
-    const previous = new Map<string, [number, number]>();
-    if (state.index.size > 0) {
-      const positions = graph.getPointPositions();
-      for (const [id, index] of state.index) {
-        const x = positions[index * 2];
-        const y = positions[index * 2 + 1];
-        if (x !== undefined && y !== undefined && Number.isFinite(x)) previous.set(id, [x, y]);
-      }
-    }
+    remember(graph);
+    const previous = state.memory;
+    const { nodes, edges } = state.next;
     state.nodes = nodes;
     state.edges = edges;
     state.index = new Map(nodes.map((node, index) => [node.id, index]));
-    const fresh = previous.size === 0;
+    const unknown = nodes.filter((node) => !previous.has(node.id)).length;
+    // Mostly new documents: lay them out before showing them.
+    const fresh = unknown > nodes.length * 0.3;
     const center = 4096;
     const spread = Math.max(200, Math.sqrt(nodes.length) * 40);
     const positions = new Float32Array(nodes.length * 2);
@@ -431,14 +449,19 @@ export function GraphGpu({
     }
     state.steered = false;
     graph.setPinnedPoints(null);
-    graph.setPointPositions(positions, !fresh);
+    graph.setPointPositions(positions, true);
     graph.setPointShapes(shapes);
     graph.setLinks(links.subarray(0, at * 2));
     graph.setLinkStyles(styles.subarray(0, at));
     neighboursOf(state.activeId);
     applyClusters(graph);
     paintGraph(graph);
-    graph.start(fresh ? 1 : 0.3);
+    graph.render(fresh ? 1 : 0.15, 0);
+    // Settle most of the layout on the GPU before the first frame, so it is not watched
+    // shrinking and the camera frames it once.
+    if (fresh) for (let step = 0; step < PRE_STEPS; step += 1) graph.step();
+    frameView(graph, 0);
+    graph.start(fresh ? 0.25 : 0.15);
   }
 
   function neighboursOf(id: string | null) {
