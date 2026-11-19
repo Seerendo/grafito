@@ -96,6 +96,15 @@ Restoring one note doesn't require a full restore:
 - **Trash:** deleted notes stay in the trash for 30 days.
 - **History:** every note keeps its version history.
 
+## First administrator
+
+Until an administrator exists, «Primera vez» asks for an installation code.
+The app writes it to its log on the first visit
+(`docker compose logs app | grep "Código de instalación"`) and keeps it in
+`GRAFITO_SECRETS_DIR/SETUP_CODE`. Set `GRAFITO_SETUP_CODE` to choose it
+yourself. Only one administrator is created even if two forms are sent at
+once.
+
 ## Rotating secrets
 
 When `.env` doesn't set `BETTER_AUTH_SECRET` or `GRAFITO_ENCRYPTION_KEY`, or
@@ -105,8 +114,10 @@ volume (`server/install-secrets.ts`).
 
 - On the first start after upgrading, everyone signs in again.
 - Unless `GRAFITO_ENCRYPTION_KEY_PREVIOUS` is set, the old example encryption
-  key acts as the previous key. AI keys and the SMTP password saved with it
-  still decrypt, and are re-encrypted with the new key when used.
+  key acts as the previous key only until the app has started: then AI keys,
+  Git tokens and the SMTP password saved with it are sealed again with the
+  installation key (`server/secret-rotation.ts`) and the example stops being
+  accepted.
 
 To use your own instead, set them in `.env` as below.
 
@@ -116,11 +127,11 @@ To use your own instead, set them in `.env` as below.
 2. In `.env`, move the current value to `GRAFITO_ENCRYPTION_KEY_PREVIOUS` and
    put the new one in `GRAFITO_ENCRYPTION_KEY`.
 3. Run `docker compose up -d app`.
-4. Each saved AI key is re-encrypted with the new key the next time its owner
-   uses the chat. After a reasonable period (for example 30 days), remove
-   `GRAFITO_ENCRYPTION_KEY_PREVIOUS`. Keys that weren't used in that period
-   become unreadable, and their owners reconnect the provider in
-   **Cuenta → Conexiones de IA**.
+4. On start, saved AI keys, Git tokens and the SMTP password that still open
+   with the previous key are sealed again with the new one. Then remove
+   `GRAFITO_ENCRYPTION_KEY_PREVIOUS`. A secret that opened with neither key
+   stays unreadable, and its owner reconnects it (for AI,
+   **Cuenta → Conexiones de IA**).
 
 If the key is **lost**, nothing can recover the saved AI keys. Set a new key;
 users then reconnect their providers. Notes and accounts are unaffected.
@@ -281,3 +292,8 @@ docker compose up -d --build
 
 Migrations run automatically when the app starts. Take a manual backup first
 (see above).
+
+Since Better Auth 1.7 the SSO provider returns to `/api/auth/callback/sso`
+(Administración → Autenticación → SSO shows it). Providers registered with the
+older `/api/auth/oauth2/callback/sso` keep working; update them when
+convenient.

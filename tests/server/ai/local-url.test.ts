@@ -60,3 +60,21 @@ test("con el alias de Docker, «localhost» llama al equipo anfitrión", () => {
   assert.equal(checkLocalUrl("http://localhost:11434", "postgres").ok, false);
   assert.equal(checkLocalUrl("http://postgres:5432", "host.docker.internal").ok, false);
 });
+
+test("servicios de Compose, enlace local y loopback IPv6 ya normalizado se rechazan (GRAF-15)", () => {
+  for (const url of [
+    "http://grafeno:7700",
+    "http://collabora:9980",
+    "http://clamav:3310",
+    "http://gateway/",
+    "http://backup/",
+    "http://169.254.169.254/latest/meta-data/",
+    "http://[::ffff:169.254.169.254]/",
+    "http://[fe80::1]/",
+    "http://[::ffff:127.0.0.1]:11434",
+    "http://[::ffff:7f00:1]/",
+  ])
+    assert.equal(checkLocalUrl(url).ok, false, url);
+  assert.equal(checkLocalUrl("http://192.168.1.20:11434").ok, true);
+  assert.equal(checkLocalUrl("http://10.0.0.5:1234/v1").ok, true);
+});

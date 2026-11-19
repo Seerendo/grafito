@@ -1,4 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import { claimJob } from "@/server/jobs";
+import { announceSetupCode, sameSetupCode, setupCode } from "@/server/setup-code";
 import { filterInstant, likePattern } from "@/domain/log-filter";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
@@ -15,7 +17,7 @@ import {
 } from "@/server/platform";
 import { allows, forgetRoleGrants, readUserProfile } from "@/server/profile";
 import { probeElastic } from "@/server/search";
-import { canSearchOwner, queryContent } from "@/server/index/query";
+import { queryContent } from "@/server/index/query";
 import { logActivity } from "@/server/audit";
 import { probeClamd } from "@/server/clamav";
 import { probeBucket } from "@/server/storage";
@@ -100,28 +102,16 @@ async function authHeaders(): Promise<Headers> {
   return headers;
 }
 
-async function discardUnchosenAdmin(sql: Sql): Promise<void> {
-  const rows = await sql<{ user_id: string; must_change_password: unknown; chosen: unknown }>`
-    select user_id, must_change_password, chosen from app_admin
-  `;
-  for (const row of rows) {
-    if (flag(row.chosen)) continue;
-    if (!flag(row.must_change_password)) {
-      await sql`update app_admin set chosen = true where user_id = ${row.user_id}`;
-      continue;
-    }
-    await sql`delete from "user" where id = ${row.user_id}`;
-  }
-}
-
 export const accessState = createServerFn({ method: "GET" }).handler(async () => {
   const sql = await sqlClient();
-  await discardUnchosenAdmin(sql);
   const rows = await sql<{ login_name: string; must_change_password: unknown }>`
     select login_name, must_change_password from app_admin limit 1
   `;
   const row = rows[0];
-  if (!row) return { installed: false as const, loginName: "admin", mustChangePassword: false };
+  if (!row) {
+    announceSetupCode();
+    return { installed: false as const, loginName: "admin", mustChangePassword: false };
+  }
   return {
     installed: true as const,
     loginName: row.login_name || "admin",
@@ -135,10 +125,15 @@ export const createInitialAdmin = createServerFn({ method: "POST" })
       .object({
         username: z.string().trim().min(1).max(32),
         password: z.string().min(4).max(128),
+        setupCode: z.string().max(64),
       })
       .parse(input),
   )
   .handler(async ({ data }) => {
+    // Without the installation code, whoever reached a new install first would own it.
+    if (!sameSetupCode(data.setupCode, setupCode())) {
+      return { ok: false as const, error: "El código de instalación no es correcto." };
+    }
     const email = emailForUsername(data.username);
     if (!email) {
       return {
@@ -147,7 +142,13 @@ export const createInitialAdmin = createServerFn({ method: "POST" })
       };
     }
     const sql = await sqlClient();
-    await discardUnchosenAdmin(sql);
+    // One creation at a time: two forms sent together must not both become administrator.
+    if (!(await claimJob(sql, "setup-admin", 60_000))) {
+      return {
+        ok: false as const,
+        error: "Ya se está creando el administrador. Espera un momento.",
+      };
+    }
     const existing = await sql<{ user_id: string }>`select user_id from app_admin limit 1`;
     if (existing.length > 0) {
       return {
@@ -481,7 +482,8 @@ export const syncDocuments = createServerFn({ method: "POST" })
 export const searchDocuments = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .validator((input: unknown) =>
-    z.object({ q: z.string().max(80), ownerId: z.string().max(80).optional() }).parse(input),
+    // Only the caller's own vault: a share grants its items, not a search over the owner's vault.
+    z.object({ q: z.string().max(80) }).parse(input),
   )
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
@@ -498,9 +500,7 @@ export const searchDocuments = createServerFn({ method: "POST" })
       engine: documentEngine(),
     };
     if (!q) return empty;
-    const ownerId = data.ownerId || context.userId;
-    if (!(await canSearchOwner(sql, context.userId, ownerId))) return empty;
-    const hits = await queryContent(sql, ownerId, q);
+    const hits = await queryContent(sql, context.userId, q);
     return {
       hits: hits.map((hit) => ({
         id: hit.id,

@@ -1,4 +1,5 @@
 import { officeText } from "./office-text.ts";
+import { blockUnsafeBlob } from "./clamav";
 import type { Sql } from "@/lib/db";
 import { pagePlainText } from "@/domain/vault/pdf-text";
 import type { Document, VaultFile } from "@/domain/vault/types";
@@ -57,6 +58,9 @@ export async function storeIncomingFile(
   if (!decoded) return { file: { name: file.name, mime: file.mime }, converted: false };
   const key = newFileKey(userId);
   await putBlob(sql, key, decoded.bytes, file.mime || decoded.mime);
+  // Embedded bytes are scanned too; a refused file keeps its name and loses its content.
+  if (await blockUnsafeBlob(sql, key))
+    return { file: { name: file.name, mime: file.mime }, converted: true };
   return {
     file: { name: file.name, mime: file.mime, key, size: decoded.bytes.byteLength },
     converted: true,
@@ -161,7 +165,8 @@ function drawingText(bytes: Uint8Array): string | null {
 type PdfProxy = {
   numPages: number;
   getPage: (page: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }>;
-  destroy: () => Promise<void> | void;
+  /** PDF.js 6 closes a document through the task that loaded it. */
+  loadingTask: { destroy: () => Promise<void> | void };
 };
 
 /**
@@ -185,7 +190,7 @@ export async function pdfPageTexts(
     return null;
   } finally {
     try {
-      await document?.destroy();
+      await document?.loadingTask.destroy();
     } catch {
       /* The document is already closed. */
     }

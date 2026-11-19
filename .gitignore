@@ -17,3 +17,6 @@ docker-compose.test.yml
 backups-test/
 # Excalidraw fonts, copied from node_modules by vite.config.ts
 public/excalidraw/
+
+# Local security review copy; never committed.
+/security/

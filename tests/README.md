@@ -24,4 +24,8 @@ extension settings it changes. `uploads.e2e.mjs` resets the `e2eup-user` vault a
 drops folders the way a browser hands them over (filesystem entries), so empty
 folders are covered. `vault-pages.e2e.mjs` creates fresh `e2evp-` members
 each run. Run each file and each browser on its own: sign-in is rate limited
-on the gateway, and one combined run hung.
+on the gateway, and one combined run hung. `security.e2e.mjs` checks the
+fixes of the November 2026 security review (one test per finding; GRAF-01 needs
+a throwaway instance on an empty database, see its header).
+`auth-providers.e2e.mjs` signs in through the test stack's OpenLDAP and
+Keycloak (`auth-test` profile) and restores the provider settings it changes.

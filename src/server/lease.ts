@@ -141,5 +141,7 @@ export async function requireLease(userId: string): Promise<Sql> {
   startContentIndex();
   const { startGraphSync } = await import("@/server/graph/sync");
   startGraphSync();
+  const { rotateSealedSecrets } = await import("@/server/secret-rotation");
+  void rotateSealedSecrets(sql);
   return sql;
 }

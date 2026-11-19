@@ -1340,6 +1340,46 @@ and sent through `/api/files/uploads`, no saved antivirus settings:
 Scan times vary between runs on the same file (6000 pages: over 60 s once,
 15 s the next time). Settings saved before keep their own timeout.
 
+## Round 45: security review fixes
+
+A source review of the code (23 findings, not versioned) was checked against
+the test stack. The flaws that could be reproduced were reproduced first; then
+`tests/e2e/security.e2e.mjs` was run against the fixed build and against a
+build of `main` without the fixes, where each test fails.
+
+| Finding                                              | Before (build without the fixes)                            | After                                         |
+| ---------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| GRAF-01 first administrator                          | Created without anything; two forms at once made two admins | ✅ needs the code; one admin                  |
+| GRAF-02 anonymous page load                          | ❌ deleted an unchosen administrator                        | ✅ kept                                       |
+| GRAF-03 search with a folder share                   | ❌ returned a private note's text                           | ✅ nothing of the owner                       |
+| GRAF-10 file link after withdrawing                  | ❌ 200                                                      | ✅ 403                                        |
+| GRAF-23 file an owner's key into a share             | ❌ the private file was filed and readable                  | ✅ «Esa subida no es tuya»                    |
+| GRAF-13 sign-in with an outside callback             | ❌ 200, stored in the state                                 | ✅ 400                                        |
+| GRAF-14 change password from «Cuenta»                | ❌ client asked to keep the other sessions                  | ✅ other session gone, this one kept          |
+| GRAF-12 WebDAV lockout, rotating XFF                 | (through the gateway) no lockout                            | ✅ 429                                        |
+| GRAF-08 unsigned webhook                             | read the body first                                         | ✅ 401 before reading; 2 MB signed body → 413 |
+| GRAF-05, 15, 17, 19, 20, 22                          | by reading the code                                         | ✅ unit tests where they apply                |
+| GRAF-09, 11 (antivirus on other writers, WOPI reads) | by reading the code                                         | changed; not run in a browser                 |
+
+Dependencies (`npm audit`): better-auth 1.6.34 → 1.7.26, pdfjs-dist 5.7 → 6.5,
+nodemailer 6.10 → 10.6, unpdf 0.12 → 2.2, plus node-forge, zod, seroval and tar
+within their ranges. The lockfile is written by the image's npm (Node 22).
+
+| Check after the upgrade                                                                     | Result                         |
+| ------------------------------------------------------------------------------------------- | ------------------------------ |
+| Round 39 PDF signature test on the dev server (`grafito-e2e-dev`), Chromium                 | ✅ 8 of 8                      |
+| `tests/e2e/auth-providers.e2e.mjs`: LDAP `carla`, SSO `sofia` in Keycloak, old SSO callback | ✅ 3 of 3, three runs in a row |
+| Rounds 41–43 browser tests, Chromium                                                        | ✅ 8 of 8                      |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, image build                  | ✅ 270 tests pass              |
+
+The first SSO sign-in after creating the provider failed once with «id_token
+failed verification»; the next six passed. Not reproduced since.
+
+Open: Postgres, MinIO, Elasticsearch, Redis and Collabora's console keep their
+loopback ports and example credentials (GRAF-04, 06, 07, 16); see
+docs/SECURITY.md. Advisories left in Excalidraw's bundled Mermaid/lodash and in
+build tools.
+
 ## Useful commands
 
 ```bash

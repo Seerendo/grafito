@@ -124,6 +124,16 @@ export function issueOfficeToken(data: OfficeToken): { token: string; expiresAt:
 }
 
 /** Validate a WOPI request token for this document. */
+/**
+ * A token issued through a share keeps working only while the share still lets that person read
+ * the document (security finding GRAF-11). Saving checks edit access separately.
+ */
+export async function officeTokenStillGranted(sql: Sql, token: OfficeToken): Promise<boolean> {
+  if (!token.s || token.u === token.o) return true;
+  const { grantedDocOwner } = await import("@/server/share");
+  return (await grantedDocOwner(sql, token.u, token.s, token.d)) === token.o;
+}
+
 export function readOfficeToken(request: Request, docId: string): OfficeToken | null {
   const token = new URL(request.url).searchParams.get("access_token");
   const data = token ? readToken<OfficeToken>(token) : null;

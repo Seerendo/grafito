@@ -7,7 +7,7 @@ import { maxUploadBytes, PART_SIZE, startUpload } from "@/server/blobs";
 import { readExtensionRules } from "@/server/file-rules";
 import { newFileKey } from "@/server/files";
 import { checkSpace } from "@/server/space";
-import { uploadTarget } from "@/server/upload-target";
+import { claimUpload, uploadTarget } from "@/server/upload-target";
 
 /**
  * Multipart protocol: POST uploads with name/mime/size returns key/uploadId/partSize; PUT part
@@ -51,6 +51,13 @@ export const Route = createFileRoute("/api/files/uploads")({
           });
           if (full) return apiError(413, full);
           const key = newFileKey(target.ownerId);
+          if (target.shared && body.data.shareId)
+            await claimUpload(sql, {
+              key,
+              userId,
+              shareId: body.data.shareId,
+              portfolioId: target.portfolioId,
+            });
           const uploadId = await startUpload(
             sql,
             key,

@@ -230,7 +230,8 @@ export function PdfView({
     })();
     return () => {
       cancelled = true;
-      void doc?.destroy();
+      // PDF.js 6 closes a document through the task that loaded it.
+      void doc?.loadingTask.destroy();
     };
   }, [url, reloadKey]);
 
@@ -1013,9 +1014,9 @@ function PdfPage({
   /** Embedded PDF annotations positioned over their page rectangles. */
   const badges = viewport
     ? embedded.map((note) => {
-        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(
-          note.rect as [number, number, number, number],
-        );
+        const [px1, py1, px2, py2] = note.rect as [number, number, number, number];
+        const [x1, y1] = viewport.convertToViewportPoint(px1, py1) as [number, number];
+        const [x2, y2] = viewport.convertToViewportPoint(px2, py2) as [number, number];
         return { note, left: Math.min(x1!, x2!), top: Math.min(y1!, y2!) };
       })
     : [];

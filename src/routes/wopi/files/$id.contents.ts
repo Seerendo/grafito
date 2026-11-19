@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { blockUnsafeBlob } from "@/server/clamav";
 import { getBlob, maxUploadBytes, putBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
-import { readOfficeToken } from "@/server/office";
+import { officeTokenStillGranted, readOfficeToken } from "@/server/office";
 import { editableTarget } from "@/server/share";
 import { getDoc, replaceFile } from "@/server/vault";
 
@@ -17,6 +18,8 @@ export const Route = createFileRoute("/wopi/files/$id/contents")({
         if (!token) return new Response("Unauthorized", { status: 401 });
         const { getSql } = await import("@/lib/db");
         const sql = await getSql();
+        if (!(await officeTokenStillGranted(sql, token)))
+          return new Response("Access revoked", { status: 403 });
         const doc = await getDoc(sql, token.o, params.id);
         const blob = doc?.file?.key ? await getBlob(sql, doc.file.key) : null;
         if (!doc?.file || !blob) return new Response("Not found", { status: 404 });
@@ -53,6 +56,9 @@ export const Route = createFileRoute("/wopi/files/$id/contents")({
         }
         const key = newFileKey(token.o);
         await putBlob(sql, key, bytes, doc.file.mime);
+        // Office saves go through the antivirus like any upload (security finding GRAF-09).
+        const blocked = await blockUnsafeBlob(sql, key);
+        if (blocked) return new Response(blocked.message, { status: blocked.status });
         // Group editor autosaves in history; explicit saves remain separate.
         const autosave =
           (request.headers.get("x-cool-wopi-isautosave") ??

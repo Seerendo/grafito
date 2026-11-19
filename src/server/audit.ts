@@ -25,10 +25,18 @@ function clip(value: string, max: number): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
+/**
+ * The address the gateway saw: the last X-Forwarded-For hop, which nginx appends. The first one
+ * is whatever the client wrote, so lockouts keyed on it could be dodged (GRAF-12).
+ */
 export function requestIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for") ?? "";
-  const first = forwarded.split(",")[0]?.trim() ?? "";
-  return first.slice(0, 80);
+  const last = forwarded
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .pop();
+  return (last || request.headers.get("x-real-ip") || "").slice(0, 80);
 }
 
 /** Record an event without passwords or file contents. */

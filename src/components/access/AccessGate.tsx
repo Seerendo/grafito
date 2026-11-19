@@ -207,6 +207,7 @@ function SetupForm({
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -215,7 +216,7 @@ function SetupForm({
     setBusy(true);
     setError("");
     try {
-      const created = await createInitialAdmin({ data: { username, password } });
+      const created = await createInitialAdmin({ data: { username, password, setupCode } });
       if (!created.ok) {
         setError(created.error);
         onInstalled();
@@ -238,11 +239,17 @@ function SetupForm({
       <h1 className="mt-2 font-serif text-3xl">{t("Primera vez")}</h1>
       <form onSubmit={submit} className="mt-5 space-y-3">
         <TextField
+          label={t("Código de instalación")}
+          value={setupCode}
+          onChange={setSetupCode}
+          autoComplete="off"
+          autoFocus
+        />
+        <TextField
           label={t("Usuario")}
           value={username}
           onChange={setUsername}
           autoComplete="off"
-          autoFocus
         />
         <TextField
           label={t("Contraseña")}

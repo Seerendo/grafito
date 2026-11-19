@@ -6,6 +6,7 @@ import {
   EncryptionUnavailable,
   encryptionReady,
   open,
+  retirePublicPrevious,
 } from "../../src/server/crypto.ts";
 
 /** AI credential encryption: round trips, randomness, integrity and missing keys. */
@@ -54,4 +55,21 @@ test("rotación: lo cifrado con la clave anterior se lee y avisa que hay que vol
   assert.deepEqual(open(encrypt("sk-otra")), { value: "sk-otra", stale: false });
   delete process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS;
   assert.throws(() => open(sealed));
+});
+
+test("la clave anterior de ejemplo público se retira; una anterior propia se conserva (GRAF-05)", () => {
+  const example = "grafito-dev-encryption-key-cambia-esto-0001";
+  process.env.GRAFITO_ENCRYPTION_KEY = example;
+  const sealed = encrypt("sk-antigua");
+  process.env.GRAFITO_ENCRYPTION_KEY = KEY;
+  process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS = example;
+  assert.deepEqual(open(sealed), { value: "sk-antigua", stale: true });
+  retirePublicPrevious();
+  assert.equal(process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS, undefined);
+  assert.throws(() => open(sealed));
+  const own = "otra-clave-anterior-propia-suficientemente-larga-99";
+  process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS = own;
+  retirePublicPrevious();
+  assert.equal(process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS, own);
+  delete process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS;
 });

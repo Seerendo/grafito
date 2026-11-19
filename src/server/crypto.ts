@@ -61,6 +61,18 @@ function decryptWith(secret: Buffer, sealed: string): string {
   ]).toString("utf8");
 }
 
+/** The example key published with Grafito; see install-secrets.ts. */
+const PUBLIC_EXAMPLE_KEY = "grafito-dev-encryption-key-cambia-esto-0001";
+
+/**
+ * Stop reading with the previous key when it is the public example, once secret-rotation.ts
+ * re-encrypted what used it.
+ */
+export function retirePublicPrevious(): void {
+  if (process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS?.trim() === PUBLIC_EXAMPLE_KEY)
+    delete process.env.GRAFITO_ENCRYPTION_KEY_PREVIOUS;
+}
+
 /** Decrypt with the current key or previous rotation key. */
 export function open(sealed: string): { value: string; stale: boolean } {
   try {

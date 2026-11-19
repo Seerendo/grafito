@@ -1,4 +1,3 @@
-import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { getBearerToken, setBearerToken } from "./bearer";
 import { writeSessionUser } from "./session-sync";
@@ -9,8 +8,6 @@ import { writeSessionUser } from "./session-sync";
  * directly would keep sending them.
  */
 export const authClient = createAuthClient({
-  // signIn.oauth2 implements OIDC SSO.
-  plugins: [genericOAuthClient()],
   fetchOptions: {
     onRequest(ctx) {
       const token = getBearerToken();

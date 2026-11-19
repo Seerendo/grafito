@@ -743,8 +743,8 @@ export async function sharedTreeForUser(
     item,
     canDownload ? "download" : "view",
     (docId) => ({
-      url: signedFileUrl(docId, item.owner_id),
-      downloadUrl: canDownload ? signedFileUrl(docId, item.owner_id, true) : null,
+      url: signedFileUrl(docId, item.owner_id, false, item.id),
+      downloadUrl: canDownload ? signedFileUrl(docId, item.owner_id, true, item.id) : null,
     }),
     fresh,
   );
@@ -966,6 +966,32 @@ export async function grantedDocOwner(
   )
     return null;
   return item.owner_id;
+}
+
+/**
+ * Whether shareId is still shared with someone and still covers docId: signed file links issued
+ * through a share stop working once the share is withdrawn, its grants expire or the document
+ * leaves it (security finding GRAF-10).
+ */
+export async function liveShareCovers(
+  sql: Sql,
+  shareId: string,
+  ownerId: string,
+  docId: string,
+): Promise<boolean> {
+  const now = Date.now();
+  const rows = await sql<ItemRecord>`
+    select s.id, s.owner_id, s.kind, s.target_id, s.title, s.visibility, s.access, s.public_token
+    from share_item s
+    where s.id = ${shareId} and s.owner_id = ${ownerId} and s.visibility = 'shared'
+      and (
+        exists (select 1 from share_grant g where g.share_id = s.id and (g.expires_at is null or g.expires_at > ${now}))
+        or exists (select 1 from share_org_grant g where g.share_id = s.id and (g.expires_at is null or g.expires_at > ${now}))
+      )
+    limit 1
+  `;
+  const item = rows[0];
+  return item ? covers(sql, item, docId) : false;
 }
 
 /** Owner of a live public link, without recording an access (the graph asks on every view). */

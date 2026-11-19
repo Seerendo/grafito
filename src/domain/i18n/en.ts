@@ -269,6 +269,13 @@ export const en: Record<string, string> = {
   "{0} archivo": "{0} file",
   "{0} archivos": "{0} files",
   "en total: {0}": "in all: {0}",
+  "Código de instalación": "Installation code",
+  "Ese acceso viene de un portafolio superior; cámbialo desde allí.":
+    "That access comes from a portfolio above; change it there.",
+  "Ya no tienes acceso a este archivo.": "You no longer have access to this file.",
+  "El código de instalación no es correcto.": "The installation code is not correct.",
+  "Ya se está creando el administrador. Espera un momento.":
+    "The administrator is already being created. Wait a moment.",
   "Subiendo a «{0}»": "Uploading to «{0}»",
   "En pausa: «{0}»": "Paused: «{0}»",
   "Carga cancelada: «{0}»": "Upload cancelled: «{0}»",

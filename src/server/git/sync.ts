@@ -1,4 +1,5 @@
 import { claimJob } from "@/server/jobs";
+import { blockUnsafeBlob } from "@/server/clamav";
 import { randomBytes } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { merge3 } from "@/domain/vault/merge";
@@ -389,6 +390,10 @@ export async function syncLink(sql: Sql, link: LinkRow): Promise<SyncSummary> {
     const key = newFileKey(userId);
     const mime = mimeOf(name);
     await putBlob(sql, key, bytes, mime);
+    if (await blockUnsafeBlob(sql, key)) {
+      summary.skipped.push(path);
+      return null;
+    }
     const now = Date.now();
     const doc: Document = {
       id: crypto.randomUUID(),
@@ -423,6 +428,7 @@ export async function syncLink(sql: Sql, link: LinkRow): Promise<SyncSummary> {
     if (bytes.length > maxUploadBytes()) return null;
     const key = newFileKey(userId);
     await putBlob(sql, key, bytes, doc.file_mime ?? mimeOf(doc.file_name ?? ""));
+    if (await blockUnsafeBlob(sql, key)) return null;
     if (doc.file_key)
       return replaceFile(sql, userId, doc.id, {
         key,

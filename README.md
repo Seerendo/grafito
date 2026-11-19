@@ -224,8 +224,11 @@ also **deletes the volumes**, erasing all accounts, notes and files. The
 
 ## First run
 
-1. The first visit shows **Primera vez** (first time). Choose the administrator
-   username and password.
+1. The first visit shows **Primera vez** (first time). It asks for the
+   installation code, which the app writes to its log
+   (`docker compose logs app`, the line «Código de instalación…»), or the one
+   you set in `GRAFITO_SETUP_CODE`. Then choose the administrator username and
+   password.
 2. If the password is shorter than 8 characters, you must change it before you
    can see any notes.
 3. A new vault starts with sample notes under the **Documentación** portfolio.

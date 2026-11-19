@@ -12,7 +12,11 @@ function params(url: string): URLSearchParams {
 
 test("un enlace firmado se verifica con su dueño y sin descarga", () => {
   const url = signedFileUrl("doc-1", "user-1");
-  assert.deepEqual(verifyFileUrl("doc-1", params(url)), { ownerId: "user-1", download: false });
+  assert.deepEqual(verifyFileUrl("doc-1", params(url)), {
+    ownerId: "user-1",
+    download: false,
+    shareId: "",
+  });
 });
 
 test("otro documento, otro dueño o activar la descarga invalidan la firma", () => {
@@ -28,7 +32,11 @@ test("otro documento, otro dueño o activar la descarga invalidan la firma", () 
 
 test("el enlace de descarga lleva su propio permiso", () => {
   const url = signedFileUrl("doc-1", "user-1", true);
-  assert.deepEqual(verifyFileUrl("doc-1", params(url)), { ownerId: "user-1", download: true });
+  assert.deepEqual(verifyFileUrl("doc-1", params(url)), {
+    ownerId: "user-1",
+    download: true,
+    shareId: "",
+  });
 });
 
 test("caducado: no vale", () => {
@@ -50,6 +58,23 @@ test("fichas firmadas: ida y vuelta, manipulación y caducidad", async () => {
     JSON.stringify({ d: "doc-1", w: true, exp: Date.now() + 1e9 }),
   ).toString("base64url");
   assert.equal(readToken(`${forged}.${sig}`), null);
-  assert.equal(readToken(`${body}.x${sig!.slice(1)}`), null);
+  // Change the first character of the signature to a different one (it may already be "x").
+  const tampered = `${sig![0] === "x" ? "y" : "x"}${sig!.slice(1)}`;
+  assert.equal(readToken(`${body}.${tampered}`), null);
   assert.equal(readToken(signToken({ d: "doc-1" }, -1).token), null);
+});
+
+test("un enlace emitido por un compartido lleva el compartido y no se puede quitar ni cambiar", () => {
+  const url = signedFileUrl("doc-1", "user-1", false, "share-1");
+  assert.deepEqual(verifyFileUrl("doc-1", params(url)), {
+    ownerId: "user-1",
+    download: false,
+    shareId: "share-1",
+  });
+  const without = params(url);
+  without.delete("h");
+  assert.equal(verifyFileUrl("doc-1", without), null);
+  const other = params(url);
+  other.set("h", "share-2");
+  assert.equal(verifyFileUrl("doc-1", other), null);
 });

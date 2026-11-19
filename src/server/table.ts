@@ -1170,6 +1170,9 @@ export async function attachPublicFile(
   const { putBlob } = await import("./blobs");
   const key = newFileKey(form.owner_id);
   await putBlob(sql, key, bytes, input.mime || "application/octet-stream");
+  const { blockUnsafeBlob } = await import("./clamav");
+  const blocked = await blockUnsafeBlob(sql, key);
+  if (blocked) return { ok: false, error: blocked.message };
   return attachFile(sql, form.owner_id, form.doc_id, {
     name: input.name,
     mime: input.mime || "application/octet-stream",
@@ -1317,6 +1320,9 @@ export async function attachInvitedFile(
   const { putBlob } = await import("./blobs");
   const key = newFileKey(form.owner_id);
   await putBlob(sql, key, bytes, input.mime || "application/octet-stream");
+  const { blockUnsafeBlob } = await import("./clamav");
+  const blocked = await blockUnsafeBlob(sql, key);
+  if (blocked) return { ok: false, error: blocked.message };
   return attachFile(sql, form.owner_id, form.doc_id, {
     name: input.name,
     mime: input.mime || "application/octet-stream",

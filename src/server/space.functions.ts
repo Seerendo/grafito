@@ -256,6 +256,19 @@ export const setMemberAccess = createServerFn({ method: "POST" })
       (item) => item.userId === data.userId && item.shareId === data.memberShareId,
     );
     if (!member) return { ok: false as const, error: "Ese usuario no tiene acceso aquí." };
+    // Someone who administers a folder through a share may change shares of that folder or
+    // below it, not a share of a folder above, which would reach its siblings (GRAF-22).
+    if (ctx.ownerId !== context.userId && !ctx.sysadmin) {
+      const target = await ctx.sql<{ target_id: string }>`
+        select target_id from share_item where id = ${data.memberShareId} and owner_id = ${ctx.ownerId} limit 1
+      `;
+      const below = await subtree(ctx.sql, ctx.ownerId, ctx.portfolioId);
+      if (!target[0] || !below.includes(target[0].target_id))
+        return {
+          ok: false as const,
+          error: "Ese acceso viene de un portafolio superior; cámbialo desde allí.",
+        };
+    }
     await setGrantAccess(ctx.sql, data.memberShareId, data.userId, data.access);
     return { ok: true as const, ...(await describePortfolio(ctx, context.userId)) };
   });
@@ -538,7 +551,8 @@ export const addSharedFile = createServerFn({ method: "POST" })
     const ctx = await writer(context.userId, data.shareId, data.portfolioId);
     if (!ctx || !allows(ctx.profile, PERMISSION.filesUpload))
       return { ok: false as const, error: "No puedes subir archivos aquí." };
-    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId)))
+    // The key must be one this person started for this very portfolio (GRAF-23).
+    if (!(await mayUpload(ctx.sql, context.userId, data.key, data.shareId, ctx.target.portfolioId)))
       return { ok: false as const, error: "Esa subida no es tuya." };
     const size = await blobSize(ctx.sql, data.key);
     if (size === null) return { ok: false as const, error: "El archivo no llegó al servidor." };

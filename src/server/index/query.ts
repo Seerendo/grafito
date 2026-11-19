@@ -85,34 +85,6 @@ export async function queryContent(
   return hits;
 }
 
-/** Whether the caller may search ownerId's vault. */
-export async function canSearchOwner(
-  sql: Sql,
-  viewerId: string,
-  ownerId: string,
-): Promise<boolean> {
-  if (viewerId === ownerId) return true;
-  const workspace = await sql<{ ok: number }>`
-    select 1 as ok from workspace_access where owner_id = ${ownerId} and user_id = ${viewerId} limit 1
-  `;
-  if (workspace.length > 0) return true;
-  const grant = await sql<{ ok: number }>`
-    select 1 as ok from share_grant g
-    join share_item s on s.id = g.share_id
-    where g.user_id = ${viewerId} and s.owner_id = ${ownerId}
-    limit 1
-  `;
-  if (grant.length > 0) return true;
-  const org = await sql<{ ok: number }>`
-    select 1 as ok from share_org_grant g
-    join share_item s on s.id = g.share_id
-    join app_org_member m on m.org_id = g.org_id
-    where m.user_id = ${viewerId} and s.owner_id = ${ownerId}
-    limit 1
-  `;
-  return org.length > 0;
-}
-
 /**
  * Text already stored for search. Tables prefer their cell text. Empty when the document is not
  * indexed yet, so the caller can extract it once.

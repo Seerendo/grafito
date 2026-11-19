@@ -27,18 +27,32 @@ function same(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-function signature(docId: string, ownerId: string, expires: number, download: boolean): string {
-  return hmac(`${docId}.${ownerId}.${expires}.${download ? 1 : 0}`);
+function signature(
+  docId: string,
+  ownerId: string,
+  expires: number,
+  download: boolean,
+  shareId: string,
+): string {
+  const base = `${docId}.${ownerId}.${expires}.${download ? 1 : 0}`;
+  return hmac(shareId ? `${base}.share:${shareId}` : base);
 }
 
-export function signedFileUrl(docId: string, ownerId: string, download = false): string {
+export function signedFileUrl(
+  docId: string,
+  ownerId: string,
+  download = false,
+  /** Share the link was issued through; the file is served only while it still covers it. */
+  shareId = "",
+): string {
   const expires = Math.floor(Date.now() / 1000) + TTL_SECONDS;
   const params = new URLSearchParams({
     o: ownerId,
     e: String(expires),
-    s: signature(docId, ownerId, expires, download),
+    s: signature(docId, ownerId, expires, download, shareId),
   });
   if (download) params.set("d", "1");
+  if (shareId) params.set("h", shareId);
   return `/api/files/${encodeURIComponent(docId)}?${params}`;
 }
 
@@ -46,13 +60,16 @@ export function signedFileUrl(docId: string, ownerId: string, download = false):
 export function verifyFileUrl(
   docId: string,
   params: URLSearchParams,
-): { ownerId: string; download: boolean } | null {
+): { ownerId: string; download: boolean; shareId: string } | null {
   const ownerId = params.get("o");
   const expires = Number(params.get("e"));
   const given = params.get("s");
   const download = params.get("d") === "1";
+  const shareId = params.get("h") ?? "";
   if (!ownerId || !given || !Number.isFinite(expires) || expires * 1000 < Date.now()) return null;
-  return same(signature(docId, ownerId, expires, download), given) ? { ownerId, download } : null;
+  return same(signature(docId, ownerId, expires, download, shareId), given)
+    ? { ownerId, download, shareId }
+    : null;
 }
 
 /** Signed base64url data.signature token with expiry in seconds, used as WOPI access_token. */

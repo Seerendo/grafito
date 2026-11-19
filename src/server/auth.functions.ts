@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { internalHostReason } from "@/server/ai/local-url";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { testConnection } from "@/lib/auth/ldap.server";
@@ -71,7 +72,7 @@ export const authState = createServerFn({ method: "GET" })
         google: `${origin}/api/auth/callback/google`,
         github: `${origin}/api/auth/callback/github`,
         microsoft: `${origin}/api/auth/callback/microsoft`,
-        sso: `${origin}/api/auth/oauth2/callback/sso`,
+        sso: `${origin}/api/auth/callback/sso`,
       },
     };
   });
@@ -134,6 +135,8 @@ export const testLdap = createServerFn({ method: "POST" })
     if (!config.url || config.url === "ldap://" || !config.baseDn) {
       return { ok: false as const, error: "Falta la URL del servidor o la base de búsqueda." };
     }
+    const blocked = providerHostReason(config.url);
+    if (blocked) return { ok: false as const, error: blocked };
     try {
       return { ok: true as const, message: await testConnection(config, data.probeUser) };
     } catch (error) {
@@ -144,6 +147,18 @@ export const testLdap = createServerFn({ method: "POST" })
     }
   });
 
+/**
+ * Providers may live on the LAN, and the test stack's Keycloak and OpenLDAP are providers; the
+ * rest of Grafito's services and link-local addresses are not (security finding GRAF-17).
+ */
+function providerHostReason(raw: string): string | null {
+  try {
+    return internalHostReason(new URL(raw).hostname, ["keycloak", "openldap"]);
+  } catch {
+    return null;
+  }
+}
+
 /** Test an OIDC issuer through its discovery document. */
 export const testSso = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -152,8 +167,11 @@ export const testSso = createServerFn({ method: "POST" })
     const { ok } = await manager(context.userId);
     if (!ok) return DENIED;
     const url = `${data.issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
+    const blocked = providerHostReason(url);
+    if (blocked) return { ok: false as const, error: blocked };
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      // A redirect could lead anywhere, including Grafito's own services.
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
       if (!response.ok)
         return { ok: false as const, error: `El emisor respondió ${response.status}.` };
       const doc = (await response.json()) as { issuer?: string; authorization_endpoint?: string };

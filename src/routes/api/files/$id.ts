@@ -3,7 +3,7 @@ import { PERMISSION } from "@/domain/permissions";
 import { apiCaller, apiError, failure, requirePermission } from "@/server/api";
 import { verifyFileUrl } from "@/server/file-links";
 import { fileResponse } from "@/server/files";
-import { publicDocOwner } from "@/server/share";
+import { liveShareCovers, publicDocOwner } from "@/server/share";
 import { getDoc } from "@/server/vault";
 
 /**
@@ -27,6 +27,11 @@ export const Route = createFileRoute("/api/files/$id")({
           const token = url.searchParams.get("token");
           if (url.searchParams.has("s")) {
             if (!signed) return apiError(403, "El enlace caducó. Vuelve a abrir el documento.");
+            if (
+              signed.shareId &&
+              !(await liveShareCovers(sql, signed.shareId, signed.ownerId, params.id))
+            )
+              return apiError(403, "Ya no tienes acceso a este archivo.");
             ownerId = signed.ownerId;
             download = signed.download;
           } else if (token) {

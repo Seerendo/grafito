@@ -48,7 +48,7 @@ export async function changePassword(
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json", ...bearerHeader() },
-    body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: false }),
+    body: JSON.stringify({ currentPassword, newPassword, revokeOtherSessions: true }),
   });
   if (response.ok) {
     rememberBearerFrom(response);

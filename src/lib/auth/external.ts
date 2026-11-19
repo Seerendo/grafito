@@ -29,10 +29,8 @@ export async function signInWithProvider(
   provider: "google" | "github" | "microsoft" | "sso",
 ): Promise<string | null> {
   const urls = { callbackURL: "/", errorCallbackURL: "/login" };
-  const { error } =
-    provider === "sso"
-      ? await authClient.signIn.oauth2({ providerId: "sso", ...urls })
-      : await authClient.signIn.social({ provider, ...urls });
+  // Since Better Auth 1.7 the OIDC provider is a social provider like the others.
+  const { error } = await authClient.signIn.social({ provider, ...urls });
   return error ? error.message || t("No se pudo iniciar sesión con ese proveedor.") : null;
 }
 

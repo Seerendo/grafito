@@ -1,4 +1,5 @@
 import type { Sql } from "@/lib/db";
+import { blockUnsafeBlob } from "./clamav";
 import { PERMISSION } from "@/domain/permissions";
 import { isDrawingName } from "@/domain/vault/drawing";
 import type { UserProfile } from "@/server/profile";
@@ -37,6 +38,8 @@ export async function storeDrawing(
     return { ok: false, error: "El dibujo es demasiado grande." };
   const key = newFileKey(ownerId);
   await putBlob(sql, key, bytes, doc.file.mime || "application/vnd.excalidraw+json");
+  const blocked = await blockUnsafeBlob(sql, key);
+  if (blocked) return { ok: false, error: blocked.message };
   try {
     const saved = await replaceFile(sql, ownerId, input.docId, {
       key,

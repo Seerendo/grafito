@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { readOfficeToken } from "@/server/office";
+import { officeTokenStillGranted, readOfficeToken } from "@/server/office";
 import { getDoc } from "@/server/vault";
 
 /** WOPI CheckFileInfo requested by Collabora on opening, authorized by Grafito's signed access_token. */
@@ -10,7 +10,10 @@ export const Route = createFileRoute("/wopi/files/$id")({
         const token = readOfficeToken(request, params.id);
         if (!token) return new Response("Unauthorized", { status: 401 });
         const { getSql } = await import("@/lib/db");
-        const doc = await getDoc(await getSql(), token.o, params.id);
+        const sql = await getSql();
+        if (!(await officeTokenStillGranted(sql, token)))
+          return new Response("Access revoked", { status: 403 });
+        const doc = await getDoc(sql, token.o, params.id);
         if (!doc?.file) return new Response("Not found", { status: 404 });
         return Response.json(
           {

@@ -58,7 +58,10 @@ export function ldapPlugin(): BetterAuthPlugin {
           const found = await adapter.findUserByEmail(email, { includeAccounts: true });
           let user = found?.user;
           if (!user) {
-            user = await adapter.createUser({ email, name: person.name, emailVerified: true });
+            user = await adapter.createUser(
+              { email, name: person.name, emailVerified: true },
+              { method: "ldap" },
+            );
           }
           const linked = found?.accounts?.some((account) => account.providerId === "ldap");
           // Do not adopt an existing local or external account by matching email; control of a directory attribute must not enable account takeover.
