@@ -63,7 +63,9 @@ export function clamCommand(
     socket.on("close", () => {
       if (chunks.length > 0) finish(undefined, Buffer.concat(chunks).toString("utf8"));
     });
-    socket.on("data", (chunk) => {
+    // No encoding is set, so chunks are Buffers (Node 26 types allow strings too).
+    socket.on("data", (data: Buffer | string) => {
+      const chunk = typeof data === "string" ? Buffer.from(data) : data;
       chunks.push(chunk);
       if (chunk.includes(0)) socket.end();
     });

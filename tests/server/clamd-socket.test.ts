@@ -15,8 +15,8 @@ async function fakeClamd(
 ): Promise<{ port: number; close: () => void }> {
   const server = net.createServer((socket) => {
     let tail = Buffer.alloc(0);
-    socket.on("data", (chunk) => {
-      tail = Buffer.concat([tail, chunk]).subarray(-4);
+    socket.on("data", (chunk: Buffer | string) => {
+      tail = Buffer.concat([tail, Buffer.from(chunk)]).subarray(-4);
       onData(socket, tail.length === 4 && tail.readUInt32BE(0) === 0);
     });
     socket.on("error", () => undefined);

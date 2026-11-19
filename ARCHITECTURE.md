@@ -532,11 +532,11 @@ themselves aren't in `docker-compose.yml`: they live in a local test compose
 that isn't versioned.
 
 **Lockfile:** after `npm install <package>` with a different npm than the
-image's (Node 22 / npm 10), regenerate `package-lock.json` like this so the
+image's (Node 26.13.1 / npm 11), regenerate `package-lock.json` like this so the
 `Dockerfile`'s `npm ci` doesn't fail:
 
 ```bash
-docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --package-lock-only
+docker run --rm -v "$PWD:/app" -w /app node:26.13.1-bookworm-slim npm install --package-lock-only
 ```
 
 ## Server-side vault and sync

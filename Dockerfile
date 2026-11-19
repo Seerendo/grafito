@@ -1,6 +1,6 @@
 # Grafito production build and runtime image containing only compiled output.
 
-FROM node:22-bookworm-slim AS build
+FROM node:26.13.1-bookworm-slim AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -14,7 +14,7 @@ COPY . .
 # Runtime database initialization applies them before the first query.
 RUN npm run build
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:26.13.1-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production

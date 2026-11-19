@@ -1380,6 +1380,20 @@ loopback ports and example credentials (GRAF-04, 06, 07, 16); see
 docs/SECURITY.md. Advisories left in Excalidraw's bundled Mermaid/lodash and in
 build tools.
 
+## Round 46: Node 26 LTS
+
+The image, CI and `.nvmrc` move from Node 22 to Node 26.13.1 (npm 11.20);
+`@types/node` 26. Node 26's socket types allow string chunks, so the clamd
+client and its test convert them.
+
+| Check                                                                      | Result            |
+| -------------------------------------------------------------------------- | ----------------- |
+| Image builds from `node:26.13.1-bookworm-slim`; the app reports `v26.13.1` | ✅                |
+| `npm ci` with the regenerated lockfile, in that image                      | ✅                |
+| Rounds 41–43 browser tests, Chromium                                       | ✅ 8 of 8         |
+| Security tests GRAF-02, 03, 08, 10, 13, 23                                 | ✅ 6 of 6         |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`              | ✅ 270 tests pass |
+
 ## Useful commands
 
 ```bash

@@ -968,7 +968,7 @@ and LDAP users to load into your own test servers.
 ## Development
 
 The app is built with TanStack Start (React 19, SSR, server functions),
-Tailwind CSS v4, Better Auth and zustand. It targets Node 22.
+Tailwind CSS v4, Better Auth and zustand. It targets Node 26 (LTS, 26.13.1 in the image and CI).
 
 ```bash
 npm install
@@ -985,7 +985,7 @@ If you add a dependency with an npm version other than the image's (npm 10),
 regenerate the lockfile with the container's npm so that `npm ci` keeps working:
 
 ```bash
-docker run --rm -v "$PWD:/app" -w /app node:22-bookworm-slim npm install --package-lock-only
+docker run --rm -v "$PWD:/app" -w /app node:26.13.1-bookworm-slim npm install --package-lock-only
 ```
 
 ## Further reading
