@@ -107,7 +107,9 @@ async function syncOnce(userId: string): Promise<void> {
   const store = useVault.getState();
   if (store.owner !== userId || !store.hydrated) return;
   setStatus("syncing");
-  let meta = readMeta(userId);
+  // A vault seeded with the sample in this browser is not the person's work: read the whole
+  // server vault and adopt it, and only push the sample to a server that has nothing yet.
+  let meta = store.seeded ? null : readMeta(userId);
   const pulled = await pullVault({ data: { since: meta?.rev ?? 0 } });
   if (useVault.getState().owner !== userId) return;
 
@@ -177,10 +179,22 @@ async function syncOnce(userId: string): Promise<void> {
     changes.portfolios.length +
     changes.deletedPortfolios.length;
   if (total === 0) return;
-  const result = await pushVault({ data: changes });
+  const restoring = now.restoreSample;
+  const result = await pushVault({ data: { ...changes, restoreSamples: restoring } });
   if (!result.ok) {
     // Without write permission, the next refresh restores authoritative server content.
     return;
+  }
+  if (restoring) useVault.setState({ restoreSample: false });
+  // Deleted sample documentation the server would not take back: drop it here too.
+  if (result.dropped.docs.length + result.dropped.portfolios.length > 0) {
+    useVault.getState().applyRemote({
+      docs: [],
+      deletedDocs: result.dropped.docs,
+      portfolios: [],
+      deletedPortfolios: result.dropped.portfolios,
+    });
+    again = true;
   }
   const refused = new Set(result.conflicts.map((doc) => doc.id));
   useVault.getState().markSynced(changes.docs.filter((doc) => !refused.has(doc.id)));

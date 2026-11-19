@@ -25,12 +25,14 @@ import {
   type DavShareGate,
   type DavWhere,
 } from "@/domain/dav";
+import { blockedMessage, uploadBlocked } from "@/domain/file-extensions";
 import { descendantIds } from "@/domain/vault/portfolios";
 import type { Document, Portfolio } from "@/domain/vault/types";
 import type { Sql } from "@/lib/db";
 import type { ApiCaller } from "@/server/api";
 import { recordAudit, requestIp } from "@/server/audit";
 import { blockUnsafeBlob } from "@/server/clamav";
+import { readExtensionRules } from "@/server/file-rules";
 import { deleteBlob, maxUploadBytes, putBlob } from "@/server/blobs";
 import { fileResponse, migrateLegacyFiles, newFileKey } from "@/server/files";
 import {
@@ -343,6 +345,10 @@ async function putOne(bag: Bag, request: Request, where: DavWhere): Promise<Resp
     return existing.doc.kind === "markdown"
       ? writeNote(bag, request, existing, bytes, false)
       : writeFile(bag, request, parent, tail.name, bytes, existing);
+  }
+  if (uploadBlocked(tail.name, await readExtensionRules(bag.sql))) {
+    await audit(bag, request, "denied", blockedMessage(tail.name));
+    return plain(415, blockedMessage(tail.name));
   }
   if (isMarkdownName(tail.name)) return writeNote(bag, request, parent, bytes, true, tail.name);
   return writeFile(bag, request, parent, tail.name, bytes, null);

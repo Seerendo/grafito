@@ -2,6 +2,6 @@
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": true },
   "include": ["src", "tests"],
-  // The browser test drives Playwright, which is not a project dependency (no types to check).
-  "exclude": ["tests/e2e/pdf-signatures.e2e.mjs"]
+  // The browser tests drive Playwright, which is not a project dependency (no types to check).
+  "exclude": ["tests/e2e/**/*.e2e.mjs"]
 }

@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { blockedMessage, uploadBlocked } from "@/domain/file-extensions";
 import { PERMISSION } from "@/domain/permissions";
 import { apiCaller, apiError, failure, json, readJson, requirePermission } from "@/server/api";
 import { maxUploadBytes, PART_SIZE, startUpload } from "@/server/blobs";
+import { readExtensionRules } from "@/server/file-rules";
 import { newFileKey } from "@/server/files";
 import { checkSpace } from "@/server/space";
 import { uploadTarget } from "@/server/upload-target";
@@ -35,6 +37,8 @@ export const Route = createFileRoute("/api/files/uploads")({
           requirePermission(profile, PERMISSION.filesUpload, "Tu rol no permite subir archivos.");
           const body = start.safeParse(await readJson(request));
           if (!body.success) return apiError(400, "Se espera { name, mime, size }.");
+          if (uploadBlocked(body.data.name, await readExtensionRules(sql)))
+            return apiError(415, blockedMessage(body.data.name));
           const max = maxUploadBytes();
           if (body.data.size > max)
             return apiError(413, `«${body.data.name}» supera el límite de ${megabytes(max)}.`);

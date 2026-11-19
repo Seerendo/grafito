@@ -46,7 +46,12 @@ import { EditorPane } from "./EditorPane";
 import { GraphView } from "./GraphView";
 import { Sidebar, SidebarRail } from "./Sidebar";
 import { NotePdfHost } from "./NotePdf";
-import { ingestExternalFiles, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
+import {
+  droppedNothing,
+  ingestExternalFiles,
+  isExternalFileDrag,
+  readDroppedEntries,
+} from "./ingest-files";
 import { t } from "@/app/i18n";
 import { useFullscreen, watchFullscreen } from "@/app/fullscreen";
 import { treeVersion, useGraphAvailable } from "@/app/graph";
@@ -629,7 +634,7 @@ function dropDestination(): DropTarget {
 function ingestAt(data: DataTransfer) {
   const target = dropDestination();
   void readDroppedEntries(data).then((files) => {
-    if (files.length === 0) return;
+    if (droppedNothing(files)) return;
     if (target.kind === "shared") {
       if (!target.ok) {
         report(t("No puedes añadir nada a ese portafolio."));
@@ -1332,7 +1337,7 @@ function VaultDialogs() {
   if (dialog.type === "upload-error") {
     return (
       <Modal title={t(dialog.title ?? "No se pudo subir")} onClose={() => setDialog(null)}>
-        <p className="text-sm text-muted">{t(dialog.message)}</p>
+        <p className="whitespace-pre-line text-sm text-muted">{t(dialog.message)}</p>
         <div className="mt-4 flex justify-end">
           <Primary onClick={() => setDialog(null)}>{t("Entendido")}</Primary>
         </div>

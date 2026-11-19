@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
+import { tallyFolder } from "@/domain/vault/tally";
 import { resolveLink, useSharedTrees } from "@/app/shared-links";
 import { linkKey } from "@/domain/vault/anchor";
 import type { Portfolio } from "@/domain/vault/types";
@@ -22,6 +23,7 @@ import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
 import { createDrawing, createTable } from "./ingest-files";
 import { useMemo } from "react";
+import { create } from "zustand";
 import { useVault } from "@/app/vault/store";
 import { intl, t } from "@/app/i18n";
 import { useDirectoryPick } from "@/app/directory-pick";
@@ -56,9 +58,6 @@ export function HomeBoard({
         .sort((a, b) => a.name.localeCompare(b.name, intl(), { sensitivity: "base" })),
     [portfolios],
   );
-  const countIn = (id: string) =>
-    documents.filter((document) => document.portfolioId === id).length +
-    portfolios.filter((item) => item.parentId === id).length;
   const { openMenu, element: menu } = useRowMenu(onOpenNote, selectInDirectory);
   const recent = useMemo(
     () => [...documents].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, RECENT),
@@ -96,6 +95,7 @@ export function HomeBoard({
             ) : null}
           </span>
         </div>
+        <FolderCount rootId={null} />
         <div className="mt-8">
           <PendingSignatures onOpenNote={onOpenNote} />
         </div>
@@ -105,22 +105,13 @@ export function HomeBoard({
               {t("Portafolios")}
             </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
-              {roots.map((portfolio) => (
-                <li key={portfolio.id} className="border-b border-line last:border-b-0">
-                  <button
-                    type="button"
-                    onClick={() => openPortfolio(portfolio.id)}
-                    onContextMenu={(event) =>
-                      openMenu(event, { kind: "portfolio", id: portfolio.id })
-                    }
-                    className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
-                  >
-                    <Folder className="size-4 shrink-0 text-faint" />
-                    <span className="min-w-0 flex-1 truncate text-sm">{portfolio.name}</span>
-                    <span className="shrink-0 text-xs text-faint">{countIn(portfolio.id)}</span>
-                  </button>
-                </li>
-              ))}
+              <FolderRows
+                items={roots}
+                depth={0}
+                onOpenPortfolio={openPortfolio}
+                onOpenDocument={setActive}
+                openMenu={openMenu}
+              />
             </ul>
           </section>
         ) : null}
@@ -214,10 +205,6 @@ export function PortfolioBoard({
         .sort((a, b) => a.title.localeCompare(b.title, intl(), { sensitivity: "base" })),
     [documents, portfolioId],
   );
-  const countIn = (id: string) =>
-    documents.filter((document) => document.portfolioId === id).length +
-    portfolios.filter((item) => item.parentId === id).length;
-
   if (!portfolio) return null;
 
   return (
@@ -273,6 +260,7 @@ export function PortfolioBoard({
             ) : null}
           </span>
         </div>
+        <FolderCount rootId={portfolioId} />
         <PortfolioAbout portfolio={portfolio} onOpenNote={onOpenNote} />
         {children.length === 0 && items.length === 0 ? (
           <p className="mt-8 text-sm text-faint">{t("Este portafolio está vacío.")}</p>
@@ -283,20 +271,13 @@ export function PortfolioBoard({
               {t("Portafolios")}
             </h2>
             <ul className="mt-2 overflow-hidden rounded-lg border border-line bg-surface">
-              {children.map((child) => (
-                <li key={child.id} className="border-b border-line last:border-b-0">
-                  <button
-                    type="button"
-                    onClick={() => onOpenPortfolio(child.id)}
-                    onContextMenu={(event) => openMenu(event, { kind: "portfolio", id: child.id })}
-                    className="flex min-h-12 w-full items-center gap-3 px-4 py-2 text-left hover:bg-elevated"
-                  >
-                    <Folder className="size-4 shrink-0 text-faint" />
-                    <span className="min-w-0 flex-1 truncate text-sm">{child.name}</span>
-                    <span className="shrink-0 text-xs text-faint">{countIn(child.id)}</span>
-                  </button>
-                </li>
-              ))}
+              <FolderRows
+                items={children}
+                depth={0}
+                onOpenPortfolio={onOpenPortfolio}
+                onOpenDocument={setActive}
+                openMenu={openMenu}
+              />
             </ul>
           </section>
         ) : null}
@@ -338,6 +319,151 @@ export function PortfolioBoard({
       </div>
       {menu}
     </div>
+  );
+}
+
+/** Portfolios unfolded on the central pages, kept while the app is open. */
+const useBoardOpen = create<{ open: Record<string, boolean> }>(() => ({ open: {} }));
+
+function toggleBoardOpen(id: string) {
+  useBoardOpen.setState((state) => ({ open: { ...state.open, [id]: !state.open[id] } }));
+}
+
+const INDENT = ["pl-4", "pl-9", "pl-14", "pl-19", "pl-24", "pl-29"];
+
+function indentOf(depth: number): string {
+  return INDENT[Math.min(depth, INDENT.length - 1)] ?? "pl-4";
+}
+
+function documentIcon(document: { kind: string; file?: { name: string } | null }) {
+  return document.kind === "file"
+    ? isTableName(document.file?.name ?? "")
+      ? Sheet
+      : File
+    : FileText;
+}
+
+const byName = (a: { name: string }, b: { name: string }) =>
+  a.name.localeCompare(b.name, intl(), { sensitivity: "base" });
+
+/**
+ * Portfolio rows on a central page. The arrow folds or unfolds the portfolio in place, showing
+ * its portfolios and documents below it; the name opens the portfolio's page.
+ */
+function FolderRows({
+  items,
+  depth,
+  onOpenPortfolio,
+  onOpenDocument,
+  openMenu,
+}: {
+  items: Portfolio[];
+  depth: number;
+  onOpenPortfolio: (id: string) => void;
+  onOpenDocument: (id: string) => void;
+  openMenu: ReturnType<typeof useRowMenu>["openMenu"];
+}) {
+  const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const open = useBoardOpen((state) => state.open);
+  return (
+    <>
+      {items.map((portfolio) => {
+        const unfolded = Boolean(open[portfolio.id]);
+        const subfolders = portfolios.filter((item) => item.parentId === portfolio.id);
+        const inside = documents.filter((document) => document.portfolioId === portfolio.id);
+        return (
+          <li key={portfolio.id} className="border-b border-line last:border-b-0">
+            <div className={`flex min-h-12 items-center ${indentOf(depth)} pr-4 hover:bg-elevated`}>
+              <button
+                type="button"
+                aria-expanded={unfolded}
+                aria-label={
+                  unfolded
+                    ? t("Plegar {0}", { 0: portfolio.name })
+                    : t("Desplegar {0}", { 0: portfolio.name })
+                }
+                onClick={() => toggleBoardOpen(portfolio.id)}
+                className="-ml-2 grid size-9 shrink-0 place-items-center rounded-md text-faint hover:text-fg"
+              >
+                <ChevronRight
+                  className={`size-4 transition-transform ${unfolded ? "rotate-90" : ""}`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenPortfolio(portfolio.id)}
+                onContextMenu={(event) => openMenu(event, { kind: "portfolio", id: portfolio.id })}
+                className="flex min-h-12 min-w-0 flex-1 items-center gap-3 py-2 text-left"
+              >
+                <Folder className="size-4 shrink-0 text-faint" />
+                <span className="min-w-0 flex-1 truncate text-sm">{portfolio.name}</span>
+                <span className="shrink-0 text-xs text-faint">
+                  {subfolders.length + inside.length}
+                </span>
+              </button>
+            </div>
+            {unfolded && subfolders.length + inside.length > 0 ? (
+              <ul className="border-t border-line">
+                <FolderRows
+                  items={[...subfolders].sort(byName)}
+                  depth={depth + 1}
+                  onOpenPortfolio={onOpenPortfolio}
+                  onOpenDocument={onOpenDocument}
+                  openMenu={openMenu}
+                />
+                {[...inside]
+                  .sort((a, b) => a.title.localeCompare(b.title, intl(), { sensitivity: "base" }))
+                  .map((document) => {
+                    const Icon = documentIcon(document);
+                    return (
+                      <li key={document.id} className="border-b border-line last:border-b-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenDocument(document.id)}
+                          onContextMenu={(event) =>
+                            openMenu(event, { kind: "document", id: document.id })
+                          }
+                          className={`flex min-h-11 w-full items-center gap-3 ${indentOf(depth + 1)} py-2 pr-4 text-left hover:bg-elevated`}
+                        >
+                          <span className="w-5 shrink-0" />
+                          <Icon className="size-4 shrink-0 text-faint" />
+                          <span className="min-w-0 flex-1 truncate text-sm">{document.title}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Folders and files directly inside and everything below, as a file manager shows them, to
+ * check that an upload arrived complete.
+ */
+function FolderCount({ rootId }: { rootId: string | null }) {
+  const documents = useVault((state) => state.documents);
+  const portfolios = useVault((state) => state.portfolios);
+  const tally = useMemo(
+    () => tallyFolder(portfolios, documents, rootId),
+    [portfolios, documents, rootId],
+  );
+  const part = (count: { folders: number; files: number }) =>
+    `${t(count.folders === 1 ? "{0} carpeta" : "{0} carpetas", { 0: count.folders })} · ${t(
+      count.files === 1 ? "{0} archivo" : "{0} archivos",
+      { 0: count.files },
+    )}`;
+  const nested = tally.total.folders !== tally.direct.folders;
+  return (
+    <p data-ui="folder-count" className="mt-1 text-xs text-faint tabular-nums">
+      {part(tally.direct)}
+      {nested ? ` · ${t("en total: {0}", { 0: part(tally.total) })}` : ""}
+    </p>
   );
 }
 

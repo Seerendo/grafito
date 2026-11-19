@@ -145,8 +145,8 @@ function isPortfolio(value: unknown): value is Portfolio {
 function parseSaved(raw: string): Persisted | null {
   const data = JSON.parse(raw) as Partial<Persisted>;
   if (!Array.isArray(data.documents)) return null;
+  // An empty vault is a saved vault: treating it as missing brought the sample back.
   const documents = data.documents.filter(isDocument).map(normalize);
-  if (documents.length === 0) return null;
   const portfolios = Array.isArray(data.portfolios) ? data.portfolios.filter(isPortfolio) : [];
   // Preserve the personal-root view after reload. If the previous document is missing, do not open an arbitrary replacement.
   const activeId = documents.some((document) => document.id === data.activeId)
@@ -320,7 +320,8 @@ type VaultState = Persisted & {
     portfolioId?: string | null,
     title?: string,
     content?: string,
-    options?: { open?: boolean },
+    /** quiet leaves selection and folding alone, for background uploads. */
+    options?: { open?: boolean; quiet?: boolean },
   ) => string;
   /** open selects a newly uploaded file; normal uploads leave it closed. */
   uploadFile: (
@@ -329,8 +330,13 @@ type VaultState = Persisted & {
     mime: string,
     stored: { key: string; size: number },
     open?: boolean,
+    quiet?: boolean,
   ) => string | null;
-  createPortfolio: (parentId: string | null, name: string) => string | null;
+  createPortfolio: (
+    parentId: string | null,
+    name: string,
+    options?: { quiet?: boolean },
+  ) => string | null;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
   /** Move selected doc:<id> and port:<id> entries, including descendants, to trash. */
@@ -376,6 +382,8 @@ type VaultState = Persisted & {
   /** Open a portfolio page showing child portfolios, notes and files. */
   openPortfolio: (id: string) => void;
   reset: () => void;
+  /** «Restaurar el ejemplo» asked for the sample back; the next push says so to the server. */
+  restoreSample: boolean;
 };
 
 /** Newly opened vault state: saved or sample data and a clean UI. */
@@ -655,13 +663,17 @@ export const useVault = create<VaultState>((set, get) => ({
             ...(blank ? { draft: { id: document.id, title: name } } : {}),
           }
         : {}),
-      selectedPortfolioId: target,
-      collapsed: expandTo(get().collapsed, get().portfolios, target),
+      ...(options?.quiet
+        ? {}
+        : {
+            selectedPortfolioId: target,
+            collapsed: expandTo(get().collapsed, get().portfolios, target),
+          }),
     });
     return document.id;
   },
 
-  uploadFile: (portfolioId, name, mime, stored, open = false) => {
+  uploadFile: (portfolioId, name, mime, stored, open = false, quiet = false) => {
     if (!can(PERMISSION.filesUpload)) return t("Tu rol no permite subir archivos.");
     const base = name.replace(/\.[^.]+$/, "") || name;
     const title = uniqueTitle(get().documents, base, portfolioId, "file");
@@ -679,17 +691,25 @@ export const useVault = create<VaultState>((set, get) => ({
     set({
       documents: [document, ...get().documents],
       ...(open ? { activeId: document.id, folderPicked: false, graph: false, palette: false } : {}),
-      selectedPortfolioId: portfolioId,
-      collapsed: expandTo(get().collapsed, get().portfolios, portfolioId),
+      ...(quiet
+        ? {}
+        : {
+            selectedPortfolioId: portfolioId,
+            collapsed: expandTo(get().collapsed, get().portfolios, portfolioId),
+          }),
     });
     return null;
   },
 
-  createPortfolio: (parentId, name) => {
+  createPortfolio: (parentId, name, options) => {
     if (!can(PERMISSION.portfoliosManage)) return null;
     const clean = name.trim().replace(/[\\/]/g, "");
     if (!clean) return null;
     const id = uuid();
+    if (options?.quiet) {
+      set({ portfolios: [...get().portfolios, { id, name: clean, parentId }] });
+      return id;
+    }
     set({
       portfolios: [...get().portfolios, { id, name: clean, parentId }],
       selectedPortfolioId: id,
@@ -1072,8 +1092,10 @@ export const useVault = create<VaultState>((set, get) => ({
 
   reset: () => {
     if (!can(PERMISSION.notesCreate) || !can(PERMISSION.notesDelete)) return;
-    set({ ...freshVault(null), hydrated: get().owner !== null });
+    set({ ...freshVault(null), hydrated: get().owner !== null, restoreSample: true });
   },
+
+  restoreSample: false,
 }));
 
 subscribePermissions(() => {

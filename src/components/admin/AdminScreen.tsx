@@ -65,6 +65,7 @@ import { AiBoard } from "./AiBoard";
 import { MailBoard } from "./MailBoard";
 import { SecurityBoard } from "./SecurityBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
+import { ExtensionsBoard } from "./ExtensionsBoard";
 import { t } from "@/app/i18n";
 
 type Section =
@@ -524,7 +525,12 @@ export function AdminScreen() {
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
                 {current?.id === "ia" ? <AiBoard /> : null}
                 {current?.id === "correo" ? <MailBoard /> : null}
-                {current?.id === "seguridad" ? <SecurityBoard /> : null}
+                {current?.id === "seguridad" ? (
+                  <div className="space-y-8">
+                    <SecurityBoard />
+                    <ExtensionsBoard />
+                  </div>
+                ) : null}
                 {current?.id === "plugins" ? <Plugins view={view} reload={load} /> : null}
                 {current?.id === "sesion" ? <SessionPanel seconds={view.sessionTtl} /> : null}
               </div>

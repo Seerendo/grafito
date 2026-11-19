@@ -1220,6 +1220,126 @@ Grafito on the server; the HTTP endpoint is refused.
 | Sign-in with a password, round 39 browser test with accounts written by its seed (4 browsers) | ✅ 32 of 32                             |
 | `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, `npm run build`                | ✅ 240 tests pass                       |
 
+## Round 41: user modal, log filters, blocked extensions
+
+Requested: clicking a user in Administración → Usuarios showed its form under
+the whole list, out of sight; LDAP accounts could have their name changed;
+the system logs had no filters; there was no way to block extensions.
+
+Test stack (`grafito-e2e`, image built from this tree, gateway on port 8080),
+browser engines through Playwright 1.60 (`tests/e2e/admin-tools.e2e.mjs`):
+Chromium, Firefox, WebKit, and the installed Google Chrome, on Windows.
+
+| Check                                                                                       | Result                                           |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 32 users, click the last one: the form opens as a modal inside the window (1280 and 390 px) | ✅ all four browsers                             |
+| LDAP user: origin LDAP, name and email read only; the server keeps the directory name       | ✅                                               |
+| Local user: rename from the modal, the list shows the new name                              | ✅                                               |
+| Logs: filter by user, by description or area, from/to date and time, nothing matching       | ✅ exactly the seeded lines each time            |
+| Seguridad: tick `.rar`, `.iso`, type `.TORRENT`, mark `.mp4` as not indexed, save           | ✅ «Guardado.», one log line                     |
+| `POST /api/files/uploads` with `copia.RAR`, `lista.torrent`, `video.mp4`                    | ✅ 415, 415, 200                                 |
+| Upload `.rar` and `.txt` together from the browser                                          | ✅ `.txt` uploaded, the summary names the `.rar` |
+| Stored `.mp4` file and a note after the index rule changes                                  | ✅ the `.mp4` leaves the index, the note stays   |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, image build                  | ✅ 247 tests pass                                |
+
+WebDAV uploads go through the same rule (415); that path was not run in a
+browser.
+
+## Round 42: background uploads, empty folders, antivirus summary, counts
+
+Requested: a bulk upload selected and opened every folder as it went; it
+could not be paused or cancelled; empty folders were lost; an antivirus hit
+reported only the last error (the person saw a 503); there was no way to
+check that a large upload arrived complete.
+
+Not reproduced: a detection answering 503. EICAR through the API gives 422
+with the signature, alone, twelve at a time and inside 30–99 MB files. 503
+comes only from a scanner that is unreachable, times out, or closes before
+answering. The client socket now keeps a reply that arrives before a reset,
+and the messages say which case it was (413 for clamd's size limit).
+
+Test stack (`grafito-e2e`, image built from this tree, gateway on port 8080),
+Playwright 1.60 (`tests/e2e/uploads.e2e.mjs`, `tests/e2e/admin-tools.e2e.mjs`),
+each file and each browser run on its own: Chromium, Firefox, WebKit, and the
+installed Google Chrome, on Windows. Drops are made with filesystem entries,
+as a browser hands a dropped folder over.
+
+| Check                                                                                            | Result                                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Drop a folder (30 files of 1.5 MB, two empty folders, EICAR) on a portfolio while a note is open | ✅ the note stays open, no folder opens or gets selected           |
+| Pause after a few files                                                                          | ✅ the counts stop for 2.5 s                                       |
+| Go to Cuenta and resume there                                                                    | ✅ the job goes on and finishes                                    |
+| Summary: 30 files, 5 folders, 1 rejected by the antivirus with its signature                     | ✅                                                                 |
+| Server: every clean file and every folder, empty ones included                                   | ✅                                                                 |
+| Portfolio page: «3 carpetas · 0 archivos · en total: 4 carpetas · 30 archivos»                   | ✅                                                                 |
+| Cancel after two files                                                                           | ✅ uploaded + «Sin subir» = 20; the server holds the uploaded ones |
+| Same drop on a portfolio shared with edit access                                                 | ✅ same queue, summary and folders in the owner's vault            |
+| Round 41 browser test again (blocked `.rar` now listed in the summary)                           | ✅ 12 of 12                                                        |
+| `POST /api/files/uploads/complete` with EICAR                                                    | ✅ 422 «El antivirus detectó una amenaza (Eicar-Test-Signature)…»  |
+| Fake clamd: reply then close, size-limit reply, reset without reply                              | ✅ infected, error with its text, failure                          |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, image build                       | ✅ 260 tests pass                                                  |
+
+Not covered: the folder picker (`Subir carpeta`) cannot see empty folders in
+any browser; only a drop can. A reload loses a paused job (the tab asks
+first). WebDAV uploads were not run in a browser.
+
+## Round 43: fold portfolios on the central page, sample documentation stays deleted
+
+Requested: portfolios could only be folded in the sidebar; the sample
+documentation kept showing in the graph after being deleted and often came
+back.
+
+Cause: a saved vault with no documents was read as "nothing saved", so the
+next load seeded the sample again and the next sync pushed it, undeleting it
+on the server (reproduced: delete «Documentación», reload, the 13 notes are
+live again). The graph draws the vault's documents, so they showed there too.
+Now an empty vault is a vault; a browser holding only the seeded sample adopts
+the server vault; the server refuses to bring back sample notes or portfolios
+it holds as deleted and tells the browser to drop them. «Restaurar notas de
+ejemplo» still brings them back.
+
+Test stack (`grafito-e2e`, image built from this tree, gateway on port 8080),
+Playwright 1.60 (`tests/e2e/vault-pages.e2e.mjs`), each browser on its own:
+Chromium, Firefox, WebKit, and the installed Google Chrome, on Windows.
+
+| Check                                                                               | Result                                      |
+| ----------------------------------------------------------------------------------- | ------------------------------------------- |
+| Carpeta Personal page: unfold Documentación, then Inicio; open a note from the tree | ✅ all four browsers                        |
+| Back on the page the tree is as it was; fold hides the contents                     | ✅                                          |
+| Portfolio page: unfold and fold Atlas                                               | ✅                                          |
+| New member: the sample reaches the server once (13 notes)                           | ✅                                          |
+| Delete «Documentación», reload                                                      | ✅ 0 live, sidebar without it (was 13 back) |
+| A new browser for the same person                                                   | ✅ 0 live                                   |
+| A browser offline during the delete edits «Bienvenida», then comes back             | ✅ the note disappears there, 0 live        |
+| «Restaurar notas de ejemplo»                                                        | ✅ 13 live again                            |
+| Rounds 41 and 42 browser tests again                                                | ✅ 24 of 24                                 |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`, image build          | ✅ 262 tests pass                           |
+
+Found while testing: in WebKit, navigating away from a page that is still
+hydrating left the next page without `$_TSR` and broken. The new test goes
+straight to the vault once it has a token; the app itself was not changed for
+it.
+
+## Round 44: antivirus timeout for long PDFs
+
+Found in the studies: the 503 seen in bulk uploads was ClamAV running out of
+time on long, clean PDFs (60 s by default; 3000 pages took 52 s, 6000 pages
+went over). The default is now 300 s and the screen accepts up to 900 s.
+
+Test stack (`grafito-e2e`, image built from this tree), PDFs made with pdf-lib
+and sent through `/api/files/uploads`, no saved antivirus settings:
+
+| Check                                                         | Result            |
+| ------------------------------------------------------------- | ----------------- |
+| 6000-page PDF (6 MB), before the change                       | ❌ 503 after 60 s |
+| 6000-page PDF, after                                          | ✅ 200 in 15 s    |
+| 12 000-page PDF (12 MB), after                                | ✅ 200 in 70 s    |
+| Seguridad accepts 900 s and refuses 901 s                     | ✅ (unit test)    |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check` | ✅ 262 tests pass |
+
+Scan times vary between runs on the same file (6000 pages: over 60 s once,
+15 s the next time). Settings saved before keep their own timeout.
+
 ## Useful commands
 
 ```bash

@@ -20,7 +20,7 @@ import {
   report,
   uploadFolderToShared,
 } from "@/app/shared-actions";
-import { isExternalFileDrag, readDroppedEntries } from "./ingest-files";
+import { droppedNothing, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
 import { useVault } from "@/app/vault/store";
 import { useContextMenu } from "@/components/ui/use-context-menu";
 import type { ContextItem } from "@/components/ui/ContextMenu";
@@ -337,7 +337,7 @@ export function SharedSection({
     if (!shareId) return;
     void (async () => {
       const files = await readDroppedEntries(event.dataTransfer);
-      if (files.length === 0) return;
+      if (droppedNothing(files)) return;
       const tree = await fetchSharedTree(shareId, true).catch(() => null);
       const portfolioId =
         tree && which === "root"

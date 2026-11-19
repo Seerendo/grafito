@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { filterInstant, likePattern } from "@/domain/log-filter";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { removeUserFiles } from "@/server/files";
@@ -666,8 +667,14 @@ export const updateVaultUser = createServerFn({ method: "POST" })
       return { ok: false as const, error: "Sin permiso para actualizar usuarios." };
     if (data.email && !emailPattern.test(data.email))
       return { ok: false as const, error: "El correo no es válido." };
-    const current = await sql<{ role_id: string | null; owner: unknown }>`
-      select m.role_id, exists(select 1 from app_admin a where a.user_id = u.id) as owner
+    const current = await sql<{
+      role_id: string | null;
+      owner: unknown;
+      source: string | null;
+      name: string;
+    }>`
+      select m.role_id, m.source, u.name,
+        exists(select 1 from app_admin a where a.user_id = u.id) as owner
       from "user" u
       left join app_user_role m on m.user_id = u.id
       where u.id = ${data.userId}
@@ -690,7 +697,9 @@ export const updateVaultUser = createServerFn({ method: "POST" })
       id: string;
     }>`select id from app_role where id = ${data.roleId} limit 1`;
     if (!role[0]) return { ok: false as const, error: "Ese rol no existe." };
-    await sql`update "user" set name = ${data.name.trim()}, "updatedAt" = now() where id = ${data.userId}`;
+    // LDAP owns the name of directory accounts.
+    const name = row.source === "ldap" ? row.name : data.name.trim();
+    await sql`update "user" set name = ${name}, "updatedAt" = now() where id = ${data.userId}`;
     await sql`update app_user_role set role_id = ${data.roleId} where user_id = ${data.userId}`;
     // External providers control email through syncExternalEmail.
     const { externalEmail } = await import("@/lib/auth/provision.server");
@@ -705,7 +714,7 @@ export const updateVaultUser = createServerFn({ method: "POST" })
       sql,
       actor.loginName || actor.displayName,
       "Usuarios",
-      `Actualiza a ${data.name.trim()}`,
+      `Actualiza a ${name}`,
       context.userId,
     );
     return { ok: true as const };
@@ -887,9 +896,19 @@ export const systemSnapshot = createServerFn({ method: "GET" })
     };
   });
 
-export const systemLogs = createServerFn({ method: "GET" })
+export const systemLogs = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .handler(async ({ context }) => {
+  .validator((input: unknown) =>
+    z
+      .object({
+        actor: z.string().max(120).optional(),
+        text: z.string().max(200).optional(),
+        from: z.string().max(40).optional(),
+        to: z.string().max(40).optional(),
+      })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const actor = await readUserProfile(sql, context.userId);
     if (!allows(actor, "monitor.view")) {
@@ -898,6 +917,10 @@ export const systemLogs = createServerFn({ method: "GET" })
         rows: [] as { id: string; at: string; actor: string; area: string; message: string }[],
       };
     }
+    const who = data.actor?.trim() ?? "";
+    const text = data.text?.trim() ?? "";
+    const from = filterInstant(data.from);
+    const to = filterInstant(data.to);
     const rows = await sql<{
       id: string;
       at: string;
@@ -907,8 +930,13 @@ export const systemLogs = createServerFn({ method: "GET" })
     }>`
       select id, at::text as at, actor, area, message
       from app_log
+      where (${who === ""} or actor ilike ${who ? likePattern(who) : ""})
+        and (${text === ""} or message ilike ${text ? likePattern(text) : ""}
+          or area ilike ${text ? likePattern(text) : ""})
+        and (${from === ""} or at >= ${from || "1970-01-01"}::timestamptz)
+        and (${to === ""} or at <= ${to || "1970-01-01"}::timestamptz)
       order by at desc
-      limit 80
+      limit 200
     `;
     return {
       ok: true as const,

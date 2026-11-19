@@ -1,9 +1,10 @@
 import { uploadVaultFile } from "@/app/files";
+import { enqueueUpload, type UploadDestination } from "@/app/upload-queue";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
 import { DRAWING_MIME, emptyDrawing } from "@/domain/vault/drawing";
-import { folderPlan, ignoredUpload } from "@/domain/vault/folders";
+import { ignoredUpload } from "@/domain/vault/folders";
 import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
 
 const DOC_MIME = "application/x-grafito-document";
@@ -23,6 +24,9 @@ function isMarkdownFile(file: File) {
 
 /** Local file with its relative folder path; empty means a loose file. */
 export type IncomingFile = { file: File; relativePath: string };
+
+/** What a drop holds: its files, and every folder path in it (empty folders included). */
+export type Dropped = { files: IncomingFile[]; folders: string[] };
 
 export function asIncoming(input: File | IncomingFile): IncomingFile {
   if (input instanceof File)
@@ -64,7 +68,7 @@ function readDirectory(entry: DroppedEntry): Promise<DroppedEntry[]> {
   });
 }
 
-async function walkEntry(entry: DroppedEntry, prefix: string, out: IncomingFile[]): Promise<void> {
+async function walkEntry(entry: DroppedEntry, prefix: string, out: Dropped): Promise<void> {
   if (entry.isFile) {
     const file = await new Promise<File>((resolve, reject) => {
       if (!entry.file) {
@@ -73,19 +77,20 @@ async function walkEntry(entry: DroppedEntry, prefix: string, out: IncomingFile[
       }
       entry.file(resolve, reject);
     });
-    out.push({ file, relativePath: prefix ? `${prefix}/${file.name}` : file.name });
+    out.files.push({ file, relativePath: prefix ? `${prefix}/${file.name}` : file.name });
     return;
   }
   if (!entry.isDirectory) return;
   const next = prefix ? `${prefix}/${entry.name}` : entry.name;
+  out.folders.push(next);
   for (const child of await readDirectory(entry)) await walkEntry(child, next, out);
 }
 
 /**
- * Dropped files and folders. Filesystem entries preserve paths lost by dataTransfer.files; fall
- * back to files when entries are unavailable.
+ * Dropped files and folders. Filesystem entries preserve paths and empty folders lost by
+ * dataTransfer.files; fall back to files when entries are unavailable.
  */
-export async function readDroppedEntries(data: DataTransfer): Promise<IncomingFile[]> {
+export async function readDroppedEntries(data: DataTransfer): Promise<Dropped> {
   const entries = [...data.items]
     .map((item) => {
       const read = (item as DataTransferItem & { webkitGetAsEntry?: () => DroppedEntry | null })
@@ -93,84 +98,107 @@ export async function readDroppedEntries(data: DataTransfer): Promise<IncomingFi
       return item.kind === "file" && read ? read.call(item) : null;
     })
     .filter((entry): entry is DroppedEntry => Boolean(entry));
-  if (entries.length === 0) return [...data.files].map((file) => asIncoming(file));
-  const out: IncomingFile[] = [];
+  const plain = () => ({ files: [...data.files].map((file) => asIncoming(file)), folders: [] });
+  if (entries.length === 0) return plain();
+  const out: Dropped = { files: [], folders: [] };
   for (const entry of entries) await walkEntry(entry, "", out);
-  return out.length > 0 ? out : [...data.files].map((file) => asIncoming(file));
+  return out.files.length > 0 || out.folders.length > 0 ? out : plain();
+}
+
+export function droppedNothing(dropped: Dropped): boolean {
+  return dropped.files.length === 0 && dropped.folders.length === 0;
 }
 
 /**
- * Import Markdown as notes; upload other files in chunks as file documents. Synchronize
- * afterward so the server knows the document referencing the uploaded object.
+ * The personal vault as an upload destination. Folders and documents are added without
+ * selecting or unfolding anything; a checkpoint syncs so the server knows the new documents.
+ */
+export function personalDestination(portfolioId: string | null): UploadDestination {
+  const owner = useVault.getState().owner;
+  const label =
+    useVault.getState().portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ??
+    t("Carpeta Personal");
+  return {
+    label,
+    rootId: portfolioId,
+    findFolder: (parentId, name) =>
+      useVault
+        .getState()
+        .portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name)
+        ?.id ?? null,
+    createFolder: async (parentId, name) => {
+      const id = useVault.getState().createPortfolio(parentId, name, { quiet: true });
+      if (!id) throw new Error("No puedes crear portafolios aquí.");
+      return id;
+    },
+    putFile: async (file, folderId, signal) => {
+      const vault = useVault.getState();
+      if (isMarkdownFile(file)) {
+        const text = await file.text();
+        const title = file.name.replace(/\.(md|markdown)$/i, "").trim() || t("Sin título");
+        const id = vault.createDocument(folderId, title, text, { open: false, quiet: true });
+        if (!id) throw new Error("Tu rol no permite crear notas.");
+        return;
+      }
+      const stored = await uploadVaultFile(file, { portfolioId: folderId }, { signal });
+      const refused = useVault
+        .getState()
+        .uploadFile(
+          folderId,
+          file.name,
+          file.type || "application/octet-stream",
+          stored,
+          false,
+          true,
+        );
+      if (refused) throw new Error(refused);
+    },
+    checkpoint: async () => {
+      const current = useVault.getState().owner;
+      if (current && current === owner) await syncVault(current);
+    },
+    stillValid: () => useVault.getState().owner === owner,
+  };
+}
+
+/**
+ * Upload files and folders into the personal vault in the background (see upload-queue.ts).
+ * Markdown becomes notes; other files upload in chunks. open uploads a single file at once and
+ * opens it, for new drawings and tables.
  */
 export async function ingestExternalFiles(
-  files: FileList | Array<File | IncomingFile>,
+  files: FileList | Array<File | IncomingFile> | Dropped,
   portfolioId: string | null,
   options?: { open?: boolean },
 ) {
-  const list = [...files]
-    .map((item) => asIncoming(item))
-    .filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
-  if (list.length === 0) return;
-  const vault = useVault.getState();
-  if (portfolioId && vault.collapsed[portfolioId]) vault.toggleCollapsed(portfolioId);
-  vault.setSelectedPortfolio(portfolioId);
-  const byPath = new Map<string, IncomingFile>();
-  for (const item of list) {
-    const planned = folderPlan([item.relativePath]).files[0];
-    if (planned) byPath.set(planned.relativePath, item);
+  const dropped: Dropped =
+    "folders" in files && !(files instanceof FileList)
+      ? files
+      : { files: [...files].map((item) => asIncoming(item)), folders: [] };
+  const list = dropped.files.filter(
+    (item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name),
+  );
+  if (list.length === 0 && dropped.folders.length === 0) return;
+  if (options?.open) {
+    await uploadAndOpen(list[0]!.file, portfolioId);
+    return;
   }
-  const plan = folderPlan([...byPath.keys()]);
-  const ids = new Map<string, string | null>([["", portfolioId]]);
+  await enqueueUpload({ files: list, folders: dropped.folders }, personalDestination(portfolioId));
+}
+
+async function uploadAndOpen(file: File, portfolioId: string | null): Promise<void> {
   let error: string | null = null;
-  for (const folder of plan.folders) {
-    const slash = folder.lastIndexOf("/");
-    const parentKey = slash === -1 ? "" : folder.slice(0, slash);
-    if (!ids.has(parentKey)) continue;
-    const parentId = ids.get(parentKey) ?? null;
-    const name = slash === -1 ? folder : folder.slice(slash + 1);
-    const existing = useVault
+  try {
+    const stored = await uploadVaultFile(file, { portfolioId });
+    error = useVault
       .getState()
-      .portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name);
-    if (existing) {
-      ids.set(folder, existing.id);
-      continue;
-    }
-    const created = useVault.getState().createPortfolio(parentId, name);
-    if (!created) {
-      error = t("No puedes crear portafolios aquí.");
-      continue;
-    }
-    ids.set(folder, created);
+      .uploadFile(portfolioId, file.name, file.type || "application/octet-stream", stored, true);
+  } catch (failure) {
+    error =
+      failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
   }
-  const open = options?.open === true;
-  let uploaded = false;
-  for (const planned of plan.files) {
-    if (planned.folder !== "" && !ids.has(planned.folder)) continue;
-    const dest = planned.folder === "" ? portfolioId : (ids.get(planned.folder) ?? null);
-    const item = byPath.get(planned.relativePath);
-    if (!item) continue;
-    const file = item.file;
-    if (isMarkdownFile(file)) {
-      const text = await file.text();
-      useVault.getState().importNote(file.name, text, dest, open);
-      continue;
-    }
-    try {
-      const stored = await uploadVaultFile(file, { portfolioId: dest });
-      const result = useVault
-        .getState()
-        .uploadFile(dest, file.name, file.type || "application/octet-stream", stored, open);
-      if (result) error = result;
-      else uploaded = true;
-    } catch (failure) {
-      error =
-        failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
-    }
-  }
-  useVault.getState().setSelectedPortfolio(portfolioId);
   const owner = useVault.getState().owner;
-  if (uploaded && owner) await syncVault(owner);
+  if (!error && owner) await syncVault(owner);
   if (error) useVault.getState().setDialog({ type: "upload-error", message: error });
 }
 

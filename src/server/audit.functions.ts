@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { filterInstant, likePattern } from "@/domain/log-filter";
 import { z } from "zod";
 import {
   auditToCsv,
@@ -27,15 +28,8 @@ type Filter = z.infer<typeof filter>;
 
 const EMPTY: AuditExportRow[] = [];
 
-function like(value: string): string {
-  return `%${value.trim().replace(/[\\%_]/g, "")}%`;
-}
-
-function when(value: string | undefined): string {
-  if (!value?.trim()) return "";
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? "" : new Date(ms).toISOString();
-}
+const like = likePattern;
+const when = filterInstant;
 
 async function reader(userId: string): Promise<{ sql: Sql; ok: boolean; actor: string }> {
   const sql = await requireLease(userId);

@@ -33,7 +33,12 @@ import { useTableIndex } from "@/app/table-index";
 import { useDirectoryPick } from "@/app/directory-pick";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION } from "@/domain/permissions";
-import { ingestExternalFiles, isExternalFileDrag, readDroppedEntries } from "./ingest-files";
+import {
+  droppedNothing,
+  ingestExternalFiles,
+  isExternalFileDrag,
+  readDroppedEntries,
+} from "./ingest-files";
 import { useRowMenu, type RowMenuTarget } from "./RowMenu";
 import { SharedSection } from "./SharedSection";
 import { useSharedView } from "@/app/shared-view";
@@ -316,7 +321,7 @@ export function Sidebar({
 
   const takeExternal = (data: DataTransfer, portfolioId: string | null) => {
     void readDroppedEntries(data).then((files) => {
-      if (files.length === 0) return;
+      if (droppedNothing(files)) return;
       void ingestExternalFiles(files, portfolioId);
     });
   };

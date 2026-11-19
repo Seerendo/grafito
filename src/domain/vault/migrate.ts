@@ -81,6 +81,41 @@ export const SAMPLE_ROOT_ID = "p-documentacion";
 export const SAMPLE_ROOT_NAME = "Documentación";
 const SAMPLE_PORTFOLIO_IDS = ["p-inicio", "p-atlas", "p-personal", "p-taller", "p-diario"];
 
+/** Notes and files of the sample documentation (app/vault/seed.ts). */
+export const SAMPLE_DOC_IDS = [
+  "n-bitacora",
+  "n-decisiones",
+  "n-diagramas",
+  "n-diario",
+  "n-escribir",
+  "n-fuentes",
+  "n-grafo",
+  "n-hipotesis",
+  "n-inicio",
+  "n-lectura",
+  "n-mapa",
+  "n-plano",
+  "n-ritual",
+];
+
+/** Every portfolio of the sample documentation, its root included. */
+export const SAMPLE_FOLDER_IDS = [SAMPLE_ROOT_ID, ...SAMPLE_PORTFOLIO_IDS];
+
+/**
+ * Once deleted, sample documentation stays deleted: a push that would bring back a sample note
+ * or portfolio the server holds as deleted drops it. Restoring from the trash goes through the
+ * server and is not a push.
+ */
+export function dropDeletedSamples<
+  T extends { docs: { id: string }[]; portfolios: { id: string }[] },
+>(changes: T, deleted: { docs: ReadonlySet<string>; portfolios: ReadonlySet<string> }): T {
+  return {
+    ...changes,
+    docs: changes.docs.filter((doc) => !deleted.docs.has(doc.id)),
+    portfolios: changes.portfolios.filter((portfolio) => !deleted.portfolios.has(portfolio.id)),
+  };
+}
+
 /**
  * One-time migration nests legacy sample portfolios under Documentation. If that root already
  * exists, leave user organization unchanged. Return null when no changes are needed.

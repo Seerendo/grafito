@@ -23,3 +23,15 @@ test("una ruta que sale de la carpeta no se crea", () => {
   assert.deepEqual(plan.folders, ["ok"]);
   assert.deepEqual(plan.files, [{ relativePath: "ok/nota.md", folder: "ok" }]);
 });
+
+test("las carpetas vacías también se crean, con sus padres", () => {
+  const plan = folderPlan(["Informes/a.pdf"], ["Informes/Vacía", "Otra/Sub/Honda", "../fuera"]);
+  assert.deepEqual(plan.folders, [
+    "Informes",
+    "Otra",
+    "Informes/Vacía",
+    "Otra/Sub",
+    "Otra/Sub/Honda",
+  ]);
+  assert.deepEqual(plan.files, [{ relativePath: "Informes/a.pdf", folder: "Informes" }]);
+});

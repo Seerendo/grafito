@@ -5,9 +5,10 @@ import { fetchSharedTree } from "@/app/shared-open";
 import { addSharedFile, createSharedNote, createSharedPortfolio } from "@/server/space.functions";
 import { deleteSharedDoc, deleteSharedPortfolio } from "@/server/workspace-trash.functions";
 import { t } from "@/app/i18n";
-import { folderPlan, ignoredUpload } from "@/domain/vault/folders";
+import { ignoredUpload } from "@/domain/vault/folders";
 import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
-import type { IncomingFile } from "@/components/vault/ingest-files";
+import type { Dropped, IncomingFile } from "@/components/vault/ingest-files";
+import { enqueueUpload, type UploadDestination } from "@/app/upload-queue";
 
 /**
  * Actions within editable shared portfolios and workspaces, used by viewer buttons and
@@ -64,6 +65,7 @@ export async function uploadToShared(
   files: FileList | File[],
   open = false,
 ): Promise<string | null> {
+  if (!open) return uploadFolderToShared(shareId, portfolioId, [...files]);
   let last: string | null = null;
   for (const file of [...files]) {
     try {
@@ -78,6 +80,80 @@ export async function uploadToShared(
     }
   }
   if (last) await refresh(shareId, open ? last : null, open);
+  return null;
+}
+
+/**
+ * An editable shared portfolio as an upload destination. Folders are looked up in the tree read
+ * when the job starts; a checkpoint reloads the tree without opening anything.
+ */
+async function sharedDestination(
+  shareId: string,
+  portfolioId: string | null,
+): Promise<UploadDestination> {
+  const tree = await fetchSharedTree(shareId, true).catch(() => null);
+  const known = tree?.portfolios ?? [];
+  const label =
+    known.find((portfolio) => portfolio.id === portfolioId)?.name ??
+    tree?.share.title ??
+    t("Compartido");
+  return {
+    label,
+    rootId: portfolioId,
+    findFolder: (parentId, name) =>
+      known.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name)?.id ??
+      null,
+    createFolder: async (parentId, name) => {
+      const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(
+        () => null,
+      );
+      if (!result?.ok) throw new Error(result?.error ?? "No se pudo crear el portafolio.");
+      return result.id;
+    },
+    putFile: async (file, folderId, signal) => {
+      const stored = await uploadVaultFile(file, { shareId, portfolioId: folderId }, { signal });
+      const result = await addSharedFile({
+        data: {
+          shareId,
+          portfolioId: folderId,
+          key: stored.key,
+          name: file.name,
+          mime: file.type,
+        },
+      });
+      if (!result.ok) throw new Error(result.error);
+    },
+    checkpoint: () => refresh(shareId, null, false),
+  };
+}
+
+/**
+ * Upload files and folders into an editable shared portfolio in the background (see
+ * upload-queue.ts). Resolves when the job ends; its panel reports what did not upload.
+ */
+export async function uploadFolderToShared(
+  shareId: string,
+  portfolioId: string | null,
+  incoming: Array<File | IncomingFile> | Dropped,
+): Promise<string | null> {
+  const dropped: Dropped = Array.isArray(incoming)
+    ? {
+        files: incoming.map((item) =>
+          item instanceof File
+            ? { file: item, relativePath: item.webkitRelativePath || item.name }
+            : { file: item.file, relativePath: item.relativePath || item.file.name },
+        ),
+        folders: [],
+      }
+    : incoming;
+  const files = dropped.files.filter(
+    (item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name),
+  );
+  if (files.length === 0 && dropped.folders.length === 0) return null;
+  await enqueueUpload(
+    { files, folders: dropped.folders },
+    await sharedDestination(shareId, portfolioId),
+  );
   return null;
 }
 
@@ -108,86 +184,6 @@ export async function newSharedTable(
     type: TABLE_MIME,
   });
   return uploadToShared(shareId, portfolioId, [file], true);
-}
-
-/** Upload a folder hierarchy. Create portfolios before refreshing the tree; ids tracks paths until then. */
-export async function uploadFolderToShared(
-  shareId: string,
-  portfolioId: string | null,
-  incoming: Array<File | IncomingFile>,
-): Promise<string | null> {
-  const items = incoming
-    .map((item) =>
-      item instanceof File
-        ? { file: item, relativePath: item.webkitRelativePath || item.name }
-        : { file: item.file, relativePath: item.relativePath || item.file.name },
-    )
-    .filter((item) => !ignoredUpload(item.relativePath) && !ignoredUpload(item.file.name));
-  if (items.length === 0) return null;
-  const byPath = new Map<string, { file: File; relativePath: string }>();
-  for (const item of items) {
-    const planned = folderPlan([item.relativePath]).files[0];
-    if (planned) byPath.set(planned.relativePath, item);
-  }
-  const plan = folderPlan([...byPath.keys()]);
-  const ids = new Map<string, string | null>([["", portfolioId]]);
-  const visible = () => {
-    const tree = useSharedView.getState().tree;
-    return tree?.share.id === shareId ? tree : null;
-  };
-  let folderError: string | null = null;
-  for (const folder of plan.folders) {
-    const slash = folder.lastIndexOf("/");
-    const parentKey = slash === -1 ? "" : folder.slice(0, slash);
-    if (!ids.has(parentKey)) continue;
-    const parentId = ids.get(parentKey) ?? null;
-    const name = slash === -1 ? folder : folder.slice(slash + 1);
-    const known = visible()?.portfolios.find(
-      (portfolio) => portfolio.parentId === parentId && portfolio.name === name,
-    );
-    if (known) {
-      ids.set(folder, known.id);
-      continue;
-    }
-    const result = await createSharedPortfolio({ data: { shareId, parentId, name } }).catch(
-      () => null,
-    );
-    if (!result?.ok) {
-      folderError = result?.error ?? t("No se pudo crear el portafolio.");
-      continue;
-    }
-    ids.set(folder, result.id);
-  }
-  let last: string | null = null;
-  let error = folderError;
-  for (const planned of plan.files) {
-    if (planned.folder !== "" && !ids.has(planned.folder)) continue;
-    const dest = planned.folder === "" ? portfolioId : (ids.get(planned.folder) ?? null);
-    const item = byPath.get(planned.relativePath);
-    if (!item) continue;
-    try {
-      const stored = await uploadVaultFile(item.file, { shareId, portfolioId: dest });
-      const result = await addSharedFile({
-        data: {
-          shareId,
-          portfolioId: dest,
-          key: stored.key,
-          name: item.file.name,
-          mime: item.file.type,
-        },
-      });
-      if (!result.ok) {
-        error = result.error;
-        break;
-      }
-      last = result.id;
-    } catch (failure) {
-      error = failure instanceof Error ? failure.message : t("No se pudo subir.");
-      break;
-    }
-  }
-  if (plan.folders.length > 0 || last) await refresh(shareId, null, false);
-  return error;
 }
 
 /** Open the system file picker from a user click and upload selections; directory selects a folder. */

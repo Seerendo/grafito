@@ -25,6 +25,17 @@ function track(upload: Upload | null, id: string): void {
   }));
 }
 
+/** A refused upload with the server's status: 415 blocked extension, 422 antivirus hit. */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "UploadError";
+  }
+}
+
 async function call<T>(url: string, init: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -33,7 +44,10 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
   });
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok)
-    throw new Error(body.error || t("El servidor respondió {0}.", { 0: response.status }));
+    throw new UploadError(
+      body.error || t("El servidor respondió {0}.", { 0: response.status }),
+      response.status,
+    );
   return body;
 }
 
@@ -44,7 +58,9 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
 export async function uploadVaultFile(
   file: File,
   target: { portfolioId?: string | null; shareId?: string } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<{ key: string; size: number }> {
+  const signal = options.signal;
   const id = uuid();
   const mime = file.type || "application/octet-stream";
   track({ id, name: file.name, sent: 0, total: file.size }, id);
@@ -56,6 +72,7 @@ export async function uploadVaultFile(
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name: file.name, mime, size: file.size, ...target }),
+        signal,
       },
     );
     const parts: { part: number; etag: string }[] = [];
@@ -72,6 +89,7 @@ export async function uploadVaultFile(
       const { etag } = await call<{ etag: string }>(`/api/files/uploads/part?${query}`, {
         method: "PUT",
         body: chunk,
+        signal,
       });
       parts.push({ part, etag });
       offset += chunk.size;
@@ -82,6 +100,7 @@ export async function uploadVaultFile(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key: started.key, uploadId: started.uploadId, parts, ...target }),
+      signal,
     });
   } catch (error) {
     if (started) {

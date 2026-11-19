@@ -20,6 +20,32 @@ export function parseClamdReply(raw: string): {
   return { verdict: "error", signature: "", detail: line || "Sin respuesta del antivirus." };
 }
 
+/** What the person reads when the antivirus finds something; the file is not kept. */
+export function infectedMessage(signature: string): string {
+  return `El antivirus detectó una amenaza (${signature || "sin nombre"}). El archivo no se guardó.`;
+}
+
+/**
+ * A scan that did not finish: the file is not kept either, but the reason differs. Too large
+ * for clamd's StreamMaxLength is 413; a timeout or an unreachable clamd is 503.
+ */
+export function scanFailure(detail: string): { status: number; message: string } {
+  if (/size limit exceeded/i.test(detail))
+    return {
+      status: 413,
+      message: "El archivo es más grande de lo que el antivirus puede analizar. No se guardó.",
+    };
+  if (/a tiempo|timed? ?out/i.test(detail))
+    return {
+      status: 503,
+      message: "El antivirus no terminó de analizar el archivo a tiempo. No se guardó.",
+    };
+  return {
+    status: 503,
+    message: "El antivirus no está disponible. No se guardó el archivo.",
+  };
+}
+
 /**
  * Allow files when scanning is disabled or returns clean. Reject infected files and scanner
  * failures without retaining the object.
@@ -45,7 +71,7 @@ export const DEFAULT_CLAMAV: ClamavConfig = {
   enabled: true,
   host: "clamav",
   port: 3310,
-  timeoutSeconds: 60,
+  timeoutSeconds: 300,
 };
 
 const HOSTNAME =
@@ -63,9 +89,9 @@ export function parseClamavConfig(
   if (
     !Number.isInteger(input.timeoutSeconds) ||
     input.timeoutSeconds < 5 ||
-    input.timeoutSeconds > 120
+    input.timeoutSeconds > 900
   ) {
-    return { ok: false, error: "El tiempo de espera tiene que estar entre 5 y 120 segundos." };
+    return { ok: false, error: "El tiempo de espera tiene que estar entre 5 y 900 segundos." };
   }
   if (host && !HOSTNAME.test(host) && !IPV4.test(host)) {
     return { ok: false, error: "El servidor no es un nombre o una dirección válidos." };

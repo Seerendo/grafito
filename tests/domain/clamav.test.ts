@@ -3,9 +3,11 @@ import { test } from "node:test";
 import {
   clamavEndpoint,
   DEFAULT_CLAMAV,
+  infectedMessage,
   parseClamavConfig,
   parseClamdReply,
   scanDecision,
+  scanFailure,
 } from "../../src/domain/clamav.ts";
 
 test("clamd: limpio, infectado y fallo", () => {
@@ -40,6 +42,15 @@ test("la pantalla solo acepta un servidor, un puerto y un plazo válidos", () =>
     parseClamavConfig({ enabled: true, host: "clamav", port: 3310, timeoutSeconds: 4 }).ok,
     false,
   );
+  // Long PDFs take minutes to scan: up to fifteen minutes is allowed.
+  assert.equal(
+    parseClamavConfig({ enabled: true, host: "clamav", port: 3310, timeoutSeconds: 900 }).ok,
+    true,
+  );
+  assert.equal(
+    parseClamavConfig({ enabled: true, host: "clamav", port: 3310, timeoutSeconds: 901 }).ok,
+    false,
+  );
   assert.deepEqual(
     clamavEndpoint({ enabled: false, host: "clamav", port: 3310, timeoutSeconds: 60 }),
     null,
@@ -57,7 +68,7 @@ test("sin valores guardados, el antivirus queda activo en clamav:3310", () => {
   assert.equal(DEFAULT_CLAMAV.enabled, true);
   assert.equal(DEFAULT_CLAMAV.host, "clamav");
   assert.equal(DEFAULT_CLAMAV.port, 3310);
-  assert.equal(DEFAULT_CLAMAV.timeoutSeconds, 60);
+  assert.equal(DEFAULT_CLAMAV.timeoutSeconds, 300);
   assert.deepEqual(clamavEndpoint(DEFAULT_CLAMAV), { host: "clamav", port: 3310 });
 });
 
@@ -67,4 +78,15 @@ test("sin host se permite; configurado solo pasa si está limpio", () => {
   assert.equal(scanDecision(true, "clean"), "allow");
   assert.equal(scanDecision(true, "infected"), "reject");
   assert.equal(scanDecision(true, "error"), "reject");
+});
+
+test("mensajes: detección, tamaño, plazo y servicio caído", () => {
+  assert.equal(
+    infectedMessage("Eicar-Test-Signature"),
+    "El antivirus detectó una amenaza (Eicar-Test-Signature). El archivo no se guardó.",
+  );
+  assert.equal(scanFailure("INSTREAM size limit exceeded. ERROR").status, 413);
+  assert.match(scanFailure("El antivirus no contestó a tiempo.").message, /a tiempo/);
+  assert.equal(scanFailure("connect ECONNREFUSED 172.18.0.5:3310").status, 503);
+  assert.match(scanFailure("connect ECONNREFUSED").message, /no está disponible/);
 });

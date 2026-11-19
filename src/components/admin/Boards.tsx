@@ -1,8 +1,9 @@
 import { copyText } from "@/lib/clipboard";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { SearchField } from "@/components/ui/SearchField";
 import { Select } from "@/components/ui/Select";
 import { TextAction } from "@/components/ui/TextAction";
+import { Modal } from "@/components/ui/Modal";
 import { UsageMeter } from "@/components/ui/UsageMeter";
 import type { adminState, systemLogs, systemSnapshot } from "@/server/admin.functions";
 import {
@@ -330,107 +331,125 @@ function UserForm({
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // The directory owns the name and email of LDAP accounts.
+  const fromLdap = person?.source === "ldap";
   return (
-    <form
-      className="space-y-3 rounded-lg border border-line bg-surface p-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setBusy(true);
-        setError("");
-        void onSubmit({ name, username, email, roleId }).then((message) => {
-          setBusy(false);
-          if (message) setError(message);
-        });
-      }}
-    >
-      <h2 className="font-serif text-2xl">{title}</h2>
-      <label className="block text-sm">
-        <span className="text-muted">{t("Nombre")}</span>
-        <input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3"
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="text-muted">{t("Usuario")}</span>
-        <input
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-          required
-          disabled={Boolean(person)}
-          autoComplete="off"
-          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 disabled:opacity-60"
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="text-muted">{t("Correo")}</span>
-        <input
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required={!person}
-          // LDAP, OAuth and SSO supply the email address.
-          readOnly={Boolean(person && person.source !== "local")}
-          autoComplete="off"
-          className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 read-only:text-muted"
-        />
-      </label>
-      <label className="block text-sm">
-        <span className="text-muted">{t("Rol")}</span>
-        {person?.owner ? (
-          <p
-            className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted"
-            title={t("El administrador inicial siempre es Administrador")}
+    <Modal title={title} onClose={onClose}>
+      <form
+        className="space-y-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setBusy(true);
+          setError("");
+          void onSubmit({ name, username, email, roleId }).then((message) => {
+            setBusy(false);
+            if (message) setError(message);
+          });
+        }}
+      >
+        {person ? (
+          <div className="space-y-1">
+            <span className="flex items-center gap-2 text-sm">
+              <span className="text-muted">{t("Origen")}</span>
+              {SOURCE_LABEL[person.source] ? (
+                <SourceTag source={person.source} />
+              ) : (
+                <span>{t("Local")}</span>
+              )}
+            </span>
+            <SignIns first={person.firstLoginAt} last={person.lastSeenAt} />
+            <AccessState access={person.access} />
+          </div>
+        ) : null}
+        <label className="block text-sm">
+          <span className="text-muted">{t("Nombre")}</span>
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+            readOnly={fromLdap}
+            className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 read-only:text-muted"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">{t("Usuario")}</span>
+          <input
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            required
+            disabled={Boolean(person)}
+            autoComplete="off"
+            className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 disabled:opacity-60"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">{t("Correo")}</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required={!person}
+            // LDAP, OAuth and SSO supply the email address.
+            readOnly={Boolean(person && person.source !== "local")}
+            autoComplete="off"
+            className="mt-1 h-11 w-full rounded-md border border-line bg-inset px-3 read-only:text-muted"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">{t("Rol")}</span>
+          {person?.owner ? (
+            <p
+              className="mt-1 flex h-11 items-center rounded-md border border-line bg-inset px-3 text-muted"
+              title={t("El administrador inicial siempre es Administrador")}
+            >
+              {t("Administrador")}
+            </p>
+          ) : (
+            <Select value={roleId} onChange={setRoleId} className="mt-1">
+              {roles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {t(role.name)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </label>
+        {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={busy}
+            className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
           >
-            {t("Administrador")}
-          </p>
-        ) : (
-          <Select value={roleId} onChange={setRoleId} className="mt-1">
-            {roles.map((role) => (
-              <option key={role.id} value={role.id}>
-                {t(role.name)}
-              </option>
-            ))}
-          </Select>
-        )}
-      </label>
-      {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="h-11 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
-        >
-          {busy ? t("Guardando…") : t("Guardar")}
-        </button>
-        {onResend && person && !person.owner && person.source === "local" ? (
+            {busy ? t("Guardando…") : t("Guardar")}
+          </button>
+          {onResend && person && !person.owner && person.source === "local" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                void onResend().then((message) => {
+                  setBusy(false);
+                  if (message) setError(message);
+                });
+              }}
+              className="h-11 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated disabled:opacity-50"
+            >
+              {t("Reenviar acceso")}
+            </button>
+          ) : null}
           <button
             type="button"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError("");
-              void onResend().then((message) => {
-                setBusy(false);
-                if (message) setError(message);
-              });
-            }}
-            className="h-11 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated disabled:opacity-50"
+            onClick={onClose}
+            className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated"
           >
-            {t("Reenviar acceso")}
+            {t("Cancelar")}
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-11 rounded-md px-4 text-sm text-muted hover:bg-elevated"
-        >
-          {t("Cancelar")}
-        </button>
-      </div>
-    </form>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -753,33 +772,119 @@ export function MonitorBoard() {
   );
 }
 
+type LogFilter = { actor: string; text: string; from: string; to: string };
+const NO_LOG_FILTER: LogFilter = { actor: "", text: "", from: "", to: "" };
+
 export function LogsBoard() {
   const [rows, setRows] = useState<
     Extract<Awaited<ReturnType<typeof systemLogs>>, { ok: true }>["rows"]
   >([]);
   const [error, setError] = useState("");
-  useEffect(() => {
-    void loadLogs()
+  const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState(NO_LOG_FILTER);
+  const [filtered, setFiltered] = useState(false);
+  const load = useCallback((next: LogFilter) => {
+    setBusy(true);
+    setError("");
+    // datetime-local carries no zone: send the instant the viewer means.
+    const instant = (value: string) => (value ? new Date(value).toISOString() : "");
+    void loadLogs({
+      data: { actor: next.actor, text: next.text, from: instant(next.from), to: instant(next.to) },
+    })
       .then((result) => {
         if (!result.ok) setError(t("Sin permiso."));
         else setRows(result.rows);
       })
-      .catch(() => setError(t("No se pudieron leer los registros.")));
+      .catch(() => setError(t("No se pudieron leer los registros.")))
+      .finally(() => setBusy(false));
   }, []);
-  if (error) return <p className="text-sm text-danger">{t(error)}</p>;
-  if (rows.length === 0)
-    return <p className="text-sm text-muted">{t("Todavía no hay registros.")}</p>;
+  useEffect(() => {
+    load(NO_LOG_FILTER);
+  }, [load]);
+  const patch = (part: Partial<LogFilter>) => setFilter((current) => ({ ...current, ...part }));
+  const field = "mt-1 h-11 w-full min-w-0 rounded-md border border-line bg-inset px-3 text-sm";
   return (
-    <ul className="overflow-hidden rounded-lg border border-line bg-surface">
-      {rows.map((row) => (
-        <li key={row.id} className="border-b border-line px-4 py-3 last:border-b-0">
-          <p className="text-sm">{t(row.message)}</p>
-          <p className="mt-1 text-xs text-muted">
-            {t(row.area)} · {row.actor || t("sistema")} · {row.at.replace("T", " ").slice(0, 19)}
-          </p>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-4">
+      <form
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setFiltered(Object.values(filter).some((value) => value.trim() !== ""));
+          load(filter);
+        }}
+      >
+        <label className="block text-xs text-muted">
+          {t("Usuario")}
+          <input
+            className={field}
+            value={filter.actor}
+            onChange={(event) => patch({ actor: event.target.value })}
+          />
+        </label>
+        <label className="block text-xs text-muted">
+          {t("Descripción")}
+          <input
+            className={field}
+            value={filter.text}
+            onChange={(event) => patch({ text: event.target.value })}
+          />
+        </label>
+        <label className="block text-xs text-muted">
+          {t("Desde")}
+          <input
+            className={field}
+            type="datetime-local"
+            value={filter.from}
+            onChange={(event) => patch({ from: event.target.value })}
+          />
+        </label>
+        <label className="block text-xs text-muted">
+          {t("Hasta")}
+          <input
+            className={field}
+            type="datetime-local"
+            value={filter.to}
+            onChange={(event) => patch({ to: event.target.value })}
+          />
+        </label>
+        <div className="flex items-end">
+          <button
+            type="submit"
+            disabled={busy}
+            className="h-11 rounded-md border border-line px-4 text-sm hover:bg-elevated disabled:opacity-60"
+          >
+            {t("Filtrar")}
+          </button>
+        </div>
+      </form>
+      {error ? <p className="text-sm text-danger">{t(error)}</p> : null}
+      {!error && rows.length === 0 ? (
+        <p className="text-sm text-muted">
+          {filtered ? t("Ningún registro coincide.") : t("Todavía no hay registros.")}
+        </p>
+      ) : null}
+      {rows.length > 0 ? (
+        <ul className="overflow-hidden rounded-lg border border-line bg-surface">
+          {rows.map((row) => (
+            <li key={row.id} className="border-b border-line px-4 py-3 last:border-b-0">
+              <p className="text-sm">{t(row.message)}</p>
+              <p className="mt-1 text-xs text-muted">
+                {t(row.area)} · {row.actor || t("sistema")} · {logWhen(row.at)}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** Log time in the viewer's zone; Postgres text timestamps parse once the space becomes T. */
+function logWhen(at: string) {
+  const ms = Date.parse(at.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+  if (Number.isNaN(ms)) return at.replace("T", " ").slice(0, 19);
+  return new Intl.DateTimeFormat(intl(), { dateStyle: "medium", timeStyle: "medium" }).format(
+    new Date(ms),
   );
 }
 

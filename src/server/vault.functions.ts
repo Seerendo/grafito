@@ -6,6 +6,7 @@ import { requireLease } from "@/server/lease";
 import { allows, readUserProfile } from "@/server/profile";
 import { MAX_CONTENT, pullChanges, pushChanges } from "@/server/vault";
 import { MAX_EXACT } from "@/domain/vault/anchor";
+import { dropDeletedSamples, SAMPLE_DOC_IDS, SAMPLE_FOLDER_IDS } from "@/domain/vault/migrate";
 
 /** Browser/server vault synchronization; see app/vault/sync.ts. */
 
@@ -87,6 +88,8 @@ export const pushVault = createServerFn({ method: "POST" })
         deletedDocs: z.array(id).max(2000),
         portfolios: z.array(portfolioSchema).max(2000),
         deletedPortfolios: z.array(id).max(2000),
+        /** Sent once after «Restaurar el ejemplo»: the sample may come back. */
+        restoreSamples: z.boolean().optional(),
       })
       .parse(input),
   )
@@ -102,8 +105,29 @@ export const pushVault = createServerFn({ method: "POST" })
     if (data.deletedPortfolios.length > 0 && !allows(profile, PERMISSION.portfoliosManage)) {
       return { ok: false as const, error: "Tu rol no puede borrar portafolios." };
     }
-    const result = await pushChanges(sql, context.userId, data);
-    return { ok: true as const, ...result };
+    // Sample documentation the person deleted is not brought back by a browser that still holds it.
+    const gone = data.restoreSamples
+      ? []
+      : await sql<{ id: string; kind: string }>`
+      select id, 'doc' as kind from vault_doc
+      where user_id = ${context.userId} and deleted and id = any(string_to_array(${SAMPLE_DOC_IDS.join(",")}, ','))
+      union all
+      select id, 'portfolio' as kind from vault_portfolio
+      where user_id = ${context.userId} and deleted and id = any(string_to_array(${SAMPLE_FOLDER_IDS.join(",")}, ','))
+    `;
+    const kept = dropDeletedSamples(data, {
+      docs: new Set(gone.filter((row) => row.kind === "doc").map((row) => row.id)),
+      portfolios: new Set(gone.filter((row) => row.kind === "portfolio").map((row) => row.id)),
+    });
+    const result = await pushChanges(sql, context.userId, kept);
+    // The browser drops what was refused, so it stops showing it (in the graph too).
+    const dropped = {
+      docs: data.docs.filter((doc) => !kept.docs.includes(doc)).map((doc) => doc.id),
+      portfolios: data.portfolios
+        .filter((portfolio) => !kept.portfolios.includes(portfolio))
+        .map((portfolio) => portfolio.id),
+    };
+    return { ok: true as const, ...result, dropped };
   });
 
 export const pullVault = createServerFn({ method: "GET" })

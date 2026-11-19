@@ -197,7 +197,9 @@ rejected. Filter it, then export CSV or JSON (up to 5000 rows).
 Retention is 365 days unless you set another value there (7 to 3650). Rows
 older than that are deleted about every ten minutes, the next time something
 is recorded. The short list under **Logs de sistema** is separate and is not
-pruned by this setting.
+pruned by this setting. It shows the latest 200 lines that match its filters:
+user, text in the description or area, and a from/to date and time in the
+viewer's time zone.
 
 A failed browser sign-in is still only slowed down by Better Auth. It is not
 a row in this log. A successful sign-in is.
@@ -214,19 +216,45 @@ Scanning is on by default. The address is the service name `clamav` and port
 `3310`.
 
 **Administración → Seguridad** is the only place to change the server, the
-port and the timeout (5 to 120 seconds, 60 by default), or to turn scanning
+port and the timeout (5 to 900 seconds, 300 by default), or to turn scanning
 off. That needs the `security.manage` permission. Until someone saves that
 screen, the built-in address applies. After a save, the screen wins,
 including turning scanning off. **Fuentes → Comprobar** also says whether
 ClamAV answers.
 
-If scanning is on and ClamAV is down, a new file upload is refused (422 when
-a signature matches, 503 when the scanner cannot be reached) and the object
-is deleted. Note text is not scanned. The first start can take several
+If scanning is on, a file that is not clean is refused and the object is
+deleted: 422 when a signature matches (the message names it), 413 when the
+file is larger than clamd's `StreamMaxLength` (100 MB by default, the same as
+the upload limit), 503 when the scanner times out or cannot be reached. In a
+multi-file upload only that file is left out; the summary lists it.
+
+Scan time grows with the number of pages, not the size: on the test machine a
+1000-page PDF took about 14 s and a 12 000-page one about 70 s. A screen saved
+before this change keeps its own timeout (often 60 s); raise it there if long
+PDFs fail with «no terminó de analizar el archivo a tiempo». clamd also stops
+a single scan after its own `MaxScanTime` (120 s by default) and then reports
+the file as clean, without having read all of it. Note text is not scanned. The first start can take several
 minutes before **Seguridad → Comprobar** says ClamAV answers.
 
 The test stack starts the same service with
 `docker compose -f docker-compose.test.yml up -d`.
+
+## File extensions
+
+**Administración → Seguridad**, below the antivirus, holds two lists (permission
+`security.manage`):
+
+- **Bloquear la subida**: the extension cannot be uploaded from the browser or
+  WebDAV (415). The browser skips those files before sending them and names
+  them when the upload ends. Files already stored stay.
+- **Subir sin indexar**: the file uploads, opens and syncs as usual, but its
+  name and text stay out of the search index. A note counts as `.md`. Changing
+  this list reindexes everything in the background, so stored files drop out
+  or come back.
+
+Pick from the common extensions or type others, separated by commas. Only the
+last extension counts (`backup.tar.gz` is `gz`). The lists are
+`upload_blocked_ext` and `index_blocked_ext` in `app_setting`.
 
 ## When something is down
 

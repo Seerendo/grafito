@@ -1,6 +1,8 @@
+import { indexBlocked } from "@/domain/file-extensions";
 import { indexBody } from "@/domain/search-text";
 import type { Sql } from "@/lib/db";
 import { fileText } from "@/server/files";
+import { readExtensionRules } from "@/server/file-rules";
 import { claimJob } from "@/server/jobs";
 import { deleteElasticDoc, upsertElasticDoc } from "@/server/search";
 import { getDoc } from "@/server/vault";
@@ -81,8 +83,29 @@ async function bodyOf(sql: Sql, row: Pending): Promise<string> {
   return indexBody([name, extracted, cells]);
 }
 
+/** Name whose extension decides index rules: the file name, or the note as a .md file. */
+function ruleName(row: Pending): string {
+  return row.kind === "markdown" ? `${row.title}.md` : (row.file_name ?? "");
+}
+
+/** Keep a document blocked for indexing out of search, marked done for its revision. */
+async function skipBlocked(sql: Sql, row: Pending): Promise<void> {
+  await sql`delete from doc_index where user_id = ${row.user_id} and doc_id = ${row.id}`;
+  await deleteElasticDoc(row.user_id, row.id);
+  await sql`
+    insert into content_index (user_id, doc_id, rev, chars, ok, error, indexed_at)
+    values (${row.user_id}, ${row.id}, ${Number(row.rev)}, 0, true, '', ${Date.now()})
+    on conflict (user_id, doc_id) do update set
+      rev = excluded.rev, chars = 0, ok = true, error = '', indexed_at = excluded.indexed_at
+  `;
+}
+
 async function indexOne(sql: Sql, row: Pending): Promise<void> {
   const rev = Number(row.rev);
+  if (indexBlocked(ruleName(row), await readExtensionRules(sql))) {
+    await skipBlocked(sql, row);
+    return;
+  }
   await touch(sql, row.title);
   try {
     const body = await bodyOf(sql, row);

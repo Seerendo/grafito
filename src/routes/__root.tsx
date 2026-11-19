@@ -7,6 +7,7 @@ import { applyLocale, getLocale, LOCALE_COOKIE, localeFromCookie, useLocale } fr
 import { themeBootScript } from "@/app/theme";
 import { SessionSync } from "@/components/session/SessionSync";
 import { SessionWatch } from "@/components/session/SessionWatch";
+import { UploadQueuePanel } from "@/components/vault/UploadQueuePanel";
 import { DEFAULT_DESIGN, isDesign, type Design } from "@/domain/design";
 import type { Locale } from "@/domain/i18n";
 import appCss from "../styles.css?url";
@@ -92,6 +93,7 @@ function RootDocument() {
         <SessionWatch />
         {/* Changing language remounts the app with translated text. */}
         <Outlet key={locale} />
+        <UploadQueuePanel />
         <Scripts />
       </body>
     </html>

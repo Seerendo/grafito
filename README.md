@@ -229,7 +229,9 @@ also **deletes the volumes**, erasing all accounts, notes and files. The
 2. If the password is shorter than 8 characters, you must change it before you
    can see any notes.
 3. A new vault starts with sample notes under the **Documentación** portfolio.
-   They show the main features, and you can delete them.
+   They show the main features, and you can delete them. Once deleted they
+   stay deleted: an emptied vault, another browser or a browser that still
+   held them does not bring them back. **Restaurar el ejemplo** does.
 
 After that, the start screen is a normal sign-in.
 
@@ -327,6 +329,23 @@ After that, the start screen is a normal sign-in.
   - The file is stored and shows up in that folder. It does not open.
     **Nueva nota**, **Nuevo dibujo** and **Nueva tabla** still open, because
     those are there to edit.
+  - Uploads run in the background, one file at a time, in a panel at the
+    bottom right. What you are looking at does not change, and you can keep
+    working elsewhere in Grafito. **Pausar** stops after abandoning the file
+    in flight; **Reanudar** goes on from the first file not yet uploaded;
+    **Cancelar** stops for good. Reloading or closing the tab asks first,
+    because the files you picked are only held by that tab.
+  - Folders keep their structure. Empty folders are created too when you
+    drop a folder; the browser's folder picker does not report empty
+    folders.
+  - When it ends, the panel says how many files and folders arrived, and
+    which ones did not: blocked extension, rejected by the antivirus (with
+    the signature), or another error. The other files still upload.
+  - A portfolio's page shows how many folders and files it holds directly,
+    and in all, to check a large upload.
+- On the Carpeta Personal page and on a portfolio's page, the arrow next to
+  each portfolio folds or unfolds it in place, with its portfolios and
+  documents, without leaving the page. The name opens the portfolio.
   - If you cannot add anything there (a read-only portfolio, or a single
     shared document), Grafito says so and does not put the file in the
     Carpeta Personal.

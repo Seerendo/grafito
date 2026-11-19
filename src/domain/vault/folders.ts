@@ -6,20 +6,41 @@ export function ignoredUpload(path: string): boolean {
   return IGNORED_UPLOAD.has(base);
 }
 
+/** Path parts without empty or "." parts; null when it climbs with "..". */
+function cleanParts(raw: string): string[] | null {
+  const parts = raw
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((part) => part.length > 0 && part !== ".");
+  return parts.some((part) => part === "..") ? null : parts;
+}
+
 /**
  * Plan folder imports from outermost to innermost and assign files to folders. Empty folder
- * denotes the destination portfolio. Ignore traversal paths containing dot-dot.
+ * denotes the destination portfolio. Ignore traversal paths containing dot-dot. emptyFolders
+ * are folder paths with nothing inside that are created too.
  */
-export function folderPlan(paths: readonly string[]): {
+export function folderPlan(
+  paths: readonly string[],
+  emptyFolders: readonly string[] = [],
+): {
   folders: string[];
   files: { relativePath: string; folder: string }[];
 } {
   const folders = new Set<string>();
   const files: { relativePath: string; folder: string }[] = [];
+  for (const raw of emptyFolders) {
+    const parts = cleanParts(raw);
+    if (!parts) continue;
+    let acc = "";
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      folders.add(acc);
+    }
+  }
   for (const raw of paths) {
-    const relativePath = raw.replaceAll("\\", "/").replace(/^\/+|\/+$/g, "");
-    const parts = relativePath.split("/").filter((part) => part.length > 0 && part !== ".");
-    if (parts.length === 0 || parts.some((part) => part === "..")) continue;
+    const parts = cleanParts(raw);
+    if (!parts || parts.length === 0) continue;
     const folderParts = parts.slice(0, -1);
     let acc = "";
     for (const part of folderParts) {

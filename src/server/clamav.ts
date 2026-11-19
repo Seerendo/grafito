@@ -1,22 +1,23 @@
-import net from "node:net";
 import {
   clamavEndpoint,
   DEFAULT_CLAMAV,
   parseClamavConfig,
-  parseClamdReply,
   type ClamavConfig,
+  infectedMessage,
+  scanFailure,
   type ScanVerdict,
 } from "@/domain/clamav";
 import type { Sql } from "@/lib/db";
 import { deleteBlob, readBlob } from "./blobs";
+import { clamCommand, scanBytes, type ClamdEndpoint } from "./clamd-socket";
+
+export { scanBytes, type ClamdEndpoint };
 
 /**
  * Server antivirus defaults to Compose clamd at clamav:3310 until settings are saved. Enabled
- * scans stream through INSTREAM; infection or scanner failure deletes the object and rejects
- * completion.
+ * scans stream through INSTREAM (clamd-socket.ts); infection or scanner failure deletes the
+ * object and rejects completion.
  */
-
-export type ClamdEndpoint = { host: string; port: number };
 
 const NUL = String.fromCharCode(0);
 
@@ -41,7 +42,7 @@ export async function readClamavSettings(sql: Sql): Promise<ClamavSettings> {
     enabled: map.get(KEYS.enabled) === "1",
     host: map.get(KEYS.host) ?? "",
     port: Number(map.get(KEYS.port) ?? 3310),
-    timeoutSeconds: Number(map.get(KEYS.timeout) ?? 60),
+    timeoutSeconds: Number(map.get(KEYS.timeout) ?? DEFAULT_CLAMAV.timeoutSeconds),
   });
   // Unreadable settings must not disable scanning; fall back to defaults.
   if (!parsed.ok) return { ...DEFAULT_CLAMAV, source: "default" };
@@ -98,17 +99,12 @@ export async function blockUnsafeBlob(sql: Sql, key: string): Promise<ScanBlock 
   if (reply.verdict === "infected") {
     return {
       status: 422,
-      message: `El antivirus rechazó el archivo (${reply.signature}).`,
+      message: infectedMessage(reply.signature),
       signature: reply.signature,
       detail: reply.detail,
     };
   }
-  return {
-    status: 503,
-    message: "El antivirus no está disponible. La subida se canceló.",
-    signature: "",
-    detail: reply.detail,
-  };
+  return { ...scanFailure(reply.detail), signature: "", detail: reply.detail };
 }
 
 export async function probeClamd(sql: Sql): Promise<"off" | "up" | "down"> {
@@ -125,57 +121,4 @@ export async function pingEndpoint(endpoint: ClamdEndpoint | null): Promise<"off
   } catch {
     return "down";
   }
-}
-
-export async function scanBytes(
-  bytes: Uint8Array,
-  endpoint: ClamdEndpoint,
-  timeoutMs = 60_000,
-): Promise<{ verdict: ScanVerdict; signature: string; detail: string }> {
-  const payload = instream(bytes);
-  const text = await clamCommand(endpoint, payload, timeoutMs);
-  return parseClamdReply(text);
-}
-
-/** Send zINSTREAM, chunks prefixed by four-byte lengths, and a final empty chunk. */
-function instream(bytes: Uint8Array): Buffer {
-  const parts: Buffer[] = [Buffer.from(`zINSTREAM${NUL}`)];
-  const size = 64 * 1024;
-  for (let offset = 0; offset < bytes.length; offset += size) {
-    const slice = bytes.subarray(offset, offset + size);
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(slice.length, 0);
-    parts.push(length, Buffer.from(slice));
-  }
-  parts.push(Buffer.alloc(4));
-  return Buffer.concat(parts);
-}
-
-function clamCommand(endpoint: ClamdEndpoint, payload: Buffer, timeoutMs: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect({ host: endpoint.host, port: endpoint.port });
-    const chunks: Buffer[] = [];
-    let settled = false;
-    const finish = (error?: Error, text?: string) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      if (error) reject(error);
-      else resolve(text ?? "");
-    };
-    const timer = setTimeout(
-      () => finish(new Error("El antivirus no contestó a tiempo.")),
-      timeoutMs,
-    );
-    socket.on("error", (error) => finish(error));
-    socket.on("data", (chunk) => {
-      chunks.push(chunk);
-      if (chunk.includes(0)) socket.end();
-    });
-    socket.on("end", () => finish(undefined, Buffer.concat(chunks).toString("utf8")));
-    socket.on("connect", () => {
-      socket.write(payload);
-    });
-  });
 }
