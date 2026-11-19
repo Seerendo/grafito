@@ -19,6 +19,7 @@ import {
   KeyRound,
   Palette,
   Puzzle,
+  RefreshCw,
   ScrollText,
   Users,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { leaveApp } from "@/app/leave";
 import { SESSION_PRESETS } from "@/domain/session";
 import { setPluginFlags } from "@/app/plugins";
+import { canSwitch, extensionPhase } from "@/domain/extensions";
 import { applyTheme, currentTheme, THEMES, type ThemeId } from "@/app/theme";
 import { useVault } from "@/app/vault/store";
 import { AppFrame } from "@/components/chrome/AppFrame";
@@ -43,6 +45,7 @@ import {
   adminState,
   probeSources,
   setPluginEnabled,
+  checkExtensions,
   setSourceEnabled,
 } from "@/server/admin.functions";
 import { setSessionTtl, storageReport } from "@/server/session.functions";
@@ -136,7 +139,7 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
   },
   { id: "correo", label: "Correo electrónico", icon: Mail, need: ["mail.manage"] },
   { id: "seguridad", label: "Seguridad", icon: Shield, need: ["security.manage"] },
-  { id: "plugins", label: "Plugins", icon: Puzzle, need: ["plugins.manage"] },
+  { id: "plugins", label: "Extensiones", icon: Puzzle, need: ["plugins.manage"] },
   { id: "apariencia", label: "Apariencia", icon: Palette },
   { id: "sesion", label: "Sesión", icon: Clock, need: ["session.manage"] },
   {
@@ -265,7 +268,7 @@ export function AdminScreen() {
             canAdmin: true,
           });
           setPluginFlags(
-            Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.enabled])),
+            Object.fromEntries(next.plugins.map((plugin) => [plugin.id, plugin.active])),
           );
         }
       })
@@ -636,26 +639,90 @@ function Plugins({
   view: Extract<State, { isAdmin: true }>;
   reload: () => void;
 }) {
+  const [items, setItems] = useState(view.plugins);
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState<{ id: string; error: string } | null>(null);
+  useEffect(() => setItems(view.plugins), [view.plugins]);
+
+  const recheck = async () => {
+    setBusy("*");
+    try {
+      const next = await checkExtensions();
+      if (next.length > 0) {
+        setItems(next);
+        setPluginFlags(Object.fromEntries(next.map((item) => [item.id, item.active])));
+      }
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const toggle = async (id: string, enabled: boolean) => {
+    setBusy(id);
+    setProblem(null);
+    try {
+      const result = await setPluginEnabled({ data: { id, enabled } });
+      if (!result.ok) setProblem({ id, error: result.error });
+    } finally {
+      setBusy("");
+      reload();
+    }
+  };
+
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-surface">
+      <div className="flex items-center justify-end border-b border-line px-4 py-2">
+        <button
+          type="button"
+          onClick={() => void recheck()}
+          disabled={busy !== ""}
+          className="inline-flex h-9 items-center gap-2 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+        >
+          <RefreshCw className={`size-4 ${busy === "*" ? "animate-spin" : ""}`} />
+          {t("Comprobar conexión")}
+        </button>
+      </div>
       <ul>
-        {view.plugins.map((plugin) => (
-          <li
-            key={plugin.id}
-            className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm">{t(plugin.name)}</p>
-            </div>
-            <Switch
-              checked={plugin.enabled}
-              ariaLabel={t(plugin.name)}
-              onChange={(enabled) =>
-                void setPluginEnabled({ data: { id: plugin.id, enabled } }).then(reload)
-              }
-            />
-          </li>
-        ))}
+        {items.map((plugin) => {
+          const phase = extensionPhase(plugin.enabled, plugin.check);
+          const status = {
+            local: "",
+            connected: t("Conectada"),
+            paused: t("En pausa: sin conexión"),
+            offline: t("Sin conexión"),
+          }[phase];
+          return (
+            <li
+              key={plugin.id}
+              data-extension={plugin.id}
+              className="flex items-center gap-4 border-b border-line px-4 py-3 last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm">{t(plugin.name)}</p>
+                {status ? (
+                  <p
+                    data-ui="extension-status"
+                    className={`text-xs ${plugin.check.ok ? "text-faint" : "text-danger"}`}
+                  >
+                    {status}
+                    {plugin.check.ok ? "" : ` · ${t(plugin.check.detail)}`}
+                  </p>
+                ) : null}
+                {problem?.id === plugin.id ? (
+                  <p role="alert" className="text-xs text-danger">
+                    {t("No se pudo activar")}: {t(problem.error)}
+                  </p>
+                ) : null}
+              </div>
+              <Switch
+                checked={plugin.enabled}
+                ariaLabel={t(plugin.name)}
+                disabled={busy !== "" || !canSwitch(plugin.enabled, plugin.check)}
+                onChange={(enabled) => void toggle(plugin.id, enabled)}
+              />
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

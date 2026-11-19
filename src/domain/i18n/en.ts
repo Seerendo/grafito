@@ -212,6 +212,7 @@ export const en: Record<string, string> = {
   Autenticación: "Authentication",
   "Inteligencia artificial": "Artificial intelligence",
   Plugins: "Plugins",
+  Extensiones: "Extensions",
   Sesión: "Session",
   OAuth: "OAuth",
   Temas: "Themes",
@@ -482,6 +483,7 @@ export const en: Record<string, string> = {
   "Borra una organización": "Deletes an organization",
   // Fonts and storage.
   "Cuentas, permisos, fuentes y plugins": "Accounts, permissions, sources and plugins",
+  "Cuentas, permisos, fuentes y extensiones": "Accounts, permissions, sources and extensions",
   "Notas y referencias": "Notes and references",
   "Archivos subidos": "Uploaded files",
   "Sin Elasticsearch. El índice queda en Postgres.":
@@ -524,6 +526,7 @@ export const en: Record<string, string> = {
   "Hacer públicas o compartir notas y portafolios": "Make public or share notes and portfolios",
   "Crear organizaciones y asignar miembros": "Create organizations and assign members",
   "Activar o pausar plugins": "Enable or pause plugins",
+  "Activar o pausar extensiones": "Enable or pause extensions",
   Gestionar: "Manage",
   "Crear, renombrar y borrar portafolios": "Create, rename and delete portfolios",
   "Crear roles y asignar permisos": "Create roles and assign permissions",
@@ -1468,7 +1471,7 @@ export const en: Record<string, string> = {
   "Este PDF ya tiene una firma con certificado. Una imagen la invalidaría.":
     "This PDF already has a certificate signature. An image would invalidate it.",
   "Grafeno no está configurado": "Grafeno is not configured",
-  "Grafo pausado en Plugins": "Graph paused in Plugins",
+  "Grafo pausado en Extensiones": "Graph paused in Extensions",
   "Grafeno no responde": "Grafeno is not answering",
   "Copiando bóvedas…": "Copying vaults…",
   "Bóvedas al día": "Vaults up to date",
@@ -1492,4 +1495,25 @@ export const en: Record<string, string> = {
   "Grafo de documentos en 3D": "Document graph in 3D",
   "No se pudo cargar la vista 3D. Recarga la página.":
     "The 3D view could not load. Reload the page.",
+  // Extensions.
+  "Comprobar conexión": "Check connection",
+  Conectada: "Connected",
+  "En pausa: sin conexión": "Paused: no connection",
+  "Sin conexión": "No connection",
+  "No se pudo activar": "Could not turn on",
+  "Esa extensión no existe.": "That extension does not exist.",
+  "La comprobación falló.": "The check failed.",
+  "Grafeno no está configurado.": "Grafeno is not configured.",
+  "Grafeno no responde.": "Grafeno is not answering.",
+  "El compilador de LaTeX no responde.": "The LaTeX compiler is not answering.",
+  "El servicio de OCR no está configurado.": "The OCR service is not configured.",
+  "El servicio de OCR no responde.": "The OCR service is not answering.",
+  "La extensión LaTeX está desactivada.": "The LaTeX extension is off.",
+  "El compilador de LaTeX no responde. Se podrá compilar cuando vuelva.":
+    "The LaTeX compiler is not answering. You can compile when it is back.",
+  "La extensión LaTeX está en pausa.": "The LaTeX extension is paused.",
+  "En pausa: sin conexión · {0} en cola": "Paused: no connection · {0} queued",
+  "No tienes permiso para esto.": "You do not have permission for this.",
+  "Documentos LaTeX compilados a PDF": "LaTeX documents compiled to PDF",
+  "Texto de PDF escaneados e imágenes en la búsqueda": "Text of scanned PDFs and images in search",
 };

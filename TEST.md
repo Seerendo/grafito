@@ -1433,6 +1433,24 @@ The upgrade checks ran the versioned `docker-compose.yml` under other project
 names (`grafito-compat`, `grafito-fresh`), with their own volumes, removed
 afterwards.
 
+## Round 49: extensions
+
+Playwright 1.60, `tests/e2e/extensions.e2e.mjs`, stopping and starting the test
+stack's `grafeno`, `latex` and `ocr` containers.
+
+| Check                                                                  | Result                                                           |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Administración → Extensiones: Grafo, LaTeX and OCR connected           | ✅ «Conectada»; Mermaid, Vínculos and Git show no status         |
+| `latex` stopped: LaTeX shows «En pausa: sin conexión»                  | ✅ «Nuevo documento LaTeX» disappears from the vault             |
+| LaTeX turned off while `latex` is down                                 | ✅ «Sin conexión»; its switch cannot turn it on again            |
+| `latex` back, **Comprobar conexión**                                   | ✅ «Conectada», turns on, the button is back                     |
+| `grafeno` stopped: Grafo paused, a note written                        | ✅ the graph leaves the palette; the copy waits behind the vault |
+| `grafeno` back                                                         | ✅ the copy catches up on its own and the graph shows again      |
+| `ocr` stopped, a photo uploaded                                        | ✅ «En pausa: sin conexión»; the photo stays queued, not failed  |
+| `ocr` back                                                             | ✅ read and found from search                                    |
+| Rounds 47 (LaTeX/OCR), admin tools and vault pages browser tests again | ✅                                                               |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`          | ✅ 277 tests pass                                                |
+
 ## Useful commands
 
 ```bash

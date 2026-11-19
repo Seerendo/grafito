@@ -194,13 +194,20 @@ async function release(sql: Sql): Promise<void> {
 }
 
 let running = false;
+/** Whether the last pass found the extension on and Grafeno answering. */
+let wasUp = true;
 
 /** One pass: the vaults whose revision moved past what Grafeno holds. */
 export async function graphPass(sql: Sql): Promise<void> {
   if (running) return;
   running = true;
   try {
-    if (!grafeno() || !(await graphPluginOn(sql)) || !(await grafenoReachable())) return;
+    const up = Boolean(grafeno()) && (await graphPluginOn(sql)) && (await grafenoReachable());
+    // Back after an outage or a pause: check at once which vaults Grafeno still holds (it may
+    // have restarted empty), so the copy resumes without waiting for the next five-minute heal.
+    if (up && !wasUp) lastHeal = 0;
+    wasUp = up;
+    if (!up) return;
     if (!(await claimJob(sql, LOCK, LOCK_MS))) return;
     try {
       await heal(sql);

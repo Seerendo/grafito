@@ -53,6 +53,7 @@ export function RowContextMenu({
   const documents = useVault((state) => state.documents);
   const can = usePermissions();
   const gitOn = usePluginEnabled("git");
+  const latexOn = usePluginEnabled("latex");
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState({ left: menu.x, top: menu.y, ready: false });
   const document = menu.kind === "document" ? documents.find((item) => item.id === menu.id) : null;
@@ -112,13 +113,16 @@ export function RowContextMenu({
           ),
       ),
     });
-    items.push({
-      label: t("Nuevo documento LaTeX"),
-      onClick: act(
-        () =>
-          void createLatex(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? "")),
-      ),
-    });
+    if (latexOn)
+      items.push({
+        label: t("Nuevo documento LaTeX"),
+        onClick: act(
+          () =>
+            void createLatex(portfolioId).then(() =>
+              onOpenNote(useVault.getState().activeId ?? ""),
+            ),
+        ),
+      });
     items.push({
       label: t("Nueva tabla"),
       onClick: act(

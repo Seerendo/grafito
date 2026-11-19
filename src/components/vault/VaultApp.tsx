@@ -226,13 +226,25 @@ function VaultWorkspace() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  // Extensions pause while their service is down and come back with it: ask again every
+  // minute and when the page comes back to the front.
   useEffect(() => {
-    if (pluginFlagsFresh()) return;
-    void listPlugins()
-      .then((flags) => {
-        if (Object.keys(flags).length > 0) setPluginFlags(flags);
-      })
-      .catch(() => undefined);
+    const refresh = (force: boolean) => {
+      if (!force && pluginFlagsFresh()) return;
+      void listPlugins()
+        .then((flags) => {
+          if (Object.keys(flags).length > 0) setPluginFlags(flags);
+        })
+        .catch(() => undefined);
+    };
+    refresh(false);
+    const onFocus = () => refresh(false);
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => refresh(true), 60_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {

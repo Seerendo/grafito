@@ -31,7 +31,7 @@ export async function ocrTextFor(
   sql: Sql,
   input: { ownerId: string; docId: string; fileKey: string },
 ): Promise<string | null> {
-  if (!ocrUrl()) return null;
+  // Queued even while OCR is off or its service is down: the queue is read when it is back.
   const rows = await sql<{ file_key: string; state: string; text: string }>`
     select file_key, state, text from ocr_text
     where owner_id = ${input.ownerId} and doc_id = ${input.docId} limit 1
@@ -48,9 +48,11 @@ export async function ocrTextFor(
   return null;
 }
 
-async function recognize(bytes: Uint8Array): Promise<{ pages: string[] } | { error: string }> {
+type Recognized = { pages: string[] } | { error: string } | { unreachable: true };
+
+async function recognize(bytes: Uint8Array): Promise<Recognized> {
   const url = ocrUrl();
-  if (!url) return { error: "OCR apagado." };
+  if (!url) return { unreachable: true };
   try {
     const response = await fetch(`${url.replace(/\/+$/, "")}/ocr?lang=spa+eng`, {
       method: "POST",
@@ -63,7 +65,10 @@ async function recognize(bytes: Uint8Array): Promise<{ pages: string[] } | { err
       return { error: body.error || `El OCR respondió ${response.status}.` };
     return { pages: body.pages };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "El OCR no está disponible." };
+    // The service went away mid-read: the document waits for it instead of failing.
+    if (error instanceof Error && error.name === "TimeoutError")
+      return { error: "El OCR tardó demasiado." };
+    return { unreachable: true };
   }
 }
 
@@ -76,7 +81,8 @@ export async function ocrStep(sql: Sql): Promise<boolean> {
   const job = rows[0];
   if (!job) return false;
   const bytes = await readBlob(sql, job.file_key);
-  const result = bytes ? await recognize(bytes) : { error: "El archivo ya no está." };
+  const result: Recognized = bytes ? await recognize(bytes) : { error: "El archivo ya no está." };
+  if ("unreachable" in result) return false;
   const now = Date.now();
   if ("pages" in result) {
     const text = result.pages.join("\n\n").trim();
@@ -96,18 +102,29 @@ export async function ocrStep(sql: Sql): Promise<boolean> {
   return true;
 }
 
-export type OcrStatus = { pending: number; done: number; failed: number; enabled: boolean };
+export type OcrStatus = {
+  pending: number;
+  done: number;
+  failed: number;
+  /** The OCR extension is on and its service answers. */
+  enabled: boolean;
+  /** On, but its service is not answering: the queue waits for it. */
+  paused: boolean;
+};
 
 export async function readOcrStatus(sql: Sql): Promise<OcrStatus> {
   const rows = await sql<{ state: string; n: number }>`
     select state, count(*)::int as n from ocr_text group by state
   `;
   const count = (state: string) => rows.find((row) => row.state === state)?.n ?? 0;
+  const { extensionActive, extensionChosen } = await import("./extensions");
+  const active = await extensionActive(sql, "ocr");
   return {
     pending: count("pending"),
     done: count("done") + count("empty"),
     failed: count("failed"),
-    enabled: Boolean(ocrUrl()),
+    enabled: active,
+    paused: !active && (await extensionChosen(sql, "ocr")),
   };
 }
 
@@ -127,6 +144,9 @@ export function startOcr(): void {
         const { getSql } = await import("@/lib/db");
         const sql = await getSql();
         // A long scan can take minutes: hold the claim long enough, give it back after.
+        // Only while the OCR extension is on and its service answers; the queue waits otherwise.
+        const { extensionActive } = await import("./extensions");
+        if (!(await extensionActive(sql, "ocr"))) return;
         if (!(await claimJob(sql, LOCK, 25 * 60_000))) return;
         try {
           await ocrStep(sql);

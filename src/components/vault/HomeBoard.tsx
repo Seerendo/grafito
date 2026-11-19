@@ -527,7 +527,8 @@ function NewLatexButton({
   onOpenNote: (id: string) => void;
 }) {
   const can = usePermissions();
-  if (!can(PERMISSION.filesUpload)) return null;
+  const latexOn = usePluginEnabled("latex");
+  if (!can(PERMISSION.filesUpload) || !latexOn) return null;
   return (
     <button
       type="button"

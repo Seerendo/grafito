@@ -21,6 +21,7 @@ import { queryContent } from "@/server/index/query";
 import { logActivity } from "@/server/audit";
 import { probeClamd } from "@/server/clamav";
 import { probeBucket } from "@/server/storage";
+import { readExtensions, setExtension } from "@/server/extensions";
 
 type Sql = Awaited<ReturnType<typeof import("@/lib/db").getSql>>;
 
@@ -236,15 +237,7 @@ export const adminState = createServerFn({ method: "GET" })
     const sources = await sql<{ id: string; kind: string; label: string; enabled: unknown }>`
       select id, kind, label, enabled from app_source order by label
     `;
-    const plugins = await sql<{
-      id: string;
-      name: string;
-      description: string;
-      enabled: unknown;
-      built_in: unknown;
-    }>`
-      select id, name, description, enabled, built_in from app_plugin order by name
-    `;
+    const plugins = await readExtensions(sql);
     const count = await sql<{
       n: number;
     }>`select count(*)::int as n from doc_index where user_id = ${context.userId}`;
@@ -330,13 +323,7 @@ export const adminState = createServerFn({ method: "GET" })
         label: source.label,
         enabled: flag(source.enabled),
       })),
-      plugins: plugins.map((plugin) => ({
-        id: plugin.id,
-        name: plugin.name,
-        description: plugin.description,
-        enabled: flag(plugin.enabled),
-        builtIn: flag(plugin.built_in),
-      })),
+      plugins,
       indexed: Number(count[0]?.n ?? 0),
       engines: empty.engines,
     };
@@ -403,9 +390,18 @@ export const setPluginEnabled = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const sql = await requireLease(context.userId);
     const profile = await readUserProfile(sql, context.userId);
-    if (!allows(profile, "plugins.manage")) return { ok: false as const };
-    await sql`update app_plugin set enabled = ${data.enabled} where id = ${data.id}`;
-    return { ok: true as const };
+    if (!allows(profile, "plugins.manage"))
+      return { ok: false as const, error: "No tienes permiso para esto." };
+    const result = await setExtension(sql, data.id, data.enabled);
+    if (result.ok)
+      await writeLog(
+        sql,
+        profile.loginName || profile.displayName,
+        "Extensiones",
+        `${data.enabled ? "Activa" : "Desactiva"} ${data.id}`,
+        context.userId,
+      );
+    return result;
   });
 
 export const setSourceEnabled = createServerFn({ method: "POST" })
@@ -421,11 +417,22 @@ export const setSourceEnabled = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** Administración → Extensiones → «Comprobar»: every check again, without the 10 s cache. */
+export const checkExtensions = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await requireLease(context.userId);
+    const profile = await readUserProfile(sql, context.userId);
+    if (!allows(profile, "plugins.manage")) return [];
+    return readExtensions(sql, true);
+  });
+
 export const listPlugins = createServerFn({ method: "GET" }).handler(async () => {
   try {
     const sql = await sqlClient();
-    const plugins = await sql<{ id: string; enabled: unknown }>`select id, enabled from app_plugin`;
-    return Object.fromEntries(plugins.map((plugin) => [plugin.id, flag(plugin.enabled)]));
+    // Active: turned on and its service answering, so a paused extension hides until it is back.
+    const extensions = await readExtensions(sql);
+    return Object.fromEntries(extensions.map((item) => [item.id, item.active]));
   } catch {
     return {} as Record<string, boolean>;
   }

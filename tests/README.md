@@ -31,3 +31,6 @@ a throwaway instance on an empty database, see its header).
 Keycloak (`auth-test` profile) and restores the provider settings it changes.
 `latex-ocr.e2e.mjs` needs the `latex` and `ocr` services: it creates, edits and
 compiles a LaTeX document, and has a scanned PDF and a photo read by OCR.
+`extensions.e2e.mjs` stops and starts the test stack's `grafeno`, `latex` and
+`ocr` containers (`E2E_COMPOSE` says how): an extension cannot be turned on
+without its service, pauses while it is down and resumes with it, catching up.

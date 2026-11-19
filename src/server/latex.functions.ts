@@ -9,6 +9,7 @@ import { editableTarget, grantedDocOwner } from "@/server/share";
 import { readBlob } from "@/server/blobs";
 import { getDoc } from "@/server/vault";
 import { compileLatex, storeLatex } from "@/server/latex";
+import { checkExtension, extensionChosen } from "@/server/extensions";
 
 /** Read, save and compile LaTeX documents; see server/latex.ts. */
 
@@ -65,6 +66,14 @@ export const compileLatexDoc = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const found = await readable(context.userId, data.docId, data.shareId);
     if (!found) return { ok: false as const, error: "Ese documento LaTeX no existe.", log: "" };
+    if (!(await extensionChosen(found.sql, "latex")))
+      return { ok: false as const, error: "La extensión LaTeX está desactivada.", log: "" };
+    if (!(await checkExtension("latex")).ok)
+      return {
+        ok: false as const,
+        error: "El compilador de LaTeX no responde. Se podrá compilar cuando vuelva.",
+        log: "",
+      };
     const result = await compileLatex(context.userId, data.source);
     if (!result.ok) return result;
     return { ok: true as const, pdf: Buffer.from(result.pdf).toString("base64") };

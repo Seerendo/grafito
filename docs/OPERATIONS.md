@@ -267,6 +267,26 @@ Pick from the common extensions or type others, separated by commas. Only the
 last extension counts (`backup.tar.gz` is `gz`). The lists are
 `upload_blocked_ext` and `index_blocked_ext` in `app_setting`.
 
+## Extensions
+
+Administración → Extensiones lists Grafo, LaTeX, OCR, Mermaid, Vínculos and
+Git. The ones with a service of their own are checked against it (Grafo →
+Grafeno, LaTeX → `latex`, OCR → `ocr`, at most every 10 s, or at once with
+**Comprobar conexión**):
+
+- An extension only turns on when its check passes.
+- One that is on and loses its service is paused, not turned off: the app
+  hides it (the graph, **Nuevo documento LaTeX**, compiling) and the
+  administrator's choice stays. Open pages notice within a minute.
+- When the service answers again it resumes on its own. Grafo copies what
+  changed meanwhile and checks at once which vaults Grafeno still holds, in
+  case it restarted empty. OCR reads the documents queued while it was down;
+  they wait instead of failing.
+
+Mermaid, Vínculos and Git have no service to check. The table is still
+`app_plugin` and the permission `plugins.manage`, so existing roles and
+choices carry over; migration 0044 adds LaTeX and OCR, both on.
+
 ## LaTeX and OCR
 
 Two services start with the rest (`docker compose up -d --build` builds
@@ -296,18 +316,18 @@ their index entries are removed in batches of 500.
 
 ## When something is down
 
-| Symptom                                     | Check                                                                      | Fix                                                                                                                                           |
-| ------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| The page doesn't load                       | `docker compose ps`, `docker compose logs --tail 100 app`                  | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`.    |
-| Sign-in fails for everyone                  | `docker compose logs app \| grep -i auth`                                  | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident.                      |
-| Search returns nothing                      | Administración → Monitorización y logs → Fuentes → Comprobar               | Start Elasticsearch. Search falls back to Postgres meanwhile.                                                                                 |
-| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación                        | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read.                       |
-| The graph button and Menciones are gone     | Administración → Monitorización y logs → Grafo                             | Start Grafeno (`docker compose up -d grafeno`) and check **Plugins → Grafo**. They come back within a minute; everything else keeps working.  |
-| Every upload fails as soon as it finishes   | Scanning is on by default (Administración → Seguridad)                     | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen. |
-| Everyone is signed out                      | Redis was restarted or flushed                                             | Nothing to fix: session deadlines are recreated on the next sign-in.                                                                          |
-| AI chat says the key can't be read          | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect.                                               |
-| Disk full                                   | `docker system df`, `du -sh backups`                                       | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`.                                                                |
-| Data loss or corruption                     | —                                                                          | Restore the latest good dump (see above).                                                                                                     |
+| Symptom                                     | Check                                                                      | Fix                                                                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The page doesn't load                       | `docker compose ps`, `docker compose logs --tail 100 app`                  | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`.       |
+| Sign-in fails for everyone                  | `docker compose logs app \| grep -i auth`                                  | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident.                         |
+| Search returns nothing                      | Administración → Monitorización y logs → Fuentes → Comprobar               | Start Elasticsearch. Search falls back to Postgres meanwhile.                                                                                    |
+| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación                        | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read.                          |
+| The graph button and Menciones are gone     | Administración → Monitorización y logs → Grafo                             | Start Grafeno (`docker compose up -d grafeno`) and check **Extensiones → Grafo**. They come back within a minute; everything else keeps working. |
+| Every upload fails as soon as it finishes   | Scanning is on by default (Administración → Seguridad)                     | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen.    |
+| Everyone is signed out                      | Redis was restarted or flushed                                             | Nothing to fix: session deadlines are recreated on the next sign-in.                                                                             |
+| AI chat says the key can't be read          | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect.                                                  |
+| Disk full                                   | `docker system df`, `du -sh backups`                                       | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`.                                                                   |
+| Data loss or corruption                     | —                                                                          | Restore the latest good dump (see above).                                                                                                        |
 
 ## Upgrading
 

@@ -17,7 +17,7 @@ GRAFENO_TOKEN=a-long-random-value
 
 The graph is on when all of these hold:
 
-- **Administración → Plugins → Grafo** is on.
+- **Administración → Extensiones → Grafo** is on.
 - `GRAFENO_URL` is set (`http://grafeno:7810` in `docker-compose.yml`).
 - Grafeno answers (checked every 10 s).
 - The person's role has **Ver el grafo**.

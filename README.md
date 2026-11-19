@@ -572,7 +572,9 @@ fluid; a browser without WebGL2 gets a simpler drawing.
 
 The graph and **Menciones** come from Grafeno, the graph engine started with
 the rest of the services. While Grafeno is not answering, or **Grafo** is
-paused in **Plugins**, both hide and everything else works as usual. See
+off in **Extensiones**, both hide and everything else works as usual. When
+Grafeno answers again they come back on their own, and what changed meanwhile
+is copied in the background. See
 [docs/GRAPH.md](docs/GRAPH.md).
 
 Colours show communities, groups of documents linked mostly among
@@ -810,7 +812,7 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                                                                                          |
 | **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                                                                                  |
 | **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                                                                               |
-| **Plugins**                                  | Turn the graph (it needs Grafeno), Mermaid, links and Git sync on or off (Git is off by default)                                                                                                                                                                                                                                                              |
+| **Extensiones**                              | Turn the graph (Grafeno), LaTeX (the `latex` service), OCR (the `ocr` service), Mermaid, links and Git sync on or off (Git is off by default). An extension that needs a service shows whether it is connected and only turns on when it is; one that loses its service pauses and resumes when the service is back                                           |
 | **Organizaciones**                           | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization.                                                                    |
 | **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user.                                                                                                                                                                                 |
 | **Apariencia**                               | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs.                                                                                         |

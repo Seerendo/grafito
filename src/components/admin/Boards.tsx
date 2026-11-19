@@ -955,7 +955,9 @@ export function IndexBoard() {
             1: status.ocr.pending,
             2: status.ocr.failed,
           })
-        : t("Apagado"),
+        : status.ocr.paused
+          ? t("En pausa: sin conexión · {0} en cola", { 0: status.ocr.pending })
+          : t("Apagado"),
     ],
   ] as const;
   return (
@@ -1042,7 +1044,7 @@ export function GraphBoard() {
   const phase = !status.configured
     ? t("Grafeno no está configurado")
     : !status.plugin
-      ? t("Grafo pausado en Plugins")
+      ? t("Grafo pausado en Extensiones")
       : !status.reachable
         ? t("Grafeno no responde")
         : status.pending > 0

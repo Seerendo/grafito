@@ -13,7 +13,7 @@ default.
 
 ## Turning it on
 
-1. **Administración → Plugins**: turn on **Git**.
+1. **Administración → Extensiones**: turn on **Git**.
 2. **Administración → Roles**: the **Git** permission (`git.sync`, under
    Portafolios) is given to the administrator only. Give it to other roles if
    they should use it.

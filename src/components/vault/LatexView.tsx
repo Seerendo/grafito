@@ -1,6 +1,7 @@
 import { Download, Play, Save } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/app/i18n";
+import { usePluginEnabled } from "@/app/plugins";
 import { compileLatexDoc, readLatex, saveLatex } from "@/server/latex.functions";
 import { PdfView } from "./PdfView";
 
@@ -30,6 +31,10 @@ export function LatexView({
   const [problem, setProblem] = useState<{ error: string; log: string } | null>(null);
   const [loadError, setLoadError] = useState("");
   const urlRef = useRef<string | null>(null);
+  // Off or its service down: the source still opens and saves; compiling waits.
+  const latexOn = usePluginEnabled("latex");
+  const latexOnRef = useRef(latexOn);
+  latexOnRef.current = latexOn;
   const scope = shareId ? { shareId } : {};
 
   const showPdf = (base64: string) => {
@@ -75,7 +80,7 @@ export function LatexView({
         }
         setSource(result.content);
         setSaved(result.content);
-        void compile(result.content);
+        if (latexOnRef.current) void compile(result.content);
       })
       .catch(() => {
         if (!cancelled) setLoadError("No se pudo abrir el documento.");
@@ -107,7 +112,7 @@ export function LatexView({
     } finally {
       setSaving(false);
     }
-    void compile(source);
+    if (latexOn) void compile(source);
   };
 
   if (loadError) return <p className="p-6 text-sm text-danger">{t(loadError)}</p>;
@@ -131,7 +136,7 @@ export function LatexView({
         <button
           type="button"
           onClick={() => void compile(source)}
-          disabled={compiling}
+          disabled={compiling || !latexOn}
           className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
         >
           <Play className="size-4" />
@@ -182,7 +187,11 @@ export function LatexView({
             <PdfView key={pdfUrl} url={pdfUrl} data={pdfBytes} title={title} />
           ) : (
             <p className="p-6 text-sm text-faint">
-              {compiling ? t("Compilando…") : t("Sin PDF todavía.")}
+              {compiling
+                ? t("Compilando…")
+                : latexOn
+                  ? t("Sin PDF todavía.")
+                  : t("La extensión LaTeX está en pausa.")}
             </p>
           )}
         </div>
