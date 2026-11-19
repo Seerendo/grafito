@@ -147,6 +147,50 @@ describe("LaTeX documents and OCR", () => {
     );
   });
 
+  test("a bibliography (biblatex + biber) and XeLaTeX compile from the browser", async () => {
+    const view = page.locator('[data-ui="latex"]');
+    const source = view.getByLabel("Código LaTeX");
+    const compiles = async (text) => {
+      await source.fill(text);
+      await view.getByRole("button", { name: "Compilar" }).click();
+      await view
+        .getByRole("button", { name: "Compilando…" })
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => undefined);
+      await view.getByRole("button", { name: "Compilar" }).waitFor({ timeout: 150_000 });
+      assert.equal(await view.locator('[data-ui="latex-error"]').count(), 0);
+      await view.locator("canvas").first().waitFor();
+    };
+    await compiles(
+      [
+        "\\documentclass{article}",
+        "\\usepackage[spanish]{babel}",
+        "\\begin{filecontents*}[overwrite]{refs.bib}",
+        "@book{knuth, author={Donald Knuth}, title={The TeXbook}, year={1984}, publisher={Addison-Wesley}}",
+        "\\end{filecontents*}",
+        "\\usepackage[backend=biber,style=authoryear]{biblatex}",
+        "\\addbibresource{refs.bib}",
+        "\\begin{document}",
+        "Según \\textcite{knuth}.",
+        "\\printbibliography",
+        "\\end{document}",
+      ].join("\n"),
+    );
+    await compiles(
+      [
+        "% !TEX program = xelatex",
+        "\\documentclass{article}",
+        "\\usepackage{fontspec}",
+        "\\setmainfont{Libertinus Serif}",
+        "\\setsansfont{Fira Sans}",
+        "\\begin{document}",
+        "Hola, ñandú.",
+        "\\end{document}",
+      ].join("\n"),
+    );
+  });
+
   test("a scanned PDF and a photo are read by OCR and become searchable", async () => {
     // A "scan": text drawn on a canvas, saved as PNG and as an image-only PDF.
     const files = await page.evaluate(async () => {

@@ -290,13 +290,19 @@ choices carry over; migration 0044 adds LaTeX and OCR, both on.
 ## LaTeX and OCR
 
 Two services start with the rest (`docker compose up -d --build` builds
-them the first time; plan a few minutes and about 1.7 GB of images):
+them the first time; plan several minutes and about 4 GB of images):
 
-- `latex` (docker/latex): TeX Live compiling with `pdflatex`, without shell
-  escape, reading only its own folder, as a non-root user, 60 s per
-  compilation (`LATEX_TIMEOUT_SECONDS`). It only receives the source being
-  compiled. `LATEX_URL` in the app points at it (`http://latex:8080`);
-  `LATEX_URL=` turns compilation off, and `.tex` files still open and save.
+- `latex` (docker/latex): TeX Live compiling with `pdflatex`, or XeLaTeX when
+  the document starts with `% !TEX program = xelatex`; BibTeX or biber run
+  when the document has a bibliography. Packages: the LaTeX base, recommended
+  and extra collections, extra fonts, pictures (TikZ, pgfplots), science,
+  publishers, humanities, Spanish, English and European languages. Without
+  shell escape, reading only its own folder, as a non-root user, 120 s per
+  compilation with every pass (`LATEX_TIMEOUT_SECONDS`). It only receives the
+  source being compiled. To add packages, add Debian `texlive-*` packages to
+  docker/latex/Dockerfile and rebuild. `LATEX_URL` in the app points at it
+  (`http://latex:8080`); `LATEX_URL=` turns compilation off, and `.tex` files
+  still open and save.
 - `ocr` (docker/ocr): OCRmyPDF and Tesseract, Spanish and English. Indexing
   queues PDFs without a text layer and images; the app reads one at a time in
   the background and indexes the text. `OCR_JOBS` (2) is how many CPU cores

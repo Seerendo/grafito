@@ -92,12 +92,15 @@ without the fixes. It failed there, so it catches each flaw.
 
 ## LaTeX and OCR services
 
-- `latex` runs `pdflatex -no-shell-escape` with `openin_any`/`openout_any`
-  set to paranoid, in a fresh folder per compilation, as a non-root user, with
-  a time and size limit. `\write18` and `\input{/etc/passwd}` are refused
-  (checked). It holds no Grafito data and has no published port; the app only
-  sends it the source of a document the caller can read, one compilation per
-  person at a time.
+- `latex` runs `pdflatex` (or `xelatex`) with `-no-shell-escape` and
+  `openin_any`/`openout_any` set to paranoid, in a fresh folder per
+  compilation, as a non-root user, with a time and size limit. `\write18` and
+  `\input{/etc/passwd}` are refused with both engines (checked). LuaLaTeX is
+  not offered, because its Lua code can read files outside those limits.
+  BibTeX and biber only see the compilation folder's files and the
+  container's own. It holds no Grafito data and has no published port; the
+  app only sends it the source of a document the caller can read, one
+  compilation per person at a time.
 - `ocr` receives only the bytes of the document being read, as a non-root
   user, with size, page and time limits, and no published port.
 

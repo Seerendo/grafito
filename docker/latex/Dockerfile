@@ -1,14 +1,22 @@
-# LaTeX compiler for Grafito (docker/latex/server.py). TeX Live from Debian with the common
-# packages and Spanish support; no network access is needed at compile time.
+# LaTeX compiler for Grafito (docker/latex/server.py). TeX Live from Debian with Spanish
+# support, bibliographies (BibTeX and biber), XeLaTeX and the usual package collections; no
+# network access is needed at compile time.
 FROM debian:bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      python3 \
+      python3 fontconfig \
       texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-      texlive-fonts-recommended texlive-lang-spanish texlive-science \
-      lmodern \
+      texlive-fonts-recommended texlive-fonts-extra cm-super lmodern \
+      texlive-lang-spanish texlive-lang-english texlive-lang-european \
+      texlive-science texlive-pictures texlive-publishers texlive-humanities \
+      texlive-bibtex-extra biber texlive-xetex texlive-plain-generic \
+ && fc-cache -f \
  && rm -rf /var/lib/apt/lists/* /usr/share/doc/*
+
+# TeX Live's own OpenType/TrueType fonts, by name, for XeLaTeX (fontspec).
+COPY 09-texlive.conf /etc/fonts/conf.d/09-texlive.conf
+RUN fc-cache -f
 
 RUN useradd --system --create-home tex
 USER tex

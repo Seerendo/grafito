@@ -290,7 +290,7 @@ services:
   # do not compile.
   latex:
     build: ./docker/latex
-    image: grafito-latex:1
+    image: grafito-latex:2
     restart: unless-stopped
 
   # OCR for scanned PDFs and images (docker/ocr): OCRmyPDF and Tesseract in

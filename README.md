@@ -360,7 +360,11 @@ After that, the start screen is a normal sign-in.
   what is on screen; **Guardar** or Ctrl+S saves a new version and compiles.
   An error names its line, and the full LaTeX log is one click away.
   **Descargar PDF** saves the result. The `latex` service compiles (TeX Live,
-  `pdflatex`); `.tex` text is searchable like any other file.
+  `pdflatex`, or XeLaTeX with `% !TEX program = xelatex` on the first line).
+  Bibliographies work with BibTeX and biber; the `.bib` goes inside the
+  document in a `filecontents*` block. Packages cannot be installed from the
+  app: the image carries the common collections (see docs/OPERATIONS.md).
+  `.tex` text is searchable like any other file.
 - **OCR:** a scanned PDF or a photo (PNG, JPEG, TIFF) has its text read in the
   background by the `ocr` service (Tesseract, Spanish and English), so search
   and the assistant find it. Administración → Indexación shows how many were

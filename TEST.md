@@ -1433,6 +1433,24 @@ The upgrade checks ran the versioned `docker-compose.yml` under other project
 names (`grafito-compat`, `grafito-fresh`), with their own volumes, removed
 afterwards.
 
+## Round 48: more LaTeX packages, bibliographies, XeLaTeX
+
+The `grafito-latex:2` image (about 4 GB), straight against the compiler and from
+the browser (`tests/e2e/latex-ocr.e2e.mjs`).
+
+| Check                                                                  | Result                                                     |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------- |
+| biblatex with biber, `.bib` in a `filecontents*` block                 | ✅ compiles, cites and prints the bibliography             |
+| natbib with BibTeX                                                     | ✅                                                         |
+| `% !TEX program = xelatex` with fontspec (Libertinus Serif, Fira Sans) | ✅ fonts found by name                                     |
+| pgfplots, libertine, fontawesome5, chemfig, mhchem, siunitx            | ✅                                                         |
+| A citation with no bibliography                                        | ✅ compiles                                                |
+| A `.bib` with a syntax error                                           | ✅ refused, «Bibliografía (biber): ERROR …»                |
+| `% !TEX program = lualatex`                                            | ✅ compiled with pdflatex                                  |
+| `\write18`, `\input{\|…}` and `\input{/etc/passwd}` with both engines  | ✅ refused; nothing written outside the compilation folder |
+| From the browser: bibliography and XeLaTeX documents compile           | ✅                                                         |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`          | ✅ 272 tests pass                                          |
+
 ## Round 49: extensions
 
 Playwright 1.60, `tests/e2e/extensions.e2e.mjs`, stopping and starting the test
