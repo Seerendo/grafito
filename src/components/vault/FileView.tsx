@@ -10,6 +10,8 @@ import { PdfView } from "./PdfView";
 import { PdfSignatures } from "./PdfSignatures";
 import { DrawingView } from "./DrawingView";
 import { isDrawingName } from "@/domain/vault/drawing";
+import { isLatexName } from "@/domain/vault/latex";
+import { LatexView } from "./LatexView";
 import { isTableName } from "@/domain/vault/table";
 import { TableView } from "./TableView";
 import { usePermissions } from "@/app/permissions";
@@ -18,10 +20,11 @@ import type { TextAnchor } from "@/domain/vault/anchor";
 import type { ManualLink } from "@/domain/vault/types";
 import { getLocale, t } from "@/app/i18n";
 
-type Kind = "image" | "pdf" | "drawing" | "video" | "audio" | "other";
+type Kind = "image" | "pdf" | "drawing" | "latex" | "video" | "audio" | "other";
 
 function kindOf(mime: string, name: string): Kind {
   if (isDrawingName(name)) return "drawing";
+  if (isLatexName(name)) return "latex";
   if (mime.startsWith("image/") || /\.(svg|png|jpe?g|gif|webp|avif)$/i.test(name)) return "image";
   if (mime === "application/pdf" || /\.pdf$/i.test(name)) return "pdf";
   if (mime.startsWith("video/") || /\.(mp4|webm|mov)$/i.test(name)) return "video";
@@ -288,6 +291,14 @@ function FileBody({
               alt={title}
               onError={broken}
               className="mx-auto max-h-full max-w-full rounded-md border border-line"
+            />
+          ) : kind === "latex" ? (
+            <LatexView
+              docId={drawing.docId}
+              shareId={drawing.shareId}
+              canEdit={drawing.canEdit}
+              title={title}
+              onSaved={pull}
             />
           ) : kind === "drawing" ? (
             <DrawingView

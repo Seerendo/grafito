@@ -1,4 +1,4 @@
-import { indexBlocked } from "@/domain/file-extensions";
+import { indexBlocked, type ExtensionRules } from "@/domain/file-extensions";
 import { indexBody } from "@/domain/search-text";
 import type { Sql } from "@/lib/db";
 import { fileText } from "@/server/files";
@@ -6,15 +6,25 @@ import { readExtensionRules } from "@/server/file-rules";
 import { claimJob } from "@/server/jobs";
 import { deleteElasticDoc, upsertElasticDoc } from "@/server/search";
 import { getDoc } from "@/server/vault";
+import { ocrCandidate, ocrTextFor, readOcrStatus, type OcrStatus } from "@/server/ocr";
 
 /**
- * Background indexing processes one note/table/file per pass into Postgres and optional
- * Elasticsearch. Extract text directly without models. One replica runs at a time and yields
- * between documents.
+ * Background indexing into Postgres and optional Elasticsearch. Extract text directly without
+ * models. One replica runs at a time. Each pass works through a batch for a short time budget,
+ * yielding to requests between documents: one document per pass made a 1000-file upload take
+ * the better part of an hour, and the app stalled while large PDFs were parsed whole.
  */
 
 const TICK_MS = 800;
 const LOCK = "content-index";
+/** Documents per batch query, and how long one pass may keep working. */
+const BATCH = 50;
+const PASS_MS = 3000;
+/** Stale entries removed per pass. */
+const FORGET_BATCH = 500;
+
+/** Let pending requests run between documents. */
+const yieldToRequests = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 type Pending = {
   user_id: string;
@@ -61,9 +71,10 @@ async function forgetRemoved(sql: Sql): Promise<boolean> {
     select c.user_id, c.doc_id from content_index c
     left join vault_doc d on d.user_id = c.user_id and d.id = c.doc_id and not d.deleted
     where d.id is null
-    limit 10
+    limit ${FORGET_BATCH}
   `;
   for (const row of rows) {
+    await yieldToRequests();
     await sql`delete from content_index where user_id = ${row.user_id} and doc_id = ${row.doc_id}`;
     await sql`delete from doc_index where user_id = ${row.user_id} and doc_id = ${row.doc_id}`;
     await deleteElasticDoc(row.user_id, row.doc_id);
@@ -78,8 +89,17 @@ async function bodyOf(sql: Sql, row: Pending): Promise<string> {
   const cells = extra[0]?.search_text ?? "";
   if (row.kind === "markdown") return indexBody([row.content, cells]);
   const doc = await getDoc(sql, row.user_id, row.id);
-  const extracted = doc ? ((await fileText(sql, doc, 24_000)) ?? "") : "";
+  let extracted = doc ? ((await fileText(sql, doc, 24_000)) ?? "") : "";
   const name = row.file_name ?? doc?.file?.name ?? "";
+  // A scan or a photo has no text layer: use what OCR read, or queue it (server/ocr.ts).
+  if (extracted.trim().length < 20 && doc?.file?.key && ocrCandidate(name, doc.file.mime)) {
+    const recognized = await ocrTextFor(sql, {
+      ownerId: row.user_id,
+      docId: row.id,
+      fileKey: doc.file.key,
+    });
+    if (recognized) extracted = recognized.slice(0, 24_000);
+  }
   return indexBody([name, extracted, cells]);
 }
 
@@ -100,9 +120,9 @@ async function skipBlocked(sql: Sql, row: Pending): Promise<void> {
   `;
 }
 
-async function indexOne(sql: Sql, row: Pending): Promise<void> {
+async function indexOne(sql: Sql, row: Pending, rules: ExtensionRules): Promise<void> {
   const rev = Number(row.rev);
-  if (indexBlocked(ruleName(row), await readExtensionRules(sql))) {
+  if (indexBlocked(ruleName(row), rules)) {
     await skipBlocked(sql, row);
     return;
   }
@@ -149,27 +169,35 @@ async function indexOne(sql: Sql, row: Pending): Promise<void> {
   }
 }
 
-/** One pass removes stale entries or indexes the most outdated document. */
+/**
+ * One pass removes stale entries, then indexes the most outdated documents until the batch or
+ * the time budget runs out.
+ */
 export async function indexStep(sql: Sql): Promise<void> {
   if (!(await documentsEnabled(sql))) {
     await touch(sql, "");
     return;
   }
-  if (await forgetRemoved(sql)) return;
+  const started = Date.now();
+  await forgetRemoved(sql);
   const rows = await sql<Pending>`
     select d.user_id, d.id, d.rev, d.title, d.kind, d.portfolio_id, d.content, d.links_json, d.file_name
     from vault_doc d
     left join content_index c on c.user_id = d.user_id and c.doc_id = d.id
     where not d.deleted and (c.doc_id is null or c.rev <> d.rev)
     order by d.updated_at asc
-    limit 1
+    limit ${BATCH}
   `;
-  const row = rows[0];
-  if (!row) {
+  if (rows.length === 0) {
     await touch(sql, "");
     return;
   }
-  await indexOne(sql, row);
+  const rules = await readExtensionRules(sql);
+  for (const row of rows) {
+    if (Date.now() - started > PASS_MS) break;
+    await yieldToRequests();
+    await indexOne(sql, row, rules);
+  }
 }
 
 export type IndexStatus = {
@@ -181,6 +209,7 @@ export type IndexStatus = {
   lastError: string;
   updatedAt: number;
   engine: "elasticsearch" | "postgres";
+  ocr: OcrStatus;
 };
 
 export async function readIndexStatus(sql: Sql): Promise<IndexStatus> {
@@ -210,6 +239,7 @@ export async function readIndexStatus(sql: Sql): Promise<IndexStatus> {
     lastError: run[0]?.last_error ?? "",
     updatedAt: Number(run[0]?.updated_at ?? 0),
     engine: documentEngine(),
+    ocr: await readOcrStatus(sql),
   };
 }
 

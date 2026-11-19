@@ -267,6 +267,33 @@ Pick from the common extensions or type others, separated by commas. Only the
 last extension counts (`backup.tar.gz` is `gz`). The lists are
 `upload_blocked_ext` and `index_blocked_ext` in `app_setting`.
 
+## LaTeX and OCR
+
+Two services start with the rest (`docker compose up -d --build` builds
+them the first time; plan a few minutes and about 1.7 GB of images):
+
+- `latex` (docker/latex): TeX Live compiling with `pdflatex`, without shell
+  escape, reading only its own folder, as a non-root user, 60 s per
+  compilation (`LATEX_TIMEOUT_SECONDS`). It only receives the source being
+  compiled. `LATEX_URL` in the app points at it (`http://latex:8080`);
+  `LATEX_URL=` turns compilation off, and `.tex` files still open and save.
+- `ocr` (docker/ocr): OCRmyPDF and Tesseract, Spanish and English. Indexing
+  queues PDFs without a text layer and images; the app reads one at a time in
+  the background and indexes the text. `OCR_JOBS` (2) is how many CPU cores
+  one document may use; `OCR_MAX_PAGES` (300) and `OCR_TIMEOUT_SECONDS` (900)
+  bound a single document. `OCR_URL=` turns OCR off; scans are then indexed by
+  name. Progress is in Administración → Indexación.
+
+Neither port is published.
+
+## Indexing large uploads
+
+The indexer works through up to 50 documents per pass, about three seconds
+at a time, and yields to requests between documents. A PDF is read page by
+page only until the 24,000 characters that are indexed. A folder of a
+thousand files is indexed while it uploads. After deleting many documents,
+their index entries are removed in batches of 500.
+
 ## When something is down
 
 | Symptom                                     | Check                                                                      | Fix                                                                                                                                           |

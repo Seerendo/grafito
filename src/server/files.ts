@@ -129,7 +129,7 @@ export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<s
     !drawing &&
     (mime.startsWith("text/") ||
       TEXTUAL.test(mime) ||
-      /\.(md|txt|csv|json|svg|xml|ya?ml)$/i.test(file.name));
+      /\.(md|txt|csv|json|svg|xml|ya?ml|tex)$/i.test(file.name));
   const pdf = mime === "application/pdf" || /\.pdf$/i.test(file.name);
   if (!textual && !office && !pdf && !drawing) return null;
   let bytes: Uint8Array | null = null;
@@ -142,7 +142,7 @@ export async function fileText(sql: Sql, doc: Document, max = 20_000): Promise<s
   else if (office) raw = officeText(file.name, bytes);
   // Extract drawing text rather than raw Excalidraw scene JSON.
   else if (drawing) raw = drawingText(bytes);
-  else raw = await pdfText(bytes);
+  else raw = await pdfText(bytes, max);
   if (!raw) return null;
   return raw.length > max ? `${raw.slice(0, max)}\n…(recortado)` : raw;
 }
@@ -211,16 +211,36 @@ export async function documentPdfPages(
   return pdfPageTexts(bytes);
 }
 
-/** PDF.js text extraction through unpdf; null for textless scans. */
-async function pdfText(bytes: Uint8Array): Promise<string | null> {
+/**
+ * PDF.js text extraction through unpdf, page by page, stopping once max characters are in hand:
+ * a thousand-page PDF no longer has every page parsed for the first few that are kept, which
+ * held up the whole server while large uploads were indexed. Null for textless scans.
+ */
+async function pdfText(bytes: Uint8Array, max: number): Promise<string | null> {
+  let document: PdfProxy | null = null;
   try {
-    const { extractText, getDocumentProxy } = await import("unpdf");
-    const document = await getDocumentProxy(new Uint8Array(bytes));
-    const { text } = await extractText(document, { mergePages: true });
-    const value = (Array.isArray(text) ? text.join("\n\n") : text).trim();
+    const { getDocumentProxy } = await import("unpdf");
+    document = await getDocumentProxy(new Uint8Array(bytes));
+    const pages: string[] = [];
+    let length = 0;
+    for (let page = 1; page <= document.numPages && length <= max; page += 1) {
+      const content = await (await document.getPage(page)).getTextContent();
+      const text = pagePlainText(content.items);
+      pages.push(text);
+      length += text.length + 2;
+      // Let requests through between pages.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const value = pages.join("\n\n").trim();
     return value || null;
   } catch {
     return null;
+  } finally {
+    try {
+      await document?.loadingTask.destroy();
+    } catch {
+      /* Already closed. */
+    }
   }
 }
 

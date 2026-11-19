@@ -90,6 +90,17 @@ without the fixes. It failed there, so it catches each flaw.
   bodies are not. Reading and exporting it needs `monitor.view`. Rows older
   than the retention setting are deleted.
 
+## LaTeX and OCR services
+
+- `latex` runs `pdflatex -no-shell-escape` with `openin_any`/`openout_any`
+  set to paranoid, in a fresh folder per compilation, as a non-root user, with
+  a time and size limit. `\write18` and `\input{/etc/passwd}` are refused
+  (checked). It holds no Grafito data and has no published port; the app only
+  sends it the source of a document the caller can read, one compilation per
+  person at a time.
+- `ocr` receives only the bytes of the document being read, as a non-root
+  user, with size, page and time limits, and no published port.
+
 ## Known limits
 
 - The CSP allows inline scripts, because of the server-rendered state

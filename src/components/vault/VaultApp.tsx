@@ -696,6 +696,13 @@ function FileDropShield({ enabled }: { enabled: boolean }) {
 
     // Hit-test with the shield out of the way, then cover everything except the directory.
     const overTree = (x: number, y: number) => {
+      // A drag event without coordinates cannot be hit-tested: step aside and let the element
+      // it was dispatched on (a directory row, say) take the drop.
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        node.style.pointerEvents = "none";
+        node.classList.add("invisible");
+        return true;
+      }
       node.style.pointerEvents = "none";
       const hit = document.elementFromPoint(x, y);
       const tree =

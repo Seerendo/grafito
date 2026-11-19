@@ -29,3 +29,5 @@ fixes of the November 2026 security review (one test per finding; GRAF-01 needs
 a throwaway instance on an empty database, see its header).
 `auth-providers.e2e.mjs` signs in through the test stack's OpenLDAP and
 Keycloak (`auth-test` profile) and restores the provider settings it changes.
+`latex-ocr.e2e.mjs` needs the `latex` and `ocr` services: it creates, edits and
+compiles a LaTeX document, and has a scanned PDF and a photo read by OCR.

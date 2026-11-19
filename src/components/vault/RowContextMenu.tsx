@@ -9,7 +9,7 @@ import { usePluginEnabled } from "@/app/plugins";
 import { useVault } from "@/app/vault/store";
 import { PERMISSION, deletePermission, exportPermission } from "@/domain/permissions";
 import type { Document } from "@/domain/vault/types";
-import { createDrawing, createTable } from "./ingest-files";
+import { createDrawing, createLatex, createTable } from "./ingest-files";
 
 export type RowMenuTarget = (
   { kind: "root" } | { kind: "portfolio"; id: string } | { kind: "document"; id: string }
@@ -110,6 +110,13 @@ export function RowContextMenu({
           void createDrawing(portfolioId).then(() =>
             onOpenNote(useVault.getState().activeId ?? ""),
           ),
+      ),
+    });
+    items.push({
+      label: t("Nuevo documento LaTeX"),
+      onClick: act(
+        () =>
+          void createLatex(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? "")),
       ),
     });
     items.push({

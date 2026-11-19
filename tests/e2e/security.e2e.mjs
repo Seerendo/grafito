@@ -248,7 +248,9 @@ describe("security fixes", () => {
         request.method() === "POST" &&
         request.url().includes("/_serverFn/") &&
         body.includes("e2esec-edit") &&
-        body.includes("subida.txt")
+        body.includes("subida.txt") &&
+        // The request that files the upload, not the vault sync.
+        !body.includes("deletedDocs")
       )
         captured = { url: request.url(), body, headers: request.headers() };
     });

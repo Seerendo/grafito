@@ -1394,6 +1394,45 @@ client and its test convert them.
 | Security tests GRAF-02, 03, 08, 10, 13, 23                                 | ✅ 6 of 6         |
 | `npm run typecheck`, `eslint`, `npm test`, `prettier --check`              | ✅ 270 tests pass |
 
+## Round 47: large folder uploads, LaTeX documents, OCR, upgrades
+
+Reported: a folder of more than 1000 files in subfolders got stuck: nothing
+was indexed and the files could not be reached. LaTeX documents and OCR did
+not exist. Upgrades (`git pull`, `docker compose up -d --build`) had to keep
+working with and without `.env`.
+
+Cause of the stall: the indexer took one document every 800 ms and parsed
+each PDF whole even though only the first 24,000 characters are kept. A big
+upload took the better part of an hour to index, and large PDFs held up the
+server. It now works through batches with a time budget, reads PDFs page by
+page up to what it keeps, and yields between documents.
+
+Test stack (`grafito-e2e`, images built from this tree), Chrome through
+Playwright 1.60. Folders dropped as a browser hands them over (filesystem
+entries), with notes, text files and PDFs of 20, 200 and 800 pages.
+
+| Check                                                                                     | Result                                                                |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 1000 files in 111 folders, before the fix                                                 | ❌ uploaded in 130 s; none of its files indexed after                 |
+| Same, after                                                                               | ✅ all 1013 documents indexed when the upload ends (131 s)            |
+| 2500 files in 111 folders                                                                 | ✅ all 2513 indexed when the upload ends (337 s)                      |
+| The app answers during the upload (an API call every 5 s)                                 | ✅ 8–58 ms                                                            |
+| Another browser: the 2513 documents, a note, a short and an 800-page PDF open from search | ✅                                                                    |
+| New LaTeX document from the button: template compiles, preview shown                      | ✅                                                                    |
+| An error names its line; a fix saves a new version and compiles again                     | ✅ «Línea N: Undefined control sequence»                              |
+| `.tex` text searchable                                                                    | ✅                                                                    |
+| `\write18` and `\input{/etc/passwd}` in a source                                          | ✅ refused                                                            |
+| A scanned PDF (image only) and a PNG photo uploaded                                       | ✅ read by OCR in seconds, found from search                          |
+| Upgrade without `.env` from `073bdd7` with an admin, a note, a PDF and a docx             | ✅ same password, everything there, opens, searchable; LaTeX compiles |
+| Same with custom secrets in the environment file                                          | ✅                                                                    |
+| New install without `.env`                                                                | ✅ asks for the installation code from the log, refuses a wrong one   |
+| Rounds 41–45 and LDAP/SSO browser tests again                                             | ✅                                                                    |
+| `npm run typecheck`, `eslint`, `npm test`, `prettier --check`                             | ✅ 273 tests pass                                                     |
+
+The upgrade checks ran the versioned `docker-compose.yml` under other project
+names (`grafito-compat`, `grafito-fresh`), with their own volumes, removed
+afterwards.
+
 ## Useful commands
 
 ```bash

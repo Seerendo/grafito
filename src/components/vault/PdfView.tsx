@@ -52,6 +52,8 @@ export type PdfSignLayer = {
 
 export type PdfViewProps = {
   url: string;
+  /** PDF bytes already in memory (a LaTeX preview); url is then only a key. */
+  data?: Uint8Array;
   title: string;
   links?: ManualLink[];
   targetTitle?: (id: string) => string | undefined;
@@ -136,6 +138,7 @@ function anchorInLayer(layer: HTMLElement): TextAnchor | null {
 
 export function PdfView({
   url,
+  data,
   title,
   links = [],
   targetTitle,
@@ -190,7 +193,12 @@ export function PdfView({
       try {
         const lib = await loadPdfJs();
         const source = reloadKey ? `${url}${url.includes("?") ? "&" : "?"}v=${reloadKey}` : url;
-        doc = await lib.getDocument({ url: source, useSystemFonts: true }).promise;
+        // PDF.js takes ownership of the bytes it is given: pass a copy.
+        doc = await lib.getDocument(
+          data
+            ? { data: data.slice(), useSystemFonts: true }
+            : { url: source, useSystemFonts: true },
+        ).promise;
         const first = await doc.getPage(1);
         const base = first.getViewport({ scale: 1 });
         if (cancelled) return;
@@ -233,7 +241,7 @@ export function PdfView({
       // PDF.js 6 closes a document through the task that loaded it.
       void doc?.loadingTask.destroy();
     };
-  }, [url, reloadKey]);
+  }, [url, data, reloadKey]);
 
   // The comments panel lists annotations without rectangle metadata.
   useEffect(() => {

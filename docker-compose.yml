@@ -284,6 +284,26 @@ services:
     volumes:
       - grafito_grafeno:/data
 
+  # LaTeX compiler for .tex documents (docker/latex): TeX Live with pdflatex,
+  # no shell escape, a time limit. It only sees the source it is sent, and its
+  # port is not published. Without it, .tex documents still open and save, but
+  # do not compile.
+  latex:
+    build: ./docker/latex
+    image: grafito-latex:1
+    restart: unless-stopped
+
+  # OCR for scanned PDFs and images (docker/ocr): OCRmyPDF and Tesseract in
+  # Spanish and English. Grafito queues documents without a text layer and
+  # indexes what it reads. Its port is not published. Without it, scans are
+  # indexed by name only.
+  ocr:
+    build: ./docker/ocr
+    image: grafito-ocr:1
+    restart: unless-stopped
+    environment:
+      OCR_JOBS: ${OCR_JOBS:-2}
+
   # The front door: Grafito and the Office editor on one port (docker/gateway.conf).
   # Point your reverse proxy, or the browser, at this port.
   gateway:

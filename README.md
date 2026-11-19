@@ -354,6 +354,17 @@ After that, the start screen is a normal sign-in.
     Carpeta Personal.
   - Images, PDFs, video and audio are previewed when you open them.
     Everything else can be downloaded.
+- **LaTeX documents:** **Nuevo documento LaTeX** (on a portfolio's page or in
+  the right-click menu) creates a `.tex` file from a Spanish article template.
+  Opening it shows the source next to the compiled PDF. **Compilar** compiles
+  what is on screen; **Guardar** or Ctrl+S saves a new version and compiles.
+  An error names its line, and the full LaTeX log is one click away.
+  **Descargar PDF** saves the result. The `latex` service compiles (TeX Live,
+  `pdflatex`); `.tex` text is searchable like any other file.
+- **OCR:** a scanned PDF or a photo (PNG, JPEG, TIFF) has its text read in the
+  background by the `ocr` service (Tesseract, Spanish and English), so search
+  and the assistant find it. Administración → Indexación shows how many were
+  read and how many are waiting.
 - **Drawings:** **Nuevo dibujo** (on a portfolio's page or in the right-click
   menu) creates an Excalidraw drawing.
   - It is a `.excalidraw` file, so it can be linked, shared and restored from

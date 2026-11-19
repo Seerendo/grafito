@@ -947,6 +947,16 @@ export function IndexBoard() {
     [t("Pendientes"), String(status.pending)],
     [t("Con errores"), String(status.failed)],
     [t("Motor"), engine],
+    [
+      t("OCR"),
+      status.ocr.enabled
+        ? t("{0} leídos · {1} en cola · {2} con error", {
+            0: status.ocr.done,
+            1: status.ocr.pending,
+            2: status.ocr.failed,
+          })
+        : t("Apagado"),
+    ],
   ] as const;
   return (
     <div className="space-y-4">

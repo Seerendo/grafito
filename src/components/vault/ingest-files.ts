@@ -4,6 +4,7 @@ import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
 import { t } from "@/app/i18n";
 import { DRAWING_MIME, emptyDrawing } from "@/domain/vault/drawing";
+import { LATEX_EXTENSION, LATEX_MIME, latexTemplate } from "@/domain/vault/latex";
 import { ignoredUpload } from "@/domain/vault/folders";
 import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
 
@@ -205,6 +206,13 @@ async function uploadAndOpen(file: File, portfolioId: string | null): Promise<vo
 /** Create and open an empty Excalidraw drawing in portfolioId. */
 export async function createDrawing(portfolioId: string | null): Promise<void> {
   const file = new File([emptyDrawing()], `${t("Dibujo")}.excalidraw`, { type: DRAWING_MIME });
+  await ingestExternalFiles([file], portfolioId, { open: true });
+}
+
+/** Create and open a LaTeX document from the template; see domain/vault/latex.ts. */
+export async function createLatex(portfolioId: string | null): Promise<void> {
+  const name = t("Documento LaTeX");
+  const file = new File([latexTemplate(name)], `${name}${LATEX_EXTENSION}`, { type: LATEX_MIME });
   await ingestExternalFiles([file], portfolioId, { open: true });
 }
 

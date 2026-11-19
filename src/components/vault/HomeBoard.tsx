@@ -10,6 +10,7 @@ import {
   PenTool,
   Plus,
   Sheet,
+  Sigma,
   X,
 } from "lucide-react";
 import { isTableName } from "@/domain/vault/table";
@@ -21,7 +22,7 @@ import { usePluginEnabled } from "@/app/plugins";
 import { downloadPortfolio } from "@/app/export";
 import { usePermissions } from "@/app/permissions";
 import { PERMISSION } from "@/domain/permissions";
-import { createDrawing, createTable } from "./ingest-files";
+import { createDrawing, createLatex, createTable } from "./ingest-files";
 import { useMemo } from "react";
 import { create } from "zustand";
 import { useVault } from "@/app/vault/store";
@@ -83,6 +84,7 @@ export function HomeBoard({
           <span className="ml-auto flex flex-wrap gap-2">
             <NewTableButton portfolioId={null} onOpenNote={onOpenNote} />
             <NewDrawingButton portfolioId={null} onOpenNote={onOpenNote} />
+            <NewLatexButton portfolioId={null} onOpenNote={onOpenNote} />
             {onCreate ? (
               <button
                 type="button"
@@ -248,6 +250,7 @@ export function PortfolioBoard({
             <ZipButton portfolioId={portfolioId} />
             <NewTableButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
             <NewDrawingButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
+            <NewLatexButton portfolioId={portfolioId} onOpenNote={onOpenNote} />
             {onCreate ? (
               <button
                 type="button"
@@ -511,6 +514,30 @@ function NewDrawingButton({
     >
       <PenTool className="size-4" />
       {t("Nuevo dibujo")}
+    </button>
+  );
+}
+
+/** Create a LaTeX document in the current folder. */
+function NewLatexButton({
+  portfolioId,
+  onOpenNote,
+}: {
+  portfolioId: string | null;
+  onOpenNote: (id: string) => void;
+}) {
+  const can = usePermissions();
+  if (!can(PERMISSION.filesUpload)) return null;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void createLatex(portfolioId).then(() => onOpenNote(useVault.getState().activeId ?? ""))
+      }
+      className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-4 text-sm text-fg hover:bg-elevated"
+    >
+      <Sigma className="size-4" />
+      {t("Nuevo documento LaTeX")}
     </button>
   );
 }
