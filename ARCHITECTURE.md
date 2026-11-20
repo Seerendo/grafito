@@ -298,6 +298,7 @@ The `vault/` pieces:
 | `0041_admin_chosen.sql`       | Every administrator row counts as chosen (no anonymous clean-up of administrators any more)                                                                                                                      |
 | `0042_upload_claim.sql`       | `upload_claim`: who started each upload into another person's share, and for which folder                                                                                                                        |
 | `0043_ocr.sql`                | `ocr_text`: recognized text per document and file version (removed by 0045)                                                                                                                                      |
+| `0046_trash_links.sql`        | `trash_link`: manual links taken out of documents and portfolios when their target went to the trash, put back on restore                                                                                        |
 | `0045_remove_ocr.sql`         | OCR removed: documents indexed with OCR text are indexed again without it, the `ocr` extension row and `ocr_text` go                                                                                             |
 | `0016_mail.sql`               | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql`      | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor                                                                                                                       |
@@ -614,6 +615,17 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
   for the next sync (`onSynced`), and says so; missing, forbidden, empty and
   failed links, PDF download, invalid PDF and rendering errors, and Office
   sessions each have their own message.
+- **Links of deleted items:** deleting takes the manual links other
+  documents and portfolios had to it out of them, on the server, and keeps
+  them in `trash_link`; restoring it puts them back (and a source restored
+  later gets its links to live targets back). Purging drops them.
+- **Races:** an imported folder gets an id derived from its parent and name
+  (`importFolderId`), so two tabs importing the same folder at once write one
+  row; an imported document's id is claimed with one insert, so a document
+  sent twice at once is stored once and the second upload's object deleted.
+- **Backpressure:** a 503 on finishing an upload (antivirus overloaded or out
+  of time) makes the job send one file at a time and send that file once
+  more, under the same document id.
 - **Trash:** a portfolio restored from the trash brings back what was deleted
   with it (same deletion time or later); what was deleted on its own before
   keeps its own entry. Purging a portfolio removes exactly what it shows.

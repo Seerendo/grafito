@@ -293,5 +293,146 @@ for (const engine of engines) {
       assert.equal(new Set(server.files).size, 13);
       await context.close();
     });
+
+    test("T03b two tabs importing the same folders at the same moment make each folder once", async () => {
+      const who = await fresh();
+      const a = await signIn(browser, who);
+      const b = await signIn(browser, who, { fresh: true });
+      const tree = {
+        Comun: { folder: { uno: { folder: { dos: { folder: {} } } }, tres: { folder: {} } } },
+      };
+      await Promise.all([dropTree(a.page, who.dest, tree), dropTree(b.page, who.dest, tree)]);
+      await Promise.all([jobEnds(a.page), jobEnds(b.page)]);
+      const server = await serverTree(who.userId, who.dest);
+      assert.deepEqual(server.folders, [
+        "Destino",
+        "Destino/Comun",
+        "Destino/Comun/tres",
+        "Destino/Comun/uno",
+        "Destino/Comun/uno/dos",
+      ]);
+      await a.context.close();
+      await b.context.close();
+    });
+
+    test("T09b the same document sent twice at once is stored once", async () => {
+      const who = await fresh();
+      const { context, page } = await signIn(browser, who);
+      const result = await page.evaluate(
+        async ({ dest, bytes }) => {
+          const token = localStorage.getItem("grafito-auth.bearer-token");
+          const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+          const body = Uint8Array.from(atob(bytes), (c) => c.charCodeAt(0));
+          const doc = {
+            id: crypto.randomUUID(),
+            title: "doble",
+            name: "doble.pdf",
+            mime: "application/pdf",
+            createdAt: Date.now(),
+            actor: "e2e",
+          };
+          // Two whole uploads, then both completions at the same moment with the same document.
+          const started = await Promise.all(
+            [0, 1].map(async () => {
+              const start = await fetch("/api/files/uploads", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  name: doc.name,
+                  mime: doc.mime,
+                  size: body.length,
+                  portfolioId: dest,
+                }),
+              }).then((response) => response.json());
+              const query = new URLSearchParams({
+                key: start.key,
+                uploadId: start.uploadId,
+                part: "1",
+              });
+              const part = await fetch(`/api/files/uploads/part?${query}`, {
+                method: "PUT",
+                headers: { authorization: headers.authorization },
+                body,
+              }).then((response) => response.json());
+              return { ...start, etag: part.etag };
+            }),
+          );
+          const done = await Promise.all(
+            started.map((one) =>
+              fetch("/api/files/uploads/complete", {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  key: one.key,
+                  uploadId: one.uploadId,
+                  parts: [{ part: 1, etag: one.etag }],
+                  portfolioId: dest,
+                  doc,
+                }),
+              }).then(async (response) => ({
+                status: response.status,
+                body: await response.json(),
+              })),
+            ),
+          );
+          return { id: doc.id, keys: started.map((one) => one.key), done };
+        },
+        { dest: who.dest, bytes: await pdf("doble") },
+      );
+      assert.deepEqual(
+        result.done.map((answer) => answer.status),
+        [200, 200],
+      );
+      const kept = result.done.map((answer) => answer.body.doc.file.key);
+      assert.equal(kept[0], kept[1], "both answers name the same stored file");
+      const rows = await query(
+        `select file_key from vault_doc where user_id = $1 and portfolio_id = $2 and not deleted`,
+        [who.userId, who.dest],
+      );
+      assert.equal(rows.length, 1, "one document");
+      assert.equal(rows[0].file_key, kept[0]);
+      // The other object is gone from storage: reading it through the API finds nothing.
+      const other = result.keys.find((key) => key !== kept[0]);
+      const blob = await query(`select 1 from vault_doc where file_key = $1`, [other]);
+      assert.equal(blob.length, 0);
+      await context.close();
+    });
+
+    test("T08b the antivirus overloaded (503): one file at a time, that file sent again, no duplicate", async () => {
+      const who = await fresh();
+      const { context, page } = await signIn(browser, who);
+      let inFlight = 0;
+      let after503 = 0;
+      let refused = false;
+      await page.route("**/api/files/uploads/complete", async (route) => {
+        const body = route.request().postDataJSON();
+        if (body?.abort) return route.continue();
+        if (!refused) {
+          // The first completion answers as an overloaded antivirus would, without storing it.
+          refused = true;
+          return route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "El antivirus no terminó de analizar a tiempo." }),
+          });
+        }
+        inFlight += 1;
+        after503 = Math.max(after503, inFlight);
+        const response = await route.fetch();
+        inFlight -= 1;
+        return route.fulfill({ response });
+      });
+      await dropTree(page, who.dest, { Lento: { folder: await pdfs(9, "l") } });
+      assert.match(await jobEnds(page), /Archivos subidos\s*9/);
+      const server = await serverTree(who.userId, who.dest);
+      assert.equal(server.files.length, 9);
+      assert.equal(new Set(server.files).size, 9);
+      assert.ok(
+        after503 <= 2,
+        `at most the file already sent overlaps after the 503 (${after503})`,
+      );
+      await page.unroute("**/api/files/uploads/complete");
+      await context.close();
+    });
   });
 }

@@ -100,6 +100,10 @@ type Job = {
   waiters: (() => void)[];
   started: number;
   errors: Record<string, number>;
+  /** Files sent at once; drops to one when the server says it is overloaded (503). */
+  lanes: number;
+  /** Entries already sent again after a 503. */
+  retried: Set<number>;
 };
 
 const jobs = new Map<string, Job>();
@@ -223,6 +227,14 @@ async function fileStep(job: Job, index: number): Promise<void> {
     // resume. An answer from the server (a refusal) is reported even then.
     if (controller.signal.aborted && !(error instanceof UploadError)) return;
     const status = error instanceof UploadError ? error.status : null;
+    // 503: the antivirus did not finish in time or is overloaded. Backpressure: one file at a
+    // time from now on, and this one is sent once more (same document id, never twice).
+    if (status === 503 && !job.retried.has(index)) {
+      job.retried.add(index);
+      job.lanes = 1;
+      countError(job, "overloaded");
+      return;
+    }
     job.batch.set(index, failureState(status), messageOf(error));
     // The server logs the stage that failed (storage, scan, register) under the same id.
     countError(job, status === 422 ? "antivirus" : status === null ? "network" : "transfer");
@@ -254,8 +266,8 @@ async function runJob(job: Job): Promise<void> {
     publish();
   }
   // Files, a few at a time; every folder they need was settled above.
-  const lane = async () => {
-    while (job.status === "running" && valid()) {
+  const lane = async (number: number) => {
+    while (job.status === "running" && valid() && number < job.lanes) {
       const index = job.batch.claimFile(new Set(job.flight.keys()));
       if (index === -1) return;
       // Claimed before the first await, so no other lane takes it.
@@ -268,7 +280,7 @@ async function runJob(job: Job): Promise<void> {
       publish();
     }
   };
-  await Promise.all(Array.from({ length: FILE_CONCURRENCY }, lane));
+  await Promise.all(Array.from({ length: FILE_CONCURRENCY }, (_, number) => lane(number)));
   if (job.status === "running") job.status = "done";
   job.current = "";
   // Shown once the views caught up and the counts are final (see reconcile).
@@ -369,6 +381,8 @@ export async function enqueueUpload(
     waiters: [],
     started: performance.now(),
     errors: {},
+    lanes: FILE_CONCURRENCY,
+    retried: new Set(),
   };
   jobs.set(job.id, job);
   publish();

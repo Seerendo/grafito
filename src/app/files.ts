@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 import type { Document, VaultFile } from "@/domain/vault/types";
 import { bearerHeader } from "@/lib/auth/bearer";
+import { readAnswer } from "@/lib/http-answer";
 import { fileLink, viewerEvent, type ViewerStage } from "@/server/files.functions";
 import { useVault } from "@/app/vault/store";
 import { knownToServer, onSynced, syncVault } from "@/app/vault/sync";
@@ -44,13 +45,13 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
     credentials: "same-origin",
     headers: { ...(init.headers as Record<string, string> | undefined), ...bearerHeader() },
   });
-  const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok)
+  const answer = await readAnswer<T>(response, init.signal);
+  if (!answer.ok)
     throw new UploadError(
-      body.error || t("El servidor respondió {0}.", { 0: response.status }),
-      response.status,
+      answer.error || t("El servidor respondió {0}.", { 0: answer.status }),
+      answer.status,
     );
-  return body;
+  return answer.body;
 }
 
 /** The document a personal upload is stored in, sent with the last request; see uploads.complete. */

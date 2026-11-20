@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PERMISSION } from "@/domain/permissions";
 import { apiCaller, apiError, failure, json, requirePermission } from "@/server/api";
 import { PART_SIZE, uploadPart } from "@/server/blobs";
+import { importIdOf, logEvent } from "@/server/telemetry";
 import { mayUpload } from "@/server/upload-target";
 
 /** PUT /api/files/uploads/part?key&uploadId&part uploads one part; see uploads.ts. */
@@ -27,6 +28,13 @@ export const Route = createFileRoute("/api/files/uploads/part")({
           if (bytes.byteLength > PART_SIZE) return apiError(413, "La parte es demasiado grande.");
           return json({ etag: await uploadPart(sql, key, uploadId, part, bytes) });
         } catch (error) {
+          if (!(error instanceof Response))
+            logEvent("upload.part.failed", {
+              importId: importIdOf(request),
+              error: error instanceof Error ? error.name : "error",
+              // A request the browser abandoned (pause, cancel) ends here as "aborted".
+              aborted: request.signal.aborted,
+            });
           return failure(error);
         }
       },

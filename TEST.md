@@ -1497,33 +1497,52 @@ Chromium and Firefox. New browser tests: `tests/e2e/bulk-import.e2e.mjs`,
 `trash.e2e.mjs`, `no-ocr.e2e.mjs` (order of arrival controlled by holding
 responses, no sleeps).
 
-| Check                                                                                     | Before                             | After                                                                                                                |
-| ----------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| PDF opened while the queue runs, 0.5 s scan per file                                      | ❌ «Cargando…» after 60 s          | ✅ shown in 0.9 s                                                                                                    |
-| Same queue (53 files, 13 folders)                                                         | 62 s                               | 13 s                                                                                                                 |
-| 1055 PDFs in 151 folders, 6 levels                                                        | 200 s, 51 pushes (790 KB)          | ✅ 80 s, no push; PDF opened in 0.5 s                                                                                |
-| 60 notes of 300 KB and 35 PDFs, then a reload                                             | ❌ 70 documents sent to the trash  | ✅ 95 kept, nothing in the trash                                                                                     |
-| T01 one file; T02/T04 a deep folder (12 levels), no document without its folder           |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T03/T12 three subfolders at once and the same in pieces give the same tree                |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T05–T07 a PDF, a Word file (Collabora session) and another PDF open during the queue      |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T08 400 files in 41 folders, each registered once                                         |                                    | ✅ 26–31 s                                                                                                           |
-| T09/T10 cancel, then drop again: what arrived is «Ya estaban», no duplicates              |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T11 reload in the middle, drop again: complete, no duplicates                             |                                    | ✅ Chromium, Firefox                                                                                                 |
-| Deletion reaching the server (`deleteAgeMs` in the log)                                   | about 1.5 s, more during an upload | ✅ 72 ms median, 95 ms max                                                                                           |
-| T13/T14/T16 delete one and several: in the open trash at once, still there after reload   |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T16b a copy of the vault saved before a deletion, read after the reload (seen in Firefox) | ❌ the deleted items came back     | ✅ stay in the trash                                                                                                 |
-| T15/T18 nested portfolio: one entry; restored whole; an earlier deletion keeps its entry  |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T17 restore a document: folder, title and file back                                       |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T19 delete while the sync is held: «Eliminando…», then confirmed                          |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T20 two sessions of one person converge; neither brings the item back                     |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T21 restart the app container: same trash                                                 |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T22 no `ocr` service, container, table or extension; migration 0045 applied               |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T23/T27 digital PDF indexed and found by a word inside it                                 |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T24 scanned PDF stored, shown, downloaded; found by name, no recognized text              |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T25 photo shown and downloaded; found by name                                             |                                    | ✅ Chromium, Firefox                                                                                                 |
-| T26 indexing finishes with no OCR call in the log                                         |                                    | ✅ Chromium, Firefox                                                                                                 |
-| Earlier browser tests: uploads (pause, cancel, share), vault pages, extensions, LaTeX     |                                    | ⚠️ pass; once in 10 runs the cancel test saw a part refused by MinIO (`NoSuchUpload`), reported as «Con error»: open |
-| `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                  |                                    | ✅ 283 + 5 tests pass                                                                                                |
+| Check                                                                                     | Before                             | After                                  |
+| ----------------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------- |
+| PDF opened while the queue runs, 0.5 s scan per file                                      | ❌ «Cargando…» after 60 s          | ✅ shown in 0.9 s                      |
+| Same queue (53 files, 13 folders)                                                         | 62 s                               | 13 s                                   |
+| 1055 PDFs in 151 folders, 6 levels                                                        | 200 s, 51 pushes (790 KB)          | ✅ 80 s, no push; PDF opened in 0.5 s  |
+| 60 notes of 300 KB and 35 PDFs, then a reload                                             | ❌ 70 documents sent to the trash  | ✅ 95 kept, nothing in the trash       |
+| T01 one file; T02/T04 a deep folder (12 levels), no document without its folder           |                                    | ✅ Chromium, Firefox                   |
+| T03/T12 three subfolders at once and the same in pieces give the same tree                |                                    | ✅ Chromium, Firefox                   |
+| T05–T07 a PDF, a Word file (Collabora session) and another PDF open during the queue      |                                    | ✅ Chromium, Firefox                   |
+| T08 400 files in 41 folders, each registered once                                         |                                    | ✅ 26–31 s                             |
+| T09/T10 cancel, then drop again: what arrived is «Ya estaban», no duplicates              |                                    | ✅ Chromium, Firefox                   |
+| T11 reload in the middle, drop again: complete, no duplicates                             |                                    | ✅ Chromium, Firefox                   |
+| Deletion reaching the server (`deleteAgeMs` in the log)                                   | about 1.5 s, more during an upload | ✅ 72 ms median, 95 ms max             |
+| T13/T14/T16 delete one and several: in the open trash at once, still there after reload   |                                    | ✅ Chromium, Firefox                   |
+| T16b a copy of the vault saved before a deletion, read after the reload (seen in Firefox) | ❌ the deleted items came back     | ✅ stay in the trash                   |
+| T15/T18 nested portfolio: one entry; restored whole; an earlier deletion keeps its entry  |                                    | ✅ Chromium, Firefox                   |
+| T17 restore a document: folder, title and file back                                       |                                    | ✅ Chromium, Firefox                   |
+| T19 delete while the sync is held: «Eliminando…», then confirmed                          |                                    | ✅ Chromium, Firefox                   |
+| T20 two sessions of one person converge; neither brings the item back                     |                                    | ✅ Chromium, Firefox                   |
+| T21 restart the app container: same trash                                                 |                                    | ✅ Chromium, Firefox                   |
+| T22 no `ocr` service, container, table or extension; migration 0045 applied               |                                    | ✅ Chromium, Firefox                   |
+| T23/T27 digital PDF indexed and found by a word inside it                                 |                                    | ✅ Chromium, Firefox                   |
+| T24 scanned PDF stored, shown, downloaded; found by name, no recognized text              |                                    | ✅ Chromium, Firefox                   |
+| T25 photo shown and downloaded; found by name                                             |                                    | ✅ Chromium, Firefox                   |
+| T26 indexing finishes with no OCR call in the log                                         |                                    | ✅ Chromium, Firefox                   |
+| Earlier browser tests: uploads (pause, cancel, share), vault pages, extensions, LaTeX     |                                    | ✅ (one cancel run open; see round 51) |
+| `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                  |                                    | ✅ 283 + 5 tests pass                  |
+
+## Round 51: what round 50 left open
+
+| Check                                                                                      | Before                                       | After                             |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------- | --------------------------------- |
+| A cancel that lands while an answer is being read (round 50, once in 10 runs)              | ❌ read as an empty success; the file failed | ✅ the cancellation is kept       |
+| The uploads browser test (pause, cancel, share) run 10 times in a row                      |                                              | ✅ 10 of 10                       |
+| T03b two tabs import the same folders at the same moment                                   | ❌ every folder twice                        | ✅ each folder once               |
+| T09b the same document completed twice at the same moment                                  | ❌ two different stored files named          | ✅ one document, one file         |
+| T17b links from a document and a portfolio to a deleted folder and its documents, restored | ❌ links gone for good                       | ✅ back on both sources           |
+| T08b the antivirus answers 503 on one file                                                 | ❌ the file failed                           | ✅ one at a time, sent again      |
+| Round 50 import, trash, uploads and no-OCR browser tests again                             |                                              | ✅ 23 tests, Chromium and Firefox |
+| `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                   |                                              | ✅ 292 tests pass                 |
+
+The cancel failure: `response.json()` was read with a catch that returned
+`{}`. A part whose answer was being read when the upload was cancelled came
+back with no ETag, and finishing the upload was refused (400). Answers are
+now read by `lib/http-answer.ts`, which keeps the cancellation. Starting an
+upload and sending a part now log their failures with the import id.
 
 ## Useful commands
 

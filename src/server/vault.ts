@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { Sql } from "@/lib/db";
 import { replaceWikiTitle } from "@/domain/vault/links";
 import { withManualLink } from "@/domain/vault/manual-link";
+import { linkKey } from "@/domain/vault/anchor";
 import { merge3 } from "@/domain/vault/merge";
 import { descendantIds } from "@/domain/vault/portfolios";
 import type { Document, ManualLink, Portfolio } from "@/domain/vault/types";
@@ -304,6 +306,7 @@ export async function pushChanges(
       where user_id = ${userId} and id = ${id} and not deleted
     `;
   }
+  await detachLinks(sql, userId, [...changes.deletedPortfolios, ...changes.deletedDocs], rev, now);
   if (changes.deletedDocs.length > 0) await purgeExpired(sql, userId);
   if (converted.length === 0) return { revision: rev, merged, conflicts };
   // When inline file bytes move to storage, advance revision again so clients fetch the key and discard cached bytes.
@@ -646,9 +649,21 @@ async function requireFolder(sql: Sql, userId: string, id: string | null): Promi
 }
 
 /**
+ * Id of the folder `name` under parentId when an import creates it. The same for every request,
+ * so two imports making that folder at the same moment (two tabs, a retry) write one row instead
+ * of two folders with the same name.
+ */
+export function importFolderId(parentId: string | null, name: string): string {
+  return `imp-${createHash("sha256")
+    .update(`${parentId ?? ""}/${name}`)
+    .digest("hex")
+    .slice(0, 40)}`;
+}
+
+/**
  * The folder named `name` under parentId: an existing one with that name (the same import sent
- * again, or a folder already there), or a new one with the browser's id. Never a second folder
- * with the same name in the same place.
+ * again, or a folder already there), or a new one. Never a second folder with the same name in
+ * the same place.
  */
 export async function ensureImportFolder(
   sql: Sql,
@@ -658,20 +673,23 @@ export async function ensureImportFolder(
   const name = input.name.trim().replace(/[\\/]/g, "").slice(0, 120);
   if (!name) throw new VaultError("La carpeta no tiene nombre.");
   await requireFolder(sql, userId, input.parentId);
+  const stable = importFolderId(input.parentId, name);
   const found = await sql<{
     id: string;
     name: string;
     parent_id: string | null;
     links_json: string;
+    deleted: unknown;
   }>`
-    select id, name, parent_id, links_json from vault_portfolio
-    where user_id = ${userId} and not deleted
-      and (id = ${input.id} or (name = ${name} and coalesce(parent_id, '') = coalesce(${input.parentId}, '')))
-    order by (id = ${input.id}) desc
+    select id, name, parent_id, links_json, deleted from vault_portfolio
+    where user_id = ${userId}
+      and (id = ${stable} or (not deleted and name = ${name}
+        and coalesce(parent_id, '') = coalesce(${input.parentId}, '')))
+    order by deleted, (id = ${stable}) desc
     limit 1
   `;
   const row = found[0];
-  if (row) {
+  if (row && !flag(row.deleted)) {
     return {
       portfolio: {
         id: row.id,
@@ -683,7 +701,9 @@ export async function ensureImportFolder(
       revision: await currentRevision(sql, userId),
     };
   }
-  const portfolio: Portfolio = { id: input.id, name, parentId: input.parentId, links: [] };
+  // The stable id belongs to a folder in the trash: a new id, so the trash keeps that one.
+  const id = row ? input.id : stable;
+  const portfolio: Portfolio = { id, name, parentId: input.parentId, links: [] };
   const result = await pushChanges(sql, userId, {
     docs: [],
     deletedDocs: [],
@@ -695,8 +715,8 @@ export async function ensureImportFolder(
 
 /**
  * Store an imported document (a note, or a file whose object was just uploaded and scanned)
- * under the browser's id. Sending the same id again returns what is stored: a retried request
- * never makes a second copy.
+ * under the browser's id. Sending the same id again, even at the same moment, returns what is
+ * stored: one insert claims the id and a retried request never makes a second copy.
  */
 export async function registerImportedDoc(
   sql: Sql,
@@ -704,24 +724,30 @@ export async function registerImportedDoc(
   doc: Document,
 ): Promise<{ doc: Document; created: boolean; revision: number }> {
   if (doc.content.length > MAX_CONTENT) throw new VaultError("La nota es demasiado larga.");
-  const existing = await getDoc(sql, userId, doc.id);
-  if (existing)
-    return { doc: existing, created: false, revision: await currentRevision(sql, userId) };
-  const taken = await sql<{ id: string }>`
-    select id from vault_doc where user_id = ${userId} and id = ${doc.id} and deleted limit 1
-  `;
-  // An id already used by something in the trash is not reused: that would restore it.
-  if (taken[0]) throw new VaultError("Ese documento ya existió y está en la papelera.", 409);
   await requireFolder(sql, userId, doc.portfolioId);
-  const result = await pushChanges(sql, userId, {
-    docs: [doc],
-    deletedDocs: [],
-    portfolios: [],
-    deletedPortfolios: [],
-  });
+  const file = doc.kind === "file" ? (await storeIncomingFile(sql, userId, doc.file)).file : null;
+  const rev = await nextRevision(sql, userId);
+  const claimed = await sql<{ id: string }>`
+    insert into vault_doc (user_id, id, title, kind, portfolio_id, content, file_name, file_mime,
+      file_key, file_size, links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
+    values (${userId}, ${doc.id}, ${doc.title}, ${doc.kind}, ${doc.portfolioId}, ${doc.content},
+      ${file?.name ?? null}, ${file?.mime ?? null}, ${file?.key ?? null}, ${file?.size ?? null},
+      ${JSON.stringify(doc.links ?? [])}, ${doc.pinned}, ${doc.createdAt}, ${doc.updatedAt},
+      ${doc.createdBy}, ${doc.updatedBy}, ${rev}, false)
+    on conflict (user_id, id) do nothing
+    returning id
+  `;
+  if (!claimed[0]) {
+    const existing = await getDoc(sql, userId, doc.id);
+    // An id already used by something in the trash is not reused: that would restore it.
+    if (!existing) throw new VaultError("Ese documento ya existió y está en la papelera.", 409);
+    return { doc: existing, created: false, revision: await currentRevision(sql, userId) };
+  }
+  // A note gets its first version and its change notices, as when it is written by a sync.
+  if (doc.kind === "markdown") await writeDoc(sql, userId, { ...doc, file: null }, rev, false);
   const stored = await getDoc(sql, userId, doc.id);
   if (!stored) throw new VaultError("No se pudo guardar el documento.", 500);
-  return { doc: stored, created: true, revision: result.revision };
+  return { doc: stored, created: true, revision: rev };
 }
 
 /**
@@ -780,6 +806,143 @@ export async function replaceFile(
 }
 
 // Trash.
+
+type LinkSource = "doc" | "portfolio";
+
+/** The same link: kind, target, PDF phrase and share. */
+function sameLink(a: ManualLink, b: ManualLink): boolean {
+  return (
+    a.kind === b.kind &&
+    linkKey(a) === linkKey(b) &&
+    (a.target ?? "") === (b.target ?? "") &&
+    (a.shareId ?? "") === (b.shareId ?? "")
+  );
+}
+
+async function sourceLinks(
+  sql: Sql,
+  userId: string,
+  kind: LinkSource,
+  id: string,
+): Promise<ManualLink[] | null> {
+  const rows =
+    kind === "doc"
+      ? await sql<{ links_json: string | null }>`
+          select links_json from vault_doc where user_id = ${userId} and id = ${id} and not deleted limit 1`
+      : await sql<{ links_json: string | null }>`
+          select links_json from vault_portfolio where user_id = ${userId} and id = ${id} and not deleted limit 1`;
+  return rows[0] ? parseLinks(rows[0].links_json ?? "[]") : null;
+}
+
+async function writeLinks(
+  sql: Sql,
+  userId: string,
+  kind: LinkSource,
+  id: string,
+  links: ManualLink[],
+  rev: number,
+): Promise<void> {
+  const json = JSON.stringify(links);
+  if (kind === "doc")
+    await sql`update vault_doc set links_json = ${json}, rev = ${rev} where user_id = ${userId} and id = ${id}`;
+  else
+    await sql`update vault_portfolio set links_json = ${json}, rev = ${rev} where user_id = ${userId} and id = ${id}`;
+}
+
+/**
+ * Take out of live documents and portfolios their manual links to what was just deleted, and
+ * keep them in trash_link, so restoring it puts them back (reattachLinks). Links into someone
+ * else's share are not about this vault and stay.
+ */
+async function detachLinks(
+  sql: Sql,
+  userId: string,
+  targets: string[],
+  rev: number,
+  now: number,
+): Promise<void> {
+  if (targets.length === 0) return;
+  const gone = new Set(targets);
+  // Ids hold no commas, quotes or LIKE wildcards; anything else is dropped from the pattern.
+  const patterns = targets.map((id) => `%"targetId":"${id.replace(/[,"%_\\]/g, "")}"%`).join(",");
+  const sources: { kind: LinkSource; id: string; links_json: string | null }[] = [
+    ...(
+      await sql<{ id: string; links_json: string | null }>`
+        select id, links_json from vault_doc
+        where user_id = ${userId} and not deleted and links_json like any(string_to_array(${patterns}, ','))`
+    ).map((row) => ({ kind: "doc" as const, ...row })),
+    ...(
+      await sql<{ id: string; links_json: string | null }>`
+        select id, links_json from vault_portfolio
+        where user_id = ${userId} and not deleted and links_json like any(string_to_array(${patterns}, ','))`
+    ).map((row) => ({ kind: "portfolio" as const, ...row })),
+  ];
+  for (const source of sources) {
+    const links = parseLinks(source.links_json ?? "[]");
+    const removed = links.filter((link) => !link.shareId && gone.has(link.targetId));
+    if (removed.length === 0) continue;
+    for (const link of removed)
+      await sql`
+        insert into trash_link (user_id, target_id, source_kind, source_id, link_json, deleted_at)
+        values (${userId}, ${link.targetId}, ${source.kind}, ${source.id}, ${JSON.stringify(link)}, ${now})
+        on conflict do nothing
+      `;
+    await writeLinks(
+      sql,
+      userId,
+      source.kind,
+      source.id,
+      links.filter((link) => !removed.includes(link)),
+      rev,
+    );
+  }
+}
+
+/**
+ * Put back the links kept by detachLinks once both ends are alive again: links to what was
+ * restored, and links from what was restored to targets that are alive. A link whose source is
+ * still in the trash waits for it.
+ */
+async function reattachLinks(
+  sql: Sql,
+  userId: string,
+  restored: string[],
+  rev: number,
+): Promise<void> {
+  if (restored.length === 0) return;
+  const list = restored.join(",");
+  const rows = await sql<{
+    target_id: string;
+    source_kind: LinkSource;
+    source_id: string;
+    link_json: string;
+  }>`
+    select target_id, source_kind, source_id, link_json from trash_link
+    where user_id = ${userId}
+      and (target_id = any(string_to_array(${list}, ',')) or source_id = any(string_to_array(${list}, ',')))
+  `;
+  for (const row of rows) {
+    const alive = await sql<{ id: string }>`
+      select id from vault_doc where user_id = ${userId} and id = ${row.target_id} and not deleted
+      union all
+      select id from vault_portfolio where user_id = ${userId} and id = ${row.target_id} and not deleted
+    `;
+    const links = await sourceLinks(sql, userId, row.source_kind, row.source_id);
+    if (!alive[0] || !links) continue;
+    const parsed = parseLinks(`[${row.link_json}]`)[0];
+    if (parsed && !links.some((link) => sameLink(link, parsed)))
+      await writeLinks(sql, userId, row.source_kind, row.source_id, [...links, parsed], rev);
+    await sql`
+      delete from trash_link where user_id = ${userId} and target_id = ${row.target_id}
+        and source_kind = ${row.source_kind} and source_id = ${row.source_id} and link_json = ${row.link_json}
+    `;
+  }
+}
+
+/** Kept links of something purged for good: neither end can come back for them. */
+async function dropKeptLinks(sql: Sql, userId: string, id: string): Promise<void> {
+  await sql`delete from trash_link where user_id = ${userId} and (target_id = ${id} or source_id = ${id})`;
+}
 
 export type TrashItem = {
   id: string;
@@ -885,6 +1048,8 @@ async function reviveParents(
   userId: string,
   portfolioId: string | null,
   rev: number,
+  /** Collects the ids of the ancestors brought back. */
+  revived: string[] = [],
 ): Promise<string | null> {
   let cursor = portfolioId;
   const seen = new Set<string>();
@@ -900,6 +1065,7 @@ async function reviveParents(
         update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
         where user_id = ${userId} and id = ${cursor}
       `;
+      revived.push(cursor);
     }
     cursor = folder.parent_id;
   }
@@ -920,8 +1086,10 @@ export async function restoreFromTrash(
   const row = rows[0];
   if (!row) throw new VaultError("Ese documento ya no está en la papelera.", 404);
   const rev = await nextRevision(sql, userId);
-  const portfolioId = await reviveParents(sql, userId, row.portfolio_id, rev);
+  const revived: string[] = [];
+  const portfolioId = await reviveParents(sql, userId, row.portfolio_id, rev, revived);
   await reviveDoc(sql, userId, id, row, portfolioId, actor, rev);
+  await reattachLinks(sql, userId, [id, ...revived], rev);
   const doc = await getDoc(sql, userId, id);
   if (!doc) throw new VaultError("No se pudo recuperar.", 500);
   return doc;
@@ -962,8 +1130,10 @@ async function restorePortfolio(
   const cutoff = Number(portfolio.deleted_at);
   const withIt = trashed.filter((item) => item.id === id || Number(item.deleted_at) >= cutoff);
   const rev = await nextRevision(sql, userId);
-  const parentId = await reviveParents(sql, userId, portfolio.parent_id, rev);
+  const revived: string[] = [];
+  const parentId = await reviveParents(sql, userId, portfolio.parent_id, rev, revived);
   for (const folder of trashedSubtree(withIt, id)) {
+    revived.push(folder);
     await sql`
       update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
       where user_id = ${userId} and id = ${folder}
@@ -973,8 +1143,12 @@ async function restorePortfolio(
       where user_id = ${userId} and deleted and deleted_at is not null and portfolio_id = ${folder}
         and deleted_at >= ${cutoff}
     `;
-    for (const doc of docs) await reviveDoc(sql, userId, doc.id, doc, folder, actor, rev);
+    for (const doc of docs) {
+      await reviveDoc(sql, userId, doc.id, doc, folder, actor, rev);
+      revived.push(doc.id);
+    }
   }
+  await reattachLinks(sql, userId, revived, rev);
   await sql`update vault_portfolio set parent_id = ${parentId} where user_id = ${userId} and id = ${id}`;
 }
 
@@ -1006,6 +1180,7 @@ async function purgeDoc(sql: Sql, userId: string, id: string): Promise<void> {
     where user_id = ${userId} and id = ${id} and deleted
   `;
   await sql`delete from vault_doc_version where user_id = ${userId} and doc_id = ${id}`;
+  await dropKeptLinks(sql, userId, id);
   await purgeComments(sql, userId, id);
   await purgeSignatures(sql, userId, id);
   // Also remove table columns and rows; see table.ts.
@@ -1040,6 +1215,7 @@ export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Prom
       `;
       for (const doc of docs) await purgeDoc(sql, userId, doc.id);
       await sql`update vault_portfolio set deleted_at = null where user_id = ${userId} and id = ${folder}`;
+      await dropKeptLinks(sql, userId, folder);
     }
   }
 }

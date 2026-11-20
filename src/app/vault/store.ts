@@ -735,12 +735,9 @@ export const useVault = create<VaultState>((set, get) => ({
     if (!target || !can(deletePermission(target.kind))) return;
     const removed = new Set([id]);
     recordDeletes(state.owner, removed);
-    const documents = state.documents
-      .filter((document) => document.id !== id)
-      .map((document) => ({
-        ...document,
-        links: document.links.filter((link) => link.targetId !== id),
-      }));
+    // Links from other documents to it are taken out by the server, which keeps them so a
+    // restore puts them back (server/vault.ts detachLinks).
+    const documents = state.documents.filter((document) => document.id !== id);
     const landing = landingAfterDelete({
       activeId: state.activeId,
       folderPicked: state.folderPicked,
@@ -773,12 +770,8 @@ export const useVault = create<VaultState>((set, get) => ({
       if (document && can(deletePermission(document.kind))) removedDocs.add(document.id);
     }
     recordDeletes(state.owner, removedDocs, removedPortfolios);
-    const documents = state.documents
-      .filter((document) => !removedDocs.has(document.id))
-      .map((document) => ({
-        ...document,
-        links: document.links.filter((link) => !removedDocs.has(link.targetId)),
-      }));
+    // Links to what is deleted are taken out (and kept for a restore) by the server.
+    const documents = state.documents.filter((document) => !removedDocs.has(document.id));
     const portfolios = state.portfolios.filter((portfolio) => !removedPortfolios.has(portfolio.id));
     const active = state.documents.find((document) => document.id === state.activeId);
     const landing = landingAfterDelete({

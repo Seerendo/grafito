@@ -7,6 +7,7 @@ import { maxUploadBytes, PART_SIZE, startUpload } from "@/server/blobs";
 import { readExtensionRules } from "@/server/file-rules";
 import { newFileKey } from "@/server/files";
 import { checkSpace } from "@/server/space";
+import { importIdOf, logEvent } from "@/server/telemetry";
 import { claimUpload, uploadTarget } from "@/server/upload-target";
 
 /**
@@ -65,6 +66,11 @@ export const Route = createFileRoute("/api/files/uploads")({
           );
           return json({ key, uploadId, partSize: PART_SIZE });
         } catch (error) {
+          if (!(error instanceof Response))
+            logEvent("upload.start.failed", {
+              importId: importIdOf(request),
+              error: error instanceof Error ? error.name : "error",
+            });
           return failure(error);
         }
       },

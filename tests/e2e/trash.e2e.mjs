@@ -205,6 +205,66 @@ for (const engine of engines) {
       await context.close();
     });
 
+    test("T17b links other items had to what was deleted come back with it", async () => {
+      const { who, context, page, ids } = await stocked(browser, person);
+      // a1 links to p1 and Obra links to planos (manual links, as the link dialog writes them).
+      const state = await query(
+        `update vault_state set revision = revision + 1 where user_id = $1 returning revision`,
+        [who.userId],
+      );
+      const rev = Number(state[0].revision);
+      const toDoc = { targetId: ids.p1, kind: "referencia" };
+      const toFolder = { targetId: ids.planos, kind: "referencia", target: "portfolio" };
+      await query(`update vault_doc set links_json = $3, rev = $4 where user_id = $1 and id = $2`, [
+        who.userId,
+        ids.a1,
+        JSON.stringify([toDoc]),
+        rev,
+      ]);
+      await query(
+        `update vault_portfolio set links_json = $3, rev = $4 where user_id = $1 and id = $2`,
+        [who.userId, ids.Obra, JSON.stringify([toFolder]), rev],
+      );
+      await page.reload();
+      await openTrash(page);
+      const links = async (table, id) =>
+        JSON.parse(
+          (
+            await query(`select links_json from ${table} where user_id = $1 and id = $2`, [
+              who.userId,
+              id,
+            ])
+          )[0].links_json,
+        );
+      await deleteRows(page, [`port:${ids.planos}`]);
+      await row(page, ids.planos).waitFor();
+      // Taken out of their sources while their targets are in the trash, and kept.
+      await until(async () => (await links("vault_doc", ids.a1)).length === 0, "a1 link detached");
+      assert.deepEqual(await links("vault_portfolio", ids.Obra), []);
+      await row(page, ids.planos).click();
+      await page.getByRole("button", { name: "Recuperar 1" }).click();
+      await page.locator(`[data-ui="sidebar"] [data-pick="port:${ids.planos}"]`).waitFor();
+      assert.deepEqual(await links("vault_doc", ids.a1), [toDoc]);
+      assert.deepEqual(await links("vault_portfolio", ids.Obra), [toFolder]);
+      const kept = await query(`select count(*)::int as n from trash_link where user_id = $1`, [
+        who.userId,
+      ]);
+      assert.equal(kept[0].n, 0, "nothing left waiting");
+      // The browser has them too.
+      await until(
+        () =>
+          page.evaluate(
+            ({ key, id, target }) =>
+              JSON.parse(localStorage.getItem(key) ?? "{}")
+                .documents?.find((doc) => doc.id === id)
+                ?.links?.some((link) => link.targetId === target) ?? false,
+            { key: `grafito.v2:${who.userId}`, id: ids.a1, target: ids.p1 },
+          ),
+        "browser copy has the link again",
+      );
+      await context.close();
+    });
+
     test("T17 restoring a document brings back its folder, title and file", async () => {
       const { who, context, page, ids } = await stocked(browser, person);
       await openTrash(page);
