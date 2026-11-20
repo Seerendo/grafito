@@ -365,10 +365,9 @@ After that, the start screen is a normal sign-in.
   document in a `filecontents*` block. Packages cannot be installed from the
   app: the image carries the common collections (see docs/OPERATIONS.md).
   `.tex` text is searchable like any other file.
-- **OCR:** a scanned PDF or a photo (PNG, JPEG, TIFF) has its text read in the
-  background by the `ocr` service (Tesseract, Spanish and English), so search
-  and the assistant find it. Administración → Indexación shows how many were
-  read and how many are waiting.
+- **Scans and photos:** a scanned PDF or a photo is stored, shown and
+  downloaded like any other file. Grafito does not read text from images
+  (there is no OCR), so search finds it by its name only.
 - **Drawings:** **Nuevo dibujo** (on a portfolio's page or in the right-click
   menu) creates an Excalidraw drawing.
   - It is a `.excalidraw` file, so it can be linked, shared and restored from
@@ -816,7 +815,7 @@ admin permissions. The section sidebar collapses to an icon rail.
 | **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                                                                                          |
 | **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                                                                                  |
 | **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                                                                               |
-| **Extensiones**                              | Turn the graph (Grafeno), LaTeX (the `latex` service), OCR (the `ocr` service), Mermaid, links and Git sync on or off (Git is off by default). An extension that needs a service shows whether it is connected and only turns on when it is; one that loses its service pauses and resumes when the service is back                                           |
+| **Extensiones**                              | Turn the graph (Grafeno), LaTeX (the `latex` service), Mermaid, links and Git sync on or off (Git is off by default). An extension that needs a service shows whether it is connected and only turns on when it is; one that loses its service pauses and resumes when the service is back                                                                    |
 | **Organizaciones**                           | Organizations and their members. Someone added to a sub-organization also joins every organization above it (removing them from one leaves the others). Right-click an organization for a sub-organization, renaming or deleting it, or the empty part of the tree for a new organization.                                                                    |
 | **Monitorización y logs → Espacio asignado** | The environment's total disk, how much is assigned (top-level workspaces and users with a limit) and how much of it is used, with a fold-out list per workspace and per user.                                                                                                                                                                                 |
 | **Apariencia**                               | **Diseño** (design), for the whole installation: **Cristal** (glass, the default: floating panels, glass and rounded controls; it was called «Moderno») or **Clásico** (classic, the original flat layout). **Temas**: ten color themes, which apply to both designs.                                                                                         |

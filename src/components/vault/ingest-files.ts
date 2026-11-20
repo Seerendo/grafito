@@ -1,12 +1,20 @@
+import { actorName } from "@/app/actor";
 import { uploadVaultFile } from "@/app/files";
-import { enqueueUpload, type UploadDestination } from "@/app/upload-queue";
+import { can } from "@/app/permissions";
+import { enqueueUpload, measureSyncWith, type UploadDestination } from "@/app/upload-queue";
 import { useVault } from "@/app/vault/store";
-import { syncVault } from "@/app/vault/sync";
+import { knownFolderToServer, markKnown, syncTotals, syncVault } from "@/app/vault/sync";
+import { PERMISSION } from "@/domain/permissions";
+import type { Document, Portfolio } from "@/domain/vault/types";
+import { uuid } from "@/lib/uuid";
+import { importFolder, importNote, reportImport } from "@/server/vault.functions";
 import { t } from "@/app/i18n";
 import { DRAWING_MIME, emptyDrawing } from "@/domain/vault/drawing";
 import { LATEX_EXTENSION, LATEX_MIME, latexTemplate } from "@/domain/vault/latex";
 import { ignoredUpload } from "@/domain/vault/folders";
 import { emptyTableFile, TABLE_EXTENSION, TABLE_MIME } from "@/domain/vault/table";
+
+measureSyncWith(() => ({ syncMs: syncTotals.ms, syncs: syncTotals.runs }));
 
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -110,55 +118,127 @@ export function droppedNothing(dropped: Dropped): boolean {
   return dropped.files.length === 0 && dropped.folders.length === 0;
 }
 
+/** Show what the server stored and record it as synchronized, so no push sends it again. */
+function showImported(
+  owner: string | null,
+  items: { docs?: Document[]; portfolios?: Portfolio[] },
+): void {
+  useVault.getState().addImported(items);
+  if (!owner) return;
+  const state = useVault.getState();
+  const docIds = new Set((items.docs ?? []).map((doc) => doc.id));
+  const folderIds = new Set((items.portfolios ?? []).map((portfolio) => portfolio.id));
+  markKnown(owner, {
+    docs: state.documents.filter((doc) => docIds.has(doc.id)),
+    portfolios: state.portfolios.filter((portfolio) => folderIds.has(portfolio.id)),
+  });
+}
+
 /**
- * The personal vault as an upload destination. Folders and documents are added without
- * selecting or unfolding anything; a checkpoint syncs so the server knows the new documents.
+ * The personal vault as an upload destination. Folders, notes and files are stored on the
+ * server one by one, each under an id the browser chose, and shown here once the server has
+ * them; nothing is selected or unfolded. A retried request never makes a second copy.
  */
 export function personalDestination(portfolioId: string | null): UploadDestination {
   const owner = useVault.getState().owner;
   const label =
     useVault.getState().portfolios.find((portfolio) => portfolio.id === portfolioId)?.name ??
     t("Carpeta Personal");
+  const show = (items: { docs?: Document[]; portfolios?: Portfolio[] }) =>
+    showImported(owner, items);
   return {
     label,
     rootId: portfolioId,
+    prepare: async () => {
+      if (!owner) return "La sesión cambió; la carga se detuvo.";
+      // A destination made a moment ago may still be on its way to the server.
+      await syncVault(owner);
+      if (portfolioId && !knownFolderToServer(owner, portfolioId))
+        return "La carpeta de destino todavía no está en el servidor. Vuelve a intentarlo.";
+      return null;
+    },
     findFolder: (parentId, name) =>
       useVault
         .getState()
         .portfolios.find((portfolio) => portfolio.parentId === parentId && portfolio.name === name)
         ?.id ?? null,
-    createFolder: async (parentId, name) => {
-      const id = useVault.getState().createPortfolio(parentId, name, { quiet: true });
-      if (!id) throw new Error("No puedes crear portafolios aquí.");
-      return id;
+    createFolder: async (parentId, name, importId) => {
+      if (!can(PERMISSION.portfoliosManage)) throw new Error("No puedes crear portafolios aquí.");
+      const result = await importFolder({ data: { id: uuid(), name, parentId, importId } });
+      if (!result.ok) throw new Error(result.error);
+      show({ portfolios: [result.portfolio] });
+      return result.portfolio.id;
     },
-    putFile: async (file, folderId, signal) => {
+    hasDoc: (docId) => useVault.getState().documents.some((doc) => doc.id === docId),
+    hasFile: (folderId, name, size) =>
+      useVault
+        .getState()
+        .documents.some(
+          (doc) =>
+            doc.portfolioId === folderId &&
+            doc.kind === "file" &&
+            doc.file?.name === name &&
+            doc.file.size === size,
+        ),
+    putFile: async (file, folderId, signal, importId, docId) => {
       const vault = useVault.getState();
+      const actor = actorName();
       if (isMarkdownFile(file)) {
+        if (!can(PERMISSION.notesCreate)) throw new Error("Tu rol no permite crear notas.");
         const text = await file.text();
-        const title = file.name.replace(/\.(md|markdown)$/i, "").trim() || t("Sin título");
-        const id = vault.createDocument(folderId, title, text, { open: false, quiet: true });
-        if (!id) throw new Error("Tu rol no permite crear notas.");
+        const base = file.name.replace(/\.(md|markdown)$/i, "").trim() || t("Sin título");
+        const now = Date.now();
+        const result = await importNote({
+          data: {
+            importId,
+            doc: {
+              id: docId,
+              title: vault.freeTitle(folderId, base, "markdown"),
+              kind: "markdown",
+              portfolioId: folderId,
+              content: text,
+              links: [],
+              pinned: false,
+              createdAt: now,
+              updatedAt: now,
+              createdBy: actor,
+              updatedBy: actor,
+            },
+          },
+        });
+        if (!result.ok) throw new Error(result.error);
+        show({ docs: [result.doc] });
         return;
       }
-      const stored = await uploadVaultFile(file, { portfolioId: folderId }, { signal });
-      const refused = useVault
-        .getState()
-        .uploadFile(
-          folderId,
-          file.name,
-          file.type || "application/octet-stream",
-          stored,
-          false,
-          true,
-        );
-      if (refused) throw new Error(refused);
+      if (!can(PERMISSION.filesUpload)) throw new Error("Tu rol no permite subir archivos.");
+      const base = file.name.replace(/\.[^.]+$/, "") || file.name;
+      const stored = await uploadVaultFile(
+        file,
+        { portfolioId: folderId },
+        {
+          signal,
+          importId,
+          doc: {
+            id: docId,
+            title: vault.freeTitle(folderId, base, "file"),
+            name: file.name,
+            mime: file.type || "application/octet-stream",
+            createdAt: Date.now(),
+            actor,
+          },
+        },
+      );
+      if (!stored.doc) throw new Error("El servidor no guardó el documento del archivo.");
+      show({ docs: [stored.doc] });
     },
     checkpoint: async () => {
       const current = useVault.getState().owner;
       if (current && current === owner) await syncVault(current);
     },
     stillValid: () => useVault.getState().owner === owner,
+    report: async (summary) => {
+      await reportImport({ data: summary });
+    },
   };
 }
 
@@ -187,19 +267,36 @@ export async function ingestExternalFiles(
   await enqueueUpload({ files: list, folders: dropped.folders }, personalDestination(portfolioId));
 }
 
+/** A single new file (a drawing, a table, a LaTeX document), stored on the server and opened. */
 async function uploadAndOpen(file: File, portfolioId: string | null): Promise<void> {
+  const owner = useVault.getState().owner;
   let error: string | null = null;
   try {
-    const stored = await uploadVaultFile(file, { portfolioId });
-    error = useVault
-      .getState()
-      .uploadFile(portfolioId, file.name, file.type || "application/octet-stream", stored, true);
+    if (!can(PERMISSION.filesUpload)) throw new Error(t("Tu rol no permite subir archivos."));
+    // A folder made a moment ago may still be on its way to the server.
+    if (owner && portfolioId && !knownFolderToServer(owner, portfolioId)) await syncVault(owner);
+    const base = file.name.replace(/\.[^.]+$/, "") || file.name;
+    const stored = await uploadVaultFile(
+      file,
+      { portfolioId },
+      {
+        doc: {
+          id: uuid(),
+          title: useVault.getState().freeTitle(portfolioId, base, "file"),
+          name: file.name,
+          mime: file.type || "application/octet-stream",
+          createdAt: Date.now(),
+          actor: actorName(),
+        },
+      },
+    );
+    if (!stored.doc) throw new Error(t("El servidor no guardó el documento del archivo."));
+    showImported(owner, { docs: [stored.doc] });
+    useVault.getState().setActive(stored.doc.id);
   } catch (failure) {
     error =
       failure instanceof Error ? failure.message : t("No se pudo subir «{0}».", { 0: file.name });
   }
-  const owner = useVault.getState().owner;
-  if (!error && owner) await syncVault(owner);
   if (error) useVault.getState().setDialog({ type: "upload-error", message: error });
 }
 

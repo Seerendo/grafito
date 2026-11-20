@@ -166,25 +166,26 @@ The `vault/` pieces:
 
 ### `src/app/` (client)
 
-| File                 | Responsibility                                                                                                                                                                                                                                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vault/store.ts`     | Vault zustand store (notes, portfolios, files), cached in `localStorage` per user (`grafito.v2:<userId>`). `openVaultFor(userId)` opens it and `closeVault()` closes it.                                                                                                                        |
-| `vault/seed.ts`      | Sample notes for the first use, grouped under the «Documentación» portfolio. Only a server vault with nothing in it receives them; once deleted, `pushVault` refuses them (`dropDeletedSamples` in `domain/vault/migrate.ts`) and the browser drops them                                        |
-| `upload-queue.ts`    | Background uploads: one job per drop or selection, one file at a time, pause/resume/cancel, a summary of what did not upload (`domain/vault/upload-batch.ts`). Destinations are the personal vault (`ingest-files.ts`) or an editable share (`shared-actions.ts`).                              |
-| `vault/sync.ts`      | Syncs the vault with the server (revisions and per-document fingerprints)                                                                                                                                                                                                                       |
-| `theme.ts`           | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES`                                                                                                                                                                                                        |
-| `account-profile.ts` | Profile of the signed-in account (name, initials, role)                                                                                                                                                                                                                                         |
-| `ai-chat.ts`         | AI chat state: open or closed, chosen model, conversation and NDJSON reading                                                                                                                                                                                                                    |
-| `files.ts`           | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile`                                                                                                |
-| `shares.ts`          | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`)                                                                                                                                                                                                                  |
-| `shared-view.ts`     | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it. |
-| `trash-view.ts`      | Whether the trash fills the main area (`useTrashView`), with the same closing rules                                                                                                                                                                                                             |
-| `directory-pick.ts`  | Directory selection (`useDirectoryPick`), shared by the sidebar and the portfolio pages. **Seleccionar** on right-click starts it without opening the row, so Ctrl/Shift can extend it while another document stays open.                                                                       |
-| `permissions.ts`     | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them.                                                                                                                                                          |
-| `actor.ts`           | Name of whoever creates or edits notes                                                                                                                                                                                                                                                          |
-| `plugins.ts`         | Flags of the enabled plugins                                                                                                                                                                                                                                                                    |
-| `vault-hold.ts`      | Remembers which administrator holds the vault open                                                                                                                                                                                                                                              |
-| `leave.ts`           | Sign out: revokes the session, clears local state and signs out of Better Auth                                                                                                                                                                                                                  |
+| File                       | Responsibility                                                                                                                                                                                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault/store.ts`           | Vault zustand store (notes, portfolios, files), cached in `localStorage` per user (`grafito.v2:<userId>`). `openVaultFor(userId)` opens it and `closeVault()` closes it.                                                                                                                                 |
+| `vault/seed.ts`            | Sample notes for the first use, grouped under the «Documentación» portfolio. Only a server vault with nothing in it receives them; once deleted, `pushVault` refuses them (`dropDeletedSamples` in `domain/vault/migrate.ts`) and the browser drops them                                                 |
+| `upload-queue.ts`          | Background uploads: one job per drop or selection; folders first, one at a time, then three files at a time; pause/resume/cancel, a summary of what did not upload (`domain/vault/upload-batch.ts`). Destinations are the personal vault (`ingest-files.ts`) or an editable share (`shared-actions.ts`). |
+| `vault/sync.ts`            | Syncs the vault with the server (revisions and per-document fingerprints), in bounded pushes (`domain/vault/sync-batches.ts`)                                                                                                                                                                            |
+| `vault/pending-deletes.ts` | Deletions made in the browser and not yet confirmed by the server (`grafito.deletes:<userId>`): the only deletions a sync sends, shown in the trash as pending or failed                                                                                                                                 |
+| `theme.ts`                 | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES`                                                                                                                                                                                                                 |
+| `account-profile.ts`       | Profile of the signed-in account (name, initials, role)                                                                                                                                                                                                                                                  |
+| `ai-chat.ts`               | AI chat state: open or closed, chosen model, conversation and NDJSON reading                                                                                                                                                                                                                             |
+| `files.ts`                 | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile`                                                                                                         |
+| `shares.ts`                | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`)                                                                                                                                                                                                                           |
+| `shared-view.ts`           | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it.          |
+| `trash-view.ts`            | Whether the trash fills the main area (`useTrashView`), with the same closing rules                                                                                                                                                                                                                      |
+| `directory-pick.ts`        | Directory selection (`useDirectoryPick`), shared by the sidebar and the portfolio pages. **Seleccionar** on right-click starts it without opening the row, so Ctrl/Shift can extend it while another document stays open.                                                                                |
+| `permissions.ts`           | Client-side permissions: `can()`, `useCan()`, `usePermissions()`. `AccessGate` loads them and the `SessionWatch` pulse refreshes them.                                                                                                                                                                   |
+| `actor.ts`                 | Name of whoever creates or edits notes                                                                                                                                                                                                                                                                   |
+| `plugins.ts`               | Flags of the enabled plugins                                                                                                                                                                                                                                                                             |
+| `vault-hold.ts`            | Remembers which administrator holds the vault open                                                                                                                                                                                                                                                       |
+| `leave.ts`                 | Sign out: revokes the session, clears local state and signs out of Better Auth                                                                                                                                                                                                                           |
 
 ### `src/domain/` (pure logic)
 
@@ -234,7 +235,6 @@ The `vault/` pieces:
 | `secret-rotation.ts`                                                                  | On start, seals again with the current key the AI keys, Git tokens and SMTP password that open only with the previous key, then stops accepting the public example key.                                                                                                                                                                                                               |
 | `upload-target.ts`                                                                    | Upload destinations and `upload_claim`: an upload into someone else's share belongs to the person and folder it was started for.                                                                                                                                                                                                                                                      |
 | `latex.ts` / `latex.functions.ts`                                                     | LaTeX documents: read, save a new version (owner or editor through a share) and compile through the `latex` service (`LATEX_URL`); the PDF preview is not stored. UI in `components/vault/LatexView.tsx`, template in `domain/vault/latex.ts`.                                                                                                                                        |
-| `ocr.ts`                                                                              | OCR queue (`ocr_text`): the indexer queues PDFs without text and images (`domain/vault/ocr.ts`); a background pass sends one at a time to the `ocr` service (`OCR_URL`) and has the document indexed again with the text.                                                                                                                                                             |
 | `clamd-socket.ts`                                                                     | clamd over TCP (`INSTREAM`, `PING`), with no app imports so tests can drive a fake clamd.                                                                                                                                                                                                                                                                                             |
 | `clamav.ts` / `clamav.functions.ts`                                                   | ClamAV `INSTREAM` scan, on by default at `clamav:3310`. Administración → Seguridad stores the server, port and timeout (`clamav_*` in `app_setting`, permission `security.manage`). Until that screen is saved, the built-in address applies. A hit or a silence deletes the object.                                                                                                  |
 | `dav/`                                                                                | WebDAV at `/dav`: Basic password or API token (or the same-site session), in-memory locks, and the caller's vault plus shares. An administrator does not see another person's private documents.                                                                                                                                                                                      |
@@ -297,7 +297,8 @@ The `vault/` pieces:
 | `0037_clamav.sql`             | Permission `security.manage` for Administración → Seguridad                                                                                                                                                      |
 | `0041_admin_chosen.sql`       | Every administrator row counts as chosen (no anonymous clean-up of administrators any more)                                                                                                                      |
 | `0042_upload_claim.sql`       | `upload_claim`: who started each upload into another person's share, and for which folder                                                                                                                        |
-| `0043_ocr.sql`                | `ocr_text`: recognized text per document and file version, with its state (pending, done, empty, failed)                                                                                                         |
+| `0043_ocr.sql`                | `ocr_text`: recognized text per document and file version (removed by 0045)                                                                                                                                      |
+| `0045_remove_ocr.sql`         | OCR removed: documents indexed with OCR text are indexed again without it, the `ocr` extension row and `ocr_text` go                                                                                             |
 | `0016_mail.sql`               | Email: permission `mail.manage`, `app_profile.notify_changes`, `app_temp_access` (one-time temporary passwords), `app_secret_note` (secret notes without Redis) and `mail_notice` (pending change notifications) |
 | `0012_file_versions.sql`      | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor                                                                                                                       |
 | `0011_file_storage.sql`       | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage)                                                                                                                    |
@@ -576,6 +577,7 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
   callers.
 - **When it syncs:**
   - When the vault opens.
+  - At once after a deletion.
   - 1.5 seconds after each change.
   - Every 20 seconds.
   - When the tab regains focus.
@@ -587,6 +589,38 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
     whatever is missing is uploaded.
 - **Permissions:** the server rejects changes from users without write
   permission, and deletions without the delete permission.
+- **Deletions are explicit:** deleting records the ids in
+  `app/vault/pending-deletes.ts`; a push sends those and forgets them once
+  the server took them. A document the server has that is missing from the
+  browser's copy is read again (a full pull), never deleted: when the vault
+  outgrows `localStorage`, `persist` drops the copy instead of leaving an
+  older one behind, and the next visit loads the vault from the server.
+- **Nothing comes back from an old copy:** `pushVault` does not bring back a
+  folder or document that is in the trash (or was purged) because a browser
+  sent it again; a document edited after its deletion still does (newest
+  wins), and so does the sample when the person restores it. What it refuses
+  comes back in `dropped`, and the browser drops it.
+- **Pushes are bounded:** at most 100 documents or about 2 MB of them, 500
+  folders and 1000 deletions per push; folders go first, deleted folders
+  before deleted documents.
+- **Imports:** a background upload stores each folder (`importFolder`), note
+  (`importNote`) and file (`/api/files/uploads/complete` with `doc`) on the
+  server under an id the browser chose, idempotently, before it shows it.
+  The file's document is stored in the same request that finishes the upload,
+  after the antivirus; if that fails the object is deleted. Those items are
+  recorded as synced (`markKnown`), so no push sends them again, and a viewer
+  can open them at once.
+- **Viewers:** an own file whose document the server does not have yet waits
+  for the next sync (`onSynced`), and says so; missing, forbidden, empty and
+  failed links, PDF download, invalid PDF and rendering errors, and Office
+  sessions each have their own message.
+- **Trash:** a portfolio restored from the trash brings back what was deleted
+  with it (same deletion time or later); what was deleted on its own before
+  keeps its own entry. Purging a portfolio removes exactly what it shows.
+- **Events:** `server/telemetry.ts` writes one JSON line per event (imports
+  with the job's id, pushes, slow or missing file reads, viewer failures,
+  trash listing, restore and purge, the trash delay): ids, counts, sizes and
+  durations only.
 
 ## Installation secrets
 

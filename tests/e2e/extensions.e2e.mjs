@@ -1,6 +1,6 @@
 /**
  * Extensions in a real browser against the local test stack (project grafito-e2e). Stops and
- * starts the grafeno, latex and ocr containers of that stack to check that an extension cannot
+ * starts the grafeno and latex containers of that stack to check that an extension cannot
  * be turned on without its service, pauses while the service is down and comes back with it,
  * catching up in the background. Not part of `npm test`.
  *
@@ -71,7 +71,7 @@ describe("extensions", () => {
       `insert into app_user_role (user_id, role_id, login_name) values ($1, 'admin', $2)`,
       [userId, login],
     );
-    await query(`update app_plugin set enabled = true where id in ('grafo', 'latex', 'ocr')`);
+    await query(`update app_plugin set enabled = true where id in ('grafo', 'latex')`);
     browser = await playwright.chromium.launch({ channel: process.env.E2E_CHANNEL ?? "chrome" });
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
     page = await context.newPage();
@@ -96,7 +96,7 @@ describe("extensions", () => {
 
   after(async () => {
     for (const name of stopped) service("start", name);
-    await query(`update app_plugin set enabled = true where id in ('grafo', 'latex', 'ocr')`);
+    await query(`update app_plugin set enabled = true where id in ('grafo', 'latex')`);
     await browser?.close();
   });
 
@@ -120,8 +120,10 @@ describe("extensions", () => {
 
   test("the page is called Extensiones and every service is connected", async () => {
     await openExtensions();
-    for (const id of ["grafo", "latex", "ocr"])
+    for (const id of ["grafo", "latex"])
       assert.match(await row(id).locator('[data-ui="extension-status"]').innerText(), /^Conectada/);
+    // OCR was removed: no row for it.
+    assert.equal(await row("ocr").count(), 0);
     // Mermaid needs no service: no status line, and its switch works.
     assert.equal(await row("mermaid").locator('[data-ui="extension-status"]').count(), 0);
     assert.equal(await row("mermaid").getByRole("switch").isEnabled(), true);
@@ -239,61 +241,6 @@ describe("extensions", () => {
       },
       "graph shown again",
       120_000,
-    );
-  });
-
-  test("OCR: the queue waits while the service is down and is read when it is back", async () => {
-    service("stop", "ocr");
-    stopped.add("ocr");
-    await openExtensions();
-    await recheckUntil("ocr", "En pausa: sin conexión");
-    await page.goto(`${base}/`);
-    await page.locator('[data-ui="sidebar"]').waitFor();
-    const png = await page.evaluate(async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1240;
-      canvas.height = 600;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#111";
-      ctx.font = "56px serif";
-      ctx.fillText("Expediente rinoceronte 7788", 100, 300);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let text = "";
-      for (const byte of bytes) text += String.fromCharCode(byte);
-      return btoa(text);
-    });
-    await page
-      .locator('input[type="file"][multiple]')
-      .first()
-      .setInputFiles([
-        { name: "foto-rinoceronte.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") },
-      ]);
-    await page.locator('article[data-job="done"]').waitFor();
-    const state = () =>
-      query(
-        `select o.state from ocr_text o join vault_doc d on d.user_id = o.owner_id and d.id = o.doc_id
-         where o.owner_id = $1 and d.file_name = 'foto-rinoceronte.png'`,
-        [userId],
-      );
-    await until(async () => (await state()).length > 0, "queued for OCR");
-    await page.waitForTimeout(10_000);
-    assert.equal((await state())[0].state, "pending", "waits instead of failing");
-    service("start", "ocr");
-    stopped.delete("ocr");
-    await until(
-      async () =>
-        (
-          await query(
-            `select 1 from doc_index i join vault_doc d on d.user_id = i.user_id and d.id = i.doc_id
-             where i.user_id = $1 and d.file_name = 'foto-rinoceronte.png' and i.body ilike '%rinoceronte%'`,
-            [userId],
-          )
-        ).length > 0,
-      "read and indexed after OCR came back",
-      240_000,
     );
   });
 });

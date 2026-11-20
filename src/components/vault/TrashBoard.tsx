@@ -2,7 +2,8 @@ import { Building2, File, FileText, Folder, House, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/app/permissions";
 import { useVault } from "@/app/vault/store";
-import { syncVault } from "@/app/vault/sync";
+import { onPendingDeletes, pendingDeletes } from "@/app/vault/pending-deletes";
+import { onSynced, syncVault } from "@/app/vault/sync";
 import { TextAction } from "@/components/ui/TextAction";
 import { Modal } from "@/components/ui/Modal";
 import { useContextMenu } from "@/components/ui/use-context-menu";
@@ -53,8 +54,24 @@ export function TrashBoard() {
       .catch(() => setSpaces([]));
   }, []);
 
-  const load = async (which = tab) => {
-    setItems(null);
+  // Deletions made here that the server has not confirmed yet (see pending-deletes.ts).
+  const owner = useVault((state) => state.owner);
+  const [waiting, setWaiting] = useState({ count: 0, failed: false });
+  useEffect(() => {
+    if (!owner) return;
+    const read = () => {
+      const pending = pendingDeletes(owner);
+      setWaiting({
+        count: Object.keys(pending.docs).length + Object.keys(pending.portfolios).length,
+        failed: pending.failed,
+      });
+    };
+    read();
+    return onPendingDeletes(read);
+  }, [owner]);
+
+  const load = async (which = tab, quiet = false) => {
+    if (!quiet) setItems(null);
     try {
       if (which) {
         const result = await workspaceTrashList({ data: { shareId: which } });
@@ -70,6 +87,15 @@ export function TrashBoard() {
       setError(t("No se pudo leer la papelera."));
     }
   };
+
+  // The server confirmed deletions made elsewhere in the app: show them here at once.
+  useEffect(() => {
+    if (tab) return;
+    return onSynced((result) => {
+      if (result.deleted > 0) void load(null, true);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   useEffect(() => {
     setConfirming(null);
@@ -238,6 +264,19 @@ export function TrashBoard() {
             )}
           </div>
         ) : null}
+        {!tab && waiting.count > 0 ? (
+          <p
+            data-ui="trash-pending"
+            data-state={waiting.failed ? "failed" : "pending"}
+            className={`mt-4 text-sm ${waiting.failed ? "text-danger" : "text-muted"}`}
+          >
+            {waiting.failed
+              ? t("No se pudo confirmar la eliminación de {n} elementos; se volverá a intentar.", {
+                  n: waiting.count,
+                })
+              : t("Eliminando {n} elementos…", { n: waiting.count })}
+          </p>
+        ) : null}
         {error ? <p className="mt-4 text-sm text-danger">{t(error)}</p> : null}
         {notice ? <p className="mt-4 text-sm text-muted">{notice}</p> : null}
         {!items && !error ? <p className="mt-6 text-sm text-muted">{t("Cargando…")}</p> : null}
@@ -262,6 +301,7 @@ export function TrashBoard() {
                 <li
                   key={item.id}
                   data-trash-row
+                  data-trash-id={item.id}
                   aria-selected={on}
                   onClick={(event) => pickRow(event, item.id)}
                   className={`flex cursor-pointer flex-wrap items-center gap-3 border-b border-line px-4 py-3 text-sm last:border-b-0 ${on ? "bg-accent/15" : "hover:bg-elevated"}`}

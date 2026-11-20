@@ -57,6 +57,13 @@ export const officeSession = createServerFn({ method: "POST" })
       canWrite = Boolean(editable);
     }
     const doc = ownerId ? await getDoc(sql, ownerId, data.docId) : null;
+    // A document of one's own the server does not have yet is still synchronizing, not broken.
+    if (!doc && ownerId && !data.shareId)
+      return {
+        ok: false as const,
+        error: "Ese documento todavía no está en el servidor.",
+        pending: true as const,
+      };
     if (!ownerId || !doc?.file?.key || !isOfficeName(doc.file.name)) {
       return { ok: false as const, error: "Ese documento no se puede abrir en el editor." };
     }

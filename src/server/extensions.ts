@@ -2,14 +2,13 @@ import type { Sql } from "@/lib/db";
 import { canSwitch, extensionActive as activeFor } from "@/domain/extensions";
 import { grafeno, grafenoProblem, grafenoReachable } from "./graph/grafeno";
 import { latexUrl } from "./latex";
-import { ocrUrl } from "./ocr";
 
 /**
  * Extensions (the app_plugin table). An extension that needs a service is checked before it can
  * be turned on, and only runs while the check passes: Grafo needs Grafeno, LaTeX the latex
- * service, OCR the ocr service. One that is on but loses its service is paused, not turned off,
- * and runs again when the service answers; its background work (graph sync, OCR queue) picks up
- * where it stopped. Mermaid, Vínculos and Git need no service of their own.
+ * service. One that is on but loses its service is paused, not turned off, and runs again when
+ * the service answers; its background work (graph sync) picks up where it stopped. Mermaid,
+ * Vínculos and Git need no service of their own.
  */
 
 export type ExtensionCheck = {
@@ -50,8 +49,6 @@ async function probe(id: string): Promise<ExtensionCheck> {
     }
     case "latex":
       return health(latexUrl(), "El compilador de LaTeX");
-    case "ocr":
-      return health(ocrUrl(), "El servicio de OCR");
     default:
       return NO_SERVICE;
   }

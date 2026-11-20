@@ -6,7 +6,6 @@ import { readExtensionRules } from "@/server/file-rules";
 import { claimJob } from "@/server/jobs";
 import { deleteElasticDoc, upsertElasticDoc } from "@/server/search";
 import { getDoc } from "@/server/vault";
-import { ocrCandidate, ocrTextFor, readOcrStatus, type OcrStatus } from "@/server/ocr";
 
 /**
  * Background indexing into Postgres and optional Elasticsearch. Extract text directly without
@@ -89,17 +88,9 @@ async function bodyOf(sql: Sql, row: Pending): Promise<string> {
   const cells = extra[0]?.search_text ?? "";
   if (row.kind === "markdown") return indexBody([row.content, cells]);
   const doc = await getDoc(sql, row.user_id, row.id);
-  let extracted = doc ? ((await fileText(sql, doc, 24_000)) ?? "") : "";
+  // A scan or a photo has no text layer: it is found by its name only.
+  const extracted = doc ? ((await fileText(sql, doc, 24_000)) ?? "") : "";
   const name = row.file_name ?? doc?.file?.name ?? "";
-  // A scan or a photo has no text layer: use what OCR read, or queue it (server/ocr.ts).
-  if (extracted.trim().length < 20 && doc?.file?.key && ocrCandidate(name, doc.file.mime)) {
-    const recognized = await ocrTextFor(sql, {
-      ownerId: row.user_id,
-      docId: row.id,
-      fileKey: doc.file.key,
-    });
-    if (recognized) extracted = recognized.slice(0, 24_000);
-  }
   return indexBody([name, extracted, cells]);
 }
 
@@ -209,7 +200,6 @@ export type IndexStatus = {
   lastError: string;
   updatedAt: number;
   engine: "elasticsearch" | "postgres";
-  ocr: OcrStatus;
 };
 
 export async function readIndexStatus(sql: Sql): Promise<IndexStatus> {
@@ -239,7 +229,6 @@ export async function readIndexStatus(sql: Sql): Promise<IndexStatus> {
     lastError: run[0]?.last_error ?? "",
     updatedAt: Number(run[0]?.updated_at ?? 0),
     engine: documentEngine(),
-    ocr: await readOcrStatus(sql),
   };
 }
 

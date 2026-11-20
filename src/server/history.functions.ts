@@ -12,6 +12,7 @@ import { TTL_MS as PRESENCE_TTL_MS, touchPresence } from "@/server/presence";
 import { redisTouchPresence } from "@/server/redis";
 import { putBlob, readBlob } from "@/server/blobs";
 import { newFileKey } from "@/server/files";
+import { logEvent, since } from "@/server/telemetry";
 import {
   getDoc,
   listTrash,
@@ -229,8 +230,11 @@ export const notePresence = createServerFn({ method: "POST" })
 export const trashList = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
+    const started = performance.now();
     const sql = await requireLease(context.userId);
-    return listTrash(sql, context.userId);
+    const items = await listTrash(sql, context.userId);
+    logEvent("trash.list", { items: items.length, ms: since(started) });
+    return items;
   });
 
 export const trashRestore = createServerFn({ method: "POST" })
@@ -242,8 +246,10 @@ export const trashRestore = createServerFn({ method: "POST" })
     if (!allows(profile, PERMISSION.notesCreate) && !allows(profile, PERMISSION.filesUpload)) {
       return { ok: false as const, error: "Tu rol no puede recuperar documentos." };
     }
+    const started = performance.now();
     try {
       const item = await restoreTrashItem(sql, context.userId, data.id, actor);
+      logEvent("trash.restore", { kind: item.kind, ms: since(started) });
       return { ok: true as const, id: item.id, kind: item.kind };
     } catch (error) {
       if (error instanceof VaultError) return { ok: false as const, error: error.message };
@@ -260,6 +266,8 @@ export const trashPurge = createServerFn({ method: "POST" })
     if (!allows(profile, PERMISSION.notesDelete) && !allows(profile, PERMISSION.filesDelete)) {
       return { ok: false as const, error: "Tu rol no puede borrar." };
     }
+    const started = performance.now();
     await purgeTrash(sql, context.userId, data.ids);
+    logEvent("trash.purge", { items: data.ids?.length ?? -1, ms: since(started) });
     return { ok: true as const };
   });

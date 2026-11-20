@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isLatexName, latexTemplate } from "../../../src/domain/vault/latex.ts";
-import { ocrCandidate } from "../../../src/domain/vault/ocr.ts";
 
-/** LaTeX documents and which files go to OCR. */
+/** LaTeX documents. */
 
 test("la plantilla es un documento completo con el título limpio", () => {
   const tex = latexTemplate("Informe {raro} $ & 50%");
@@ -17,18 +16,4 @@ test("la plantilla es un documento completo con el título limpio", () => {
 test("se reconocen los .tex", () => {
   assert.equal(isLatexName("tesis.TEX"), true);
   assert.equal(isLatexName("tesis.tex.pdf"), false);
-});
-
-test("al OCR van PDF e imágenes, no lo demás", () => {
-  assert.equal(ocrCandidate("escaneo.pdf", "application/octet-stream"), true);
-  assert.equal(ocrCandidate("foto", "image/jpeg"), true);
-  assert.equal(ocrCandidate("plano.TIFF", ""), true);
-  assert.equal(ocrCandidate("dibujo.svg", "image/svg+xml"), false);
-  assert.equal(
-    ocrCandidate(
-      "acta.docx",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ),
-    false,
-  );
 });

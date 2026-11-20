@@ -35,6 +35,7 @@ const STATE_LABEL = {
   failed: "Error",
   pending: "Sin subir",
   done: "Subido",
+  existing: "Ya estaba",
 } as const;
 
 function heading(job: JobView): string {
@@ -47,7 +48,7 @@ function heading(job: JobView): string {
 function JobCard({ job }: { job: JobView }) {
   const uploads = useUploads((state) => state.uploads);
   const { files, folders } = job.counts;
-  const handled = files.done + files.skipped + files.infected + files.failed;
+  const handled = files.done + files.existing + files.skipped + files.infected + files.failed;
   const percent = files.total > 0 ? Math.round((handled / files.total) * 100) : 100;
   const name = job.current.split("/").pop() ?? "";
   const live = uploads.find((upload) => upload.name === name);
@@ -62,12 +63,12 @@ function JobCard({ job }: { job: JobView }) {
       <p data-ui="upload-counts" className="mt-1 text-xs text-muted tabular-nums">
         {folders.total > 0
           ? t("{0} de {1} archivos · {2} de {3} carpetas", {
-              0: files.done,
+              0: files.done + files.existing,
               1: files.total,
               2: folders.done,
               3: folders.total,
             })
-          : t("{0} de {1} archivos", { 0: files.done, 1: files.total })}
+          : t("{0} de {1} archivos", { 0: files.done + files.existing, 1: files.total })}
       </p>
       {active ? (
         <>
@@ -114,6 +115,7 @@ function Summary({ job }: { job: JobView }) {
   const lines: [string, number, string][] = [
     [t("Archivos subidos"), files.done, ""],
     [t("Carpetas creadas o ya existentes"), folders.done, ""],
+    [t("Ya estaban en su carpeta"), files.existing, "text-muted"],
     [t("Omitidos por su extensión"), files.skipped, "text-muted"],
     [t("Rechazados por el antivirus"), files.infected, "text-danger"],
     [t("Con error"), files.failed + folders.failed, "text-danger"],

@@ -271,7 +271,6 @@ export const en: Record<string, string> = {
   "{0} archivos": "{0} files",
   "en total: {0}": "in all: {0}",
   "Código de instalación": "Installation code",
-  "{0} leídos · {1} en cola · {2} con error": "{0} read · {1} queued · {2} failed",
   "Nuevo documento LaTeX": "New LaTeX document",
   "Documento LaTeX": "LaTeX document",
   Compilar: "Compile",
@@ -1506,14 +1505,47 @@ export const en: Record<string, string> = {
   "Grafeno no está configurado.": "Grafeno is not configured.",
   "Grafeno no responde.": "Grafeno is not answering.",
   "El compilador de LaTeX no responde.": "The LaTeX compiler is not answering.",
-  "El servicio de OCR no está configurado.": "The OCR service is not configured.",
-  "El servicio de OCR no responde.": "The OCR service is not answering.",
   "La extensión LaTeX está desactivada.": "The LaTeX extension is off.",
   "El compilador de LaTeX no responde. Se podrá compilar cuando vuelva.":
     "The LaTeX compiler is not answering. You can compile when it is back.",
   "La extensión LaTeX está en pausa.": "The LaTeX extension is paused.",
-  "En pausa: sin conexión · {0} en cola": "Paused: no connection · {0} queued",
   "No tienes permiso para esto.": "You do not have permission for this.",
   "Documentos LaTeX compilados a PDF": "LaTeX documents compiled to PDF",
-  "Texto de PDF escaneados e imágenes en la búsqueda": "Text of scanned PDFs and images in search",
+  // Imports, viewers and the trash.
+  "Este documento aún no está en el servidor; se abrirá en cuanto se sincronice.":
+    "This document is not on the server yet; it opens as soon as it is synchronized.",
+  "El servidor no tiene este archivo. Puede que se haya eliminado en otra sesión.":
+    "The server does not have this file. It may have been deleted in another session.",
+  "Este documento no tiene contenido guardado.": "This document has no stored content.",
+  "No se pudo pedir el archivo al servidor.": "The file could not be requested from the server.",
+  "El enlace del archivo caducó o ya no tienes acceso. Vuelve a abrirlo.":
+    "The file's link expired or you no longer have access. Open it again.",
+  "El servidor no encontró el archivo.": "The server did not find the file.",
+  "No se pudo descargar el PDF.": "The PDF could not be downloaded.",
+  "El archivo no es un PDF válido.": "The file is not a valid PDF.",
+  "El PDF está protegido con contraseña.": "The PDF is password protected.",
+  "No se pudo mostrar el PDF.": "The PDF could not be shown.",
+  "Ese documento todavía no está en el servidor.": "That document is not on the server yet.",
+  "Ya estaba": "Already there",
+  "Ya estaban en su carpeta": "Already in their folder",
+  "No se pudo confirmar la eliminación de {n} elementos; se volverá a intentar.":
+    "Deleting {n} items could not be confirmed; it will be tried again.",
+  "Eliminando {n} elementos…": "Deleting {n} items…",
+  "El servidor no guardó el documento del archivo.":
+    "The server did not store the file's document.",
+  "La carpeta de destino todavía no está en el servidor. Vuelve a intentarlo.":
+    "The destination folder is not on the server yet. Try again.",
+  "La carpeta de destino ya no existe.": "The destination folder no longer exists.",
+  "No se pudo crear la carpeta que la contiene.": "The folder that holds it could not be created.",
+  "No se pudo crear la carpeta que lo contiene.": "The folder that holds it could not be created.",
+  "La carpeta no tiene nombre.": "The folder has no name.",
+  "Ese documento ya existió y está en la papelera.":
+    "That document existed before and is in the trash.",
+  "No se pudo guardar el documento.": "The document could not be saved.",
+  "Un archivo compartido se guarda con su propia llamada.":
+    "A shared file is saved with its own request.",
+  "No se pudo guardar el documento de este archivo.": "This file's document could not be saved.",
+  "No se pudo analizar el archivo con el antivirus.": "The antivirus could not scan the file.",
+  "El almacenamiento de archivos no pudo guardar la subida.":
+    "File storage could not save the upload.",
 };

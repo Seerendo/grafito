@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { reportViewer } from "@/app/files";
 import { onBeforeRestore } from "@/app/office";
+import { useVault } from "@/app/vault/store";
+import { knownToServer, onSynced, syncVault } from "@/app/vault/sync";
 import { officeSession } from "@/server/office.functions";
 import { t } from "@/app/i18n";
 
 type Session = Extract<Awaited<ReturnType<typeof officeSession>>, { ok: true }>;
-
-/** Retry while a newly uploaded document becomes known to the server. */
-const SESSION_RETRIES = 6;
 
 /** Timeout for the editor to save and close before restoring a version. */
 const RESTORE_WAIT_MS = 8000;
@@ -33,34 +33,53 @@ export function OfficeEditor({
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    let timer = 0;
+    let stop = () => {};
     setSession(null);
     setError("");
-    // Retry briefly before reporting a newly uploaded document as unavailable.
-    const attempt = (left: number) => {
-      void officeSession({ data: { docId, shareId, origin: window.location.origin, lang } })
-        .then((result) => {
-          if (cancelled) return;
-          if (result.ok) setSession(result);
-          else if (left > 0 && !("setup" in result))
-            timer = window.setTimeout(() => attempt(left - 1), 1500);
-          else setError(result.error);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          if (left > 0) timer = window.setTimeout(() => attempt(left - 1), 1500);
-          else setError(t("No se pudo abrir el editor."));
-        });
-    };
-    attempt(SESSION_RETRIES);
+    const started = performance.now();
+    void officeSession({ data: { docId, shareId, origin: window.location.origin, lang } })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.ok) {
+          setPending(false);
+          setSession(result);
+          return;
+        }
+        const owner = useVault.getState().owner;
+        if ("pending" in result && owner && !knownToServer(owner, docId)) {
+          // Still on its way to the server: open it once a synchronization went through.
+          setPending(true);
+          stop = onSynced(() => setAttempt((value) => value + 1));
+          void syncVault(owner);
+          return;
+        }
+        setPending(false);
+        setError(result.error);
+        reportViewer(
+          "office",
+          "pending" in result ? "missing" : "setup" in result ? "setup" : "refused",
+          performance.now() - started,
+        );
+      })
+      .catch((failure: unknown) => {
+        if (cancelled) return;
+        setError("No se pudo abrir el editor.");
+        reportViewer(
+          "office",
+          failure instanceof Error ? `request ${failure.name}` : "request",
+          performance.now() - started,
+        );
+      });
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      stop();
     };
-  }, [docId, shareId, lang]);
+  }, [docId, shareId, lang, attempt]);
 
   useEffect(() => {
     if (session) formRef.current?.submit();
@@ -137,8 +156,27 @@ export function OfficeEditor({
     );
   }, [session, docId]);
 
-  if (error) return <p className="p-6 text-sm text-danger">{t(error)}</p>;
-  if (!session) return <p className="p-6 text-sm text-faint">{t("Cargando…")}</p>;
+  if (error)
+    return (
+      <p data-ui="office-error" className="p-6 text-sm text-danger">
+        {t(error)}
+        <button
+          type="button"
+          onClick={() => setAttempt((value) => value + 1)}
+          className="ml-3 inline-flex h-9 items-center rounded-md border border-line px-3 text-fg hover:bg-elevated"
+        >
+          {t("Reintentar")}
+        </button>
+      </p>
+    );
+  if (!session)
+    return (
+      <p data-ui="office-status" className="p-6 text-sm text-faint">
+        {pending
+          ? t("Este documento aún no está en el servidor; se abrirá en cuanto se sincronice.")
+          : t("Cargando…")}
+      </p>
+    );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <form ref={formRef} action={session.url} method="post" target={frameName} className="hidden">

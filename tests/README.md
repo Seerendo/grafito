@@ -29,8 +29,13 @@ fixes of the November 2026 security review (one test per finding; GRAF-01 needs
 a throwaway instance on an empty database, see its header).
 `auth-providers.e2e.mjs` signs in through the test stack's OpenLDAP and
 Keycloak (`auth-test` profile) and restores the provider settings it changes.
-`latex-ocr.e2e.mjs` needs the `latex` and `ocr` services: it creates, edits and
-compiles a LaTeX document, and has a scanned PDF and a photo read by OCR.
-`extensions.e2e.mjs` stops and starts the test stack's `grafeno`, `latex` and
-`ocr` containers (`E2E_COMPOSE` says how): an extension cannot be turned on
-without its service, pauses while it is down and resumes with it, catching up.
+`latex.e2e.mjs` needs the `latex` service: it creates, edits and compiles a
+LaTeX document. `extensions.e2e.mjs` stops and starts the test stack's
+`grafeno` and `latex` containers (`E2E_COMPOSE` says how): an extension cannot
+be turned on without its service, pauses while it is down and resumes with it,
+catching up. `bulk-import.e2e.mjs` (T01–T12), `trash.e2e.mjs` (T13–T21) and
+`no-ocr.e2e.mjs` (T22–T27) share `vault-harness.mjs`: one fresh member per file
+and a new destination portfolio per test, and the order in which answers
+arrive is controlled by holding them (`gate`), never by sleeping. `trash.e2e.mjs`
+restarts the test stack's `app` container and `no-ocr.e2e.mjs` reads its
+compose project (`E2E_COMPOSE`).

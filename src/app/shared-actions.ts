@@ -110,8 +110,12 @@ async function sharedDestination(
       if (!result?.ok) throw new Error(result?.error ?? "No se pudo crear el portafolio.");
       return result.id;
     },
-    putFile: async (file, folderId, signal) => {
-      const stored = await uploadVaultFile(file, { shareId, portfolioId: folderId }, { signal });
+    putFile: async (file, folderId, signal, importId) => {
+      const stored = await uploadVaultFile(
+        file,
+        { shareId, portfolioId: folderId },
+        { signal, importId },
+      );
       const result = await addSharedFile({
         data: {
           shareId,

@@ -17,6 +17,7 @@ import {
   type PdfNote,
 } from "@/app/comments";
 import { intl, t } from "@/app/i18n";
+import { reportViewer } from "@/app/files";
 
 /**
  * PDF.js viewer supports phrase links, anchored comments, existing PDF annotations and Ctrl+F
@@ -66,6 +67,30 @@ export type PdfViewProps = {
   reloadKey?: number;
   signatures?: PdfSignLayer;
 };
+
+/**
+ * Why PDF.js could not open a file: the download (expired link, missing object, server error),
+ * the file itself (not a PDF, password) or the rendering.
+ */
+function pdfProblem(failure: unknown): { kind: string; message: string } {
+  const name = failure instanceof Error ? failure.name : "";
+  const status = (failure as { status?: number } | null)?.status ?? 0;
+  if (name === "ResponseException" || name === "UnexpectedResponseException" || status) {
+    if (status === 401 || status === 403)
+      return {
+        kind: `download ${status}`,
+        message: "El enlace del archivo caducó o ya no tienes acceso. Vuelve a abrirlo.",
+      };
+    if (status === 404)
+      return { kind: "download 404", message: "El servidor no encontró el archivo." };
+    return { kind: `download ${status}`, message: "No se pudo descargar el PDF." };
+  }
+  if (name === "InvalidPDFException")
+    return { kind: "invalid", message: "El archivo no es un PDF válido." };
+  if (name === "PasswordException")
+    return { kind: "password", message: "El PDF está protegido con contraseña." };
+  return { kind: `render ${name}`.trim(), message: "No se pudo mostrar el PDF." };
+}
 
 let loader: Promise<PdfJs> | null = null;
 
@@ -152,7 +177,7 @@ export function PdfView({
 }: PdfViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<{ lib: PdfJs; doc: PDFDocumentProxy; ratio: number } | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const [width, setWidth] = useState(0);
   const [composing, setComposing] = useState<Picked | null>(null);
   const [findOpen, setFindOpen] = useState(false);
@@ -187,8 +212,9 @@ export function PdfView({
     let cancelled = false;
     let doc: PDFDocumentProxy | null = null;
     setPdf(null);
-    setError(false);
+    setError("");
     setEmbedded([]);
+    const started = performance.now();
     void (async () => {
       try {
         const lib = await loadPdfJs();
@@ -232,8 +258,11 @@ export function PdfView({
           }
         }
         if (!cancelled) setEmbedded(found);
-      } catch {
-        if (!cancelled) setError(true);
+      } catch (failure) {
+        if (cancelled) return;
+        const problem = pdfProblem(failure);
+        setError(problem.message);
+        reportViewer("pdf", problem.kind, performance.now() - started);
       }
     })();
     return () => {
@@ -393,7 +422,12 @@ export function PdfView({
 
   const anchored = useMemo(() => comments.filter((comment) => comment.anchor), [comments]);
 
-  if (error) return <p className="text-sm text-danger">{t("No se pudo abrir el PDF.")}</p>;
+  if (error)
+    return (
+      <p data-ui="pdf-error" className="text-sm text-danger">
+        {t(error)}
+      </p>
+    );
 
   const bubbleNotes = bubble?.noteIds
     ? comments.filter((comment) => bubble.noteIds!.includes(comment.id))

@@ -18,6 +18,7 @@ import {
 } from "@/domain/vault/types";
 import { can, subscribePermissions } from "@/app/permissions";
 import { heldAdminId } from "@/app/vault-hold";
+import { recordDeletes } from "./pending-deletes";
 import { createSeed } from "./seed";
 import { t } from "@/app/i18n";
 
@@ -323,20 +324,18 @@ type VaultState = Persisted & {
     /** quiet leaves selection and folding alone, for background uploads. */
     options?: { open?: boolean; quiet?: boolean },
   ) => string;
-  /** open selects a newly uploaded file; normal uploads leave it closed. */
-  uploadFile: (
-    portfolioId: string | null,
-    name: string,
-    mime: string,
-    stored: { key: string; size: number },
-    open?: boolean,
-    quiet?: boolean,
-  ) => string | null;
   createPortfolio: (
     parentId: string | null,
     name: string,
     options?: { quiet?: boolean },
   ) => string | null;
+  /**
+   * Show folders and documents the server already stored (a background upload): nothing is
+   * selected or unfolded, and synchronization does not send them again (see sync.ts markKnown).
+   */
+  addImported: (items: { docs?: Document[]; portfolios?: Portfolio[] }) => void;
+  /** A free title for a new document of that kind in portfolioId. */
+  freeTitle: (portfolioId: string | null, base: string, kind: "markdown" | "file") => string;
   deleteDocument: (id: string) => void;
   deletePortfolio: (id: string) => void;
   /** Move selected doc:<id> and port:<id> entries, including descendants, to trash. */
@@ -418,8 +417,22 @@ function persist(state: Pick<VaultState, "owner" | "hydrated" | keyof Persisted>
   };
   try {
     localStorage.setItem(storageKey(state.owner), JSON.stringify(payload));
-  } catch {
-    /* almacenamiento lleno o no disponible */
+  } catch (error) {
+    // The vault no longer fits in this browser's storage. An older copy left behind would be
+    // read on the next visit as if it were current; drop it, so that visit loads the vault from
+    // the server instead (see sync.ts). The server already has what was synchronized.
+    let dropped = true;
+    try {
+      localStorage.removeItem(storageKey(state.owner));
+    } catch {
+      // Storage is unavailable altogether: there is no copy to go stale either.
+      dropped = false;
+    }
+    console.warn("[vault] local copy not saved; the next visit loads it from the server", {
+      documents: payload.documents.length,
+      error: error instanceof Error ? error.name : "error",
+      dropped,
+    });
   }
 }
 
@@ -673,34 +686,6 @@ export const useVault = create<VaultState>((set, get) => ({
     return document.id;
   },
 
-  uploadFile: (portfolioId, name, mime, stored, open = false, quiet = false) => {
-    if (!can(PERMISSION.filesUpload)) return t("Tu rol no permite subir archivos.");
-    const base = name.replace(/\.[^.]+$/, "") || name;
-    const title = uniqueTitle(get().documents, base, portfolioId, "file");
-    const document: Document = {
-      id: uuid(),
-      title,
-      portfolioId,
-      kind: "file",
-      content: "",
-      file: { name, mime: mime || "application/octet-stream", key: stored.key, size: stored.size },
-      links: [],
-      ...born(),
-      pinned: false,
-    };
-    set({
-      documents: [document, ...get().documents],
-      ...(open ? { activeId: document.id, folderPicked: false, graph: false, palette: false } : {}),
-      ...(quiet
-        ? {}
-        : {
-            selectedPortfolioId: portfolioId,
-            collapsed: expandTo(get().collapsed, get().portfolios, portfolioId),
-          }),
-    });
-    return null;
-  },
-
   createPortfolio: (parentId, name, options) => {
     if (!can(PERMISSION.portfoliosManage)) return null;
     const clean = name.trim().replace(/[\\/]/g, "");
@@ -719,11 +704,37 @@ export const useVault = create<VaultState>((set, get) => ({
     return id;
   },
 
+  addImported: ({ docs = [], portfolios = [] }) => {
+    if (docs.length + portfolios.length === 0) return;
+    const state = get();
+    const incoming = new Map(docs.map((document) => [document.id, normalize(document)]));
+    const documents = state.documents.map((document) => {
+      const next = incoming.get(document.id);
+      if (!next) return document;
+      incoming.delete(document.id);
+      return next;
+    });
+    const folders = new Map(portfolios.map((portfolio) => [portfolio.id, portfolio]));
+    const nextPortfolios = state.portfolios.map((portfolio) => {
+      const next = folders.get(portfolio.id);
+      if (!next) return portfolio;
+      folders.delete(portfolio.id);
+      return next;
+    });
+    set({
+      documents: incoming.size > 0 ? [...incoming.values(), ...documents] : documents,
+      portfolios: folders.size > 0 ? [...nextPortfolios, ...folders.values()] : nextPortfolios,
+    });
+  },
+
+  freeTitle: (portfolioId, base, kind) => uniqueTitle(get().documents, base, portfolioId, kind),
+
   deleteDocument: (id) => {
     const state = get();
     const target = state.documents.find((document) => document.id === id);
     if (!target || !can(deletePermission(target.kind))) return;
     const removed = new Set([id]);
+    recordDeletes(state.owner, removed);
     const documents = state.documents
       .filter((document) => document.id !== id)
       .map((document) => ({
@@ -761,6 +772,7 @@ export const useVault = create<VaultState>((set, get) => ({
       const document = state.documents.find((item) => item.id === key.slice(4));
       if (document && can(deletePermission(document.kind))) removedDocs.add(document.id);
     }
+    recordDeletes(state.owner, removedDocs, removedPortfolios);
     const documents = state.documents
       .filter((document) => !removedDocs.has(document.id))
       .map((document) => ({
@@ -919,6 +931,7 @@ export const useVault = create<VaultState>((set, get) => ({
       return;
     }
     if (action === "replace") {
+      recordDeletes(get().owner, [dialog.existingId]);
       const documents = get()
         .documents.filter((document) => document.id !== dialog.existingId)
         .map((document) => ({
@@ -1092,7 +1105,18 @@ export const useVault = create<VaultState>((set, get) => ({
 
   reset: () => {
     if (!can(PERMISSION.notesCreate) || !can(PERMISSION.notesDelete)) return;
-    set({ ...freshVault(null), hydrated: get().owner !== null, restoreSample: true });
+    const fresh = freshVault(null);
+    const kept = new Set([...fresh.documents, ...fresh.portfolios].map((item) => item.id));
+    recordDeletes(
+      get().owner,
+      get()
+        .documents.map((document) => document.id)
+        .filter((id) => !kept.has(id)),
+      get()
+        .portfolios.map((portfolio) => portfolio.id)
+        .filter((id) => !kept.has(id)),
+    );
+    set({ ...fresh, hydrated: get().owner !== null, restoreSample: true });
   },
 
   restoreSample: false,
@@ -1116,6 +1140,8 @@ function settleDraft(): void {
   if (!draft || state.activeId === draft.id) return;
   const document = state.documents.find((item) => item.id === draft.id);
   if (document && isBlankDraft(draft, document)) {
+    // It may have reached the server before it was emptied again: delete it there too.
+    recordDeletes(state.owner, [document.id]);
     useVault.setState({
       documents: state.documents.filter((item) => item.id !== draft.id),
       draft: null,

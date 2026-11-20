@@ -1,10 +1,10 @@
 /**
- * LaTeX documents and OCR in a real browser against the local test stack (project grafito-e2e)
- * with the latex and ocr services. Not part of `npm test`.
+ * LaTeX documents in a real browser against the local test stack (project grafito-e2e) with the
+ * latex service. Not part of `npm test`.
  *
  *   E2E_BASE_URL=http://127.0.0.1:8080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
- *   node --test tests/e2e/latex-ocr.e2e.mjs
+ *   node --test tests/e2e/latex.e2e.mjs
  *
  * Each run creates a fresh "e2elx-" member.
  */
@@ -40,7 +40,7 @@ async function until(check, label, ms = 60_000) {
   }
 }
 
-describe("LaTeX documents and OCR", () => {
+describe("LaTeX documents", () => {
   let browser;
   let page;
   let userId;
@@ -189,73 +189,5 @@ describe("LaTeX documents and OCR", () => {
         "\\end{document}",
       ].join("\n"),
     );
-  });
-
-  test("a scanned PDF and a photo are read by OCR and become searchable", async () => {
-    // A "scan": text drawn on a canvas, saved as PNG and as an image-only PDF.
-    const files = await page.evaluate(async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1240;
-      canvas.height = 1754;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#111";
-      ctx.font = "56px serif";
-      ctx.fillText("CONTRATO DE ARRENDAMIENTO", 120, 260);
-      ctx.font = "40px serif";
-      ctx.fillText("Expediente hipopotamo numero 4521", 120, 380);
-      const png = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-      const toBase64 = async (blob) => {
-        const bytes = new Uint8Array(await blob.arrayBuffer());
-        let text = "";
-        for (const byte of bytes) text += String.fromCharCode(byte);
-        return btoa(text);
-      };
-      return { png: await toBase64(png), jpeg: await toBase64(jpeg) };
-    });
-    // The image-only PDF is built here with pdf-lib, from the JPEG.
-    const { PDFDocument } = await import("pdf-lib");
-    const pdf = await PDFDocument.create();
-    const jpg = await pdf.embedJpg(Buffer.from(files.jpeg, "base64"));
-    pdf.addPage([595, 842]).drawImage(jpg, { x: 0, y: 0, width: 595, height: 842 });
-    const pdfBytes = Buffer.from(await pdf.save()).toString("base64");
-
-    await page
-      .locator('input[type="file"][multiple]')
-      .first()
-      .setInputFiles([
-        {
-          name: "escaneo-contrato.pdf",
-          mimeType: "application/pdf",
-          buffer: Buffer.from(pdfBytes, "base64"),
-        },
-        {
-          name: "foto-contrato.png",
-          mimeType: "image/png",
-          buffer: Buffer.from(files.png, "base64"),
-        },
-      ]);
-    await page.locator('article[data-job="done"]').waitFor();
-    for (const name of ["escaneo-contrato.pdf", "foto-contrato.png"]) {
-      await until(
-        async () =>
-          (
-            await query(
-              `select 1 from doc_index i join vault_doc d on d.user_id = i.user_id and d.id = i.doc_id
-               where i.user_id = $1 and d.file_name = $2 and i.body ilike '%hipopotamo%'`,
-              [userId, name],
-            )
-          ).length > 0,
-        `OCR text of ${name}`,
-        240_000,
-      );
-    }
-    // Found from the app's search.
-    await page.keyboard.press("Control+k");
-    await page.keyboard.type("hipopotamo");
-    await page.getByText("escaneo-contrato", { exact: false }).first().waitFor();
-    await page.keyboard.press("Escape");
   });
 });

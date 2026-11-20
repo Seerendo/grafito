@@ -269,10 +269,10 @@ last extension counts (`backup.tar.gz` is `gz`). The lists are
 
 ## Extensions
 
-Administración → Extensiones lists Grafo, LaTeX, OCR, Mermaid, Vínculos and
-Git. The ones with a service of their own are checked against it (Grafo →
-Grafeno, LaTeX → `latex`, OCR → `ocr`, at most every 10 s, or at once with
-**Comprobar conexión**):
+Administración → Extensiones lists Grafo, LaTeX, Mermaid, Vínculos and Git.
+The ones with a service of their own are checked against it (Grafo →
+Grafeno, LaTeX → `latex`, at most every 10 s, or at once with **Comprobar
+conexión**):
 
 - An extension only turns on when its check passes.
 - One that is on and loses its service is paused, not turned off: the app
@@ -280,17 +280,16 @@ Grafeno, LaTeX → `latex`, OCR → `ocr`, at most every 10 s, or at once with
   administrator's choice stays. Open pages notice within a minute.
 - When the service answers again it resumes on its own. Grafo copies what
   changed meanwhile and checks at once which vaults Grafeno still holds, in
-  case it restarted empty. OCR reads the documents queued while it was down;
-  they wait instead of failing.
+  case it restarted empty.
 
 Mermaid, Vínculos and Git have no service to check. The table is still
 `app_plugin` and the permission `plugins.manage`, so existing roles and
-choices carry over; migration 0044 adds LaTeX and OCR, both on.
+choices carry over; migration 0044 adds LaTeX, on.
 
-## LaTeX and OCR
+## LaTeX
 
-Two services start with the rest (`docker compose up -d --build` builds
-them the first time; plan several minutes and about 4 GB of images):
+The `latex` service starts with the rest (`docker compose up -d --build`
+builds it the first time; plan several minutes and a few GB of image):
 
 - `latex` (docker/latex): TeX Live compiling with `pdflatex`, or XeLaTeX when
   the document starts with `% !TEX program = xelatex`; BibTeX or biber run
@@ -303,14 +302,24 @@ them the first time; plan several minutes and about 4 GB of images):
   docker/latex/Dockerfile and rebuild. `LATEX_URL` in the app points at it
   (`http://latex:8080`); `LATEX_URL=` turns compilation off, and `.tex` files
   still open and save.
-- `ocr` (docker/ocr): OCRmyPDF and Tesseract, Spanish and English. Indexing
-  queues PDFs without a text layer and images; the app reads one at a time in
-  the background and indexes the text. `OCR_JOBS` (2) is how many CPU cores
-  one document may use; `OCR_MAX_PAGES` (300) and `OCR_TIMEOUT_SECONDS` (900)
-  bound a single document. `OCR_URL=` turns OCR off; scans are then indexed by
-  name. Progress is in Administración → Indexación.
 
-Neither port is published.
+Its port is not published.
+
+### OCR removed
+
+Grafito no longer reads text from scanned PDFs or images; no other engine
+replaces it. Scans and photos are stored, shown and downloaded as before,
+and search finds them by name. Upgrading from a version with OCR:
+
+- Back up the database first (see Scheduled backups): migration 0045 drops
+  `ocr_text`, the text the OCR had read. That text came from the stored
+  files, which are kept; no document or file is deleted.
+- The same migration has the documents that were indexed with OCR text
+  indexed again without it, and removes OCR from Administración →
+  Extensiones.
+- `docker compose up -d --remove-orphans` removes the old `ocr` container;
+  `docker image rm grafito-ocr:1` frees its image. `OCR_URL`, `OCR_JOBS`,
+  `OCR_MAX_PAGES` and `OCR_TIMEOUT_SECONDS` are no longer read.
 
 ## Indexing large uploads
 

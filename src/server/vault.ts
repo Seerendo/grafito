@@ -636,6 +636,94 @@ export async function createPortfolio(
   return portfolio;
 }
 
+// Imports: folders, notes and files registered one by one as a background upload goes, so each is
+// on the server (and can be opened, shared, indexed or trashed) as soon as the browser shows it.
+
+/** Raised when the folder an imported item goes into is gone; the item is reported, not placed. */
+async function requireFolder(sql: Sql, userId: string, id: string | null): Promise<void> {
+  if (id && !(await portfolioExists(sql, userId, id)))
+    throw new VaultError("La carpeta de destino ya no existe.", 409);
+}
+
+/**
+ * The folder named `name` under parentId: an existing one with that name (the same import sent
+ * again, or a folder already there), or a new one with the browser's id. Never a second folder
+ * with the same name in the same place.
+ */
+export async function ensureImportFolder(
+  sql: Sql,
+  userId: string,
+  input: { id: string; name: string; parentId: string | null },
+): Promise<{ portfolio: Portfolio; created: boolean; revision: number }> {
+  const name = input.name.trim().replace(/[\\/]/g, "").slice(0, 120);
+  if (!name) throw new VaultError("La carpeta no tiene nombre.");
+  await requireFolder(sql, userId, input.parentId);
+  const found = await sql<{
+    id: string;
+    name: string;
+    parent_id: string | null;
+    links_json: string;
+  }>`
+    select id, name, parent_id, links_json from vault_portfolio
+    where user_id = ${userId} and not deleted
+      and (id = ${input.id} or (name = ${name} and coalesce(parent_id, '') = coalesce(${input.parentId}, '')))
+    order by (id = ${input.id}) desc
+    limit 1
+  `;
+  const row = found[0];
+  if (row) {
+    return {
+      portfolio: {
+        id: row.id,
+        name: row.name,
+        parentId: row.parent_id,
+        links: parseLinks(row.links_json ?? "[]"),
+      },
+      created: false,
+      revision: await currentRevision(sql, userId),
+    };
+  }
+  const portfolio: Portfolio = { id: input.id, name, parentId: input.parentId, links: [] };
+  const result = await pushChanges(sql, userId, {
+    docs: [],
+    deletedDocs: [],
+    portfolios: [portfolio],
+    deletedPortfolios: [],
+  });
+  return { portfolio, created: true, revision: result.revision };
+}
+
+/**
+ * Store an imported document (a note, or a file whose object was just uploaded and scanned)
+ * under the browser's id. Sending the same id again returns what is stored: a retried request
+ * never makes a second copy.
+ */
+export async function registerImportedDoc(
+  sql: Sql,
+  userId: string,
+  doc: Document,
+): Promise<{ doc: Document; created: boolean; revision: number }> {
+  if (doc.content.length > MAX_CONTENT) throw new VaultError("La nota es demasiado larga.");
+  const existing = await getDoc(sql, userId, doc.id);
+  if (existing)
+    return { doc: existing, created: false, revision: await currentRevision(sql, userId) };
+  const taken = await sql<{ id: string }>`
+    select id from vault_doc where user_id = ${userId} and id = ${doc.id} and deleted limit 1
+  `;
+  // An id already used by something in the trash is not reused: that would restore it.
+  if (taken[0]) throw new VaultError("Ese documento ya existió y está en la papelera.", 409);
+  await requireFolder(sql, userId, doc.portfolioId);
+  const result = await pushChanges(sql, userId, {
+    docs: [doc],
+    deletedDocs: [],
+    portfolios: [],
+    deletedPortfolios: [],
+  });
+  const stored = await getDoc(sql, userId, doc.id);
+  if (!stored) throw new VaultError("No se pudo guardar el documento.", 500);
+  return { doc: stored, created: true, revision: result.revision };
+}
+
 /**
  * Replace file content after Office saves or restores. The new object already exists; retain
  * the old one in history.
@@ -746,10 +834,17 @@ export async function listTrash(sql: Sql, userId: string): Promise<TrashItem[]> 
     id: string;
     name: string;
   }>`select id, name from vault_portfolio where user_id = ${userId}`;
-  const nameOf = (id: string | null) =>
-    id ? (names.find((row) => row.id === id)?.name ?? null) : null;
+  const nameById = new Map(names.map((row) => [row.id, row.name]));
+  const nameOf = (id: string | null) => (id ? (nameById.get(id) ?? null) : null);
+  const trashedAt = new Map(
+    trashed.map((portfolio) => [portfolio.id, Number(portfolio.deleted_at)]),
+  );
+  // Listed on its own unless its folder went to the trash with it (or after it is restored with
+  // that folder; see restorePortfolio): one deleted before its folder keeps its own entry.
+  const ownEntry = (parentId: string | null, deletedAt: unknown) =>
+    !parentId || !trashedIds.has(parentId) || Number(deletedAt) < (trashedAt.get(parentId) ?? 0);
   const docs: TrashItem[] = rows
-    .filter((row) => !row.portfolio_id || !trashedIds.has(row.portfolio_id))
+    .filter((row) => ownEntry(row.portfolio_id, row.deleted_at))
     .map((row) => ({
       id: row.id,
       title: row.title,
@@ -758,16 +853,24 @@ export async function listTrash(sql: Sql, userId: string): Promise<TrashItem[]> 
       deletedAt: Number(row.deleted_at),
     }));
   const portfolios: TrashItem[] = trashed
-    .filter((portfolio) => !portfolio.parent_id || !trashedIds.has(portfolio.parent_id))
+    .filter((portfolio) => ownEntry(portfolio.parent_id, portfolio.deleted_at))
     .map((portfolio) => {
-      const inside = trashedSubtree(trashed, portfolio.id);
+      // What restoring it brings back; see restorePortfolio.
+      const cutoff = Number(portfolio.deleted_at);
+      const inside = trashedSubtree(
+        trashed.filter((item) => item.id === portfolio.id || Number(item.deleted_at) >= cutoff),
+        portfolio.id,
+      );
       return {
         id: portfolio.id,
         title: portfolio.name,
         kind: "portfolio" as const,
         portfolioName: nameOf(portfolio.parent_id),
-        deletedAt: Number(portfolio.deleted_at),
-        count: rows.filter((row) => row.portfolio_id && inside.has(row.portfolio_id)).length,
+        deletedAt: cutoff,
+        count: rows.filter(
+          (row) =>
+            row.portfolio_id && inside.has(row.portfolio_id) && Number(row.deleted_at) >= cutoff,
+        ).length,
       };
     });
   return [...portfolios, ...docs].sort((a, b) => b.deletedAt - a.deletedAt);
@@ -854,9 +957,13 @@ async function restorePortfolio(
   const trashed = await trashedPortfolios(sql, userId);
   const portfolio = trashed.find((item) => item.id === id);
   if (!portfolio) throw new VaultError("Ese portafolio ya no está en la papelera.", 404);
+  // What went to the trash with this portfolio (the same deletion or a later one); a subfolder or
+  // a document deleted on its own before stays in the trash as its own entry.
+  const cutoff = Number(portfolio.deleted_at);
+  const withIt = trashed.filter((item) => item.id === id || Number(item.deleted_at) >= cutoff);
   const rev = await nextRevision(sql, userId);
   const parentId = await reviveParents(sql, userId, portfolio.parent_id, rev);
-  for (const folder of trashedSubtree(trashed, id)) {
+  for (const folder of trashedSubtree(withIt, id)) {
     await sql`
       update vault_portfolio set deleted = false, deleted_at = null, rev = ${rev}
       where user_id = ${userId} and id = ${folder}
@@ -864,6 +971,7 @@ async function restorePortfolio(
     const docs = await sql<{ id: string; title: string; kind: string }>`
       select id, title, kind from vault_doc
       where user_id = ${userId} and deleted and deleted_at is not null and portfolio_id = ${folder}
+        and deleted_at >= ${cutoff}
     `;
     for (const doc of docs) await reviveDoc(sql, userId, doc.id, doc, folder, actor, rev);
   }
@@ -916,14 +1024,19 @@ export async function purgeTrash(sql: Sql, userId: string, ids?: string[]): Prom
   const targets = ids ?? (await listTrash(sql, userId)).map((item) => item.id);
   const trashed = await trashedPortfolios(sql, userId);
   for (const id of targets) {
-    if (!trashed.some((portfolio) => portfolio.id === id)) {
+    const portfolio = trashed.find((item) => item.id === id);
+    if (!portfolio) {
       await purgeDoc(sql, userId, id);
       continue;
     }
-    for (const folder of trashedSubtree(trashed, id)) {
+    // The same items listTrash shows inside it; those deleted earlier keep their own entries.
+    const cutoff = Number(portfolio.deleted_at);
+    const withIt = trashed.filter((item) => item.id === id || Number(item.deleted_at) >= cutoff);
+    for (const folder of trashedSubtree(withIt, id)) {
       const docs = await sql<{ id: string }>`
         select id from vault_doc
         where user_id = ${userId} and deleted and deleted_at is not null and portfolio_id = ${folder}
+          and deleted_at >= ${cutoff}
       `;
       for (const doc of docs) await purgeDoc(sql, userId, doc.id);
       await sql`update vault_portfolio set deleted_at = null where user_id = ${userId} and id = ${folder}`;

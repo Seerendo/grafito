@@ -3,10 +3,8 @@ import { UploadError } from "@/app/files";
 import { t } from "@/app/i18n";
 import { NO_RULES, type ExtensionRules } from "@/domain/file-extensions";
 import {
-  blockedByFolder,
-  countBatch,
+  BatchProgress,
   failureState,
-  nextPending,
   planBatch,
   type BatchCounts,
   type BatchEntry,
@@ -15,24 +13,46 @@ import { uuid } from "@/lib/uuid";
 import { extensionRules } from "@/server/file-rules.functions";
 
 /**
- * Background uploads. A drop or a selection becomes a job; jobs run one file at a time, in
- * order, while the person keeps working: nothing opens and the selection does not move. A job
- * can be paused (the file in flight is abandoned and sent again on resume), resumed from the
- * first entry not yet uploaded, or cancelled. Jobs live in this tab: a reload asks first.
+ * Background uploads. A drop or a selection becomes a job that runs while the person keeps
+ * working: nothing opens and the selection does not move. Folders are created first, outermost
+ * to innermost, one at a time; then files go up a few at a time, each into a folder that already
+ * exists on the server. A file counts as uploaded only when the server stored it and its
+ * document (see UploadDestination.putFile): from then on it can be opened, shared or deleted.
+ * A job can be paused (files in flight are abandoned and sent again on resume), resumed or
+ * cancelled. Jobs live in this tab: a reload asks first, and dropping the same folder again
+ * afterwards skips what already arrived (same name and size in the same folder).
  */
 
 /** Where a job puts its folders and files: the personal vault or an editable share. */
 export type UploadDestination = {
   label: string;
   rootId: string | null;
+  /** Make sure the destination exists on the server; an error message when it does not. */
+  prepare?: () => Promise<string | null>;
   /** Existing folder with that name under parentId, if any. */
   findFolder: (parentId: string | null, name: string) => string | null;
-  createFolder: (parentId: string | null, name: string) => Promise<string>;
-  putFile: (file: File, folderId: string | null, signal: AbortSignal) => Promise<void>;
-  /** Let the server and the views catch up: called every few files and when a job stops. */
+  createFolder: (parentId: string | null, name: string, importId: string) => Promise<string>;
+  /** The same file (name and size) is already in that folder. */
+  hasFile?: (folderId: string | null, name: string, size: number) => boolean;
+  /** The document with this id is known here (stored by an earlier try of the same entry). */
+  hasDoc?: (docId: string) => boolean;
+  /**
+   * Resolves once the server stored the file and the document that holds it, under docId when
+   * the destination takes the browser's ids.
+   */
+  putFile: (
+    file: File,
+    folderId: string | null,
+    signal: AbortSignal,
+    importId: string,
+    docId: string,
+  ) => Promise<void>;
+  /** Let the views catch up with the server: called when a job stops. */
   checkpoint: () => Promise<void>;
   /** False when the job can no longer run here (another person signed in). */
   stillValid?: () => boolean;
+  /** Log what the job measured on the server, once it ends. */
+  report?: (summary: JobReport) => Promise<void>;
 };
 
 export type JobStatus = "running" | "paused" | "cancelled" | "done";
@@ -49,42 +69,71 @@ export type JobView = {
   error: string;
 };
 
+/** Measured for one job; see reportImport. */
+export type JobReport = {
+  importId: string;
+  status: "done" | "cancelled";
+  ms: number;
+  folders: number;
+  files: number;
+  done: number;
+  existing: number;
+  failed: number;
+  skipped: number;
+  bytes: number;
+  syncMs: number;
+  syncs: number;
+  errors: Record<string, number>;
+};
+
 type Job = {
   id: string;
   destination: UploadDestination;
-  entries: BatchEntry[];
+  batch: BatchProgress;
   files: File[];
   ids: Map<string, string | null>;
   status: JobStatus;
-  abort: AbortController | null;
+  /** Files in flight, by entry index. */
+  flight: Map<number, AbortController>;
   current: string;
   error: string;
   waiters: (() => void)[];
+  started: number;
+  errors: Record<string, number>;
 };
 
 const jobs = new Map<string, Job>();
 
 export const useUploadQueue = create<{ jobs: JobView[] }>(() => ({ jobs: [] }));
 
-/** Files uploaded between two checkpoints. */
-const CHECKPOINT_EVERY = 25;
+/** Files sent at the same time. The antivirus scan dominates each one; more only queue there. */
+export const FILE_CONCURRENCY = 3;
 
 function view(job: Job): JobView {
+  // Paused or cancelled shows once the files whose last request was already sent are settled:
+  // from then on nothing moves.
+  const settling = job.flight.size > 0 && (job.status === "paused" || job.status === "cancelled");
   return {
     id: job.id,
     label: job.destination.label,
-    status: job.status,
-    counts: countBatch(job.entries),
+    status: settling ? "running" : job.status,
+    counts: structuredClone(job.batch.counts),
     current: job.current,
-    problems: job.entries
-      .filter((entry) => entry.state !== "done" && entry.state !== "pending")
-      .map((entry) => ({ path: entry.path, state: entry.state, reason: entry.reason })),
+    problems: [...job.batch.problems],
     error: job.error,
   };
 }
 
+let publishing = false;
+
+/** Show the jobs' state; several changes in the same task are shown once. */
 function publish(): void {
-  useUploadQueue.setState({ jobs: [...jobs.values()].map(view) });
+  if (publishing) return;
+  publishing = true;
+  queueMicrotask(() => {
+    publishing = false;
+    useUploadQueue.setState({ jobs: [...jobs.values()].map(view) });
+  });
 }
 
 /** Errors are kept in Spanish, like server messages, and translated where shown. */
@@ -92,84 +141,192 @@ function messageOf(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "No se pudo subir.";
 }
 
-async function step(job: Job, index: number): Promise<void> {
-  const entry = job.entries[index]!;
-  const blocked = blockedByFolder(job.entries, index);
+function countError(job: Job, stage: string): void {
+  job.errors[stage] = (job.errors[stage] ?? 0) + 1;
+}
+
+function nameOf(entry: BatchEntry): string {
+  return entry.path.split("/").pop() ?? entry.path;
+}
+
+/** The server id of the folder an entry goes into; undefined when it is not there. */
+function parentOf(job: Job, entry: BatchEntry): string | null | undefined {
+  if (entry.folder === "") return job.destination.rootId;
+  return job.ids.get(entry.folder);
+}
+
+async function folderStep(job: Job, index: number): Promise<void> {
+  const entry = job.batch.entries[index]!;
+  const blocked = job.batch.blocked(entry);
   if (blocked) {
-    entry.state = "failed";
-    entry.reason = blocked;
+    job.batch.set(index, "failed", blocked);
     return;
   }
-  const parentId =
-    entry.folder === "" ? job.destination.rootId : (job.ids.get(entry.folder) ?? null);
-  const name = entry.path.split("/").pop() ?? entry.path;
+  const parentId = parentOf(job, entry);
+  if (parentId === undefined) {
+    // Never placed at the top instead: its folder is not on the server.
+    job.batch.set(index, "failed", "No se pudo crear la carpeta que la contiene.");
+    countError(job, "folder");
+    return;
+  }
   job.current = entry.path;
   publish();
-  if (entry.kind === "folder") {
-    try {
-      const found = job.destination.findFolder(parentId, name);
-      job.ids.set(entry.path, found ?? (await job.destination.createFolder(parentId, name)));
-      entry.state = "done";
-    } catch (error) {
-      entry.state = "failed";
-      entry.reason = messageOf(error);
-    }
+  try {
+    const name = nameOf(entry);
+    const found = job.destination.findFolder(parentId, name);
+    job.ids.set(entry.path, found ?? (await job.destination.createFolder(parentId, name, job.id)));
+    job.batch.set(index, "done");
+  } catch (error) {
+    job.batch.set(index, "failed", messageOf(error));
+    countError(job, "folder");
+  }
+}
+
+async function fileStep(job: Job, index: number): Promise<void> {
+  const entry = job.batch.entries[index]!;
+  const blocked = job.batch.blocked(entry);
+  if (blocked) {
+    job.batch.set(index, "failed", blocked);
+    return;
+  }
+  const folderId = parentOf(job, entry);
+  if (folderId === undefined) {
+    job.batch.set(index, "failed", "No se pudo crear la carpeta que lo contiene.");
+    countError(job, "folder");
     return;
   }
   const file = job.files[entry.source];
   if (!file) {
-    entry.state = "failed";
-    entry.reason = "No se pudo leer el archivo.";
+    job.batch.set(index, "failed", "No se pudo leer el archivo.");
+    countError(job, "read");
     return;
   }
+  // Stored by an earlier try whose answer did not arrive (a pause): it is this job's upload.
+  if (entry.docId && job.destination.hasDoc?.(entry.docId)) {
+    job.batch.set(index, "done");
+    return;
+  }
+  if (job.destination.hasFile?.(folderId, file.name, file.size)) {
+    job.batch.set(index, "existing");
+    return;
+  }
+  entry.docId ??= uuid();
   const controller = new AbortController();
-  job.abort = controller;
+  job.flight.set(index, controller);
+  job.current = entry.path;
+  publish();
   try {
-    await job.destination.putFile(file, parentId, controller.signal);
-    entry.state = "done";
+    await job.destination.putFile(file, folderId, controller.signal, job.id, entry.docId);
+    job.batch.set(index, "done");
   } catch (error) {
-    // Paused or cancelled: the file stays pending and is sent again on resume.
-    if (controller.signal.aborted) return;
-    entry.state = failureState(error instanceof UploadError ? error.status : null);
-    entry.reason = messageOf(error);
+    // Paused or cancelled during the transfer: the file stays pending and is sent again on
+    // resume. An answer from the server (a refusal) is reported even then.
+    if (controller.signal.aborted && !(error instanceof UploadError)) return;
+    const status = error instanceof UploadError ? error.status : null;
+    job.batch.set(index, failureState(status), messageOf(error));
+    // The server logs the stage that failed (storage, scan, register) under the same id.
+    countError(job, status === 422 ? "antivirus" : status === null ? "network" : "transfer");
   } finally {
-    job.abort = null;
+    job.flight.delete(index);
   }
 }
 
 async function runJob(job: Job): Promise<void> {
-  let sinceCheckpoint = 0;
-  while (job.status === "running") {
-    if (job.destination.stillValid && !job.destination.stillValid()) {
+  if (job.destination.prepare) {
+    const problem = await job.destination.prepare().catch((error: unknown) => messageOf(error));
+    if (problem) {
       job.status = "cancelled";
-      job.error = "La sesión cambió; la carga se detuvo.";
-      break;
+      job.error = problem;
     }
-    const index = nextPending(job.entries);
-    if (index === -1) {
-      job.status = "done";
-      break;
-    }
-    const before = job.entries[index]!.kind;
-    await step(job, index);
-    if (before === "file") sinceCheckpoint += 1;
+  }
+  job.batch.rewind();
+  const valid = () => {
+    if (!job.destination.stillValid || job.destination.stillValid()) return true;
+    job.status = "cancelled";
+    job.error = "La sesión cambió; la carga se detuvo.";
+    return false;
+  };
+  // Folders, in order: each one's parent is created before it.
+  while (job.status === "running" && valid()) {
+    const index = job.batch.nextFolder();
+    if (index === -1) break;
+    await folderStep(job, index);
     publish();
-    if (sinceCheckpoint >= CHECKPOINT_EVERY) {
-      sinceCheckpoint = 0;
-      await job.destination.checkpoint().catch(() => undefined);
+  }
+  // Files, a few at a time; every folder they need was settled above.
+  const lane = async () => {
+    while (job.status === "running" && valid()) {
+      const index = job.batch.claimFile(new Set(job.flight.keys()));
+      if (index === -1) return;
+      // Claimed before the first await, so no other lane takes it.
+      job.flight.set(index, new AbortController());
+      try {
+        await fileStep(job, index);
+      } finally {
+        job.flight.delete(index);
+      }
+      publish();
     }
-  }
+  };
+  await Promise.all(Array.from({ length: FILE_CONCURRENCY }, lane));
+  if (job.status === "running") job.status = "done";
   job.current = "";
-  await job.destination.checkpoint().catch(() => undefined);
+  // Shown once the views caught up and the counts are final (see reconcile).
+  await job.destination.checkpoint().catch((error: unknown) => {
+    console.warn("[upload] the views could not catch up after the job", messageOf(error));
+  });
+  reconcile(job);
   publish();
-  if (job.status === "done" || job.status === "cancelled") {
-    for (const wake of job.waiters.splice(0)) wake();
-  }
+  if (job.status === "done" || job.status === "cancelled") finish(job);
+}
+
+/**
+ * After a pause or a cancel, files whose answer was abandoned may still have been stored by the
+ * server. Once the views caught up (checkpoint), those count as uploaded, not as left to send.
+ */
+function reconcile(job: Job): void {
+  const known = job.destination.hasDoc;
+  if (!known) return;
+  job.batch.entries.forEach((entry, index) => {
+    if (entry.kind === "file" && entry.state === "pending" && entry.docId && known(entry.docId))
+      job.batch.set(index, "done");
+  });
+}
+
+/** Wake whoever waits for the job, and log what it measured. */
+function finish(job: Job): void {
+  for (const wake of job.waiters.splice(0)) wake();
+  const counts = job.batch.counts;
+  const report: JobReport = {
+    importId: job.id,
+    status: job.status === "done" ? "done" : "cancelled",
+    ms: Math.round(performance.now() - job.started),
+    folders: counts.folders.total,
+    files: counts.files.total,
+    done: counts.files.done,
+    existing: counts.files.existing,
+    failed: counts.files.failed + counts.files.infected + counts.folders.failed,
+    skipped: counts.files.skipped,
+    bytes: counts.bytes.done,
+    ...syncCost(),
+    errors: job.errors,
+  };
+  console.info("[upload] job finished", report);
+  void job.destination.report?.(report).catch((error: unknown) => {
+    console.warn("[upload] the job summary could not be sent", messageOf(error));
+  });
+}
+
+let syncCost: () => { syncMs: number; syncs: number } = () => ({ syncMs: 0, syncs: 0 });
+
+/** Where the report reads the synchronization cost from (app/vault/sync.ts syncTotals). */
+export function measureSyncWith(read: () => { syncMs: number; syncs: number }): void {
+  syncCost = read;
 }
 
 let pumping = false;
 
-/** Run running jobs one after another; a single file is in flight at a time. */
+/** Run running jobs one after another. */
 async function pump(): Promise<void> {
   if (pumping) return;
   pumping = true;
@@ -202,14 +359,16 @@ export async function enqueueUpload(
   const job: Job = {
     id: uuid(),
     destination,
-    entries,
+    batch: new BatchProgress(entries),
     files: input.files.map((item) => item.file),
     ids: new Map([["", destination.rootId]]),
     status: "running",
-    abort: null,
+    flight: new Map(),
     current: "",
     error: "",
     waiters: [],
+    started: performance.now(),
+    errors: {},
   };
   jobs.set(job.id, job);
   publish();
@@ -219,11 +378,15 @@ export async function enqueueUpload(
   return job.id;
 }
 
+function abortFlight(job: Job): void {
+  for (const controller of job.flight.values()) controller.abort();
+}
+
 export function pauseUpload(id: string): void {
   const job = jobs.get(id);
   if (job?.status !== "running") return;
   job.status = "paused";
-  job.abort?.abort();
+  abortFlight(job);
   publish();
 }
 
@@ -240,12 +403,20 @@ export function cancelUpload(id: string): void {
   if (!job || job.status === "done" || job.status === "cancelled") return;
   const wasPaused = job.status === "paused";
   job.status = "cancelled";
-  job.abort?.abort();
+  abortFlight(job);
   publish();
-  // A paused job has no loop to finish it: wake its waiters here.
+  // A paused job has no loop to finish it.
   if (wasPaused) {
-    void job.destination.checkpoint().catch(() => undefined);
-    for (const wake of job.waiters.splice(0)) wake();
+    void job.destination
+      .checkpoint()
+      .catch((error: unknown) => {
+        console.warn("[upload] the views could not catch up after cancelling", messageOf(error));
+      })
+      .then(() => {
+        reconcile(job);
+        publish();
+        finish(job);
+      });
   }
 }
 
@@ -260,8 +431,7 @@ export function dismissUpload(id: string): void {
 /** Uploads still to send: a reload or closing the tab would lose them. */
 export function uploadsPending(): boolean {
   return [...jobs.values()].some(
-    (job) =>
-      (job.status === "running" || job.status === "paused") && nextPending(job.entries) !== -1,
+    (job) => (job.status === "running" || job.status === "paused") && !job.batch.finished(),
   );
 }
 

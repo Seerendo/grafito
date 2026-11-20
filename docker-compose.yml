@@ -293,17 +293,6 @@ services:
     image: grafito-latex:2
     restart: unless-stopped
 
-  # OCR for scanned PDFs and images (docker/ocr): OCRmyPDF and Tesseract in
-  # Spanish and English. Grafito queues documents without a text layer and
-  # indexes what it reads. Its port is not published. Without it, scans are
-  # indexed by name only.
-  ocr:
-    build: ./docker/ocr
-    image: grafito-ocr:1
-    restart: unless-stopped
-    environment:
-      OCR_JOBS: ${OCR_JOBS:-2}
-
   # The front door: Grafito and the Office editor on one port (docker/gateway.conf).
   # Point your reverse proxy, or the browser, at this port.
   gateway:

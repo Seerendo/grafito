@@ -1,6 +1,6 @@
 import { Download, PenLine } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useFileLinks, type FileLinks } from "@/app/files";
+import { reportViewer, useFileLinks, type FileLinks, type LinkState } from "@/app/files";
 import { isOfficeFile, useOfficeEnabled, useOfficeReload } from "@/app/office";
 import { useVault } from "@/app/vault/store";
 import { syncVault } from "@/app/vault/sync";
@@ -155,6 +155,7 @@ function OwnFile({
       title={title}
       file={file}
       links={own.links}
+      status={own.status}
       onBroken={own.retry}
       office={{ docId }}
       pdf={pdf}
@@ -198,13 +199,24 @@ function ManualFile({
   );
 }
 
-/** Retry briefly while a newly uploaded file synchronizes to the server. */
+/** An expired link is asked for again this many times before the error is shown. */
 const RETRIES = 4;
+
+/** What the viewer says while an owned file has no link; see LinkState. */
+const LINK_MESSAGE: Record<Exclude<LinkState["state"], "ready">, string> = {
+  loading: "Cargando…",
+  pending: "Este documento aún no está en el servidor; se abrirá en cuanto se sincronice.",
+  missing: "El servidor no tiene este archivo. Puede que se haya eliminado en otra sesión.",
+  forbidden: "Tu rol no puede abrir este archivo.",
+  empty: "Este documento no tiene contenido guardado.",
+  failed: "No se pudo pedir el archivo al servidor.",
+};
 
 function FileBody({
   title,
   file,
   links,
+  status,
   onBroken,
   office,
   pdf,
@@ -213,6 +225,8 @@ function FileBody({
   title: string;
   file: VaultFile;
   links: FileLinks | null;
+  /** Why an owned file has no links yet. */
+  status?: LinkState;
   onBroken?: () => void;
   office: { docId: string; shareId?: string } | null;
   pdf?: PdfLinking;
@@ -234,11 +248,16 @@ function FileBody({
     const owner = useVault.getState().owner;
     if (owner && !office?.shareId) void syncVault(owner);
   };
+  // An image or media element that fails asks for a fresh link (an expired one) a few times.
   const broken = () => {
-    if (!onBroken || failures >= RETRIES) return;
+    if (!onBroken || failures >= RETRIES) {
+      if (failures === RETRIES) reportViewer(kind === "image" ? "image" : "media", "load", 0);
+      return;
+    }
     setFailures((value) => value + 1);
-    window.setTimeout(onBroken, 1200);
+    onBroken();
   };
+  const waiting = status && status.state !== "ready" ? status.state : "loading";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -283,7 +302,22 @@ function FileBody({
       ) : (
         <div className="min-h-0 flex-1 overflow-auto p-5 sm:p-6">
           {!links ? (
-            <p className="text-sm text-faint">{t("Cargando…")}</p>
+            <p
+              data-ui="file-status"
+              data-state={waiting}
+              className={`text-sm ${waiting === "loading" || waiting === "pending" ? "text-faint" : "text-danger"}`}
+            >
+              {t(LINK_MESSAGE[waiting])}
+              {(waiting === "missing" || waiting === "failed") && onBroken ? (
+                <button
+                  type="button"
+                  onClick={onBroken}
+                  className="ml-3 inline-flex h-9 items-center rounded-md border border-line px-3 text-fg hover:bg-elevated"
+                >
+                  {t("Reintentar")}
+                </button>
+              ) : null}
+            </p>
           ) : kind === "image" ? (
             <img
               key={links.url}
