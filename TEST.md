@@ -1569,6 +1569,38 @@ Streamable HTTP.
 | Security browser tests                                                                       | ✅ 8 of 9; GRAF-14 passes alone (sign-in limit after the rest) |
 | `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                     | ✅ 257 tests pass (the AI's own tests went with it)            |
 
+## Round 53: email module
+
+Test stack with `mail-sync` and a Dovecot IMAP server (`imap-test`, TLS with
+a test CA), synthetic mailboxes only (`tests/e2e/mail-seed.mjs`). Playwright
+1.60 (`tests/e2e/mail.e2e.mjs`, 14 tests covering T01–T41) and the MCP suite.
+Elasticsearch was down the whole round: mail search runs on Postgres.
+
+| Check                                                                                     | Result                                                                   |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Connect an IMAP account (wrong password refused, right one saved, secret never returned)  | ✅                                                                       |
+| First sync: folders with roles, 30-day window, newest first, flags                        | ✅ the 90-day-old message is not fetched                                 |
+| New message, deletion, flag change and a recreated folder (new UIDVALIDITY) on the server | ✅ all reflected; the recreated folder is fetched again                  |
+| Dangerous HTML: scripts, events, forms, `javascript:`, iframes, remote images             | ✅ none runs or loads; the CID image shows                               |
+| Attachments: PDF preview, text, EICAR                                                     | ✅ previewed, previewed, blocked by ClamAV                               |
+| Archive as Markdown, as text, as EML, attachments alone, into a new portfolio             | ✅ provenance kept, attachments linked                                   |
+| Search, filters (unread, flagged, attachments), next page                                 | ✅                                                                       |
+| SSRF: loopback, metadata, private address without a profile, port 22                      | ✅ all refused                                                           |
+| Isolation: another member's account, message, attachment link                             | ✅ not found                                                             |
+| Admin: policy, profiles, pause, retry, monitoring; audit entries                          | ✅                                                                       |
+| MCP: list, search, read, mark, archive, save an attachment; the prompt-injection mail     | ✅ text wrapped as untrusted content; accounts without MCP access hidden |
+| Mobile width (375 px): list, message, back                                                | ✅                                                                       |
+| T49: MinIO stopped while fetching an attachment                                           | ✅ retried with backoff, failed cleanly, fetched after MinIO came back   |
+| T50: Postgres, app and `mail-sync` restarted                                              | ✅ state kept, a new message synced                                      |
+| Regression: uploads, vault pages (Chromium and Firefox), trash                            | ✅ 3 + 3, 2 + 2, 8 of 8 (the earlier failures were the sign-in limit)    |
+| `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                  | ✅ 264 tests pass                                                        |
+
+Not covered: Gmail and Microsoft 365 (T07–T09, and T16 for them) need OAuth
+credentials this stack does not have; their connectors are written and
+type-checked only. Office attachments show no preview (T22): they open once
+saved to Grafito. Archiving into a workspace (T32) and Grafeno relations
+beyond the manual link (T33) were not tested end to end.
+
 ## Useful commands
 
 ```bash

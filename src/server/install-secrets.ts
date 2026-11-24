@@ -45,6 +45,29 @@ export function ensureInstallSecrets(): void {
   installSecrets(process.env, secretsDir());
 }
 
+/**
+ * For a second process (the mail-sync worker): take the secrets the app created, never create
+ * them, so two processes starting at once cannot end up with different keys. False while the
+ * encryption key is not there yet.
+ */
+export function adoptInstallSecrets(
+  env: Record<string, string | undefined> = process.env,
+  dir = secretsDir(),
+): boolean {
+  for (const name of Object.keys(PUBLIC_DEFAULTS)) {
+    const current = env[name]?.trim() ?? "";
+    if (current && !PUBLIC_DEFAULTS[name]!.includes(current)) continue;
+    const file = join(dir, name);
+    if (!existsSync(file)) return false;
+    const stored = readFileSync(file, "utf8").trim();
+    if (stored.length < 32) return false;
+    if (name === "GRAFITO_ENCRYPTION_KEY" && !env.GRAFITO_ENCRYPTION_KEY_PREVIOUS?.trim())
+      env.GRAFITO_ENCRYPTION_KEY_PREVIOUS = PUBLIC_DEFAULTS[name]![0];
+    env[name] = stored;
+  }
+  return true;
+}
+
 /** Apply secret initialization to an explicit environment and folder; report changes. */
 export function installSecrets(env: Record<string, string | undefined>, dir: string): string[] {
   const changed: string[] = [];

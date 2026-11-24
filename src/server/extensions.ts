@@ -6,7 +6,7 @@ import { latexUrl } from "./latex";
 /**
  * Extensions (the app_plugin table). An extension that needs a service is checked before it can
  * be turned on, and only runs while the check passes: Grafo needs Grafeno, LaTeX the latex
- * service. One that is on but loses its service is paused, not turned off, and runs again when
+ * service, Correo the mail-sync worker. One that is on but loses its service is paused, not turned off, and runs again when
  * the service answers; its background work (graph sync) picks up where it stopped. Mermaid,
  * Vínculos and Git need no service of their own.
  */
@@ -49,8 +49,25 @@ async function probe(id: string): Promise<ExtensionCheck> {
     }
     case "latex":
       return health(latexUrl(), "El compilador de LaTeX");
+    case "correo":
+      return mailWorkerCheck();
     default:
       return NO_SERVICE;
+  }
+}
+
+/** The mail-sync worker writes a heartbeat every 10 s; one within the last minute counts. */
+async function mailWorkerCheck(): Promise<ExtensionCheck> {
+  try {
+    const { getSql } = await import("@/lib/db");
+    const sql = await getSql();
+    const rows = await sql<{ at: unknown }>`select max(beat_at) as at from mail_worker`;
+    const at = Number(rows[0]?.at ?? 0);
+    return at > Date.now() - 60_000
+      ? { ok: true, service: true, detail: "" }
+      : { ok: false, service: true, detail: "El servicio mail-sync no está en marcha." };
+  } catch {
+    return { ok: false, service: true, detail: "El servicio mail-sync no está en marcha." };
   }
 }
 

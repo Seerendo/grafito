@@ -1,10 +1,12 @@
+import type { Sql } from "@/lib/db";
 import { openCorpus, type ToolResult } from "../corpus.ts";
 import type { ToolSpec } from "../types.ts";
 
 export type ToolEvent = ToolResult["event"];
 
-/** What a tool may touch beyond the vault: the caller's identity, for whoami. */
+/** What a tool may touch beyond the vault: the caller's identity and the database (mail tools). */
 export type ToolContext = {
+  sql: Sql;
   userId: string;
   profile: { displayName: string; loginName: string; roleName: string; permissions: string[] };
 };

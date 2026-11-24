@@ -270,7 +270,8 @@ last extension counts (`backup.tar.gz` is `gz`). The lists are
 
 ## Extensions
 
-Administración → Extensiones lists Grafo, LaTeX, Mermaid, Vínculos and Git.
+Administración → Extensiones lists Grafo, LaTeX, Correo electrónico, Mermaid,
+Vínculos and Git (Correo electrónico → the `mail-sync` worker's heartbeat).
 The ones with a service of their own are checked against it (Grafo →
 Grafeno, LaTeX → `latex`, at most every 10 s, or at once with **Comprobar
 conexión**):
@@ -286,6 +287,18 @@ conexión**):
 Mermaid, Vínculos and Git have no service to check. The table is still
 `app_plugin` and the permission `plugins.manage`, so existing roles and
 choices carry over; migration 0044 adds LaTeX, on.
+
+## Email accounts
+
+The `mail-sync` service (the app image with `node .output-mail/main.mjs`)
+copies people's mail accounts in the background; the web app only reads what
+it stored. It starts with the rest and stays idle until an administrator turns
+on the **Correo electrónico** extension. Scale it with
+`docker compose up -d --scale mail-sync=2`; each worker takes
+`MAIL_SYNC_DB_POOL` (6) database connections. It needs outbound access to the
+mail servers (IMAP 993/143, Gmail and Microsoft endpoints). Its state is in
+Postgres (backed up with the rest) and downloaded attachments in MinIO. Setup,
+variables and troubleshooting: [MAILBOX.md](MAILBOX.md).
 
 ## LaTeX
 

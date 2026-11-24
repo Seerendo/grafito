@@ -109,6 +109,24 @@ without the fixes. It failed there, so it catches each flaw.
   app only sends it the source of a document the caller can read, one
   compilation per person at a time.
 
+## Email accounts
+
+- Account passwords and OAuth tokens are sealed with
+  `GRAFITO_ENCRYPTION_KEY`, never sent back to the browser or logged; OAuth
+  uses PKCE and a single-use state that the person's own session completes.
+- Every mail query filters by the signed-in person; attachment links are
+  signed for their owner and expire in ten minutes; administrators see
+  figures, not messages.
+- IMAP hosts are resolved once and the connection goes to the checked
+  address: loopback, link-local, cloud metadata and Grafito's own services
+  are refused, private addresses only through an institutional profile,
+  ports 993 and 143 only, certificates always validated.
+- HTML mail is cleaned and shown in a sandboxed iframe without scripts or the
+  app's origin, with its own CSP; remote images wait for the person.
+- Downloaded attachments pass ClamAV (a scanner failure refuses the file).
+- MCP sees an account only when its owner allows it, and returns mail text
+  as untrusted content. Details: [MAILBOX.md](MAILBOX.md).
+
 ## Known limits
 
 - The CSP allows inline scripts, because of the server-rendered state

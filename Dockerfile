@@ -22,6 +22,8 @@ ENV HOST=0.0.0.0
 ENV PORT=8080
 
 COPY --from=build /app/.output ./.output
+# The mail-sync worker (src/mail-worker), started by the mail-sync service with its own command.
+COPY --from=build /app/.output-mail ./.output-mail
 
 EXPOSE 8080
 

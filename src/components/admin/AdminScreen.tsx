@@ -6,6 +6,7 @@ import {
   FileSearch,
   Waypoints,
   FolderOpen,
+  Inbox,
   PieChart,
   Clock,
   LayoutTemplate,
@@ -64,6 +65,7 @@ import { WorkspaceBoard } from "./WorkspaceBoard";
 import { AssignedSpaceBoard } from "./AssignedSpaceBoard";
 import { DesignPanel } from "./DesignPanel";
 import { MailBoard } from "./MailBoard";
+import { MailboxBoard } from "./MailboxBoard";
 import { SecurityBoard } from "./SecurityBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
 import { ExtensionsBoard } from "./ExtensionsBoard";
@@ -73,6 +75,7 @@ type Section =
   | "usuarios"
   | "autenticacion"
   | "correo"
+  | "buzones"
   | "seguridad"
   | "plugins"
   | "apariencia"
@@ -129,6 +132,7 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     need: ["auth.manage"],
   },
   { id: "correo", label: "Correo electrónico", icon: Mail, need: ["mail.manage"] },
+  { id: "buzones", label: "Cuentas de correo", icon: Inbox, need: ["mailbox.manage"] },
   { id: "seguridad", label: "Seguridad", icon: Shield, need: ["security.manage"] },
   { id: "plugins", label: "Extensiones", icon: Puzzle, need: ["plugins.manage"] },
   { id: "apariencia", label: "Apariencia", icon: Palette },
@@ -518,6 +522,7 @@ export function AdminScreen() {
                 {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
                 {current?.id === "correo" ? <MailBoard /> : null}
+                {current?.id === "buzones" ? <MailboxBoard /> : null}
                 {current?.id === "seguridad" ? (
                   <div className="space-y-8">
                     <SecurityBoard />

@@ -9,6 +9,7 @@ import { noteTools } from "./tools/notes.ts";
 import { organizeTools } from "./tools/organize.ts";
 import { tableTools } from "./tools/tables.ts";
 import { graphTools } from "./tools/graph.ts";
+import { mailTools } from "./tools/mail.ts";
 import type { Tool } from "./tools/tool.ts";
 import type { ToolCall, ToolSpec } from "./types.ts";
 
@@ -23,6 +24,7 @@ export const ALL_TOOLS: Tool[] = [
   ...organizeTools,
   ...tableTools,
   ...graphTools,
+  ...mailTools,
 ];
 
 function capsFor(profile: UserProfile): VaultCaps {
@@ -49,7 +51,7 @@ export function vaultTools(
   const allowed = ALL_TOOLS.filter(
     (tool) => profile.isAdmin || profile.permissions.includes(tool.permission),
   );
-  const context = { userId, profile };
+  const context = { sql, userId, profile };
   return {
     tools: allowed.map((tool) => ({
       spec: tool.spec,

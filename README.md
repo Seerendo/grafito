@@ -4,8 +4,9 @@ Grafito is a self-hosted Markdown notes vault. Notes link to each other with
 `[[wiki links]]` and `#tags`, live in nested portfolios next to uploaded files,
 and can be explored as a graph. It has multi-user accounts with roles,
 organizations, sharing (private, with people, or by public link), external
-sign-in (LDAP, OAuth, OpenID Connect), a REST API, and an MCP server so the
-assistant you already use can work on your notes.
+sign-in (LDAP, OAuth, OpenID Connect), email accounts that can be read and
+archived into the vault, a REST API, and an MCP server so the assistant you
+already use can work on your notes.
 
 The interface is available in Spanish and English (**Cuenta → Preferencias de
 usuario**, "Account → User preferences"). This guide quotes the Spanish labels,
@@ -21,6 +22,7 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - [WebDAV](#webdav)
 - [Account](#account)
 - [Administration](#administration)
+- [Email](#email)
 - [MCP server](#mcp-server)
 - [REST API](#rest-api)
 - [Configuration](#configuration)
@@ -816,6 +818,32 @@ initial administrator always keeps every permission.
 
 Right-click anywhere in an administration page gives the actions of its buttons: on a row (a user, a role, a member), that row's; elsewhere, the page's own (new user, new organization…). What a click already does (opening a row, switching a tab, picking a card, a switch) is left out. The same goes for the trash, where an empty spot only offers **Vaciar papelera**. The side bar of the administration shows, under the open section, its sub-options (click the section again to fold them; it scrolls when they don't fit), and a path above the title (Administración › Usuarios y permisos › Usuarios) leads back to each step. The administration and account pages keep where you were when you reload the page (or change the language). Leaving them any other way, such as the logo, starts them over.
 
+## Email
+
+**Correo electrónico** ("Email", in the avatar menu) is where each person reads
+their own mail accounts: Zimbra or any IMAP server, Gmail and Microsoft 365 /
+Outlook.com. The `mail-sync` service copies them in the background, so Grafito
+keeps answering while mailboxes sync.
+
+- Three panes: accounts and folders (unified inbox, per account, sent,
+  drafts, archive, spam, mail trash, starred and the server's own folders),
+  the list, and the message. Search and filters by account, folder, sender,
+  date, unread and attachments.
+- HTML mail is cleaned and shown without scripts; images from the internet
+  wait until you load them. Attachments download when opened, pass the
+  antivirus and open in Grafito's viewers.
+- **Archivar en Grafito** turns a message into a Markdown note, a text file
+  or the original `.eml`, and attachments into files, in any portfolio,
+  share or workspace where you can add files. They stay when the message is
+  deleted on the server or the account is disconnected.
+- Grafito only reads: it never sends, moves or deletes mail on the server.
+  Read, starred and hidden are kept in Grafito.
+
+An administrator turns on the **Correo electrónico** extension and sets
+policies, institutional server profiles (Zimbra) and the Google and Microsoft
+OAuth applications in **Administración → Cuentas de correo**. See
+[docs/MAILBOX.md](docs/MAILBOX.md).
+
 ## MCP server
 
 Grafito has no AI assistant of its own. Instead, it is an MCP server: an
@@ -844,17 +872,18 @@ no tools that write. Each call also checks access to the document itself:
 Documents and portfolios are named by id or by title; with several of the same
 title, the tool answers with their ids.
 
-| Area       | Tools                                                                                     |
-| ---------- | ----------------------------------------------------------------------------------------- |
-| Account    | `whoami`                                                                                  |
-| Finding    | `list_portfolios`, `list_notes`, `search_notes`, `read_note`                              |
-| Writing    | `create_note`, `update_note` (also renames), `create_portfolio`                           |
-| Organizing | `move_document`, `update_portfolio` (rename or move), `link_documents`, `link_pdf_phrase` |
-| Trash      | `delete_note`, `delete_file`, `delete_portfolio`, `list_trash`, `restore_from_trash`      |
-| History    | `list_versions`, `read_version`                                                           |
-| Comments   | `list_comments`, `add_comment`                                                            |
-| Tables     | `create_table`, `query_table`, `add_table_row`, `set_table_cell`, `delete_table_row`      |
-| Graph      | `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` (with the graph on)    |
+| Area       | Tools                                                                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account    | `whoami`                                                                                                                                                                           |
+| Finding    | `list_portfolios`, `list_notes`, `search_notes`, `read_note`                                                                                                                       |
+| Writing    | `create_note`, `update_note` (also renames), `create_portfolio`                                                                                                                    |
+| Organizing | `move_document`, `update_portfolio` (rename or move), `link_documents`, `link_pdf_phrase`                                                                                          |
+| Trash      | `delete_note`, `delete_file`, `delete_portfolio`, `list_trash`, `restore_from_trash`                                                                                               |
+| History    | `list_versions`, `read_version`                                                                                                                                                    |
+| Comments   | `list_comments`, `add_comment`                                                                                                                                                     |
+| Tables     | `create_table`, `query_table`, `add_table_row`, `set_table_cell`, `delete_table_row`                                                                                               |
+| Graph      | `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` (with the graph on)                                                                                             |
+| Email      | `list_mail_accounts`, `search_mail`, `read_mail`, `mark_mail`, `archive_mail`, `save_mail_attachment` (accounts whose owner allows MCP; mail text comes back as untrusted content) |
 
 Deleting is marked as destructive, so clients ask before calling it, and the
 tool itself refuses unless `confirm` repeats the exact name (for a table row,
@@ -977,6 +1006,8 @@ docker run --rm -v "$PWD:/app" -w /app node:26.13.1-bookworm-slim npm install --
   and what to do when something is down.
 - [docs/OFFICE.md](docs/OFFICE.md): the Office editor (Collabora), offline use
   and licensing.
+- [docs/MAILBOX.md](docs/MAILBOX.md): email accounts (IMAP, Gmail,
+  Microsoft 365): the mail-sync worker, setup, security, troubleshooting.
 - [docs/MAIL.md](docs/MAIL.md): email (SMTP), new users' one-time access and
   change notifications.
 - [docs/GRAPH.md](docs/GRAPH.md): the graph engine (Grafeno), how vaults are

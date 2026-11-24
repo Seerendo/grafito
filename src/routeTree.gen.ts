@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccesoRouteImport } from './routes/acceso'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CorreoRouteImport } from './routes/correo'
 import { Route as CuentaRouteImport } from './routes/cuenta'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
@@ -34,6 +35,8 @@ import { Route as WopiFilesIdRouteImport } from './routes/wopi/files/$id'
 import { Route as ApiFilesUploadsCompleteRouteImport } from './routes/api/files/uploads.complete'
 import { Route as ApiFilesUploadsPartRouteImport } from './routes/api/files/uploads.part'
 import { Route as ApiGitHookIdRouteImport } from './routes/api/git/hook/$id'
+import { Route as ApiMailAttachmentsIdRouteImport } from './routes/api/mail/attachments/$id'
+import { Route as ApiMailOauthCallbackRouteImport } from './routes/api/mail/oauth/callback'
 import { Route as ApiPortfoliosIdDownloadRouteImport } from './routes/api/portfolios/$id.download'
 import { Route as ApiPublicTokenTreeRouteImport } from './routes/api/public/$token.tree'
 import { Route as ApiSharedIdTreeRouteImport } from './routes/api/shared/$id.tree'
@@ -59,6 +62,11 @@ const AccesoRoute = AccesoRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CorreoRoute = CorreoRouteImport.update({
+  id: '/correo',
+  path: '/correo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CuentaRoute = CuentaRouteImport.update({
@@ -171,6 +179,16 @@ const ApiGitHookIdRoute = ApiGitHookIdRouteImport.update({
   path: '/api/git/hook/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMailAttachmentsIdRoute = ApiMailAttachmentsIdRouteImport.update({
+  id: '/api/mail/attachments/$id',
+  path: '/api/mail/attachments/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMailOauthCallbackRoute = ApiMailOauthCallbackRouteImport.update({
+  id: '/api/mail/oauth/callback',
+  path: '/api/mail/oauth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPortfoliosIdDownloadRoute = ApiPortfoliosIdDownloadRouteImport.update({
   id: '/api/portfolios/$id/download',
   path: '/api/portfolios/$id/download',
@@ -232,6 +250,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
   '/admin': typeof AdminRoute
+  '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -254,6 +273,8 @@ export interface FileRoutesByFullPath {
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/mail/attachments/$id': typeof ApiMailAttachmentsIdRoute
+  '/api/mail/oauth/callback': typeof ApiMailOauthCallbackRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
@@ -270,6 +291,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
   '/admin': typeof AdminRoute
+  '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -292,6 +314,8 @@ export interface FileRoutesByTo {
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/mail/attachments/$id': typeof ApiMailAttachmentsIdRoute
+  '/api/mail/oauth/callback': typeof ApiMailOauthCallbackRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
@@ -309,6 +333,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
   '/admin': typeof AdminRoute
+  '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -331,6 +356,8 @@ export interface FileRoutesById {
   '/api/files/uploads/complete': typeof ApiFilesUploadsCompleteRoute
   '/api/files/uploads/part': typeof ApiFilesUploadsPartRoute
   '/api/git/hook/$id': typeof ApiGitHookIdRoute
+  '/api/mail/attachments/$id': typeof ApiMailAttachmentsIdRoute
+  '/api/mail/oauth/callback': typeof ApiMailOauthCallbackRoute
   '/api/portfolios/$id/download': typeof ApiPortfoliosIdDownloadRoute
   '/api/public/$token/tree': typeof ApiPublicTokenTreeRoute
   '/api/shared/$id/tree': typeof ApiSharedIdTreeRoute
@@ -349,6 +376,7 @@ export interface FileRouteTypes {
     | '/'
     | '/acceso'
     | '/admin'
+    | '/correo'
     | '/cuenta'
     | '/login'
     | '/api/mcp'
@@ -371,6 +399,8 @@ export interface FileRouteTypes {
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
+    | '/api/mail/attachments/$id'
+    | '/api/mail/oauth/callback'
     | '/api/portfolios/$id/download'
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
@@ -387,6 +417,7 @@ export interface FileRouteTypes {
     | '/'
     | '/acceso'
     | '/admin'
+    | '/correo'
     | '/cuenta'
     | '/login'
     | '/api/mcp'
@@ -409,6 +440,8 @@ export interface FileRouteTypes {
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
+    | '/api/mail/attachments/$id'
+    | '/api/mail/oauth/callback'
     | '/api/portfolios/$id/download'
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
@@ -425,6 +458,7 @@ export interface FileRouteTypes {
     | '/'
     | '/acceso'
     | '/admin'
+    | '/correo'
     | '/cuenta'
     | '/login'
     | '/api/mcp'
@@ -447,6 +481,8 @@ export interface FileRouteTypes {
     | '/api/files/uploads/complete'
     | '/api/files/uploads/part'
     | '/api/git/hook/$id'
+    | '/api/mail/attachments/$id'
+    | '/api/mail/oauth/callback'
     | '/api/portfolios/$id/download'
     | '/api/public/$token/tree'
     | '/api/shared/$id/tree'
@@ -464,6 +500,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccesoRoute: typeof AccesoRoute
   AdminRoute: typeof AdminRoute
+  CorreoRoute: typeof CorreoRoute
   CuentaRoute: typeof CuentaRoute
   LoginRoute: typeof LoginRoute
   ApiMcpRoute: typeof ApiMcpRoute
@@ -484,6 +521,8 @@ export interface RootRouteChildren {
   ApiV1TablesRoute: typeof ApiV1TablesRouteWithChildren
   WopiFilesIdRoute: typeof WopiFilesIdRouteWithChildren
   ApiGitHookIdRoute: typeof ApiGitHookIdRoute
+  ApiMailAttachmentsIdRoute: typeof ApiMailAttachmentsIdRoute
+  ApiMailOauthCallbackRoute: typeof ApiMailOauthCallbackRoute
   ApiPortfoliosIdDownloadRoute: typeof ApiPortfoliosIdDownloadRoute
   ApiPublicTokenTreeRoute: typeof ApiPublicTokenTreeRoute
   ApiSharedIdTreeRoute: typeof ApiSharedIdTreeRoute
@@ -510,6 +549,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/correo': {
+      id: '/correo'
+      path: '/correo'
+      fullPath: '/correo'
+      preLoaderRoute: typeof CorreoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cuenta': {
@@ -664,6 +710,20 @@ declare module '@tanstack/react-router' {
       path: '/api/git/hook/$id'
       fullPath: '/api/git/hook/$id'
       preLoaderRoute: typeof ApiGitHookIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mail/attachments/$id': {
+      id: '/api/mail/attachments/$id'
+      path: '/api/mail/attachments/$id'
+      fullPath: '/api/mail/attachments/$id'
+      preLoaderRoute: typeof ApiMailAttachmentsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mail/oauth/callback': {
+      id: '/api/mail/oauth/callback'
+      path: '/api/mail/oauth/callback'
+      fullPath: '/api/mail/oauth/callback'
+      preLoaderRoute: typeof ApiMailOauthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/portfolios/$id/download': {
@@ -851,6 +911,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccesoRoute: AccesoRoute,
   AdminRoute: AdminRoute,
+  CorreoRoute: CorreoRoute,
   CuentaRoute: CuentaRoute,
   LoginRoute: LoginRoute,
   ApiMcpRoute: ApiMcpRoute,
@@ -871,6 +932,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV1TablesRoute: ApiV1TablesRouteWithChildren,
   WopiFilesIdRoute: WopiFilesIdRouteWithChildren,
   ApiGitHookIdRoute: ApiGitHookIdRoute,
+  ApiMailAttachmentsIdRoute: ApiMailAttachmentsIdRoute,
+  ApiMailOauthCallbackRoute: ApiMailOauthCallbackRoute,
   ApiPortfoliosIdDownloadRoute: ApiPortfoliosIdDownloadRoute,
   ApiPublicTokenTreeRoute: ApiPublicTokenTreeRoute,
   ApiSharedIdTreeRoute: ApiSharedIdTreeRoute,
