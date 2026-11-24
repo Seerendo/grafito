@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
-import { readSlice } from "@/domain/ai-read";
-import { namedInQuestion } from "./guard.ts";
+import { readSlice } from "@/domain/read-slice";
 import { INDEX_CAP } from "@/domain/search-text";
 import { locatePhrase, MAX_EXACT, type PhraseLocation } from "@/domain/vault/anchor";
 import type { Document, ManualKind, ManualLink } from "@/domain/vault/types";
@@ -19,9 +18,12 @@ import {
   shareForUser,
 } from "@/server/share";
 import { subtree } from "@/server/space";
+import { addComment, listComments, MAX_COMMENT } from "@/server/comments";
+import { listVersions, readVersion } from "@/server/history";
 import {
   addNamedRow,
   createTable as saveTable,
+  deleteRows,
   queryRows,
   readFields,
   saveField,
@@ -37,8 +39,11 @@ import {
   getDoc,
   listDocs,
   listPortfolios,
+  listTrash,
+  restoreTrashItem,
   trashPortfolio,
   updateNote,
+  updatePortfolio,
 } from "@/server/vault";
 import { grantWorkspaceFolders, workspaceByOwner } from "@/server/workspace";
 import { neighbourhood, shortestPath } from "@/domain/vault/graph";
@@ -49,14 +54,15 @@ import { vaultIndex } from "@/server/vault-index";
 import {
   assembleView,
   cleanRef,
+  confirmsName,
   createRefusal,
   describeOwnDoc,
   matchDocs,
   matchFolders,
   takeVisible,
   writeRefusal,
-  type AiDoc,
-  type AiFolder,
+  type CorpusDoc,
+  type CorpusFolder,
   type Assembled,
   type ShareSlice,
   type VaultCaps,
@@ -71,7 +77,7 @@ const LIST_CAP = 100;
 const SEARCH_CAP = 30;
 
 /** Reserve room for shared results when owned content fills the list limit. */
-function mixDocs(docs: AiDoc[], cap: number): AiDoc[] {
+function mixDocs(docs: CorpusDoc[], cap: number): CorpusDoc[] {
   const own = docs.filter((doc) => doc.source === "propio");
   const shared = docs.filter((doc) => doc.source !== "propio");
   if (shared.length === 0 || own.length + shared.length <= cap) return docs.slice(0, cap);
@@ -86,7 +92,7 @@ export type ToolResult = {
 
 type Opened = { ownerId: string; document: Document };
 
-function showDoc(doc: AiDoc, snippet = "") {
+function showDoc(doc: CorpusDoc, snippet = "") {
   return {
     id: doc.id,
     title: doc.title,
@@ -99,7 +105,7 @@ function showDoc(doc: AiDoc, snippet = "") {
   };
 }
 
-function showFolder(folder: AiFolder) {
+function showFolder(folder: CorpusFolder) {
   return {
     id: folder.id ?? "root",
     name: folder.name,
@@ -200,9 +206,9 @@ async function load(sql: Sql, userId: string, caps: VaultCaps): Promise<Assemble
   });
 }
 
-type Found = { doc: AiDoc; snippet: string };
+type Found = { doc: CorpusDoc; snippet: string };
 
-function remember(found: Map<string, Found>, doc: AiDoc, snippet = ""): void {
+function remember(found: Map<string, Found>, doc: CorpusDoc, snippet = ""): void {
   const key = `${doc.ownerId}:${doc.id}`;
   const current = found.get(key);
   if (!current) found.set(key, { doc, snippet });
@@ -264,7 +270,7 @@ async function searchDocs(
  * Read a visible document and recheck shared access through grantedDocOwner so mid-response
  * revocation takes effect.
  */
-async function openReadable(sql: Sql, userId: string, doc: AiDoc): Promise<Opened | null> {
+async function openReadable(sql: Sql, userId: string, doc: CorpusDoc): Promise<Opened | null> {
   if (!doc.shareId) {
     const document = await getDoc(sql, userId, doc.id);
     return document ? { ownerId: userId, document } : null;
@@ -276,7 +282,7 @@ async function openReadable(sql: Sql, userId: string, doc: AiDoc): Promise<Opene
 }
 
 /** Resolve an authorized write owner; shared writes pass through editableTarget. */
-async function writableOwner(sql: Sql, userId: string, doc: AiDoc): Promise<string | null> {
+async function writableOwner(sql: Sql, userId: string, doc: CorpusDoc): Promise<string | null> {
   if (writeRefusal(doc)) return null;
   if (!doc.shareId) return (await getDoc(sql, userId, doc.id)) ? userId : null;
   const target = await editableTarget(sql, userId, doc.shareId, doc.id);
@@ -312,7 +318,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     }
     if (byId.length > 0) return matchDocs(byId, key);
     const ownHits = await listDocs(sql, userId, { query: key, limit: 500 });
-    const pool: AiDoc[] = [];
+    const pool: CorpusDoc[] = [];
     for (const hit of ownHits) {
       pool.push(
         seen.docs.find((doc) => doc.ownerId === userId && doc.id === hit.id) ??
@@ -336,7 +342,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     });
   };
 
-  const pickDoc = async (ref: string, label: string): Promise<{ doc: AiDoc } | ToolResult> => {
+  const pickDoc = async (ref: string, label: string): Promise<{ doc: CorpusDoc } | ToolResult> => {
     const seen = await view();
     const match = await resolveDoc(seen, ref);
     if (match.status === "one") return { doc: match.doc };
@@ -352,7 +358,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
   const pickFolder = async (
     ref: string,
     label: string,
-  ): Promise<{ folder: AiFolder } | ToolResult> => {
+  ): Promise<{ folder: CorpusFolder } | ToolResult> => {
     const seen = await view();
     const match = cleanRef(ref) ? matchFolders(seen.folders, ref) : { status: "missing" as const };
     if (match.status === "missing") {
@@ -390,7 +396,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         if (!("folder" in picked)) return picked;
         scope = { ownerId: picked.folder.ownerId, portfolioId: picked.folder.id };
       }
-      const inScope = (doc: AiDoc) =>
+      const inScope = (doc: CorpusDoc) =>
         !scope || (doc.ownerId === scope.ownerId && doc.portfolioId === scope.portfolioId);
       const query = input.query?.trim() ?? "";
       // Text search also reaches owned notes beyond the 500-item preload and indexed file contents. Without a query, list the access-filtered snapshot.
@@ -763,7 +769,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
               : "Eso es una nota. Usa delete_note.",
         });
       }
-      if (!namedInQuestion(question, doc.title)) return unconfirmed(doc.title);
+      if (!confirmsName(question, doc.title)) return unconfirmed(doc.title);
       if (doc.shareId) {
         const share = await shareForUser(sql, userId, doc.shareId);
         if (!share || share.kind !== "portfolio")
@@ -804,7 +810,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
       if (!("folder" in picked)) return picked;
       const folder = picked.folder;
       if (!folder.id) return fail("No eliminó", { error: "La Carpeta Personal no se elimina." });
-      if (!namedInQuestion(question, folder.name)) return unconfirmed(folder.name);
+      if (!confirmsName(question, folder.name)) return unconfirmed(folder.name);
       let ownerId = userId;
       if (folder.shareId) {
         const share = await shareForUser(sql, userId, folder.shareId);
@@ -1068,21 +1074,329 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         },
       };
     },
+    async moveDocument(input: { ref: string; portfolio: string }): Promise<ToolResult> {
+      if (!caps.editNotes) return fail("No puede editar", { error: "No puedes editar notas." });
+      const picked = await pickDoc(input.ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const doc = picked.doc;
+      const ownerId = await writableOwner(sql, userId, doc);
+      if (!ownerId)
+        return fail("No puede moverlo", { error: writeRefusal(doc) ?? "Ya no puedes editarlo." });
+      const place = await pickFolder(input.portfolio, "No encontró el portafolio");
+      if (!("folder" in place)) return place;
+      const folder = place.folder;
+      if (folder.ownerId !== ownerId || folder.shareId !== doc.shareId)
+        return fail("No lo movió", {
+          error:
+            "Solo se mueve dentro del mismo espacio: tu Carpeta Personal o el mismo compartido.",
+        });
+      let portfolioId = folder.id;
+      if (folder.shareId) {
+        const target = await uploadTarget(sql, userId, {
+          shareId: folder.shareId,
+          portfolioId: folder.id,
+        });
+        if (typeof target === "string") return fail("No lo movió", { error: target });
+        if (target.ownerId !== ownerId)
+          return fail("No lo movió", { error: "No puedes moverlo ahí." });
+        portfolioId = target.portfolioId;
+      } else {
+        const refused = createRefusal(folder);
+        if (refused) return fail("No lo movió", { error: refused });
+      }
+      const saved = await updateNote(sql, ownerId, doc.id, { portfolioId, actor, actorId: userId });
+      invalidate();
+      return {
+        result: { id: saved.id, title: saved.title, place: folder.path || folder.place },
+        event: { label: `Movió «${saved.title}»`, ok: true, docId: saved.id, changed: true },
+      };
+    },
+    async changePortfolio(input: {
+      ref: string;
+      name?: string;
+      parent?: string;
+    }): Promise<ToolResult> {
+      if (!caps.managePortfolios)
+        return fail("No puede cambiar portafolios", { error: "No puedes gestionar portafolios." });
+      const picked = await pickFolder(input.ref, "No encontró el portafolio");
+      if (!("folder" in picked)) return picked;
+      const folder = picked.folder;
+      if (!folder.id) return fail("No lo cambió", { error: "La Carpeta Personal no se cambia." });
+      if (folder.shareId)
+        return fail("No lo cambió", {
+          error: "Los portafolios compartidos los renombra o mueve quien los comparte.",
+        });
+      let parentId: string | null | undefined;
+      if (input.parent !== undefined) {
+        const parentRef = input.parent.trim();
+        if (!parentRef || parentRef === "root") parentId = null;
+        else {
+          const parent = await pickFolder(parentRef, "No encontró el portafolio de destino");
+          if (!("folder" in parent)) return parent;
+          if (parent.folder.shareId)
+            return fail("No lo movió", { error: "Solo se mueve dentro de tu Carpeta Personal." });
+          parentId = parent.folder.id;
+        }
+      }
+      const saved = await updatePortfolio(sql, userId, folder.id, {
+        name: input.name?.trim() || undefined,
+        parentId,
+      });
+      invalidate();
+      return {
+        result: { id: saved.id, name: saved.name, parent_id: saved.parentId ?? "root" },
+        event: { label: `Cambió el portafolio «${saved.name}»`, ok: true, changed: true },
+      };
+    },
+    async listTrashItems(): Promise<ToolResult> {
+      const items = await listTrash(sql, userId);
+      return {
+        result: {
+          items: items.slice(0, LIST_CAP).map((item) => ({
+            id: item.id,
+            title: item.title,
+            kind: item.kind,
+            portfolio: item.portfolioName,
+            deleted: new Date(item.deletedAt).toISOString(),
+            ...(item.count !== undefined ? { documents: item.count } : {}),
+          })),
+          ...(items.length > LIST_CAP ? { truncated: true, total: items.length } : {}),
+        },
+        event: { label: `Revisó la papelera (${items.length})`, ok: true },
+      };
+    },
+    async restoreItem(id: string): Promise<ToolResult> {
+      const key = id.trim();
+      const item = (await listTrash(sql, userId)).find((entry) => entry.id === key);
+      if (!item)
+        return fail("No encontró el elemento", {
+          error: "Eso no está en tu papelera. Usa list_trash para ver los ids.",
+        });
+      const restored = await restoreTrashItem(sql, userId, key, actor);
+      invalidate();
+      return {
+        result: { id: restored.id, kind: restored.kind, title: item.title },
+        event: { label: `Restauró «${item.title}»`, ok: true, changed: true },
+      };
+    },
+    async documentVersions(ref: string): Promise<ToolResult> {
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const opened = await openReadable(sql, userId, picked.doc);
+      if (!opened)
+        return fail("No encontró el documento", {
+          error: "No lo encontré entre lo que puedes abrir.",
+        });
+      const versions = await listVersions(sql, opened.ownerId, picked.doc.id);
+      return {
+        result: {
+          ...showDoc(picked.doc),
+          versions: versions.slice(0, LIST_CAP).map((version) => ({
+            id: version.id,
+            title: version.title,
+            author: version.author,
+            created: new Date(version.createdAt).toISOString(),
+            size: version.size,
+            ...(version.file ? { file: true } : {}),
+          })),
+          ...(versions.length > LIST_CAP ? { truncated: true, total: versions.length } : {}),
+        },
+        event: { label: `Revisó las versiones de «${picked.doc.title}»`, ok: true },
+      };
+    },
+    async documentVersion(ref: string, versionId: string, offset = 0): Promise<ToolResult> {
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const opened = await openReadable(sql, userId, picked.doc);
+      if (!opened)
+        return fail("No encontró el documento", {
+          error: "No lo encontré entre lo que puedes abrir.",
+        });
+      const version = await readVersion(sql, opened.ownerId, picked.doc.id, versionId.trim());
+      if (!version)
+        return fail("No encontró la versión", {
+          error: "Esa versión no existe. Usa list_versions para ver los ids.",
+        });
+      if (version.fileKey)
+        return {
+          result: {
+            ...showDoc(picked.doc),
+            version: versionId.trim(),
+            title: version.title,
+            file: true,
+            size: version.fileSize,
+            note: "Es una versión de un archivo: su contenido no se lee como texto.",
+          },
+          event: { label: `Revisó una versión de «${picked.doc.title}»`, ok: true },
+        };
+      const slice = readSlice(version.content, offset);
+      return {
+        result: {
+          ...showDoc(picked.doc),
+          version: versionId.trim(),
+          version_title: version.title,
+          ...slice,
+          ...(slice.truncated ? { next_offset: slice.offset + slice.content.length } : {}),
+        },
+        event: { label: `Leyó una versión de «${picked.doc.title}»`, ok: true },
+      };
+    },
+    async documentComments(ref: string): Promise<ToolResult> {
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const opened = await openReadable(sql, userId, picked.doc);
+      if (!opened)
+        return fail("No encontró el documento", {
+          error: "No lo encontré entre lo que puedes abrir.",
+        });
+      const comments = await listComments(sql, opened.ownerId, picked.doc.id);
+      return {
+        result: {
+          ...showDoc(picked.doc),
+          comments: comments.slice(-LIST_CAP).map((comment) => ({
+            id: comment.id,
+            author: comment.author,
+            at: new Date(comment.at).toISOString(),
+            body: comment.body,
+            ...(comment.anchor ? { phrase: comment.anchor.exact, page: comment.anchor.page } : {}),
+            ...(comment.authorId === userId ? { mine: true } : {}),
+          })),
+        },
+        event: { label: `Leyó los comentarios de «${picked.doc.title}»`, ok: true },
+      };
+    },
+    async commentDocument(ref: string, body: string): Promise<ToolResult> {
+      const text = body.trim();
+      if (!text) return fail("No comentó", { error: "Escribe el comentario." });
+      if (text.length > MAX_COMMENT)
+        return fail("No comentó", {
+          error: `El comentario puede tener hasta ${MAX_COMMENT} caracteres.`,
+        });
+      const picked = await pickDoc(ref, "No encontró el documento");
+      if (!("doc" in picked)) return picked;
+      const opened = await openReadable(sql, userId, picked.doc);
+      if (!opened)
+        return fail("No encontró el documento", {
+          error: "No lo encontré entre lo que puedes abrir.",
+        });
+      await addComment(sql, {
+        ownerId: opened.ownerId,
+        docId: picked.doc.id,
+        authorId: userId,
+        authorName: actor,
+        body: text,
+      });
+      return {
+        result: { ...showDoc(picked.doc), commented: true },
+        event: {
+          label: `Comentó en «${picked.doc.title}»`,
+          ok: true,
+          docId: picked.doc.id,
+          changed: true,
+        },
+      };
+    },
+    async linkDocuments(input: {
+      from: string;
+      to: string;
+      kind: ManualKind;
+    }): Promise<ToolResult> {
+      const sourcePick = await pickDoc(input.from, "No encontró el origen");
+      if (!("doc" in sourcePick)) return sourcePick;
+      const source = sourcePick.doc;
+      const refused = writeRefusal(source);
+      if (refused) return fail("No puede vincularlo", { error: refused });
+      const ownerId = await writableOwner(sql, userId, source);
+      if (!ownerId) return fail("No puede vincularlo", { error: "Ya no puedes editarlo." });
+      const targetPick = await pickDoc(input.to, "No encontró el destino");
+      if (!("doc" in targetPick)) return targetPick;
+      const target = targetPick.doc;
+      if (target.id === source.id)
+        return fail("No vinculó", { error: "Un documento no se vincula consigo mismo." });
+      if (source.shareId && target.shareId !== source.shareId)
+        return fail("No vinculó", { error: "Ese destino no está en este espacio." });
+      if (source.shareId) {
+        const saved = await changeSharedLink(sql, {
+          userId,
+          actor,
+          canLink: true,
+          shareId: source.shareId,
+          docId: source.id,
+          add: { targetId: target.id, kind: input.kind },
+        });
+        if (!saved.ok) return fail("No vinculó", { error: saved.error });
+      } else {
+        const link: ManualLink = {
+          targetId: target.id,
+          kind: input.kind,
+          ...(target.shareId ? { shareId: target.shareId } : {}),
+        };
+        const saved = await attachManualLink(sql, ownerId, source.id, link, actor);
+        if (!saved.ok) return fail("No vinculó", { error: saved.error });
+      }
+      invalidate();
+      return {
+        result: {
+          id: source.id,
+          title: source.title,
+          targetId: target.id,
+          targetTitle: target.title,
+          kind: input.kind,
+        },
+        event: {
+          label: `Vinculó «${source.title}» con «${target.title}»`,
+          ok: true,
+          docId: source.id,
+          changed: true,
+        },
+      };
+    },
+    async deleteTableRow(ref: string, rowId: string, confirm: string): Promise<ToolResult> {
+      const picked = await pickTable(ref, true);
+      if (!("doc" in picked)) return picked;
+      const id = rowId.trim();
+      if (!id || confirm.trim() !== id)
+        return fail("Falta la confirmación", {
+          error:
+            "Para eliminar una fila, confirm debe repetir su row_id, después de que la persona lo confirme.",
+        });
+      const ownerId = await writableOwner(sql, userId, picked.doc);
+      if (!ownerId)
+        return fail("No puede editarlo", {
+          error: writeRefusal(picked.doc) ?? "Ya no puedes editarlo.",
+        });
+      const exists = await sql<{ id: string }>`
+        select id from data_row where owner_id = ${ownerId} and doc_id = ${picked.doc.id} and id = ${id} and not deleted limit 1
+      `;
+      if (!exists[0])
+        return fail("No encontró la fila", { error: "Esa fila no existe. Usa query_table." });
+      await deleteRows(sql, ownerId, picked.doc.id, [id], actor);
+      invalidate();
+      return {
+        result: { id: picked.doc.id, title: picked.doc.title, rowId: id, deleted: true },
+        event: {
+          label: `Eliminó una fila de «${picked.doc.title}»`,
+          ok: true,
+          docId: picked.doc.id,
+          changed: true,
+        },
+      };
+    },
   };
 
-  /** The yes was for something else: ask again about this one. */
+  /** confirm did not repeat the name: nothing is deleted. */
   function unconfirmed(name: string): ToolResult {
-    return fail("Pidió confirmación antes de eliminar", {
-      error: `La persona no confirmó eliminar «${name}»: tu pregunta no lo nombraba. Pregunta por «${name}» con su sitio y espera su respuesta.`,
+    return fail("Falta la confirmación", {
+      error: `Para eliminar «${name}», confirm debe ser exactamente su nombre, después de que la persona lo confirme.`,
     });
   }
 
   /**
-   * The links the assistant may walk around a document: the person's own vault, or the share it
+   * The links the MCP tools may walk around a document: the person's own vault, or the share it
    * came from limited to what that person sees. A ref names a document (its scope) or nothing
    * (the Carpeta Personal).
    */
-  async function graphScopeOf(target: AiDoc | string): Promise<
+  async function graphScopeOf(target: CorpusDoc | string): Promise<
     | ToolResult
     | {
         ownerId: string;
@@ -1098,7 +1412,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
         error: "El grafo está apagado o Grafeno no responde: no puedo recorrer los vínculos ahora.",
       });
     }
-    let doc: AiDoc | null = null;
+    let doc: CorpusDoc | null = null;
     if (typeof target === "string") {
       if (cleanRef(target)) {
         const picked = await pickDoc(target, "No encontró el documento");
@@ -1154,7 +1468,10 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     return edge.from === from ? `enlaza (${kind})` : `la enlaza (${kind})`;
   }
 
-  async function pickTable(ref: string, writing: boolean): Promise<{ doc: AiDoc } | ToolResult> {
+  async function pickTable(
+    ref: string,
+    writing: boolean,
+  ): Promise<{ doc: CorpusDoc } | ToolResult> {
     const picked = await pickDoc(ref, "No encontró la tabla");
     if (!("doc" in picked)) return picked;
     if (!picked.doc.fileName || !isTableName(picked.doc.fileName)) {
@@ -1169,7 +1486,7 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
   }
 
   async function createShared<T>(
-    folder: AiFolder,
+    folder: CorpusFolder,
     write: (ownerId: string, portfolioId: string | null) => Promise<T>,
   ): Promise<T | string> {
     if (!folder.shareId) return "No puedes añadir nada a ese portafolio.";

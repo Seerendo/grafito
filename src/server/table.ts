@@ -1086,7 +1086,7 @@ export async function attachFile(
   return { ok: true, id: file.id, title: file.title };
 }
 
-/** AI rows keyed by column names, bounded by limit. */
+/** Rows keyed by column names (MCP), bounded by limit. */
 export async function queryRows(
   sql: Sql,
   ownerId: string,
@@ -1123,7 +1123,7 @@ export async function queryRows(
   return { fields: fields.map((field) => field.name), rows: matched };
 }
 
-/** Create a row from named columns for AI and internal forms. */
+/** Create a row from named columns for MCP and internal forms. */
 export async function addNamedRow(
   sql: Sql,
   ownerId: string,

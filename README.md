@@ -4,8 +4,8 @@ Grafito is a self-hosted Markdown notes vault. Notes link to each other with
 `[[wiki links]]` and `#tags`, live in nested portfolios next to uploaded files,
 and can be explored as a graph. It has multi-user accounts with roles,
 organizations, sharing (private, with people, or by public link), external
-sign-in (LDAP, OAuth, OpenID Connect), an AI assistant that works on your notes,
-and a REST API.
+sign-in (LDAP, OAuth, OpenID Connect), a REST API, and an MCP server so the
+assistant you already use can work on your notes.
 
 The interface is available in Spanish and English (**Cuenta → Preferencias de
 usuario**, "Account → User preferences"). This guide quotes the Spanish labels,
@@ -21,7 +21,7 @@ with the English ones in quotes (for example **Compartir…**, "Share…").
 - [WebDAV](#webdav)
 - [Account](#account)
 - [Administration](#administration)
-- [AI assistant](#ai-assistant)
+- [MCP server](#mcp-server)
 - [REST API](#rest-api)
 - [Configuration](#configuration)
 - [Development](#development)
@@ -86,15 +86,15 @@ cp .env.example .env
 Uncomment and fill in what you need, then apply it with
 `docker compose up -d`. Generate secrets with `openssl rand -base64 32`.
 
-| Variable                                                    | Set it when                       | Notes                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`                                        | Optional                          | Signs sessions, file links and Office editor tokens. Empty: Grafito creates one for this installation (in the `grafito_secrets` volume). Changing it later only signs everyone out.                                                    |
-| `GRAFITO_ENCRYPTION_KEY`                                    | Optional                          | Encrypts AI keys and the SMTP password (32+ characters). Empty: Grafito creates one, like the secret above. Losing or changing it makes saved AI keys unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
-| `POSTGRES_PASSWORD`, `S3_SECRET_KEY`                        | **Before the first start**        | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md).                                                                                                            |
-| `COLLABORA_ADMIN_PASSWORD`                                  | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980.                                                                                                                                   |
-| `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito   | See [On a server or a network](#on-a-server-or-a-network).                                                                                                                                                                             |
-| `GRAFITO_MAX_UPLOAD_MB`                                     | To change the upload limit        | 100 MB by default.                                                                                                                                                                                                                     |
-| `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS`               | To change the backup schedule     | Daily, keeping 14 days.                                                                                                                                                                                                                |
+| Variable                                                    | Set it when                       | Notes                                                                                                                                                                                                                            |
+| ----------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`                                        | Optional                          | Signs sessions, file links and Office editor tokens. Empty: Grafito creates one for this installation (in the `grafito_secrets` volume). Changing it later only signs everyone out.                                              |
+| `GRAFITO_ENCRYPTION_KEY`                                    | Optional                          | Encrypts Git tokens and the SMTP password (32+ characters). Empty: Grafito creates one, like the secret above. Losing or changing it makes them unreadable, unless you rotate it (see [docs/OPERATIONS.md](docs/OPERATIONS.md)). |
+| `POSTGRES_PASSWORD`, `S3_SECRET_KEY`                        | **Before the first start**        | Only applied when the volumes are created. Changing them later needs the steps in [docs/OPERATIONS.md](docs/OPERATIONS.md).                                                                                                      |
+| `COLLABORA_ADMIN_PASSWORD`                                  | Always, outside your own computer | Password of Collabora's own admin console (user `admin`), reachable only on the server at port 9980.                                                                                                                             |
+| `BETTER_AUTH_URL`, `GRAFITO_PUBLIC_ORIGIN`, `COLLABORA_URL` | When other machines use Grafito   | See [On a server or a network](#on-a-server-or-a-network).                                                                                                                                                                       |
+| `GRAFITO_MAX_UPLOAD_MB`                                     | To change the upload limit        | 100 MB by default.                                                                                                                                                                                                               |
+| `BACKUP_INTERVAL_SECONDS`, `BACKUP_KEEP_DAYS`               | To change the backup schedule     | Daily, keeping 14 days.                                                                                                                                                                                                          |
 
 ### Installation options
 
@@ -182,19 +182,12 @@ without internet:
 3. On the target machine, load them with `docker load` and run
    `docker compose up -d`.
 
-The AI assistant is the only feature that needs internet, and only with cloud
-providers. Self-hosted Ollama or LM Studio also work offline.
-
 #### Test services
 
 `docker-compose.yml` only has what Grafito needs to run. The services used
 to test connections and integrations (Keycloak and OpenLDAP for external
 sign-in, Mailpit for email) live in a separate test compose that isn't part
 of the repository.
-
-Ollama and LM Studio aren't part of the compose. Run them yourself, installed
-on the machine or in a compose of your own, and expose their port. See
-[AI assistant](#ai-assistant).
 
 #### Without Docker (development)
 
@@ -515,7 +508,7 @@ work area.
 - **Search** across all cells, and **Importar CSV** / **Exportar CSV**
   (commas or semicolons; columns are matched by name, and new ones are
   created with the type their values suggest). Cell text is also indexed, so
-  the vault search, the command palette and the AI can find a table by what
+  the vault search, the command palette and MCP clients can find a table by what
   is written in it.
 - **Relation:** a column can point at rows of another table. **Attachment:**
   a column uploads a file into the same portfolio; the file counts toward
@@ -536,8 +529,9 @@ work area.
     (and 10 files) a minute, and each form 60 rows a minute in total.
   - If email isn't set up, or someone has no address, the form is still
     saved and Grafito says the notice was not sent.
-- The AI can `query_table`, `add_table_row` and `set_table_cell`. Formula
-  columns are already calculated when the AI reads a table.
+- Through [MCP](#mcp-server): `query_table`, `add_table_row`,
+  `set_table_cell` and `delete_table_row`. Formula columns are already
+  calculated when a table is read.
 - **Views:** **Tabla**, **Tablero**, **Galería** and **Calendario** on the
   table. The board groups a select column (drag a card to move it). The
   gallery is cards. The calendar uses a date column. The choice is
@@ -599,17 +593,16 @@ title or with Shift+click, and highlights it.
 
 ### Keyboard shortcuts
 
-| Keys   | Action                                               |
-| ------ | ---------------------------------------------------- |
-| Ctrl+K | Search notes, file contents and tags                 |
-| Ctrl+N | New note                                             |
-| Ctrl+E | Switch view mode (read → edit → split)               |
-| Ctrl+G | Toggle the graph                                     |
-| Ctrl+B | Open the AI chat (inside the editor, Ctrl+B is bold) |
-| Esc    | Close whatever is open                               |
+| Keys   | Action                                 |
+| ------ | -------------------------------------- |
+| Ctrl+K | Search notes, file contents and tags   |
+| Ctrl+N | New note                               |
+| Ctrl+E | Switch view mode (read → edit → split) |
+| Ctrl+G | Toggle the graph                       |
+| Esc    | Close whatever is open                 |
 
 Your vault is stored on the server and cached in the browser, so it opens
-instantly and syncs every few seconds. Edits made by the AI or through the API
+instantly and syncs every few seconds. Edits made through MCP or the API
 show up without reloading.
 
 ## Sharing
@@ -797,11 +790,8 @@ Open the avatar menu → **Cuenta**. Settings are split into sections:
   is saved to the account, so it follows you to other browsers.
 - **Contraseña:** change your password. Accounts that sign in with LDAP, OAuth
   or SSO change it at their provider.
-- **Conexiones de IA:** connect the AI providers the administrator allowed (see
-  [AI assistant](#ai-assistant)).
-- **API:** create and revoke personal API tokens.
-
-The last two sections only appear if your role allows them.
+- **API:** the [MCP server](#mcp-server)'s address, and personal tokens for
+  it and the [REST API](#rest-api). Only appears if your role allows it.
 
 ## Administration
 
@@ -812,7 +802,6 @@ admin permissions. The section sidebar collapses to an icon rail.
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Usuarios y permisos**                      | Users (with their first sign-in, last activity and access state), roles with per-permission toggles, organizations and sub-organizations. A new user is created with an email instead of a password: they get a one-time temporary password by email, and **Reenviar acceso** sends a new one.                                                                |
 | **Autenticación**                            | LDAP / Active Directory, OAuth (Google, GitHub, Microsoft) and SSO through OpenID Connect (Keycloak, Authentik, Okta…). Each provider sets the default role for new accounts and the allowed email domains.                                                                                                                                                   |
-| **Inteligencia artificial**                  | Which AI providers users may connect                                                                                                                                                                                                                                                                                                                          |
 | **Correo electrónico**                       | The SMTP server for new users' access emails and change notifications, with a test button. See [docs/MAIL.md](docs/MAIL.md).                                                                                                                                                                                                                                  |
 | **Seguridad**                                | ClamAV. Scanning is on by default at `clamav` port `3310`. This screen changes the server, the port and the timeout, or turns scanning off, and checks that it answers. Needs the `security.manage` permission.                                                                                                                                               |
 | **Extensiones**                              | Turn the graph (Grafeno), LaTeX (the `latex` service), Mermaid, links and Git sync on or off (Git is off by default). An extension that needs a service shows whether it is connected and only turns on when it is; one that loses its service pauses and resumes when the service is back                                                                    |
@@ -827,81 +816,54 @@ initial administrator always keeps every permission.
 
 Right-click anywhere in an administration page gives the actions of its buttons: on a row (a user, a role, a member), that row's; elsewhere, the page's own (new user, new organization…). What a click already does (opening a row, switching a tab, picking a card, a switch) is left out. The same goes for the trash, where an empty spot only offers **Vaciar papelera**. The side bar of the administration shows, under the open section, its sub-options (click the section again to fold them; it scrolls when they don't fit), and a path above the title (Administración › Usuarios y permisos › Usuarios) leads back to each step. The administration and account pages keep where you were when you reload the page (or change the language). Leaving them any other way, such as the logo, starts them over.
 
-## AI assistant
+## MCP server
 
-1. In **Administración → Inteligencia artificial**, an administrator allows
-   providers: ChatGPT, Claude, Grok, Gemini, DeepSeek, Kimi, OpenRouter, Ollama
-   and LM Studio.
-2. Each user connects their own provider in **Cuenta → Conexiones de IA**:
-   - Cloud providers use the user's own API key. Keys are tested before saving,
-     stored encrypted (AES-256-GCM) and never sent back to the browser.
-   - Ollama and LM Studio use the address of the user's own instance:
-     - On the same machine as Docker, use `localhost`, for example
-       `http://localhost:11434` (Ollama) or `http://localhost:1234/v1`
-       (LM Studio). Grafito calls it on the host machine through
-       `host.docker.internal`, so the model doesn't need to be in Docker or on
-       Grafito's network.
-     - On another machine, use its IP or name, for example
-       `http://192.168.1.20:11434`.
-     - For safety, Grafito's own services (`postgres`, `app`…) are rejected.
-3. Open the chat with the floating button or **Ctrl+B**.
-   - Under the message box, pick a connected provider and then a model. The
-     model list has a search box, because a provider can offer hundreds.
-     If a connection that used to work stops responding, the provider selector
-     says so.
-   - **New conversation** (pen icon) starts a fresh chat at any time.
-   - **History** (clock icon) lists your past conversations. Open one to
-     continue it, or delete it. Each conversation keeps its own context.
-     Conversations are saved on the server, so they're there in any browser.
-     A long one is compressed before it reaches the model: the latest turns
-     stay as they are, and everything older is folded into a short memory, so
-     that history is not sent again on every message. The transcript in the
-     chat stays complete.
-   - **Profiles** (the person icon beside the model) change how the assistant
-     works, for example «Documentación» or «Análisis». Each person creates
-     their own in **Gestionar perfiles**, inside the chat:
-     - a name;
-     - instructions the assistant follows (tone, format, focus);
-     - **Solo lectura**, so that profile can read the vault but not create,
-       edit or delete notes, files, tables or portfolios.
+Grafito has no AI assistant of its own. Instead, it is an MCP server: an
+assistant you already use (Claude, an IDE, any MCP client) can read and work
+on the vault with your permissions.
 
-     **General** is the assistant without a profile. The chosen profile is
-     remembered in that browser.
+1. Create a token in **Cuenta → API**. The same page shows the server's
+   address, `https://your-grafito/api/mcp`.
+2. Add it to your MCP client as a remote (Streamable HTTP) server, with the
+   header `Authorization: Bearer gft_...`. For example, in Claude Code:
 
-   - Clicking outside the chat minimizes it to its button. What you were
-     typing is still there when you open it again.
+   ```bash
+   claude mcp add --transport http grafito https://your-grafito/api/mcp \
+     --header "Authorization: Bearer gft_..."
+   ```
 
-The assistant can list portfolios, search, read, create and edit notes, create
-tables, and move notes, files or portfolios to the trash, within the
-permissions of your role. A delete waits until you confirm it in a later
-message: the assistant names the item and says it goes to the trash, and only
-then calls the tool. A phrase or word inside a PDF is linked to another
-document with the same anchor as selecting that text by hand; that link stays
-on the PDF and does not create an extra note. It only sees what you can open:
-your own vault, items shared with you, and workspace folders granted to you.
-Something you can view but not edit (a read-only share, or a workspace folder
-granted as read) can be read and cannot be changed. It does
-not open another person's private vault. It finds notes and portfolios by name
-as well as by id. `search_notes` looks through titles and the indexed text of
-notes, tables and files, and returns a short snippet, not the file.
-With the graph on, it also answers how documents relate: `graph_overview`
-(topics, bridge and orphan documents), `graph_neighbors` (what surrounds a
-document, up to three links away), `graph_path` (the chain of links between
-two documents) and `graph_related` (documents worth linking). They only read,
-within what you can open.
-`read_note` returns at most a few thousand characters; when the file is
-already indexed, that text comes from the index. It can still extract plain
-text, Word, Excel, PowerPoint, OpenDocument and PDFs with text (not scanned
-ones, and not the old binary `.doc` format). The chat lists each tool it
-used, and you can click one to open the note.
+Only a personal token signs in, and the role needs the **API y MCP**
+permission. The tools offered follow the role: someone who can only read gets
+no tools that write. Each call also checks access to the document itself:
 
-To try it with a local open model, install Ollama (or LM Studio and start its
-server), download a model, allow the provider in administration, and connect
-`http://localhost:11434` (or `http://localhost:1234/v1`) in your account.
+- your own vault, items shared with you and workspace folders granted to you;
+- something you can view but not edit (a read-only share, a workspace folder
+  granted as read) can be read and commented, not changed;
+- another person's private vault is never reachable.
 
-- **LM Studio:** it may listen only on `127.0.0.1`. Docker Desktop reaches
-  that. On Linux, enable "Serve on Local Network" so the container can reach it.
-- **Ollama on Linux:** start it with `OLLAMA_HOST=0.0.0.0`.
+Documents and portfolios are named by id or by title; with several of the same
+title, the tool answers with their ids.
+
+| Area       | Tools                                                                                     |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| Account    | `whoami`                                                                                  |
+| Finding    | `list_portfolios`, `list_notes`, `search_notes`, `read_note`                              |
+| Writing    | `create_note`, `update_note` (also renames), `create_portfolio`                           |
+| Organizing | `move_document`, `update_portfolio` (rename or move), `link_documents`, `link_pdf_phrase` |
+| Trash      | `delete_note`, `delete_file`, `delete_portfolio`, `list_trash`, `restore_from_trash`      |
+| History    | `list_versions`, `read_version`                                                           |
+| Comments   | `list_comments`, `add_comment`                                                            |
+| Tables     | `create_table`, `query_table`, `add_table_row`, `set_table_cell`, `delete_table_row`      |
+| Graph      | `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` (with the graph on)    |
+
+Deleting is marked as destructive, so clients ask before calling it, and the
+tool itself refuses unless `confirm` repeats the exact name (for a table row,
+its id). Notes, files and portfolios go to the trash, and `restore_from_trash`
+brings them back. `read_note` returns at most a few thousand characters at a
+time; for a file, the text comes from the index, or is extracted from plain
+text, Word, Excel, PowerPoint, OpenDocument and PDFs with text. Changes made
+through MCP show up in open browsers without reloading, and are signed
+«Name (MCP)» in the history.
 
 ## REST API
 
@@ -965,7 +927,7 @@ outside the provided Docker Compose setup. With Docker Compose, set them in
 | `GRAFITO_DB_POOL`                                             | Database connections per app instance (plus 5 for sign-ins)                                                   | 15                                                                                                |
 | `GRAFITO_DB_PREPARE`                                          | `0` turns off prepared statements (only for an old pgbouncer in transaction mode)                             | On                                                                                                |
 | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`                       | Session, file link and editor token signing; public URL                                                       | A secret created for the installation in `GRAFITO_SECRETS_DIR`; the URL is required in production |
-| `GRAFITO_ENCRYPTION_KEY`                                      | Encrypts users' AI keys and the SMTP password (32+ characters)                                                | A key created for the installation in `GRAFITO_SECRETS_DIR`                                       |
+| `GRAFITO_ENCRYPTION_KEY`                                      | Encrypts Git tokens and the SMTP password (32+ characters)                                                    | A key created for the installation in `GRAFITO_SECRETS_DIR`                                       |
 | `GRAFITO_SECRETS_DIR`                                         | Where those generated secrets are kept                                                                        | `.data/secrets` (`/app/.data/secrets`, the `grafito_secrets` volume, in Docker)                   |
 | `GRAFITO_ENCRYPTION_KEY_PREVIOUS`                             | Previous key during a rotation                                                                                | —                                                                                                 |
 | `BETTER_AUTH_TRUSTED_ORIGINS`                                 | Other sites allowed to send sign-ins, comma-separated                                                         | The address each request was sent to, `BETTER_AUTH_URL` and localhost                             |
@@ -1022,7 +984,7 @@ docker run --rm -v "$PWD:/app" -w /app node:26.13.1-bookworm-slim npm install --
 - [docs/GIT.md](docs/GIT.md): syncing portfolios with GitHub or GitLab,
   including a self-hosted (institutional) GitLab.
 - [ARCHITECTURE.md](ARCHITECTURE.md): folder layout, layers, data model,
-  sharing, sync, authentication and AI internals.
+  sharing, sync, authentication and MCP internals.
 - [TEST.md](TEST.md): the end-to-end test log for each round of changes.
 - [ROADMAP.md](ROADMAP.md): what is planned next.
 

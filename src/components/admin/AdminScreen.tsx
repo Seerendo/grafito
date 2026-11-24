@@ -13,7 +13,6 @@ import {
   Network,
   Shield,
   ShieldCheck,
-  Sparkles,
   Database,
   HardDrive,
   KeyRound,
@@ -64,7 +63,6 @@ import { QuotaBoard } from "./QuotaBoard";
 import { WorkspaceBoard } from "./WorkspaceBoard";
 import { AssignedSpaceBoard } from "./AssignedSpaceBoard";
 import { DesignPanel } from "./DesignPanel";
-import { AiBoard } from "./AiBoard";
 import { MailBoard } from "./MailBoard";
 import { SecurityBoard } from "./SecurityBoard";
 import { LdapPanel, OAuthPanel, SsoPanel } from "./AuthBoards";
@@ -74,7 +72,6 @@ import { t } from "@/app/i18n";
 type Section =
   | "usuarios"
   | "autenticacion"
-  | "ia"
   | "correo"
   | "seguridad"
   | "plugins"
@@ -130,12 +127,6 @@ const NAV: { id: Section; label: string; icon: typeof Users; need?: string[] }[]
     label: "Autenticación",
     icon: ShieldCheck,
     need: ["auth.manage"],
-  },
-  {
-    id: "ia",
-    label: "Inteligencia artificial",
-    icon: Sparkles,
-    need: ["ai.manage"],
   },
   { id: "correo", label: "Correo electrónico", icon: Mail, need: ["mail.manage"] },
   { id: "seguridad", label: "Seguridad", icon: Shield, need: ["security.manage"] },
@@ -526,7 +517,6 @@ export function AdminScreen() {
                 ) : null}
                 {current?.id === "apariencia" && leaf === "temas" ? <ThemesPanel /> : null}
                 {current?.id === "apariencia" && leaf === "diseno" ? <DesignPanel /> : null}
-                {current?.id === "ia" ? <AiBoard /> : null}
                 {current?.id === "correo" ? <MailBoard /> : null}
                 {current?.id === "seguridad" ? (
                   <div className="space-y-8">

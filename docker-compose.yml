@@ -134,12 +134,6 @@ services:
       # Collabora uses, so Grafito can explain a blank editor.
       GRAFITO_PUBLIC_ORIGIN: ${GRAFITO_PUBLIC_ORIGIN:-localhost:*}
       COLLABORA_SSL_TERMINATION: ${COLLABORA_SSL_TERMINATION:-false}
-      # Ollama and LM Studio run outside this compose (installed on the machine or
-      # in a compose of their own). A "localhost" address in Account → AI (e.g.
-      # http://localhost:11434 or http://localhost:1234/v1) is called on this
-      # host machine through host.docker.internal. Any other reachable address
-      # (LAN IP, hostname) works as is. An empty value turns the alias off.
-      GRAFITO_LOCALHOST_ALIAS: ${GRAFITO_LOCALHOST_ALIAS-host.docker.internal}
       # Grafeno, the graph engine (the grafeno service below). An empty
       # GRAFENO_URL turns the graph off; another address uses an engine of your own.
       GRAFENO_URL: ${GRAFENO_URL-http://grafeno:7810}

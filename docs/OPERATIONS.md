@@ -17,21 +17,22 @@ S3_SECRET_KEY=<a long random password>
 ```
 
 Store `GRAFITO_ENCRYPTION_KEY` somewhere safe, outside the server, such as a
-password manager. Without it, the AI keys saved by users can't be read.
+password manager. Without it, saved Git tokens and the SMTP password can't be
+read.
 
 The internal services (Postgres, Elasticsearch, Redis, MinIO) only listen on
 `127.0.0.1`. Publish only the app, preferably behind a reverse proxy with TLS.
 
 ## What holds data
 
-| Service                      | Holds                                                                                                                                               | Needs a backup?                                                                                                                                                               |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Postgres (`grafito_pg`)      | Accounts, roles, every vault (notes, file metadata), sharing, versions, trash, API tokens, encrypted AI keys; file bytes too when there is no MinIO | **Yes**: it is the source of truth                                                                                                                                            |
-| MinIO (`grafito_s3`)         | The bytes of uploaded files                                                                                                                         | **Yes**                                                                                                                                                                       |
-| Elasticsearch (`grafito_es`) | The search index                                                                                                                                    | No: it is rebuilt from Postgres                                                                                                                                               |
-| Grafeno (`grafito_grafeno`)  | The graph: links between notes, files and portfolios                                                                                                | No: it is copied again from Postgres (Monitorización → Grafo → **Reconstruir**, or by itself when a vault is missing)                                                         |
-| Redis (`grafito_redis`)      | Session deadlines                                                                                                                                   | No: users only have to sign in again                                                                                                                                          |
-| Secrets (`grafito_secrets`)  | `BETTER_AUTH_SECRET` and `GRAFITO_ENCRYPTION_KEY` when Grafito created them (not set in `.env`)                                                     | **Yes, apart from the database:** without the key, saved AI keys and the SMTP password can't be read. Copy `/app/.data/secrets` somewhere safe, or set both secrets in `.env` |
+| Service                      | Holds                                                                                                                                                  | Needs a backup?                                                                                                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Postgres (`grafito_pg`)      | Accounts, roles, every vault (notes, file metadata), sharing, versions, trash, API tokens, encrypted Git tokens; file bytes too when there is no MinIO | **Yes**: it is the source of truth                                                                                                                                               |
+| MinIO (`grafito_s3`)         | The bytes of uploaded files                                                                                                                            | **Yes**                                                                                                                                                                          |
+| Elasticsearch (`grafito_es`) | The search index                                                                                                                                       | No: it is rebuilt from Postgres                                                                                                                                                  |
+| Grafeno (`grafito_grafeno`)  | The graph: links between notes, files and portfolios                                                                                                   | No: it is copied again from Postgres (Monitorización → Grafo → **Reconstruir**, or by itself when a vault is missing)                                                            |
+| Redis (`grafito_redis`)      | Session deadlines                                                                                                                                      | No: users only have to sign in again                                                                                                                                             |
+| Secrets (`grafito_secrets`)  | `BETTER_AUTH_SECRET` and `GRAFITO_ENCRYPTION_KEY` when Grafito created them (not set in `.env`)                                                        | **Yes, apart from the database:** without the key, saved Git tokens and the SMTP password can't be read. Copy `/app/.data/secrets` somewhere safe, or set both secrets in `.env` |
 
 ## Scheduled backups
 
@@ -114,27 +115,27 @@ volume (`server/install-secrets.ts`).
 
 - On the first start after upgrading, everyone signs in again.
 - Unless `GRAFITO_ENCRYPTION_KEY_PREVIOUS` is set, the old example encryption
-  key acts as the previous key only until the app has started: then AI keys,
-  Git tokens and the SMTP password saved with it are sealed again with the
+  key acts as the previous key only until the app has started: then Git
+  tokens and the SMTP password saved with it are sealed again with the
   installation key (`server/secret-rotation.ts`) and the example stops being
   accepted.
 
 To use your own instead, set them in `.env` as below.
 
-### `GRAFITO_ENCRYPTION_KEY` (encrypts users' AI keys)
+### `GRAFITO_ENCRYPTION_KEY` (encrypts Git tokens and the SMTP password)
 
 1. Generate a new key: `openssl rand -base64 48`.
 2. In `.env`, move the current value to `GRAFITO_ENCRYPTION_KEY_PREVIOUS` and
    put the new one in `GRAFITO_ENCRYPTION_KEY`.
 3. Run `docker compose up -d app`.
-4. On start, saved AI keys, Git tokens and the SMTP password that still open
+4. On start, saved Git tokens and the SMTP password that still open
    with the previous key are sealed again with the new one. Then remove
    `GRAFITO_ENCRYPTION_KEY_PREVIOUS`. A secret that opened with neither key
-   stays unreadable, and its owner reconnects it (for AI,
-   **Cuenta → Conexiones de IA**).
+   stays unreadable: reconnect the Git link, or type the SMTP password again.
 
-If the key is **lost**, nothing can recover the saved AI keys. Set a new key;
-users then reconnect their providers. Notes and accounts are unaffected.
+If the key is **lost**, nothing can recover those secrets. Set a new key, then
+reconnect Git links and type the SMTP password again. Notes and accounts are
+unaffected.
 
 ### `BETTER_AUTH_SECRET` (signs sessions)
 
@@ -331,18 +332,17 @@ their index entries are removed in batches of 500.
 
 ## When something is down
 
-| Symptom                                     | Check                                                                      | Fix                                                                                                                                              |
-| ------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The page doesn't load                       | `docker compose ps`, `docker compose logs --tail 100 app`                  | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`.       |
-| Sign-in fails for everyone                  | `docker compose logs app \| grep -i auth`                                  | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident.                         |
-| Search returns nothing                      | Administración → Monitorización y logs → Fuentes → Comprobar               | Start Elasticsearch. Search falls back to Postgres meanwhile.                                                                                    |
-| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación                        | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read.                          |
-| The graph button and Menciones are gone     | Administración → Monitorización y logs → Grafo                             | Start Grafeno (`docker compose up -d grafeno`) and check **Extensiones → Grafo**. They come back within a minute; everything else keeps working. |
-| Every upload fails as soon as it finishes   | Scanning is on by default (Administración → Seguridad)                     | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen.    |
-| Everyone is signed out                      | Redis was restarted or flushed                                             | Nothing to fix: session deadlines are recreated on the next sign-in.                                                                             |
-| AI chat says the key can't be read          | `GRAFITO_ENCRYPTION_KEY` changed without `GRAFITO_ENCRYPTION_KEY_PREVIOUS` | Put the old key back as `GRAFITO_ENCRYPTION_KEY_PREVIOUS` (see above), or have users reconnect.                                                  |
-| Disk full                                   | `docker system df`, `du -sh backups`                                       | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`.                                                                   |
-| Data loss or corruption                     | —                                                                          | Restore the latest good dump (see above).                                                                                                        |
+| Symptom                                     | Check                                                        | Fix                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The page doesn't load                       | `docker compose ps`, `docker compose logs --tail 100 app`    | `docker compose up -d`. If `app` restarts in a loop with `ENOTFOUND postgres`, Postgres isn't healthy yet: `docker compose logs postgres`.       |
+| Sign-in fails for everyone                  | `docker compose logs app \| grep -i auth`                    | Make sure `BETTER_AUTH_URL` is the address people actually use, and that `BETTER_AUTH_SECRET` didn't change by accident.                         |
+| Search returns nothing                      | Administración → Monitorización y logs → Fuentes → Comprobar | Start Elasticsearch. Search falls back to Postgres meanwhile.                                                                                    |
+| A word inside a file is missing from search | Administración → Monitorización y logs → Indexación          | The background pass reads notes and files one at a time. **Reindexar** walks them again. Old `.doc` files are not read.                          |
+| The graph button and Menciones are gone     | Administración → Monitorización y logs → Grafo               | Start Grafeno (`docker compose up -d grafeno`) and check **Extensiones → Grafo**. They come back within a minute; everything else keeps working. |
+| Every upload fails as soon as it finishes   | Scanning is on by default (Administración → Seguridad)       | Wait until **Seguridad → Comprobar** says ClamAV answers. The first start can take several minutes. Or turn the antivirus off on that screen.    |
+| Everyone is signed out                      | Redis was restarted or flushed                               | Nothing to fix: session deadlines are recreated on the next sign-in.                                                                             |
+| Disk full                                   | `docker system df`, `du -sh backups`                         | Lower `BACKUP_KEEP_DAYS`, move old dumps elsewhere, run `docker system prune`.                                                                   |
+| Data loss or corruption                     | —                                                            | Restore the latest good dump (see above).                                                                                                        |
 
 ## Upgrading
 

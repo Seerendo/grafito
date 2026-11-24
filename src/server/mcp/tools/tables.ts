@@ -123,4 +123,28 @@ export const tableTools: Tool[] = [
         value: args.value ?? null,
       }),
   },
+  {
+    permission: PERMISSION.notesEdit,
+    writes: true,
+    destructive: true,
+    spec: {
+      name: "delete_table_row",
+      description:
+        "Elimina una fila de una tabla que esta persona puede editar; queda en el historial de la fila. Antes dile a la persona qué fila es y espera a que confirme; luego repite su row_id en confirm.",
+      parameters: {
+        type: "object",
+        properties: {
+          table: { type: "string", description: "Id o título de la tabla" },
+          row_id: { type: "string", description: "Id de la fila (el de query_table)" },
+          confirm: {
+            type: "string",
+            description: "El mismo row_id, una vez que la persona lo confirmó",
+          },
+        },
+        required: ["table", "row_id", "confirm"],
+      },
+    },
+    run: (vault, args) =>
+      vault.deleteTableRow(text(args, "table"), text(args, "row_id"), text(args, "confirm")),
+  },
 ];

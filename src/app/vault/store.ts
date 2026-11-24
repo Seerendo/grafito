@@ -274,7 +274,7 @@ type VaultState = Persisted & {
   hydrated: boolean;
   /** The in-memory vault is seeded sample data, not previously saved browser data. */
   seeded: boolean;
-  /** Apply server changes from synchronization, AI or API. */
+  /** Apply server changes from synchronization, MCP or the API. */
   applyRemote: (changes: {
     docs: Document[];
     deletedDocs: string[];

@@ -181,7 +181,7 @@ export const sharedWithMe = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async ({ context }) => {
     const sql = await requireLease(context.userId);
-    // Owner IDs are needed server-side by the assistant, not by the browser.
+    // Owner IDs are needed server-side by the MCP tools, not by the browser.
     return (await sharedWith(sql, context.userId)).map((item) => ({
       id: item.id,
       kind: item.kind,

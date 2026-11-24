@@ -13,8 +13,6 @@ import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { TableIndexSync } from "./TableIndexSync";
 import { VaultMirror } from "./VaultMirror";
 import { VaultSync } from "./VaultSync";
-import { AiChat } from "@/components/ai/AiChat";
-import { useAiChat } from "@/app/ai-chat";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
 import { SharedViewer } from "@/components/share/SharedViewer";
@@ -250,16 +248,8 @@ function VaultWorkspace() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (
-          useFullscreen.getState().on &&
-          !useVault.getState().dialog &&
-          !useAiChat.getState().open
-        ) {
+        if (useFullscreen.getState().on && !useVault.getState().dialog) {
           useFullscreen.getState().exit();
-          return;
-        }
-        if (useAiChat.getState().open) {
-          useAiChat.getState().setOpen(false);
           return;
         }
         const state = useVault.getState();
@@ -304,16 +294,6 @@ function VaultWorkspace() {
         const next: ViewMode =
           mode === "read" ? "edit" : mode === "edit" && !narrow ? "split" : "read";
         useVault.getState().setMode(next);
-      } else if (key === "b") {
-        // Ctrl+B means bold inside the note editor and AI chat elsewhere.
-        const target = event.target;
-        if (
-          target instanceof HTMLTextAreaElement &&
-          target.getAttribute("aria-label") === "Contenido de la nota"
-        )
-          return;
-        event.preventDefault();
-        useAiChat.getState().toggle();
       } else if (key === "g") {
         event.preventDefault();
         if (!graphOnRef.current) return;
@@ -580,7 +560,6 @@ function VaultWorkspace() {
         <VaultSync />
         <ShareMirror />
         <NotePdfHost />
-        <AiChat mobile={mobile} onOpenNote={openNote} />
         <FileDropShield enabled={canAddFiles} />
       </div>
     </VisibilityProvider>

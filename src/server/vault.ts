@@ -146,7 +146,7 @@ async function upsertDoc(
   const file = doc.file;
   const links = JSON.stringify(doc.links ?? []);
   if (onlyIfNewer) {
-    // Newest changes win so stale browsers cannot overwrite AI changes.
+    // Newest changes win so stale browsers cannot overwrite MCP or API changes.
     await sql`
       insert into vault_doc (user_id, id, title, kind, portfolio_id, content, file_name, file_mime, file_data,
         file_key, file_size, links_json, pinned, created_at, updated_at, created_by, updated_by, rev, deleted)
@@ -630,6 +630,46 @@ export async function createPortfolio(
   `;
   if (taken[0]) throw new VaultError("Ya hay un portafolio con ese nombre ahí.", 409);
   const portfolio: Portfolio = { id: crypto.randomUUID(), name, parentId: input.parentId };
+  await pushChanges(sql, userId, {
+    docs: [],
+    deletedDocs: [],
+    portfolios: [portfolio],
+    deletedPortfolios: [],
+  });
+  return portfolio;
+}
+
+/**
+ * Rename a portfolio or move it under another one (null for the root). A portfolio cannot move
+ * inside itself, and a name stays unique among its siblings.
+ */
+export async function updatePortfolio(
+  sql: Sql,
+  userId: string,
+  id: string,
+  input: { name?: string; parentId?: string | null },
+): Promise<Portfolio> {
+  const portfolios = await listPortfolios(sql, userId);
+  const current = portfolios.find((portfolio) => portfolio.id === id);
+  if (!current) throw new VaultError("Ese portafolio no existe.", 404);
+  const name =
+    input.name === undefined ? current.name : input.name.trim().replace(/[\\/]/g, "").slice(0, 120);
+  if (!name) throw new VaultError("Escribe un nombre.");
+  const parentId = input.parentId === undefined ? current.parentId : input.parentId;
+  if (parentId) {
+    if (!portfolios.some((portfolio) => portfolio.id === parentId))
+      throw new VaultError("El portafolio de destino no existe.", 404);
+    if (descendantIds(portfolios, id).has(parentId))
+      throw new VaultError("Un portafolio no puede ir dentro de sí mismo.", 409);
+  }
+  const taken = portfolios.some(
+    (portfolio) =>
+      portfolio.id !== id &&
+      (portfolio.parentId ?? null) === (parentId ?? null) &&
+      portfolio.name.toLowerCase() === name.toLowerCase(),
+  );
+  if (taken) throw new VaultError("Ya hay un portafolio con ese nombre ahí.", 409);
+  const portfolio: Portfolio = { ...current, name, parentId: parentId ?? null };
   await pushChanges(sql, userId, {
     docs: [],
     deletedDocs: [],

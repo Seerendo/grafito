@@ -114,11 +114,10 @@ Still open:
 
 - Note templates and reusable blocks.
 - A draft → review → published flow, with reviewers.
-- AI agent safety:
-  - A confirmation step before the AI writes.
-  - A log of the agent's actions that can be undone. Versions already make
-    every AI edit reversible by hand.
-  - A check that the model actually called a tool before it claims it did.
+- MCP:
+  - A log of the actions taken through MCP that can be undone. Versions
+    already make every edit reversible by hand.
+  - OAuth sign-in for MCP clients, besides personal tokens.
 
 ## 8. Platform
 

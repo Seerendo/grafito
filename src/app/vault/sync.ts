@@ -356,7 +356,7 @@ async function syncOnce(userId: string): Promise<Omit<SyncResult, "ms"> | null> 
     confirmDeletes(userId, { docs: batch.deletedDocs, portfolios: batch.deletedPortfolios });
     pushed += batch.docs.length + batch.portfolios.length;
     deleted += batch.deletedDocs.length + batch.deletedPortfolios.length;
-    // If another client or AI advanced the revision by more than one, retain the old revision
+    // If another client, MCP or the API advanced the revision by more than one, retain the old revision
     // so the next pull includes those changes. Also pull server-merged note versions.
     if (contiguous && result.revision === meta.rev + 1 && result.merged.length === 0)
       meta.rev = result.revision;

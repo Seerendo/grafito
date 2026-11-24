@@ -4,19 +4,14 @@ Run `npm run format` before submitting changes. CI verifies formatting with
 `npm run format:check`. Generated routes, build output, local data, backups and
 dependency files are excluded from formatting.
 
-## Agent service boundaries
+## MCP service boundaries
 
-`src/server/ai/agent.ts` is the composition layer: it resolves credentials,
-builds the authorized tool set and constructs the system prompt.
-`engine.ts` owns the bounded execution loop through injected completion and
-tool ports. It has no runtime database or HTTP dependencies. Tools execute
-sequentially because later calls can depend on earlier writes. Cancellation
-is checked before provider calls and before each tool. An already running
-write cannot be rolled back by cancellation.
-
-`events.ts` defines serializable progress events. `stream.ts` adapts an event
-producer to NDJSON and propagates reader cancellation to an AbortSignal.
-The chat route retains authentication, input validation and conversation memory.
+`src/routes/api/mcp.ts` authenticates the personal token and checks `api.use`.
+`src/server/mcp/protocol.ts` is pure JSON-RPC: it has no database or HTTP
+dependencies and is tested directly. `tools.ts` filters tools by role and runs
+them against `corpus.ts`, which decides what the token's owner can open and
+change and rechecks every write through the same share and upload checks as
+the app.
 
 The application remains a modular monolith. Keep these services in process:
 vault mutations depend on the same authorization and persistence rules as
@@ -60,11 +55,11 @@ observable behavior. Do not alter migration SQL while editing its comments.
 | Area                         | Assessment and maintenance rule                                                                                                                                                  |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Authentication and sessions  | Centralized verification, leases and server middleware. Never trust client user IDs or move server auth into browser bundles.                                                    |
-| Vault and synchronization    | One authoritative server vault; browser state is a cache with merge bases. Keep REST, AI and shared edits on the same mutation/history path.                                     |
+| Vault and synchronization    | One authoritative server vault; browser state is a cache with merge bases. Keep REST, MCP and shared edits on the same mutation/history path.                                    |
 | Sharing and workspaces       | Grants determine visible content; workspace membership alone does not grant folder access. Shared contracts now live in domain.                                                  |
 | Files, Office and signatures | Storage adapters already separate bytes from metadata. Preserve per-save permission checks and version retention.                                                                |
 | Tables and forms             | Authorization adapters delegate to table persistence; public forms expose creation rather than table reading. Keep those contracts distinct.                                     |
-| AI                           | Provider adapters, authorization corpus, tools, engine and HTTP transport have explicit responsibilities. Cancellation is tested between tool calls and on stream closure.       |
+| MCP                          | Protocol, authorization corpus and tools have explicit responsibilities. A new tool declares its permission and whether it writes or deletes; deletions require `confirm`.       |
 | Search, Git and mail         | Existing in-process jobs use database claims. Keep scheduling ownership explicit and avoid duplicate loops when adding features.                                                 |
 | Hierarchies                  | Shared linear subtree traversal replaces repeated organization scans. Forest construction is iterative and indexes parents once. Tests cover deep and cyclic inputs.             |
 | UI                           | Feature folders remain appropriate. Large views such as TableView and PdfView should be split by cohesive behavior when that behavior changes, keeping state ownership explicit. |

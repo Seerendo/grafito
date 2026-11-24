@@ -13,7 +13,6 @@ export const PERMISSION = {
   gitSync: "git.sync",
   linksManage: "links.manage",
   graphView: "graph.view",
-  aiUse: "ai.use",
   apiUse: "api.use",
 } as const;
 

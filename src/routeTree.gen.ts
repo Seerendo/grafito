@@ -14,6 +14,7 @@ import { Route as AccesoRouteImport } from './routes/acceso'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CuentaRouteImport } from './routes/cuenta'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as CompartidosIndexRouteImport } from './routes/compartidos/index'
 import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$shareId'
 import { Route as DavIndexRouteImport } from './routes/dav/index'
@@ -21,7 +22,6 @@ import { Route as DavSplatRouteImport } from './routes/dav/$'
 import { Route as FTokenRouteImport } from './routes/f/$token'
 import { Route as FormulariosTokenRouteImport } from './routes/formularios/$token'
 import { Route as PTokenRouteImport } from './routes/p/$token'
-import { Route as ApiAiChatRouteImport } from './routes/api/ai/chat'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDrawingsIdRouteImport } from './routes/api/drawings/$id'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files/$id'
@@ -71,6 +71,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CompartidosIndexRoute = CompartidosIndexRouteImport.update({
   id: '/compartidos/',
   path: '/compartidos/',
@@ -104,11 +109,6 @@ const FormulariosTokenRoute = FormulariosTokenRouteImport.update({
 const PTokenRoute = PTokenRouteImport.update({
   id: '/p/$token',
   path: '/p/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAiChatRoute = ApiAiChatRouteImport.update({
-  id: '/api/ai/chat',
-  path: '/api/ai/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -234,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
@@ -241,7 +242,6 @@ export interface FileRoutesByFullPath {
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/dav/': typeof DavIndexRoute
-  '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -272,6 +272,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
@@ -279,7 +280,6 @@ export interface FileRoutesByTo {
   '/p/$token': typeof PTokenRoute
   '/compartidos': typeof CompartidosIndexRoute
   '/dav': typeof DavIndexRoute
-  '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -311,6 +311,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
@@ -318,7 +319,6 @@ export interface FileRoutesById {
   '/p/$token': typeof PTokenRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/dav/': typeof DavIndexRoute
-  '/api/ai/chat': typeof ApiAiChatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -351,6 +351,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/cuenta'
     | '/login'
+    | '/api/mcp'
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
@@ -358,7 +359,6 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/compartidos/'
     | '/dav/'
-    | '/api/ai/chat'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -389,6 +389,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/cuenta'
     | '/login'
+    | '/api/mcp'
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
@@ -396,7 +397,6 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/compartidos'
     | '/dav'
-    | '/api/ai/chat'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -427,6 +427,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/cuenta'
     | '/login'
+    | '/api/mcp'
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
@@ -434,7 +435,6 @@ export interface FileRouteTypes {
     | '/p/$token'
     | '/compartidos/'
     | '/dav/'
-    | '/api/ai/chat'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -466,6 +466,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   CuentaRoute: typeof CuentaRoute
   LoginRoute: typeof LoginRoute
+  ApiMcpRoute: typeof ApiMcpRoute
   CompartidosShareIdRoute: typeof CompartidosShareIdRoute
   DavSplatRoute: typeof DavSplatRoute
   FTokenRoute: typeof FTokenRoute
@@ -473,7 +474,6 @@ export interface RootRouteChildren {
   PTokenRoute: typeof PTokenRoute
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   DavIndexRoute: typeof DavIndexRoute
-  ApiAiChatRoute: typeof ApiAiChatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDrawingsIdRoute: typeof ApiDrawingsIdRoute
   ApiFilesIdRoute: typeof ApiFilesIdRoute
@@ -526,6 +526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/compartidos/': {
       id: '/compartidos/'
       path: '/compartidos'
@@ -573,13 +580,6 @@ declare module '@tanstack/react-router' {
       path: '/p/$token'
       fullPath: '/p/$token'
       preLoaderRoute: typeof PTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ai/chat': {
-      id: '/api/ai/chat'
-      path: '/api/ai/chat'
-      fullPath: '/api/ai/chat'
-      preLoaderRoute: typeof ApiAiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -853,6 +853,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   CuentaRoute: CuentaRoute,
   LoginRoute: LoginRoute,
+  ApiMcpRoute: ApiMcpRoute,
   CompartidosShareIdRoute: CompartidosShareIdRoute,
   DavSplatRoute: DavSplatRoute,
   FTokenRoute: FTokenRoute,
@@ -860,7 +861,6 @@ const rootRouteChildren: RootRouteChildren = {
   PTokenRoute: PTokenRoute,
   CompartidosIndexRoute: CompartidosIndexRoute,
   DavIndexRoute: DavIndexRoute,
-  ApiAiChatRoute: ApiAiChatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDrawingsIdRoute: ApiDrawingsIdRoute,
   ApiFilesIdRoute: ApiFilesIdRoute,

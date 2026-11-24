@@ -1,5 +1,5 @@
 /**
- * Pure assistant visibility/write rules mirror the vault. Owned content requires role
+ * Pure MCP visibility/write rules mirror the vault. Owned content requires role
  * permissions and respects read-only personas. Shared non-workspace content requires share
  * access. Workspace members see only granted folders unless they have full access.
  * Administrator status cannot bypass ownership or grants. Keep consistent with server/share.ts
@@ -8,8 +8,8 @@
 
 export type ShareLevel = "admin" | "edit" | "read";
 export type FolderLevel = "read" | "edit";
-export type AiAccess = "lectura" | "edición";
-export type AiSource = "propio" | "compartido" | "espacio";
+export type CorpusAccess = "lectura" | "edición";
+export type CorpusSource = "propio" | "compartido" | "espacio";
 
 export type ShareFacts = {
   access: ShareLevel;
@@ -30,7 +30,7 @@ export type VaultCaps = {
   managePortfolios: boolean;
 };
 
-export type AiDoc = {
+export type CorpusDoc = {
   id: string;
   ownerId: string;
   /** null for the owned vault. */
@@ -39,12 +39,12 @@ export type AiDoc = {
   kind: "markdown" | "file";
   portfolioId: string | null;
   place: string;
-  source: AiSource;
-  access: AiAccess;
+  source: CorpusSource;
+  access: CorpusAccess;
   fileName: string | null;
 };
 
-export type AiFolder = {
+export type CorpusFolder = {
   /** null denotes the personal root. */
   id: string | null;
   ownerId: string;
@@ -53,11 +53,11 @@ export type AiFolder = {
   parentId: string | null;
   path: string;
   place: string;
-  source: AiSource;
-  access: AiAccess;
+  source: CorpusSource;
+  access: CorpusAccess;
 };
 
-export type Assembled = { docs: AiDoc[]; folders: AiFolder[] };
+export type Assembled = { docs: CorpusDoc[]; folders: CorpusFolder[] };
 
 type Node = { id: string; name: string; parentId: string | null };
 type DocInput = {
@@ -106,12 +106,12 @@ export function canWriteOwn(roleCanEdit: boolean, readOnlyProfile: boolean): boo
   return roleCanEdit && !readOnlyProfile;
 }
 
-export function writeRefusal(doc: Pick<AiDoc, "title" | "place" | "access">): string | null {
+export function writeRefusal(doc: Pick<CorpusDoc, "title" | "place" | "access">): string | null {
   if (doc.access === "edición") return null;
   return `Puedes ver «${doc.title}» (${doc.place}) pero no editarlo.`;
 }
 
-export function createRefusal(folder: Pick<AiFolder, "place" | "access">): string | null {
+export function createRefusal(folder: Pick<CorpusFolder, "place" | "access">): string | null {
   if (folder.access === "edición") return null;
   return `Puedes ver «${folder.place}» pero no crear ni modificar nada ahí.`;
 }
@@ -126,13 +126,13 @@ export function cleanRef(ref: string): string {
 }
 
 export type DocMatch =
-  { status: "one"; doc: AiDoc } | { status: "choices"; docs: AiDoc[] } | { status: "none" };
+  { status: "one"; doc: CorpusDoc } | { status: "choices"; docs: CorpusDoc[] } | { status: "none" };
 
 /**
  * Resolve exact IDs or titles, or unique title substrings. Preserve ambiguity for the model to
  * resolve. Missing IDs must not fall back to title search.
  */
-export function matchDocs(docs: readonly AiDoc[], ref: string): DocMatch {
+export function matchDocs(docs: readonly CorpusDoc[], ref: string): DocMatch {
   const key = cleanRef(ref);
   if (!key) return { status: "none" };
   const byId = docs.filter((doc) => doc.id === key);
@@ -151,8 +151,8 @@ export function matchDocs(docs: readonly AiDoc[], ref: string): DocMatch {
 const ROOT_WORDS = new Set(["root", "null", "raíz", "raiz", "carpeta personal", "personal"]);
 
 export type FolderMatch =
-  | { status: "one"; folder: AiFolder }
-  | { status: "choices"; folders: AiFolder[] }
+  | { status: "one"; folder: CorpusFolder }
+  | { status: "choices"; folders: CorpusFolder[] }
   | { status: "none" }
   | { status: "missing" };
 
@@ -160,7 +160,7 @@ export type FolderMatch =
  * Resolve portfolios by ID, path or unique name. root and the localized personal-root name
  * denote the owned root.
  */
-export function matchFolders(folders: readonly AiFolder[], ref: string): FolderMatch {
+export function matchFolders(folders: readonly CorpusFolder[], ref: string): FolderMatch {
   const key = cleanRef(ref);
   if (!key) return { status: "missing" };
   const byId = folders.filter((folder) => folder.id === key);
@@ -190,14 +190,14 @@ export function matchFolders(folders: readonly AiFolder[], ref: string): FolderM
  */
 export function takeVisible(
   hits: readonly { id: string }[],
-  visible: readonly AiDoc[],
+  visible: readonly CorpusDoc[],
   ownerId: string,
-): AiDoc[] {
-  const allowed = new Map<string, AiDoc>();
+): CorpusDoc[] {
+  const allowed = new Map<string, CorpusDoc>();
   for (const doc of visible) {
     if (doc.ownerId === ownerId && !allowed.has(doc.id)) allowed.set(doc.id, doc);
   }
-  const out: AiDoc[] = [];
+  const out: CorpusDoc[] = [];
   const seen = new Set<string>();
   for (const hit of hits) {
     const doc = allowed.get(hit.id);
@@ -229,7 +229,7 @@ function factsOf(share: ShareSlice): ShareFacts {
   };
 }
 
-function sourceOf(share: ShareSlice | null): AiSource {
+function sourceOf(share: ShareSlice | null): CorpusSource {
   if (!share) return "propio";
   return share.workspace ? "espacio" : "compartido";
 }
@@ -242,9 +242,9 @@ function shareLabel(share: ShareSlice): string {
 export function describeOwnDoc(
   userId: string,
   caps: VaultCaps,
-  folders: readonly AiFolder[],
+  folders: readonly CorpusFolder[],
   doc: DocInput,
-): AiDoc {
+): CorpusDoc {
   const path = doc.portfolioId
     ? (folders.find((folder) => folder.shareId === null && folder.id === doc.portfolioId)?.path ??
       "")
@@ -263,7 +263,7 @@ export function describeOwnDoc(
   };
 }
 
-function ownFolderAccess(caps: VaultCaps): AiAccess {
+function ownFolderAccess(caps: VaultCaps): CorpusAccess {
   if (caps.readOnly || !(caps.createNotes || caps.managePortfolios)) return "lectura";
   return "edición";
 }
@@ -272,18 +272,22 @@ function sharedFolderAccess(
   caps: VaultCaps,
   facts: ShareFacts,
   portfolioId: string | null,
-): AiAccess {
+): CorpusAccess {
   if (caps.readOnly || !(caps.createNotes || caps.managePortfolios)) return "lectura";
   return canWriteShare(facts, portfolioId) ? "edición" : "lectura";
 }
 
-function sharedDocAccess(caps: VaultCaps, facts: ShareFacts, portfolioId: string | null): AiAccess {
+function sharedDocAccess(
+  caps: VaultCaps,
+  facts: ShareFacts,
+  portfolioId: string | null,
+): CorpusAccess {
   if (!canWriteOwn(caps.editNotes, caps.readOnly)) return "lectura";
   return canWriteShare(facts, portfolioId) ? "edición" : "lectura";
 }
 
 /**
- * Build the assistant's visible corpus, excluding ungranted workspace documents even if
+ * Build the visible corpus for MCP tools, excluding ungranted workspace documents even if
  * supplied in a tree. Prefer writable access when the same document appears through multiple
  * shares.
  */
@@ -294,7 +298,7 @@ export function assembleView(input: {
   ownDocs: DocInput[];
   shares: ShareSlice[];
 }): Assembled {
-  const folders: AiFolder[] = [
+  const folders: CorpusFolder[] = [
     {
       id: null,
       ownerId: input.userId,
@@ -322,7 +326,7 @@ export function assembleView(input: {
     });
   }
 
-  const docs = new Map<string, AiDoc>();
+  const docs = new Map<string, CorpusDoc>();
   for (const doc of input.ownDocs) {
     docs.set(`${input.userId}:${doc.id}`, describeOwnDoc(input.userId, input.caps, folders, doc));
   }
@@ -348,7 +352,7 @@ export function assembleView(input: {
     for (const doc of share.documents) {
       if (!canReadShare(facts, doc.portfolioId)) continue;
       const path = folderPath(share.portfolios, doc.portfolioId);
-      const next: AiDoc = {
+      const next: CorpusDoc = {
         id: doc.id,
         ownerId: share.ownerId,
         shareId: share.shareId,
@@ -367,4 +371,14 @@ export function assembleView(input: {
   }
 
   return { docs: [...docs.values()], folders };
+}
+
+function folded(value: string): string {
+  return value.normalize("NFC").toLocaleLowerCase("es").replace(/\s+/g, " ").trim();
+}
+
+/** A deletion runs only when confirm repeats the exact name of what goes to the trash. */
+export function confirmsName(confirm: string, name: string): boolean {
+  const target = folded(name);
+  return target.length > 0 && folded(confirm) === target;
 }

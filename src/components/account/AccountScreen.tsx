@@ -1,4 +1,4 @@
-import { Braces, KeyRound, Mail, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
+import { Braces, KeyRound, Mail, SlidersHorizontal, UserRound } from "lucide-react";
 import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { useEffect, useState } from "react";
 import { Navigate } from "@tanstack/react-router";
@@ -11,7 +11,6 @@ import { PERMISSION } from "@/domain/permissions";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { accountState } from "@/server/session.functions";
-import { AiSettings } from "./AiSettings";
 import { ApiTokens } from "./ApiTokens";
 import { PasswordForm } from "./PasswordForm";
 import { PreferencesForm } from "./PreferencesForm";
@@ -24,7 +23,7 @@ import { t } from "@/app/i18n";
  * cards with back navigation.
  */
 
-type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "ia" | "api";
+type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "api";
 
 const SECTION_KEY = "grafito.account.section";
 
@@ -35,7 +34,6 @@ const SECTIONS: SettingsItem<Section>[] = [
   { id: "correo", label: "Correo", icon: Mail },
   { id: "preferencias", label: "Preferencias de usuario", icon: SlidersHorizontal },
   { id: "contrasena", label: "Contraseña", icon: KeyRound },
-  { id: "ia", label: "Conexiones de IA", icon: Sparkles },
   { id: "api", label: "API", icon: Braces },
 ];
 
@@ -92,10 +90,7 @@ export function AccountScreen() {
   }
   if (profile.mustChangePassword) return <Navigate to="/" />;
 
-  const items = SECTIONS.filter(
-    (item) =>
-      (item.id !== "ia" || can(PERMISSION.aiUse)) && (item.id !== "api" || can(PERMISSION.apiUse)),
-  );
+  const items = SECTIONS.filter((item) => item.id !== "api" || can(PERMISSION.apiUse));
   const current = items.find((item) => item.id === section) ?? null;
 
   return (
@@ -139,7 +134,6 @@ export function AccountScreen() {
               {current?.id === "correo" ? <MailForm /> : null}
               {current?.id === "preferencias" ? <PreferencesForm /> : null}
               {current?.id === "contrasena" ? <PasswordForm loginEmail={profile.email} /> : null}
-              {current?.id === "ia" ? <AiSettings /> : null}
               {current?.id === "api" ? <ApiTokens /> : null}
             </div>
           </div>

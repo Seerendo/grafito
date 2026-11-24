@@ -10,10 +10,10 @@ import {
   matchFolders,
   takeVisible,
   writeRefusal,
-  type AiDoc,
+  type CorpusDoc,
   type ShareSlice,
   type VaultCaps,
-} from "../../../src/server/ai/access.ts";
+} from "../../../src/server/mcp/access.ts";
 
 /**
  * The assistant cannot open another vault or write to read-only documents. These rules are
@@ -39,7 +39,7 @@ const PROFILE_RO: VaultCaps = {
   managePortfolios: true,
 };
 
-function doc(partial: Partial<AiDoc> & Pick<AiDoc, "id" | "title">): AiDoc {
+function doc(partial: Partial<CorpusDoc> & Pick<CorpusDoc, "id" | "title">): CorpusDoc {
   return {
     ownerId: "me",
     shareId: null,

@@ -13,7 +13,7 @@ function pageArg(value: unknown): number | undefined | "bad" {
   return page;
 }
 
-function linkKind(value: string): ManualKind | null {
+export function linkKind(value: string): ManualKind | null {
   const kind = value.trim().toLowerCase();
   if (!kind || kind === "referencia") return "referencia";
   if (kind === "llama") return "llama";
@@ -190,56 +190,71 @@ export const noteTools: Tool[] = [
   {
     permission: PERMISSION.notesDelete,
     writes: true,
+    destructive: true,
     spec: {
       name: "delete_note",
       description:
-        "Manda una nota a la papelera. No la llames en el mismo turno en que la persona pidió borrarla: primero dile el título y el sitio y espera a que confirme en su siguiente mensaje. Si hay varios títulos, pide el id.",
+        "Manda una nota a la papelera. Antes dile a la persona el título y el sitio y espera a que confirme; luego pasa ese título en confirm. Si hay varios títulos, usa el id.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Id de la nota, o su título" },
+          confirm: {
+            type: "string",
+            description:
+              "El nombre exacto de lo que se elimina, una vez que la persona lo confirmó",
+          },
         },
-        required: ["id"],
+        required: ["id", "confirm"],
       },
     },
-    run: (vault, args, context) =>
-      vault.deleteDocument(text(args, "id"), "markdown", context.deleteQuestion ?? ""),
+    run: (vault, args) => vault.deleteDocument(text(args, "id"), "markdown", text(args, "confirm")),
   },
   {
     permission: PERMISSION.filesDelete,
     writes: true,
+    destructive: true,
     spec: {
       name: "delete_file",
       description:
-        "Manda un archivo o una tabla a la papelera. No la llames hasta que la persona confirme en su siguiente mensaje, después de decirle el título y el sitio. Si hay varios títulos, pide el id.",
+        "Manda un archivo o una tabla a la papelera. Antes dile a la persona el título y el sitio y espera a que confirme; luego pasa ese título en confirm. Si hay varios títulos, usa el id.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Id del archivo o de la tabla, o su título" },
+          confirm: {
+            type: "string",
+            description:
+              "El nombre exacto de lo que se elimina, una vez que la persona lo confirmó",
+          },
         },
-        required: ["id"],
+        required: ["id", "confirm"],
       },
     },
-    run: (vault, args, context) =>
-      vault.deleteDocument(text(args, "id"), "file", context.deleteQuestion ?? ""),
+    run: (vault, args) => vault.deleteDocument(text(args, "id"), "file", text(args, "confirm")),
   },
   {
     permission: PERMISSION.portfoliosManage,
     writes: true,
+    destructive: true,
     spec: {
       name: "delete_portfolio",
       description:
-        "Manda un portafolio a la papelera, con los portafolios y documentos que contiene. No borra la Carpeta Personal ni la raíz de un compartido. No la llames hasta que la persona confirme en su siguiente mensaje. Dile antes el nombre, el sitio y que también se irá lo de dentro.",
+        "Manda un portafolio a la papelera, con los portafolios y documentos que contiene. No borra la Carpeta Personal ni la raíz de un compartido. Antes dile a la persona el nombre, el sitio y que también se irá lo de dentro, y espera a que confirme; luego pasa ese nombre en confirm.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Id, nombre o ruta del portafolio" },
+          confirm: {
+            type: "string",
+            description:
+              "El nombre exacto de lo que se elimina, una vez que la persona lo confirmó",
+          },
         },
-        required: ["id"],
+        required: ["id", "confirm"],
       },
     },
-    run: (vault, args, context) =>
-      vault.deletePortfolio(text(args, "id"), context.deleteQuestion ?? ""),
+    run: (vault, args) => vault.deletePortfolio(text(args, "id"), text(args, "confirm")),
   },
   {
     permission: PERMISSION.linksManage,

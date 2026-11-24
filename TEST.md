@@ -1544,6 +1544,31 @@ back with no ETag, and finishing the upload was refused (400). Answers are
 now read by `lib/http-answer.ts`, which keeps the cancellation. Starting an
 upload and sending a part now log their failures with the import id.
 
+## Round 52: the AI assistant removed, the MCP server
+
+Test stack rebuilt from scratch (its Elasticsearch could not start: another
+project holds port 9200; search runs on Postgres). Playwright 1.60,
+`tests/e2e/mcp.e2e.mjs`, and the official MCP SDK client (1.20) over
+Streamable HTTP.
+
+| Check                                                                                        | Result                                                         |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Migration 0047 on a fresh database                                                           | ✅ no `ai_*` tables, no `ai.use`/`ai.manage`; «API y MCP»      |
+| No token, an unknown token, a browser session token, `GET`                                   | ✅ 401 with `WWW-Authenticate: Bearer`, 401, 401, 405          |
+| A role without `api.use`                                                                     | ✅ 403                                                         |
+| `initialize` (2025-06-18), `notifications/initialized`, `tools/list`                         | ✅ version kept, 202, the 30 tools with annotations            |
+| Create a portfolio and a note, read, rename, move, rename/move a portfolio (not into itself) | ✅                                                             |
+| Comment, list comments, versions, read an old version, link two documents                    | ✅                                                             |
+| `delete_note` with `confirm: "sí"`, then with the exact title; trash; restore                | ✅ refused, then trashed, listed, back                         |
+| Table: create, add a row, query, delete the row without and with `confirm`                   | ✅ refused, then deleted                                       |
+| A read-only role                                                                             | ✅ no write tools listed; calling one is a JSON-RPC error      |
+| Another member's private note: read, delete                                                  | ✅ not found, nothing leaked                                   |
+| A read-only share: read, comment, edit, move                                                 | ✅ read and comment; edit and move refused                     |
+| Vault: no chat button, Ctrl+B opens nothing; Account → API shows the MCP address             | ✅                                                             |
+| Official SDK client: connect, list, `whoami`, `list_notes`                                   | ✅                                                             |
+| Security browser tests                                                                       | ✅ 8 of 9; GRAF-14 passes alone (sign-in limit after the rest) |
+| `npm run typecheck`, `lint`, `npm test`, `format:check`, `npm run build`                     | ✅ 257 tests pass (the AI's own tests went with it)            |
+
 ## Useful commands
 
 ```bash

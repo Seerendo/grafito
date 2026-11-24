@@ -211,7 +211,7 @@ export async function getBlob(
   return { body: response.body ?? new Uint8Array(), status: response.status, headers };
 }
 
-/** Read the entire file into memory for AI or text extraction. */
+/** Read the entire file into memory for MCP tools or text extraction. */
 export async function readBlob(sql: Sql, key: string): Promise<Uint8Array | null> {
   const blob = await getBlob(sql, key);
   if (!blob) return null;

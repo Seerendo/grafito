@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { READ_SLICE, readSlice } from "../../src/domain/ai-read.ts";
+import { READ_SLICE, readSlice } from "../../src/domain/read-slice.ts";
 
 /** The assistant receives a window of a document, not the whole file. */
 

@@ -111,7 +111,7 @@ routes ─▶ components ─▶ app ─▶ domain
 | `compartidos/$shareId.tsx` | `/compartidos/<id>`                          | `AccessGate` and the read-only viewer                                                                       |
 | `p/$token.tsx`             | `/p/<token>`                                 | Public viewer by link, **without a session** (skips `AccessGate`)                                           |
 | `api/v1/*.ts`              | `/api/v1/…`                                  | Vault REST API (see [REST API](#rest-api))                                                                  |
-| `api/ai/chat.ts`           | `/api/ai/chat`                               | AI chat (NDJSON response)                                                                                   |
+| `api/mcp.ts`               | `/api/mcp`                                   | MCP server (JSON-RPC, personal token)                                                                       |
 | `api/files/$id.ts`         | `/api/files/<id>`                            | A document's file: signed link, public `token`, or API token / session                                      |
 | `api/files/uploads*.ts`    | `/api/files/uploads`, `…/part`, `…/complete` | Chunked upload (start, parts, finish or abort). Finish scans with ClamAV when scanning is on (the default). |
 | `dav/index.ts`, `dav/$.ts` | `/dav`, `/dav/…`                             | WebDAV (`PROPFIND`, `GET`, `PUT`, `DELETE`, `MKCOL`, `MOVE`, `LOCK`, `UNLOCK`). No page.                    |
@@ -124,10 +124,9 @@ routes ─▶ components ─▶ app ─▶ domain
 | `chrome/`  | Shared frame: `ChromeHeader` (search, account menu), `AppFrame` (header and content) and `SettingsNav` (section sidebar that collapses to an icon rail; the state is kept in `localStorage`; used by Administration and Account)                                                                                                                                |
 | `brand/`   | Brand mark (`Mark`)                                                                                                                                                                                                                                                                                                                                             |
 | `access/`  | `AccessGate`: first run, sign-in and the forced password change                                                                                                                                                                                                                                                                                                 |
-| `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password), `AiSettings` (AI connections, `ai.use`) and `ApiTokens` (API, `api.use`). The last two are hidden without the permission.                                                                                                                 |
+| `account/` | `AccountScreen`, split into sections like Administration: `ProfileForm` (account details), `PasswordForm` (password) and `ApiTokens` (the MCP address and personal tokens, `api.use`), hidden without the permission.                                                                                                                                           |
 | `admin/`   | Administration screen and its boards: `Boards` (users, roles, monitor, logs), `AuditBoard` (exportable audit), `AiBoard`, `OrgsBoard` (organizations) and `AuthBoards` (LDAP, OAuth, SSO)                                                                                                                                                                       |
 | `session/` | `SessionWatch`: watches the session deadline and signs out when it expires                                                                                                                                                                                                                                                                                      |
-| `ai/`      | `AiChat`: floating button and chat panel (Ctrl+B)                                                                                                                                                                                                                                                                                                               |
 | `share/`   | `SharedViewer` (reusable read-only viewer; inside the vault it has no index of its own, `index={false}`, and with no document open shows `SharedBoard`, the page of a shared portfolio or workspace: its portfolios, documents and recent ones), `shared-tree.ts` (walks a shared item) and `ShareScreens` (`/compartidos`, a shared item, and the public view) |
 | `vault/`   | The vault (listed below)                                                                                                                                                                                                                                                                                                                                        |
 
@@ -175,7 +174,6 @@ The `vault/` pieces:
 | `vault/pending-deletes.ts` | Deletions made in the browser and not yet confirmed by the server (`grafito.deletes:<userId>`): the only deletions a sync sends, shown in the trash as pending or failed                                                                                                                                 |
 | `theme.ts`                 | Theme catalog, applying and cycling themes, and a startup script generated from `THEMES`                                                                                                                                                                                                                 |
 | `account-profile.ts`       | Profile of the signed-in account (name, initials, role)                                                                                                                                                                                                                                                  |
-| `ai-chat.ts`               | AI chat state: open or closed, chosen model, conversation and NDJSON reading                                                                                                                                                                                                                             |
 | `files.ts`                 | Chunked upload (`uploadVaultFile`) with progress (`useUploads`), signed view and download links (`useFileLinks`, cached for 50 minutes and retried while a new upload syncs), and `downloadFile`                                                                                                         |
 | `shares.ts`                | What the current user has shared (`useMyShares`, `visibilityMap`, `publicUrl`)                                                                                                                                                                                                                           |
 | `shared-view.ts`           | The shared-with-me item open in the vault (`useSharedView`): a document, or with none the page of one of its portfolios (`portfolioId`). While it is open, nothing of the Carpeta Personal is highlighted in the directory. Opening an own note, the Carpeta Personal or signing out closes it.          |
@@ -197,7 +195,6 @@ The `vault/` pieces:
 | `vault/portfolios.ts` | Portfolio tree                                                                                                                   |
 | `vault/migrate.ts`    | Migrates old vaults: the v1 format and `nestSamplePortfolios` (moves the sample portfolios into «Documentación», once)           |
 | `session.ts`          | Allowed session lengths                                                                                                          |
-| `ai.ts`               | Catalog of the 8 AI providers and their protocol                                                                                 |
 | `orgs.ts`             | Organizations: `childOrgs`, `orgSubtree`, `orgPath`, `wouldCycle`                                                                |
 | `share.ts`            | Sharing: `Visibility`, and `coveredBy` / `coveredByAll` (what a note, or a portfolio with its sub-portfolios, covers)            |
 | `permissions.ts`      | Vault permission keys (`PERMISSION`), and which one applies to deleting or exporting by document kind                            |
@@ -217,13 +214,12 @@ The `vault/` pieces:
 | `profile.ts`                                                                          | A user's profile and permissions (`allows()`)                                                                                                                                                                                                                                                                                                                                         |
 | `share.ts`                                                                            | Sharing data: items, grants, published copies, and reading by user or by link                                                                                                                                                                                                                                                                                                         |
 | `access-trace.ts`                                                                     | Expiry and revocation: closed windows in `access_grant_log`, openings in `access_event` (at most one per person and channel each hour, kept 180 days)                                                                                                                                                                                                                                 |
-| `vault.ts` / `vault.functions.ts`                                                     | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and the AI                                                                                                                                                                                                                                                                                         |
+| `vault.ts` / `vault.functions.ts`                                                     | Server-side vault: sync (`pushChanges` / `pullChanges`) and operations for the API and MCP                                                                                                                                                                                                                                                                                            |
 | `api.ts` / `api-tokens.ts` / `api-tokens.functions.ts`                                | REST API: authentication (token or session), responses and personal tokens                                                                                                                                                                                                                                                                                                            |
 | `crypto.ts`                                                                           | AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`. `open()` also accepts `GRAFITO_ENCRYPTION_KEY_PREVIOUS` during a rotation and reports `stale`, so callers re-encrypt.                                                                                                                                                                                                                      |
 | `history.ts` / `history.functions.ts`                                                 | Version history (`recordVersion`, grouping, retention of 200 versions per note), editing shared notes with conflict detection (`editSharedDoc`), and the trash functions                                                                                                                                                                                                              |
-| `ai/`                                                                                 | AI: adapters (`openai`, `anthropic`, `gemini`, `ollama`), `config` (allowed providers and keys), `tools` (vault tools, split into `tools/notes.ts`, `tools/tables.ts` and the read-only `tools/graph.ts`, which walk Grafeno's links through the corpus's access rules), `agent` (assistant loop) and `local-url` (validation of self-hosted addresses)                               |
+| `mcp/`                                                                                | MCP server: `protocol` (JSON-RPC), `access` and `corpus` (what the token's owner can open and change), `tools` (split into `tools/account.ts`, `tools/notes.ts`, `tools/organize.ts`, `tools/tables.ts` and the read-only `tools/graph.ts`)                                                                                                                                           |
 | `index/` / `index.functions.ts`                                                       | Background content index (`run.ts`) and the query used by search and by `search_notes` (`query.ts`). Monitorización → Indexación reads the status and can reindex.                                                                                                                                                                                                                    |
-| `ai.functions.ts`                                                                     | Administration → AI, Account → AI, and chat state                                                                                                                                                                                                                                                                                                                                     |
 | `orgs.ts` / `orgs.functions.ts`                                                       | Organizations: data and functions (`orgs.manage` permission)                                                                                                                                                                                                                                                                                                                          |
 | `auth.functions.ts`                                                                   | Administration → Authentication (`authState`, `saveAuthProvider`, `testLdap`, `testSso`), plus `authMethods` (public: which buttons the sign-in shows)                                                                                                                                                                                                                                |
 | `share.functions.ts`                                                                  | Sharing server functions: `myShares`, `shareUsers`, `setShare`, `revokeShareGrant`, `revokePublicShare`, `shareTrail`, `publishShared`, `sharedWithMe`, `sharedDocContent` and `publicDocContent` (the last one without a session). Trees come from `GET /api/shared/:id/tree` and `GET /api/public/:token/tree`                                                                      |
@@ -232,13 +228,13 @@ The `vault/` pieces:
 | `audit.ts` / `audit.functions.ts`                                                     | Structured audit (`audit_event`): who did what, the retention sweep, and Administración → Auditoría. Administration changes also keep the short `app_log` line.                                                                                                                                                                                                                       |
 | `file-rules.ts` / `file-rules.functions.ts`                                           | Extensions blocked from upload or from indexing (`upload_blocked_ext`, `index_blocked_ext` in `app_setting`, permission `security.manage`); rules in `domain/file-extensions.ts`, enforced by `api/files/uploads`, WebDAV and the indexer.                                                                                                                                            |
 | `setup-code.ts`                                                                       | Installation code required to create the first administrator (`GRAFITO_SETUP_CODE`, or `SETUP_CODE` in `GRAFITO_SECRETS_DIR`, written to the log while setup is pending).                                                                                                                                                                                                             |
-| `secret-rotation.ts`                                                                  | On start, seals again with the current key the AI keys, Git tokens and SMTP password that open only with the previous key, then stops accepting the public example key.                                                                                                                                                                                                               |
+| `secret-rotation.ts`                                                                  | On start, seals again with the current key the Git tokens and SMTP password that open only with the previous key, then stops accepting the public example key.                                                                                                                                                                                                                        |
 | `upload-target.ts`                                                                    | Upload destinations and `upload_claim`: an upload into someone else's share belongs to the person and folder it was started for.                                                                                                                                                                                                                                                      |
 | `latex.ts` / `latex.functions.ts`                                                     | LaTeX documents: read, save a new version (owner or editor through a share) and compile through the `latex` service (`LATEX_URL`); the PDF preview is not stored. UI in `components/vault/LatexView.tsx`, template in `domain/vault/latex.ts`.                                                                                                                                        |
 | `clamd-socket.ts`                                                                     | clamd over TCP (`INSTREAM`, `PING`), with no app imports so tests can drive a fake clamd.                                                                                                                                                                                                                                                                                             |
 | `clamav.ts` / `clamav.functions.ts`                                                   | ClamAV `INSTREAM` scan, on by default at `clamav:3310`. Administración → Seguridad stores the server, port and timeout (`clamav_*` in `app_setting`, permission `security.manage`). Until that screen is saved, the built-in address applies. A hit or a silence deletes the object.                                                                                                  |
 | `dav/`                                                                                | WebDAV at `/dav`: Basic password or API token (or the same-site session), in-memory locks, and the caller's vault plus shares. An administrator does not see another person's private documents.                                                                                                                                                                                      |
-| `files.ts`                                                                            | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for the AI and API, the safe HTTP response (`fileResponse`), and deleting a user's files                                                                                                           |
+| `files.ts`                                                                            | File keys (`vault/<userId>/<uuid>`, `ownsKey`), conversion of incoming data URLs (`storeIncomingFile`), one-time migration of legacy files (`migrateLegacyFiles`), text extraction for MCP and the API, the safe HTTP response (`fileResponse`), and deleting a user's files                                                                                                          |
 | `file-links.ts` / `files.functions.ts`                                                | HMAC-signed, one-hour links to a file (owner, expiry, download flag), and the server function that issues them for own files                                                                                                                                                                                                                                                          |
 | `comments.ts` / `comments.functions.ts`                                               | Comments on a document, and notes on a phrase of a PDF (a comment with an `anchor`)                                                                                                                                                                                                                                                                                                   |
 | `signature.ts` / `signature.functions.ts` / `signature-stamp.ts` / `signature-p12.ts` | PDF signature rectangles (`doc_signature`, migrations 0030 and 0033). An image is stamped with pdf-lib, or a `.p12` writes a detached PKCS#7 signature once the owner types its password. The rectangle shows a QR code and the certificate name. Neither the image, the certificate, nor the password is stored. Not a qualified signature. See [Signature trail](#signature-trail). |
@@ -304,6 +300,7 @@ The `vault/` pieces:
 | `0012_file_versions.sql`      | `vault_doc_version.file_key` and `file_size`: versions of files saved by the Office editor                                                                                                                       |
 | `0011_file_storage.sql`       | `vault_doc.file_key` and `file_size`, and `file_blob` (bytes when there is no object storage)                                                                                                                    |
 | `0010_history_trash_edit.sql` | `share_item.access` (read / edit), `deleted_at` on `vault_doc` and `vault_portfolio` (trash), and `vault_doc_version` (seeded with the current version of every note)                                            |
+| `0047_remove_ai.sql`          | Removes the AI assistant: drops `ai_conversation`, `ai_profile`, `ai_credential`, `ai_provider` and the `ai.use`, `ai.manage` permissions; `api.use` becomes «API y MCP»                                         |
 
 ## Access flow
 
@@ -559,7 +556,7 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
     server version it starts from (`mark` in `app/vault/store.ts`). The push
     carries it.
   - If the server's note changed since `base` (a person it's shared with, the
-    AI, another tab), `pushChanges` merges both with `merge3`
+    MCP or the API, another tab), `pushChanges` merges both with `merge3`
     (`domain/vault/merge.ts`): a line-based three-way merge where lines changed
     on only one side are taken from that side.
   - If both changed the same lines, nothing is written. The note comes back in
@@ -582,7 +579,7 @@ Since migration 0008, each user's vault lives in Postgres (`vault_doc`,
   - 1.5 seconds after each change.
   - Every 20 seconds.
   - When the tab regains focus.
-  - Right after the AI changes something.
+  - Right after MCP or the API changes something.
 - **First time in a browser:**
   - If the server already has the vault and the browser only has the sample
     one, the server's vault is adopted.
@@ -1055,8 +1052,9 @@ portfolio at that moment, and the note's text as the merge base).
   **Reindexar** under Monitorización y logs → Indexación clears the marks
   and walks everything again. If Elasticsearch does not answer, the same
   query runs on `doc_index` in Postgres.
-- **AI:** `query_table`, `add_table_row` and `set_table_cell` live in
-  `server/ai/tools/tables.ts`, gated by `notes.read` / `notes.edit`.
+- **MCP:** `query_table`, `add_table_row`, `set_table_cell` and
+  `delete_table_row` live in `server/mcp/tools/tables.ts`, gated by
+  `notes.read` / `notes.edit`.
 - **Access** (`server/table.functions.ts`): one's own table, or one in
   something shared with edit (or read) access, with the same checks as a note
   (`editableTarget`, `grantedDocOwner`); reading needs `notes.read`, changing
@@ -1126,7 +1124,7 @@ portfolio at that moment, and the note's text as the merge base).
   Office editor) stays mounted. Its link cache is keyed by document and file
   key, so it never hands out a link to an earlier version. Before this, the view unmounted for a moment
   and lost the text being typed.
-- **The AI** reads a drawing's text elements, not its JSON (`fileText`).
+- **MCP** reads a drawing's text elements, not its JSON (`fileText`).
 
 ## Full screen
 
@@ -1149,7 +1147,7 @@ portfolio at that moment, and the note's text as the merge base).
 
 - **Versions** (`server/history.ts`): `writeDoc` records a version whenever a
   note's title or text changes, whether the change comes from the owner's
-  browser, a shared editor, the API or the AI.
+  browser, a shared editor, the API or MCP.
   - Consecutive changes by the same author within 10 minutes are merged into
     one version.
     - For Office files, only the editor's autosaves are merged
@@ -1285,7 +1283,7 @@ The interface is in Spanish and English.
   the key, and `domain/i18n/en.ts` is the English catalog.
   - `{0}`-style variables fill in values.
   - The same keys work as patterns to translate messages the server sends
-    already assembled (errors, log entries, AI tool chips).
+    already assembled (errors, log entries).
   - Missing translations fall back to Spanish.
 - **`app/i18n.ts`:** the client provides `t()`, `useLocale()`, `setLocale()`
   and `intl()` (date and number formats).
@@ -1410,162 +1408,78 @@ Every operation checks the role's permission.
 
 Errors: JSON `{ "error": "…" }` with status 400, 401, 403, 404 or 409.
 
-## AI assistant
+## MCP server
 
-- **Administration → AI** (`ai.manage`): only turns each provider on or off.
-- **Account → AI** (`ai.use`): each person connects the allowed providers.
-  - Cloud providers use the person's own key, against the official URL.
-  - Ollama and LM Studio use the address of **the person's own instance**,
-    with an optional key.
-  - The connection is tested before saving.
-  - The key is encrypted (AES-256-GCM with `GRAFITO_ENCRYPTION_KEY`). Only its
-    last 4 characters are shown.
-- **Self-hosted addresses** (`server/ai/local-url.ts`): the server makes the
-  call, so these are restricted:
-  - Only `http(s)` without credentials is accepted.
-  - Grafito's own server (`localhost`, `127.x`, `::1`, `0.0.0.0`) is rejected.
-  - Exception in Docker: with `GRAFITO_LOCALHOST_ALIAS` (set to
-    `host.docker.internal` in `docker-compose.yml`, plus
-    `extra_hosts: host-gateway`), a `localhost` address points to the host
-    machine instead. The address is stored as typed, and the server calls the
-    alias. This lets a person use an Ollama or LM Studio installed on the same
-    machine.
-  - The deployment's internal services (`postgres`, `redis`, `elasticsearch`,
-    `minio`, `app`…) are rejected.
-  - The address is validated again on every use, and adapters don't follow
-    redirects.
-  - Other LAN addresses are accepted, since that is the use case. If that isn't
-    acceptable in your deployment, disable Ollama and LM Studio.
-- **Chat:**
-  - Opens from the floating button in the vault or **Ctrl+B**. Inside the note
-    editor, Ctrl+B stays bold, and Esc closes the chat.
-  - With no provider connected, it says so and links to Account.
-  - With a provider but no model, it asks you to pick one.
-  - **Model picker:** under the message box, a provider selector and then a
-    model selector. Only providers connected in Account are listed (a
-    connection is saved only after it answers). Models are loaded for the
-    chosen provider, with a search box, instead of every model of every
-    provider at once. If that provider later stops answering, the selector
-    shows the error.
-  - **Conversations** (`server/ai/conversations.ts`, table `ai_conversation`,
-    migration 0015):
-    - Each one is saved after every answer, with a title taken from its first
-      question. Each person keeps up to 200 conversations.
-    - The tab remembers which conversation is open.
-    - **History** lists them, opens one or deletes it. **New conversation**
-      starts another.
-  - **Context:** the chat keeps the full transcript. The model receives the
-    recent turns (the last 8, about 6,000 characters) and, once the rest no
-    longer fits, a short memory of what already happened
-    (`domain/ai-context.ts`). That memory is one line per older turn until it
-    reaches about 1,500 characters; then the same model rewrites it into a
-    dense summary. The summary is saved on the conversation (`memory` and
-    `memory_until`, migration 0034) and reused, so the old transcript is not
-    sent again. Each recent answer still carries what it really did, from its
-    tool chips (`[Acciones: Creó «X» · …]`).
-  - **Minimize:** a click outside the panel (on desktop) shrinks it toward its
-    button in 200 ms. Opening animates the other way. The draft lives in the
-    chat store, so it survives.
-  - **Profiles** (`server/ai/profiles.ts`, table `ai_profile`, migration
-    0017):
-    - Each person's own presets: a name, instructions and `read_only`. Up to
-      30 per person.
-    - The chat sends the chosen profile's id (`profileId`) with each message.
-      `runAgent` loads it for that user and adds its instructions after the
-      assistant's own, so they shape tone, format and focus.
-    - A read-only profile drops the tools marked `writes` (`create_note`,
-      `update_note`, `create_portfolio`, `add_table_row`, `set_table_cell`,
-      `link_pdf_phrase`, `create_table`, `delete_note`, `delete_file`,
-      `delete_portfolio`) on top of what the role allows.
-    - A deleted profile is ignored, and the chat falls back to **General**.
+Grafito has no AI assistant of its own (removed with migration 0047, which
+drops `ai_conversation`, `ai_profile`, `ai_credential` and `ai_provider` and the
+`ai.use` / `ai.manage` permissions). The vault is reached by external
+assistants through MCP.
 
-| Provider           | Protocol                                                | Address                                            | Key                                 |
-| ------------------ | ------------------------------------------------------- | -------------------------------------------------- | ----------------------------------- |
-| ChatGPT (OpenAI)   | Chat Completions                                        | `https://api.openai.com/v1`                        | `Authorization: Bearer`             |
-| Claude (Anthropic) | Messages (`tool_use` / `tool_result`)                   | `https://api.anthropic.com`                        | `x-api-key` and `anthropic-version` |
-| Grok (xAI)         | Chat Completions                                        | `https://api.x.ai/v1`                              | Bearer                              |
-| Gemini (Google)    | `generateContent` (`functionCall` / `functionResponse`) | `https://generativelanguage.googleapis.com/v1beta` | `x-goog-api-key`                    |
-| DeepSeek           | Chat Completions                                        | `https://api.deepseek.com`                         | Bearer                              |
-| Kimi (Moonshot)    | Chat Completions                                        | `https://api.moonshot.ai/v1`                       | Bearer                              |
-| OpenRouter         | Chat Completions                                        | `https://openrouter.ai/api/v1`                     | Bearer, plus `X-Title: Grafito`     |
-| Ollama             | Native `/api/chat`                                      | Each user's instance                               | Optional                            |
-| LM Studio          | Chat Completions                                        | Each user's instance (`…/v1`)                      | Optional                            |
+- **Endpoint** (`routes/api/mcp.ts`): `POST /api/mcp`, Streamable HTTP
+  answered as plain JSON (no server-sent events; `GET` and `DELETE` are 405).
+  `server/mcp/protocol.ts` handles `initialize` (protocol versions
+  2025-11-25, 2025-06-18, 2025-03-26 and 2024-11-05: the client's if known,
+  otherwise the newest), `ping`, `tools/list` and `tools/call`; notifications
+  get 202 with no body, and batches are answered item by item. It is pure and
+  tested in `tests/server/mcp/protocol.test.ts`.
+- **Sign-in:** only a personal `gft_` token as `Authorization: Bearer`
+  (`api_token`, the same as the REST API). A browser session is refused, so
+  another site cannot drive it with someone's cookies. The role needs
+  `api.use` («API y MCP»), otherwise 403. A missing or unknown token is 401
+  with `WWW-Authenticate: Bearer`.
+- **Tools** (`server/mcp/tools.ts`, grouped in `tools/account.ts`,
+  `tools/notes.ts`, `tools/organize.ts`, `tools/tables.ts` and
+  `tools/graph.ts`): each one declares the permission it needs, and
+  `tools/list` only shows those the role has; a call to one that is not listed
+  is a JSON-RPC error. Each declares whether it writes and whether it is
+  destructive, which become the `readOnlyHint` and `destructiveHint`
+  annotations.
 
-The agent (`server/ai/agent.ts`) alternates model calls and tool calls, for up
-to 8 steps.
+| Tool                                                               | Permission          | What it does                                                                        |
+| ------------------------------------------------------------------ | ------------------- | ----------------------------------------------------------------------------------- |
+| `whoami`                                                           | `api.use`           | Name, login, role and permissions of the token's owner                              |
+| `list_portfolios`, `list_notes`, `search_notes`, `read_note`       | `notes.read`        | What the person can open; search over titles and the index; read in windows         |
+| `create_note`, `update_note`                                       | `notes.create/edit` | Create; change text or title (renaming updates `[[links]]`, as in the app)          |
+| `create_portfolio`, `update_portfolio`                             | `portfolios.manage` | Create; rename or move within the Carpeta Personal (not inside itself)              |
+| `move_document`                                                    | `notes.edit`        | Move to another portfolio of the same space (own vault, or the same editable share) |
+| `delete_note`, `delete_file`, `delete_portfolio`                   | `*.delete`, manage  | To the trash; `confirm` must repeat the exact name                                  |
+| `list_trash`, `restore_from_trash`                                 | `notes.read/edit`   | The person's own trash, and restoring an item (a portfolio with its contents)       |
+| `list_versions`, `read_version`                                    | `notes.read`        | Saved versions of a document the person can open; a note version's text             |
+| `list_comments`, `add_comment`                                     | `notes.read`        | Comments, as in the app: readers of a share may comment                             |
+| `link_documents`, `link_pdf_phrase`                                | `links.manage`      | A manual link from an editable document; a link anchored on a PDF phrase            |
+| `create_table`, `query_table`, `add_table_row`, `set_table_cell`   | upload, read, edit  | Tables by column name; formulas already calculated                                  |
+| `delete_table_row`                                                 | `notes.edit`        | Deletes a row (kept in its history); `confirm` must repeat the row id               |
+| `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` | `graph.view`        | Read-only walks over Grafeno's links within what the person can open                |
 
-- **Tools:** only those the role allows, out of `list_portfolios`,
-  `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`,
-  `create_portfolio`, `delete_note`, `delete_file`, `delete_portfolio`,
-  `query_table`, `add_table_row`, `set_table_cell`, `create_table` and
-  `link_pdf_phrase`.
-  Notes and portfolios live in `server/ai/tools/notes.ts`; tables in
-  `server/ai/tools/tables.ts`. `search_notes` searches titles and the indexed
-  text of notes, tables and files (PDF, Word, Excel, PowerPoint,
-  OpenDocument) and returns a snippet. The read and edit tools accept an id,
-  an exact title or a part of a title that matches only one document.
-  Portfolios are found by id, name or path («Proyectos › Atlas»). On a miss,
-  the tool returns the close matches or the list of portfolios, so the model
-  can retry. Two documents with the same title are not collapsed to the
-  first one: the tool asks for an id. `link_pdf_phrase` (permission
-  `links.manage`) links a phrase or word inside a PDF to another document.
-  The anchor is the same one the viewer stores when that phrase is selected
-  by hand: it lives on the PDF, not in a new Markdown note. The phrase is
-  taken from each page's PDF.js text. If it appears on more than one page,
-  the tool asks for the page. A PDF without text (a scan) is refused.
-  `delete_note` (`notes.delete`), `delete_file` (`files.delete`, including a
-  `.tabla`) and `delete_portfolio` (`portfolios.manage`) move the item to the
-  trash. They do not run in the same turn as the request: the previous
-  assistant message has to ask about deleting, and the person's next message
-  has to agree (`deletionConfirmed` in `server/ai/guard.ts`). A shared delete
-  follows the same rules as the app: a portfolio share, edit access on every
-  descendant, and the share root itself stays. Carpeta Personal cannot be
-  deleted. `create_table` (`files.upload`) writes an empty `.tabla` and can
-  add text columns from a comma-separated list. In a shared portfolio the
-  destination is the same upload target as a file upload.
-- **What it can open** (`server/ai/access.ts`, `server/ai/corpus.ts`): the
+- **What it can open** (`server/mcp/access.ts`, `server/mcp/corpus.ts`): the
   person's own vault, items shared with them, and workspace folders granted
   to them. A document outside that set is reported as not found; the tools
   never read another person's private vault, and being an administrator does
   not bypass that. Each result is marked read or edit. A read-only share, or
-  a workspace folder granted as read, can be read and the write tools refuse
-  it. Writes go through the same checks as the app (`editableTarget`,
-  `uploadTarget`, `mayWriteInPortfolio`), into the owner's vault. Creating a
-  folder in a workspace the person does not see entirely grants them that new
-  folder, as when they create it from the app. The pure rules are tested in
-  `access.test.ts`. `scripts/ai-access-lmstudio.ts` runs the same gate against
-  a local LM Studio (not part of `npm test`).
-- **How much text reaches the model:** `search_notes` and a `list_notes`
-  query read the index (`doc_index.body`, or `data_meta.search_text` for a
-  table) and return at most four short passages, not the file.
-  `read_note` returns at most 4,000 characters (`domain/ai-read.ts`). For a
-  file that is already indexed, that window is taken from the index; otherwise
-  the text is extracted and cut the same way. `index_capped` means the stored
-  text stopped at the index limit (24,000 characters). A table is refused and
-  the model is told to use `query_table`. Older tool results in the same
-  answer are still clipped once they pass about 40,000 characters.
-- **Files:** `read_note` can also extract text that is not indexed yet
-  (`server/files.ts` → `fileText`): plain text, Office and OpenDocument
-  (`server/office-text.ts`, a small ZIP reader without dependencies) and PDF
-  (`unpdf`). Images and scanned PDFs give no text. The old binary `.doc`
-  format is not indexed.
-- **Response:** streamed as NDJSON. The chat shows each tool used, and you can
-  click one to open the note.
-- **Not claiming what it didn't do** (`server/ai/guard.ts`): if the final
-  answer says it created, edited, saved, linked or deleted something
-  (`CLAIMS_WRITE`) but no write tool succeeded in that answer, the agent asks
-  the model once more to do it with the tool or to correct itself. A delete
-  still has to wait for the person's confirmation. If it still claims a
-  change, the answer ends with a visible warning that nothing changed in the
-  vault.
-- **Context within an answer:** when the tool results of one answer pass
-  about 40,000 characters, the older ones are shortened (the last two stay
-  whole). Ollama gets `num_ctx` sized to the conversation (8,192 to 32,768
-  tokens, in powers of two): its default of 2–4k tokens cut the start of the
-  conversation, losing the instructions and the tools. LM Studio's context is
-  set when loading the model in LM Studio itself.
-
-Ollama and LM Studio aren't in the compose. Run them outside it with their
-port exposed. Enable the provider in Administration → AI, then connect it in
-Account → AI, for example with `http://localhost:11434` or
-`http://localhost:1234/v1`.
+  a workspace folder granted as read, can be read and commented, and the write
+  tools refuse it. Writes go through the same checks as the app
+  (`editableTarget`, `uploadTarget`, `mayWriteInPortfolio`), into the owner's
+  vault, signed «Name (MCP)». Creating a folder in a workspace the person does
+  not see entirely grants them that new folder, as when they create it from
+  the app. The pure rules are tested in `tests/server/mcp/access.test.ts`.
+- **Finding things:** the tools accept an id, an exact title or a part of a
+  title that matches only one document; portfolios by id, name or path
+  («Proyectos › Atlas»). On a miss, the answer lists close matches; two
+  documents with the same title are not collapsed to the first one.
+- **How much text comes back:** `search_notes` and a `list_notes` query read
+  the index (`doc_index.body`, or `data_meta.search_text` for a table) and
+  return at most four short passages. `read_note` and `read_version` return at
+  most 4,000 characters per call (`domain/read-slice.ts`), with `next_offset`
+  to continue. For a file that is already indexed, the window comes from the
+  index; otherwise the text is extracted (`server/files.ts` → `fileText`:
+  plain text, Office and OpenDocument, PDF with text). A table is refused and
+  `query_table` suggested.
+- **Deleting:** the client should ask the person first (the tools are marked
+  destructive), and the server checks it too: `delete_note`, `delete_file` and
+  `delete_portfolio` refuse unless `confirm` repeats the item's name
+  (`confirmsName` in `access.ts`, case and spacing aside); `delete_table_row`
+  wants the row id. A shared delete follows the app's rules (a portfolio
+  share, edit access on every descendant, and the share root stays). Carpeta
+  Personal cannot be deleted.
+- Results are JSON text in one `text` content item; a refusal or a miss is
+  `isError: true` with `{ "error": "…" }`.

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { internalHostReason } from "@/server/ai/local-url";
+import { internalHostReason } from "@/server/internal-host";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { testConnection } from "@/lib/auth/ldap.server";

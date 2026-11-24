@@ -99,7 +99,7 @@ If Redis restarts, notes not opened yet are lost. The administrator then uses
 
 - **When.** A document changes: a note's text or title, or an Office file saved
   from the editor, whether by its owner, by someone it was shared with, through
-  the API or by the AI.
+  the API or through MCP.
 - **Who gets it.** Everyone with access to that document:
   - its owner;
   - the people and organizations (with their sub-organizations) it was shared

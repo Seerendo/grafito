@@ -155,10 +155,10 @@ Migration 0040 steps every stored analysis one revision back, so vaults
 analysed before bridges existed are analysed again while their colours keep
 showing.
 
-## The assistant
+## Through MCP
 
-The AI assistant has four read-only graph tools (`server/ai/tools/graph.ts`),
-offered with the role's **Ver el grafo**:
+Grafito's MCP server (README, «MCP server») has four read-only graph tools
+(`server/mcp/tools/graph.ts`), offered with the role's **Ver el grafo**:
 
 | Tool              | Answers                                                                                                                          |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
@@ -167,14 +167,14 @@ offered with the role's **Ver el grafo**:
 | `graph_path`      | The shortest chain of links between two documents, each step with its kind and direction                                         |
 | `graph_related`   | Documents worth linking to one (link prediction)                                                                                 |
 
-They go through the assistant's corpus, so a document is found by id or title
-and a share or workspace only shows what that person sees. Without the graph
-they say it is unavailable, and the assistant falls back to search.
+They go through the MCP corpus, so a document is found by id or title and a
+share or workspace only shows what that person sees. Without the graph they
+say it is unavailable.
 
-Grafeno also ships an MCP server, but it is not wired to the assistant: it
-runs over stdin and opens the database file itself, which the running
-`grafeno` service already holds; its tools write agent memories, while here
-Grafeno is a copy rebuilt from Postgres; and it knows namespaces, not
+Grafeno also ships an MCP server of its own, but it is not the one to use with
+Grafito: it runs over stdin and opens the database file itself, which the
+running `grafeno` service already holds; its tools write agent memories, while
+here Grafeno is a copy rebuilt from Postgres; and it knows namespaces, not
 Grafito's shares and workspace grants.
 
 ## Neighbourhood and paths

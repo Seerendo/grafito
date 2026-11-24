@@ -5,7 +5,10 @@ import { TextAction } from "@/components/ui/TextAction";
 import { createApiToken, myApiTokens, revokeApiToken } from "@/server/api-tokens.functions";
 import { intl, t } from "@/app/i18n";
 
-/** Account API settings manage personal REST tokens for scripts and tools; reveal each token only once. */
+/**
+ * Account API settings: the MCP server's address and the personal tokens that sign in to it and to
+ * the REST API. Each token is shown only once.
+ */
 
 type Token = Extract<Awaited<ReturnType<typeof myApiTokens>>, { ok: true }>["tokens"][number];
 
@@ -16,6 +19,8 @@ export function ApiTokens() {
   const [fresh, setFresh] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [mcpUrl, setMcpUrl] = useState("");
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   const load = () =>
     myApiTokens()
@@ -27,11 +32,26 @@ export function ApiTokens() {
 
   useEffect(() => {
     void load();
+    setMcpUrl(`${window.location.origin}/api/mcp`);
   }, []);
 
   if (hidden) return null;
   return (
     <section>
+      <div data-ui="mcp-url" className="mb-4 flex items-center gap-2 text-sm">
+        <span className="shrink-0 text-muted">{t("Servidor MCP")}</span>
+        <code className="min-w-0 flex-1 truncate rounded bg-inset px-2 py-1 text-xs">{mcpUrl}</code>
+        <button
+          type="button"
+          aria-label={t("Copiar dirección")}
+          onClick={() => {
+            void copyText(mcpUrl).then(() => setCopiedUrl(true));
+          }}
+          className="shrink-0 text-faint hover:text-fg"
+        >
+          {copiedUrl ? <Check className="size-4" /> : <Copy className="size-4" />}
+        </button>
+      </div>
       <form
         className="flex flex-wrap gap-2"
         onSubmit={(event) => {
