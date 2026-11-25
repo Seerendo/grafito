@@ -978,18 +978,30 @@ describe("email module", () => {
     const form = await compose();
     await form.getByLabel("Para").fill("destino@otro.test");
     await form.getByLabel("Asunto").fill(subject);
-    // «Desde el equipo» picks a file; «Solo adjuntar».
+    // «Desde el equipo» picks a file: it is only attached, no question asked.
     await form.locator('input[type="file"]').setInputFiles({
       name: "solo-adjunto.txt",
       mimeType: "text/plain",
       buffer: Buffer.from("solo para el correo"),
     });
-    const drop = page.locator('[data-ui="mail-drop"]');
-    await drop.getByLabel("Solo adjuntar").check();
-    await drop.getByRole("button", { name: "Adjuntar", exact: true }).click();
     await form.locator('[data-attachment="solo-adjunto.txt"][data-status="ready"]').waitFor();
-    // Dropping a file: «Adjuntar y guardar en Grafito», in a chosen portfolio.
+    assert.equal(await page.locator('[data-ui="overlay"]').count(), 1, "no second window");
+    // Dragging files over the message turns its body into two drop zones, like Outlook.
+    await form.getByLabel("Guardar en").selectOption({ label: "Adjuntos guardados" });
     await form.evaluate((element) => {
+      const data = new DataTransfer();
+      data.items.add(new File(["x"], "guardar-tambien.txt", { type: "text/plain" }));
+      element.dispatchEvent(
+        new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data }),
+      );
+    });
+    const zones = form.locator('[data-ui="mail-drop-zones"]');
+    await zones.waitFor();
+    assert.match(
+      await zones.innerText(),
+      /Guardar en Grafito y adjuntar[\s\S]*Adjuntos guardados[\s\S]*Adjuntar archivos/,
+    );
+    await zones.locator('[data-ui="mail-drop-save"]').evaluate((element) => {
       const data = new DataTransfer();
       data.items.add(
         new File(["guardado en la boveda"], "guardar-tambien.txt", { type: "text/plain" }),
@@ -1001,9 +1013,7 @@ describe("email module", () => {
         new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }),
       );
     });
-    await drop.getByLabel("Adjuntar y guardar en Grafito").check();
-    await drop.getByLabel("Dónde").selectOption({ label: "Adjuntos guardados" });
-    await drop.getByRole("button", { name: "Adjuntar", exact: true }).click();
+    await zones.waitFor({ state: "detached" });
     await form.locator('[data-attachment="guardar-tambien"]').waitFor();
     const saved = await query(
       `select id, portfolio_id, file_key from vault_doc where user_id = $1 and file_name = 'guardar-tambien.txt'`,

@@ -838,8 +838,8 @@ keeps answering while mailboxes sync.
   deleted on the server or the account is disconnected.
 - **Redactar**, **Responder** and **Reenviar** send from your accounts;
   **Adjuntar desde Grafito** picks documents from your Carpeta Personal or
-  what is shared with you; files dropped from the computer are only attached
-  or also saved in the vault where you choose. Each account has its signature,
+  what is shared with you; files dragged from the computer land, as in
+  Outlook, on «attach» or «save in Grafito and attach». Each account has its signature,
   and recipients are found by name (your contacts and the Zimbra directory).
 - **Agenda:** your accounts' calendars (CalDAV: Zimbra and others) by month
   or week; create, change and delete events and invite people.

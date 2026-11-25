@@ -2,6 +2,7 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderInput,
   HardDriveUpload,
   Loader2,
   Paperclip,
@@ -95,8 +96,10 @@ export function Compose({
   const [copies, setCopies] = useState(Boolean(draft.cc));
   const [files, setFiles] = useState<Picked[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
-  const [dropped, setDropped] = useState<File[] | null>(null);
   const [over, setOver] = useState(false);
+  const [zone, setZone] = useState<"save" | "attach" | null>(null);
+  const saveFolders = useSaveFolders();
+  const [saveTo, setSaveTo] = useState(readSaveTo);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -119,7 +122,6 @@ export function Compose({
   };
 
   const attach = (list: File[], save: { portfolioId: string | null } | null) => {
-    setDropped(null);
     for (const file of list) {
       const id = crypto.randomUUID();
       const entry: Upload = {
@@ -166,12 +168,18 @@ export function Compose({
     }
   };
 
-  const onDrop = (event: DragEvent) => {
-    if (!event.dataTransfer.types.includes("Files")) return;
+  // Like Outlook: while files are dragged over the message, its body becomes two places to drop
+  // them, «keep in Grafito and attach» or «attach»; a drop anywhere else only attaches.
+  const dragging = (event: DragEvent) => mayUpload && event.dataTransfer.types.includes("Files");
+  const dropInto = (event: DragEvent, save: boolean) => {
+    if (!dragging(event)) return;
     event.preventDefault();
+    event.stopPropagation();
     setOver(false);
-    const list = [...event.dataTransfer.files];
-    if (list.length && mayUpload) setDropped(list);
+    setZone(null);
+    void droppedFiles(event.dataTransfer).then((list) => {
+      if (list.length) attach(list, save ? { portfolioId: saveTo || null } : null);
+    });
   };
 
   const pending = uploads.some((item) => item.status === "uploading");
@@ -205,16 +213,20 @@ export function Compose({
     <Modal title={t("Nuevo mensaje")} onClose={close} wide keepOpen>
       <form
         data-ui="mail-compose"
-        className={`relative flex flex-col gap-3 ${over ? "rounded-md ring-2 ring-accent" : ""}`}
+        className="flex flex-col gap-3"
         onDragOver={(event) => {
-          if (!event.dataTransfer.types.includes("Files") || !mayUpload) return;
+          if (!dragging(event)) return;
           event.preventDefault();
           setOver(true);
         }}
         onDragLeave={(event) => {
-          if (event.currentTarget === event.target) setOver(false);
+          const next = event.relatedTarget as Node | null;
+          if (!next || !event.currentTarget.contains(next)) {
+            setOver(false);
+            setZone(null);
+          }
         }}
-        onDrop={onDrop}
+        onDrop={(event) => dropInto(event, false)}
         onSubmit={(event) => {
           event.preventDefault();
           void send();
@@ -278,13 +290,55 @@ export function Compose({
             className={field}
           />
         </label>
-        <textarea
-          aria-label={t("Mensaje")}
-          value={form.text}
-          onChange={(event) => setForm({ ...form, text: event.target.value })}
-          rows={12}
-          className="min-h-48 w-full rounded-md border border-line bg-inset p-3 text-sm leading-relaxed"
-        />
+        <div className="relative">
+          <textarea
+            aria-label={t("Mensaje")}
+            value={form.text}
+            onChange={(event) => setForm({ ...form, text: event.target.value })}
+            rows={12}
+            className="min-h-48 w-full rounded-md border border-line bg-inset p-3 text-sm leading-relaxed"
+          />
+          {over ? (
+            <div
+              data-ui="mail-drop-zones"
+              className="absolute inset-0 grid grid-cols-2 gap-3 rounded-md bg-surface p-3"
+            >
+              {(
+                [
+                  {
+                    id: "save",
+                    icon: <FolderInput className="size-10" />,
+                    label: t("Guardar en Grafito y adjuntar"),
+                    detail:
+                      saveFolders.find((item) => item.id === saveTo)?.path ?? t("Carpeta Personal"),
+                  },
+                  {
+                    id: "attach",
+                    icon: <Paperclip className="size-10" />,
+                    label: t("Adjuntar archivos"),
+                    detail: "",
+                  },
+                ] as const
+              ).map((item) => (
+                <div
+                  key={item.id}
+                  data-ui={`mail-drop-${item.id}`}
+                  onDragOver={(event) => {
+                    if (!dragging(event)) return;
+                    event.preventDefault();
+                    setZone(item.id);
+                  }}
+                  onDrop={(event) => dropInto(event, item.id === "save")}
+                  className={`flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-4 text-center text-sm transition-colors ${zone === item.id ? "border-accent bg-accent/10 text-fg" : "border-line text-muted"}`}
+                >
+                  {item.icon}
+                  <span className="font-medium">{item.label}</span>
+                  {item.detail ? <span className="text-xs text-faint">{item.detail}</span> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div data-ui="mail-compose-files" className="flex flex-wrap items-center gap-2">
           {files.map((file) => (
             <span
@@ -360,9 +414,28 @@ export function Compose({
                 onChange={(event) => {
                   const list = [...(event.target.files ?? [])];
                   event.target.value = "";
-                  if (list.length) setDropped(list);
+                  if (list.length) attach(list, null);
                 }}
               />
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+                {t("Guardar en")}
+                <select
+                  aria-label={t("Guardar en")}
+                  value={saveTo}
+                  onChange={(event) => {
+                    setSaveTo(event.target.value);
+                    writeSaveTo(event.target.value);
+                  }}
+                  className="h-8 max-w-56 rounded-md border border-line bg-inset px-2 text-xs"
+                >
+                  <option value="">{t("Carpeta Personal")}</option>
+                  {saveFolders.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.path}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </>
           ) : null}
         </div>
@@ -397,13 +470,6 @@ export function Compose({
             setFiles(picked);
             setPicking(false);
           }}
-        />
-      ) : null}
-      {dropped ? (
-        <DropChoice
-          files={dropped}
-          onCancel={() => setDropped(null)}
-          onChoose={(save) => attach(dropped, save)}
         />
       ) : null}
     </Modal>
@@ -531,28 +597,36 @@ export function Recipients({
   );
 }
 
-/** Like Outlook: only attach the dropped files, or attach them and keep them in the vault. */
-function DropChoice({
-  files,
-  onCancel,
-  onChoose,
-}: {
-  files: File[];
-  onCancel: () => void;
-  onChoose: (save: { portfolioId: string | null } | null) => void;
-}) {
-  const [mode, setMode] = useState<"attach" | "save">("attach");
-  const [where, setWhere] = useState("");
-  const [folders, setFolders] = useState<{ id: string; path: string }[]>([]);
+const SAVE_KEY = "grafito.mail.save-to";
 
+/** Where files kept from a message go, remembered in this browser (empty: Carpeta Personal). */
+function readSaveTo(): string {
+  try {
+    return window.localStorage.getItem(SAVE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeSaveTo(value: string): void {
+  try {
+    window.localStorage.setItem(SAVE_KEY, value);
+  } catch {
+    /* Only a convenience. */
+  }
+}
+
+/** The person's portfolios with their paths, for «Guardar en». */
+function useSaveFolders(): { id: string; path: string }[] {
+  const [folders, setFolders] = useState<{ id: string; path: string }[]>([]);
   useEffect(() => {
     void mailArchiveTargets()
       .then((answer) => {
         const byId = new Map(answer.portfolios.map((item) => [item.id, item]));
-        const path = (id: string): string => {
+        const path = (id: string, seen = 0): string => {
           const item = byId.get(id);
-          if (!item) return "";
-          const parent = item.parentId ? path(item.parentId) : "";
+          if (!item || seen > 20) return "";
+          const parent = item.parentId ? path(item.parentId, seen + 1) : "";
           return parent ? `${parent} › ${item.name}` : item.name;
         };
         setFolders(
@@ -563,72 +637,45 @@ function DropChoice({
       })
       .catch(() => undefined);
   }, []);
+  return folders;
+}
 
-  return (
-    <Modal
-      title={
-        files.length === 1
-          ? t("Adjuntar «{0}»", { 0: files[0]!.name })
-          : t("Adjuntar {0} archivos", { 0: files.length })
-      }
-      onClose={onCancel}
-    >
-      <div data-ui="mail-drop" className="flex flex-col gap-3 text-sm">
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name="drop"
-            checked={mode === "attach"}
-            onChange={() => setMode("attach")}
-          />
-          {t("Solo adjuntar")}
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name="drop"
-            checked={mode === "save"}
-            onChange={() => setMode("save")}
-          />
-          {t("Adjuntar y guardar en Grafito")}
-        </label>
-        {mode === "save" ? (
-          <label className="flex flex-col gap-1">
-            {t("Dónde")}
-            <select
-              aria-label={t("Dónde")}
-              value={where}
-              onChange={(event) => setWhere(event.target.value)}
-              className={field}
-            >
-              <option value="">{t("Carpeta Personal")}</option>
-              {folders.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.path}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="h-10 rounded-md border border-line px-3 hover:bg-elevated"
-          >
-            {t("Cancelar")}
-          </button>
-          <button
-            type="button"
-            onClick={() => onChoose(mode === "save" ? { portfolioId: where || null } : null)}
-            className="h-10 rounded-md bg-accent px-4 font-medium text-accent-fg"
-          >
-            {t("Adjuntar")}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
+const MAX_DROPPED = 50;
+
+/**
+ * The files of a drop; a dropped folder gives the files inside it (and its subfolders). The
+ * entries are taken at once, as the browser empties the drop after the event.
+ */
+async function droppedFiles(data: DataTransfer): Promise<File[]> {
+  const plain = [...data.files];
+  const entries = [...data.items]
+    .filter((item) => item.kind === "file")
+    .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null));
+  const out: File[] = [];
+  const walk = async (entry: FileSystemEntry): Promise<void> => {
+    if (out.length >= MAX_DROPPED) return;
+    if (entry.isFile) {
+      const file = await new Promise<File | null>((resolve) =>
+        (entry as FileSystemFileEntry).file(resolve, () => resolve(null)),
+      );
+      if (file) out.push(file);
+      return;
+    }
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    for (;;) {
+      const batch = await new Promise<FileSystemEntry[]>((resolve) =>
+        reader.readEntries(resolve, () => resolve([])),
+      );
+      if (batch.length === 0) break;
+      for (const child of batch) await walk(child);
+    }
+  };
+  for (let index = 0; index < Math.max(plain.length, entries.length); index += 1) {
+    const entry = entries[index];
+    if (entry?.isDirectory) await walk(entry);
+    else if (plain[index] && out.length < MAX_DROPPED) out.push(plain[index]!);
+  }
+  return out;
 }
 
 type Choices = Extract<Awaited<ReturnType<typeof mailAttachChoices>>, { ok: true }>;

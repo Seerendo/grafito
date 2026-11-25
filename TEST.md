@@ -1645,18 +1645,18 @@ Test stack on its own ports (18080, 15432), with `caldav-test` (Radicale
 SOAP directory: `AuthRequest`, `AutoCompleteGalRequest`). `tests/e2e/mail.e2e.mjs`
 (24 tests) and `tests/e2e/mcp.e2e.mjs`.
 
-| Check                                                                                        | Result                                                                    |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Signature saved in the Account; new message, received text, reply                            | ✅ below the text after `-- `; above the quoted text in a reply           |
-| «rodd» in Para                                                                               | ✅ «Roddy Andrade» from the directory; Enter writes «Name <address>»      |
-| «ana.r» in Para                                                                              | ✅ found among contacts seen in mail                                      |
-| The account marked as Zimbra after the first search; an unknown name                         | ✅; nothing suggested                                                     |
-| «Desde el equipo» → Solo adjuntar; a dropped file → Adjuntar y guardar in a chosen portfolio | ✅ both received intact; only the second is a document, in that portfolio |
-| Agenda: calendar found through `/.well-known/caldav`; a daily event repeated 3 times         | ✅ three occurrences                                                      |
-| New event with place and a guest; edit; delete                                               | ✅ on the server: LOCATION, ATTENDEE, ORGANIZER, SEQUENCE 1; then gone    |
-| A repeating event                                                                            | ✅ shown, not editable here                                               |
-| Unit: signature placement and swap                                                           | ✅                                                                        |
-| MCP suite; `typecheck`, `lint`, `npm test`, `format:check`                                   | ✅ 9 of 9; 265 tests pass                                                 |
+| Check                                                                                | Result                                                                                                                                          |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signature saved in the Account; new message, received text, reply                    | ✅ below the text after `-- `; above the quoted text in a reply                                                                                 |
+| «rodd» in Para                                                                       | ✅ «Roddy Andrade» from the directory; Enter writes «Name <address>»                                                                            |
+| «ana.r» in Para                                                                      | ✅ found among contacts seen in mail                                                                                                            |
+| The account marked as Zimbra after the first search; an unknown name                 | ✅; nothing suggested                                                                                                                           |
+| «Desde el equipo»; files dragged over the message → «Guardar en Grafito y adjuntar»  | ✅ the first only attached, no dialog; two drop zones as in Outlook; the second kept in the portfolio set in «Guardar en»; both received intact |
+| Agenda: calendar found through `/.well-known/caldav`; a daily event repeated 3 times | ✅ three occurrences                                                                                                                            |
+| New event with place and a guest; edit; delete                                       | ✅ on the server: LOCATION, ATTENDEE, ORGANIZER, SEQUENCE 1; then gone                                                                          |
+| A repeating event                                                                    | ✅ shown, not editable here                                                                                                                     |
+| Unit: signature placement and swap                                                   | ✅                                                                                                                                              |
+| MCP suite; `typecheck`, `lint`, `npm test`, `format:check`                           | ✅ 9 of 9; 265 tests pass                                                                                                                       |
 
 Not covered: a real Zimbra (the directory stand-in follows Zimbra's JSON SOAP
 format; the MSP server is to be tried with the person's own account); calendars

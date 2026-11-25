@@ -159,12 +159,14 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   `https://<web server>/service/soap` (the web server is the IMAP host unless
   set in **Directorio y agenda**). The first try decides whether the server is
   a Zimbra; a server without that interface is not asked again.
-- **Files from the computer:** dropped on the message, or chosen with **Desde
-  el equipo**. Like Outlook, Grafito asks: **Solo adjuntar** (the file only goes
-  with the message and is removed once sent or discarded) or **Adjuntar y
-  guardar en Grafito** (it is kept as a document where the person chooses: the
-  Carpeta Personal or one of its portfolios). Both take the vault's upload path
-  (size limit, antivirus).
+- **Files from the computer:** like Outlook, dragging files over the message
+  turns its body into two drop zones: **Guardar en Grafito y adjuntar** (kept
+  as a document in the place chosen in **Guardar en**, remembered in the
+  browser: the Carpeta Personal or one of its portfolios) and **Adjuntar
+  archivos** (the file only goes with the message and is removed once sent or
+  discarded). No dialog opens. A dropped folder gives the files inside it.
+  **Desde el equipo** only attaches. Both take the vault's upload path (size
+  limit, antivirus).
 - **Agenda:** the calendars of the person's IMAP accounts through CalDAV
   (Zimbra, Nextcloud, Radicale, iCloud…), found at
   `https://<web server>/.well-known/caldav` or the **Dirección CalDAV** set in
