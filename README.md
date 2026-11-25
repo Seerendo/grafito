@@ -838,7 +838,11 @@ keeps answering while mailboxes sync.
   deleted on the server or the account is disconnected.
 - **Redactar**, **Responder** and **Reenviar** send from your accounts;
   **Adjuntar desde Grafito** picks documents from your Carpeta Personal or
-  what is shared with you, without uploading anything from the computer.
+  what is shared with you; files dropped from the computer are only attached
+  or also saved in the vault where you choose. Each account has its signature,
+  and recipients are found by name (your contacts and the Zimbra directory).
+- **Agenda:** your accounts' calendars (CalDAV: Zimbra and others) by month
+  or week; create, change and delete events and invite people.
 - Grafito never moves or deletes mail on the server. Read, starred and hidden
   are kept in Grafito.
 

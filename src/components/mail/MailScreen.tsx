@@ -1,6 +1,7 @@
 import {
   Archive,
   ArrowLeft,
+  CalendarDays,
   File as FileIcon,
   FolderClosed,
   Inbox,
@@ -20,6 +21,7 @@ import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
 import { mailMessages, mailState } from "@/server/mailbox.functions";
+import { Agenda } from "./Agenda";
 import { Compose, type Draft } from "./Compose";
 import { MessageView } from "./MessageView";
 import { statusLabel } from "./status";
@@ -81,6 +83,7 @@ export function MailScreen() {
   // On a phone one pane at a time: folders, the list, or the message.
   const [pane, setPane] = useState<"nav" | "list" | "message">("list");
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [agenda, setAgenda] = useState(false);
   const [notice, setNotice] = useState("");
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(600);
@@ -246,6 +249,7 @@ export function MailScreen() {
         onClick();
         setSelected(null);
         setPane("list");
+        setAgenda(false);
       }}
       aria-current={active ? "page" : undefined}
       className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
@@ -303,6 +307,20 @@ export function MailScreen() {
             {t("Redactar")}
           </button>
           {notice ? <p className="px-2 pb-2 text-xs text-accent">{t(notice)}</p> : null}
+          <button
+            type="button"
+            data-ui="mail-agenda-entry"
+            aria-current={agenda ? "page" : undefined}
+            onClick={() => {
+              setAgenda(true);
+              setSelected(null);
+              setPane("list");
+            }}
+            className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${agenda ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
+          >
+            <CalendarDays className="size-4" />
+            <span className="min-w-0 flex-1 truncate">{t("Agenda")}</span>
+          </button>
           {navItem(
             "unified",
             sameView(view, { kind: "role", role: "inbox" }),
@@ -367,8 +385,15 @@ export function MailScreen() {
             );
           })}
         </nav>
+        {agenda ? (
+          <Agenda
+            accounts={accounts}
+            className={`${pane === "list" ? "flex" : "hidden"} min-w-0 flex-1 md:flex`}
+            onBack={() => setPane("nav")}
+          />
+        ) : null}
         <section
-          className={`${pane === "list" ? "flex" : "hidden"} ${selected ? "md:hidden lg:flex" : "md:flex"} min-w-0 flex-1 flex-col border-r border-line lg:max-w-md`}
+          className={`${agenda ? "hidden" : `${pane === "list" ? "flex" : "hidden"} ${selected ? "md:hidden lg:flex" : "md:flex"}`} min-w-0 flex-1 flex-col border-r border-line lg:max-w-md`}
         >
           <div className="flex flex-col gap-2 border-b border-line p-2">
             <button
@@ -550,7 +575,7 @@ export function MailScreen() {
           </div>
         </section>
         <section
-          className={`${pane === "message" ? "flex" : "hidden"} ${selected ? "md:flex" : "md:hidden lg:flex"} min-w-0 flex-[1.4] flex-col`}
+          className={`${pane === "message" && !agenda ? "flex" : "hidden"} ${agenda ? "md:hidden" : selected ? "md:flex" : "md:hidden lg:flex"} min-w-0 flex-[1.4] flex-col`}
         >
           {selected ? (
             <>

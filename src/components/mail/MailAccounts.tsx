@@ -340,6 +340,8 @@ function AccountCard({
 }) {
   const [password, setPassword] = useState("");
   const [smtp, setSmtp] = useState({ host: account.smtpHost, port: account.smtpPort });
+  const [signature, setSignature] = useState(account.signature);
+  const [web, setWeb] = useState({ host: account.webHost, caldav: account.caldavUrl });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"disconnect" | "delete" | null>(null);
@@ -474,6 +476,69 @@ function AccountCard({
               </label>
             ))}
           </div>
+        </details>
+      ) : null}
+      <form
+        data-ui="mail-signature"
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void update({ signature });
+        }}
+      >
+        <label className="flex flex-col gap-1 text-sm">
+          {t("Firma")}
+          <textarea
+            value={signature}
+            rows={4}
+            onChange={(event) => setSignature(event.target.value)}
+            className="w-full rounded-md border border-line bg-inset p-3 text-sm"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={busy || signature === account.signature}
+          className="h-10 self-end rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+        >
+          {t("Guardar firma")}
+        </button>
+      </form>
+      {account.provider === "imap" ? (
+        <details data-ui="mail-web" className="text-sm">
+          <summary className="cursor-pointer text-muted">{t("Directorio y agenda")}</summary>
+          <form
+            className="mt-2 grid gap-2 sm:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void update({ webHost: web.host, caldavUrl: web.caldav });
+            }}
+          >
+            <label className="flex flex-col gap-1">
+              {t("Servidor web")}
+              <input
+                value={web.host}
+                placeholder={account.host}
+                onChange={(event) => setWeb({ ...web, host: event.target.value })}
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              {t("Dirección CalDAV")}
+              <input
+                value={web.caldav}
+                placeholder={`https://${web.host || account.host}/.well-known/caldav`}
+                onChange={(event) => setWeb({ ...web, caldav: event.target.value })}
+                className={input}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={busy || (web.host === account.webHost && web.caldav === account.caldavUrl)}
+              className="h-10 rounded-md border border-line px-3 hover:bg-elevated disabled:opacity-50 sm:col-span-2 sm:justify-self-end"
+            >
+              {t("Guardar")}
+            </button>
+          </form>
         </details>
       ) : null}
       {account.provider === "imap" ? (

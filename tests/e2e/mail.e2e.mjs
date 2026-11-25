@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import https from "node:https";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
@@ -145,6 +146,92 @@ async function smtpCount(subject) {
     await fetch(`${SMTP_API}/api/v1/search?query=${encodeURIComponent(`subject:"${subject}"`)}`)
   ).json();
   return list.messages?.length ?? 0;
+}
+
+// The test CalDAV server (caldav-test, Radicale) through 127.0.0.1:18443, TLS checked against the
+// test CA. Ana's calendar «Trabajo» starts each run with one event repeated three days.
+const CALDAV = {
+  port: Number(process.env.E2E_CALDAV_PORT ?? 18443),
+  user: "ana@prueba.test:Correo-Ana-2026",
+};
+const CALENDAR = "/ana@prueba.test/trabajo/";
+
+function dav(method, path, body = "", headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(
+      {
+        host: "127.0.0.1",
+        port: CALDAV.port,
+        servername: "caldav-test",
+        ca: readFileSync(new URL("../../.data/imap-test/certs/ca.crt", import.meta.url)),
+        method,
+        path,
+        headers: {
+          authorization: `Basic ${Buffer.from(CALDAV.user).toString("base64")}`,
+          "content-length": String(Buffer.byteLength(body)),
+          ...headers,
+        },
+      },
+      (response) => {
+        let text = "";
+        response.on("data", (chunk) => (text += chunk));
+        response.on("end", () => resolve({ status: response.statusCode, text }));
+      },
+    );
+    request.on("error", reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+async function davSeed() {
+  await dav("DELETE", CALENDAR);
+  const made = await dav(
+    "MKCALENDAR",
+    CALENDAR,
+    `<?xml version="1.0"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:set><d:prop><d:displayname>Trabajo</d:displayname></d:prop></d:set></c:mkcalendar>`,
+    { "content-type": "application/xml" },
+  );
+  assert.equal(made.status, 201);
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const put = await dav(
+    "PUT",
+    `${CALENDAR}guardia.ics`,
+    [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//e2e//ES",
+      "BEGIN:VEVENT",
+      `UID:guardia-${stamp}@prueba.test`,
+      `DTSTAMP:${day}T120000Z`,
+      `DTSTART:${day}T150000Z`,
+      `DTEND:${day}T160000Z`,
+      "RRULE:FREQ=DAILY;COUNT=3",
+      "SUMMARY:Guardia diaria",
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "",
+    ].join("\r\n"),
+    { "content-type": "text/calendar" },
+  );
+  assert.equal(put.status, 201);
+}
+
+/** Every event of Ana's «Trabajo» calendar as iCalendar text. */
+async function davEvents() {
+  const answer = await dav(
+    "REPORT",
+    CALENDAR,
+    `<?xml version="1.0"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"/></c:filter></c:calendar-query>`,
+    { depth: "1", "content-type": "application/xml" },
+  );
+  return [...answer.text.matchAll(/BEGIN:VCALENDAR[\s\S]*?END:VCALENDAR/g)].map((match) =>
+    match[0]
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/\r?\n /g, ""),
+  );
 }
 
 describe("email module", () => {
@@ -808,5 +895,216 @@ describe("email module", () => {
     await page.waitForTimeout(800);
     assert.equal(await picker.locator('[data-doc="Privada de Beto"]').count(), 0);
     assert.ok(hidden.data.id);
+  });
+  test("T56: the account's signature goes below new messages and above quoted replies", async () => {
+    await page.goto(`${base}/cuenta?seccion=buzones`);
+    const card = page.locator('[data-ui="mail-signature"]');
+    await card.getByLabel("Firma").fill("Ana Prueba\nUnidad de pruebas");
+    await card.getByRole("button", { name: "Guardar firma" }).click();
+    await until(
+      async () =>
+        (await query(`select signature from mail_account where id = $1`, [accountId]))[0]
+          .signature === "Ana Prueba\nUnidad de pruebas",
+      "signature saved",
+    );
+    const form = await compose();
+    assert.equal(
+      await form.getByLabel("Mensaje").inputValue(),
+      "\n\n-- \nAna Prueba\nUnidad de pruebas",
+    );
+    const subject = `Con firma ${stamp}`;
+    await form.getByLabel("Para").fill("destino@otro.test");
+    await form.getByLabel("Asunto").fill(subject);
+    await form.getByLabel("Mensaje").press("Control+Home");
+    await form.getByLabel("Mensaje").type("Texto del mensaje.");
+    await form.getByRole("button", { name: "Enviar", exact: true }).click();
+    await page.getByText("Mensaje enviado.").waitFor();
+    const { message } = await received(subject);
+    assert.match(
+      message.Text,
+      /Texto del mensaje\.\s*\n\s*-- \s*\nAna Prueba\s*\nUnidad de pruebas/,
+    );
+    // A reply: the signature sits above the quoted text.
+    const view = await openMessage("Informe con adjuntos");
+    await view.getByRole("button", { name: "Responder", exact: true }).click();
+    const reply = page.locator('[data-ui="mail-compose"]');
+    const text = await reply.getByLabel("Mensaje").inputValue();
+    assert.ok(text.indexOf("Ana Prueba") < text.indexOf("> Te adjunto"), text);
+  });
+
+  test("T57: recipients are found by name in contacts and in the Zimbra directory", async () => {
+    await page.goto(`${base}/cuenta?seccion=buzones`);
+    const web = page.locator('[data-ui="mail-web"]');
+    await web.locator("summary").click();
+    await web.getByLabel("Servidor web").fill("zimbra-test");
+    await web.getByRole("button", { name: "Guardar" }).click();
+    await until(
+      async () =>
+        (await query(`select web_host from mail_account where id = $1`, [accountId]))[0]
+          .web_host === "zimbra-test",
+      "web host saved",
+    );
+    const form = await compose();
+    const to = form.getByLabel("Para");
+    await to.fill("rodd");
+    const list = form.locator('[data-ui="mail-recipients"]');
+    await list.getByText("Roddy Andrade").waitFor();
+    assert.match(await list.innerText(), /Directorio/);
+    await to.press("Enter");
+    assert.equal(await to.inputValue(), "Roddy Andrade <roddy.andrade@prueba.test>, ");
+    // Then someone already seen in mail, by part of the address.
+    await to.pressSequentially("ana.r");
+    await list.getByText("ana.r@otro.test").waitFor();
+    assert.match(await list.innerText(), /Contactos/);
+    await list.getByText("ana.r@otro.test").click();
+    assert.match(
+      await to.inputValue(),
+      /^Roddy Andrade <roddy\.andrade@prueba\.test>, .*ana\.r@otro\.test>?, $/,
+    );
+    assert.equal(
+      (await query(`select directory from mail_account where id = $1`, [accountId]))[0].directory,
+      "zimbra",
+    );
+    // A person not in the directory or contacts: nothing suggested.
+    await to.fill("zzzz");
+    await page.waitForTimeout(700);
+    assert.equal(await list.count(), 0);
+  });
+
+  test("T58: files from the computer: only attached, or attached and kept in the vault", async () => {
+    const folder = (await mcp(ana.token, "create_portfolio", { name: "Adjuntos guardados" })).data
+      .id;
+    const subject = `Desde el equipo ${stamp}`;
+    const form = await compose();
+    await form.getByLabel("Para").fill("destino@otro.test");
+    await form.getByLabel("Asunto").fill(subject);
+    // «Desde el equipo» picks a file; «Solo adjuntar».
+    await form.locator('input[type="file"]').setInputFiles({
+      name: "solo-adjunto.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("solo para el correo"),
+    });
+    const drop = page.locator('[data-ui="mail-drop"]');
+    await drop.getByLabel("Solo adjuntar").check();
+    await drop.getByRole("button", { name: "Adjuntar", exact: true }).click();
+    await form.locator('[data-attachment="solo-adjunto.txt"][data-status="ready"]').waitFor();
+    // Dropping a file: «Adjuntar y guardar en Grafito», in a chosen portfolio.
+    await form.evaluate((element) => {
+      const data = new DataTransfer();
+      data.items.add(
+        new File(["guardado en la boveda"], "guardar-tambien.txt", { type: "text/plain" }),
+      );
+      element.dispatchEvent(
+        new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data }),
+      );
+      element.dispatchEvent(
+        new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data }),
+      );
+    });
+    await drop.getByLabel("Adjuntar y guardar en Grafito").check();
+    await drop.getByLabel("Dónde").selectOption({ label: "Adjuntos guardados" });
+    await drop.getByRole("button", { name: "Adjuntar", exact: true }).click();
+    await form.locator('[data-attachment="guardar-tambien"]').waitFor();
+    const saved = await query(
+      `select id, portfolio_id, file_key from vault_doc where user_id = $1 and file_name = 'guardar-tambien.txt'`,
+      [ana.id],
+    );
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].portfolio_id, folder);
+    await form.getByRole("button", { name: "Enviar", exact: true }).click();
+    await page.getByText("Mensaje enviado.").waitFor();
+    const { message } = await received(subject);
+    assert.deepEqual(message.Attachments.map((item) => item.FileName).sort(), [
+      "guardar-tambien.txt",
+      "solo-adjunto.txt",
+    ]);
+    const only = message.Attachments.find((item) => item.FileName === "solo-adjunto.txt");
+    const body = await (
+      await fetch(`${SMTP_API}/api/v1/message/${message.ID}/part/${only.PartID}`)
+    ).text();
+    assert.equal(body, "solo para el correo");
+    // Only the kept file is a document; the other one is not in the vault.
+    assert.equal(
+      (
+        await query(
+          `select count(*)::int n from vault_doc where user_id = $1 and file_name = 'solo-adjunto.txt'`,
+          [ana.id],
+        )
+      )[0].n,
+      0,
+    );
+  });
+
+  test("T59: the Agenda reads the CalDAV calendars, expands repetitions, and creates, edits and deletes events", async () => {
+    await davSeed();
+    await page.goto(`${base}/cuenta?seccion=buzones`);
+    const web = page.locator('[data-ui="mail-web"]');
+    await web.locator("summary").click();
+    await web.getByLabel("Dirección CalDAV").fill("https://caldav-test:8443/.well-known/caldav");
+    await web.getByRole("button", { name: "Guardar" }).click();
+    await until(
+      async () =>
+        (await query(`select caldav_url from mail_account where id = $1`, [accountId]))[0]
+          .caldav_url !== "",
+      "CalDAV address saved",
+    );
+    await page.goto(`${base}/correo`);
+    await page.locator('[data-ui="mail-agenda-entry"]').click();
+    const agenda = page.locator('[data-ui="mail-agenda"]');
+    await agenda.locator("label", { hasText: "Trabajo" }).waitFor();
+    // The daily event seeded on the server: three occurrences.
+    await until(
+      async () => (await agenda.locator('[data-event="Guardia diaria"]').count()) === 3,
+      "three occurrences",
+      30_000,
+    );
+    // A new event with a guest.
+    const title = `Reunión de prueba ${stamp}`;
+    await agenda.getByRole("button", { name: "Nuevo evento" }).click();
+    const form = page.locator('[data-ui="agenda-form"]');
+    await form.getByLabel("Título").fill(title);
+    await form.getByLabel("Hora de inicio").fill("10:00");
+    await form.getByLabel("Hora de fin").fill("11:00");
+    await form.getByLabel("Lugar").fill("Sala 2");
+    await form.getByLabel("Invitados").fill("carlos.mena@prueba.test");
+    await form.getByRole("button", { name: "Guardar" }).click();
+    await agenda.locator(`[data-event="${title}"]`).waitFor();
+    let stored = await davEvents();
+    let ics = stored.find((item) => item.includes(title));
+    assert.ok(ics, "stored on the CalDAV server");
+    assert.match(ics, /LOCATION:Sala 2/);
+    assert.match(ics, /ATTENDEE[^:]*:mailto:carlos\.mena@prueba\.test/i);
+    assert.match(ics, /ORGANIZER[^:]*:mailto:ana@prueba\.test/i);
+    // Edit it.
+    await agenda.locator(`[data-event="${title}"]`).click();
+    await page.locator('[data-ui="agenda-event"]').getByRole("button", { name: "Editar" }).click();
+    await form.getByLabel("Título").fill(`${title} (cambiada)`);
+    await form.getByRole("button", { name: "Guardar" }).click();
+    await agenda.locator(`[data-event="${title} (cambiada)"]`).waitFor();
+    stored = await davEvents();
+    ics = stored.find((item) => item.includes(title));
+    assert.match(ics, /SUMMARY:Reunión de prueba \d+ \(cambiada\)/);
+    assert.match(ics, /SEQUENCE:1/);
+    // Repeating events are read only here.
+    await agenda.locator('[data-event="Guardia diaria"]').first().click();
+    const detail = page.locator('[data-ui="agenda-event"]');
+    await detail
+      .getByText("Guardia diaria")
+      .first()
+      .waitFor({ state: "attached" })
+      .catch(() => undefined);
+    assert.equal(await detail.getByRole("button", { name: "Editar" }).count(), 0);
+    await page.keyboard.press("Escape");
+    await page
+      .locator('[data-ui="overlay"]')
+      .first()
+      .click({ position: { x: 5, y: 5 } });
+    // Delete the new one.
+    await agenda.locator(`[data-event="${title} (cambiada)"]`).click();
+    await detail.getByRole("button", { name: "Borrar" }).click();
+    await detail.getByRole("button", { name: "Sí" }).click();
+    await agenda.locator(`[data-event="${title} (cambiada)"]`).waitFor({ state: "detached" });
+    stored = await davEvents();
+    assert.ok(!stored.some((item) => item.includes(title)), "deleted on the server");
   });
 });

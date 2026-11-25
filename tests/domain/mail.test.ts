@@ -20,6 +20,7 @@ import {
   parseMailPolicy,
   syncInterval,
 } from "../../src/domain/mail/policy.ts";
+import { swapSignature, withSignature } from "../../src/domain/mail/compose.ts";
 
 /** The email module's pure rules: policy, where IMAP may connect, folders, archiving, cursors. */
 
@@ -151,4 +152,17 @@ test("cursor de la lista y plan de sincronización de una carpeta", () => {
     },
   );
   assert.deepEqual(vanished([1, 2, 3, 5], [1, 3, 4]), [2, 5]);
+});
+
+test("la firma va debajo de un mensaje nuevo y encima del texto citado", () => {
+  assert.equal(withSignature("", "Ana\nMSP"), "\n\n-- \nAna\nMSP");
+  assert.equal(withSignature("Hola", "Ana"), "Hola\n\n-- \nAna");
+  assert.equal(
+    withSignature("\n\nEl lunes, Beto escribió:\n> hola", "Ana"),
+    "\n\n-- \nAna\n\nEl lunes, Beto escribió:\n> hola",
+  );
+  assert.equal(withSignature("Hola", "  "), "Hola");
+  assert.equal(swapSignature("Hola\n\n-- \nAna", "Ana", "Ana (MSP)"), "Hola\n\n-- \nAna (MSP)");
+  assert.equal(swapSignature("Hola", "", "Ana"), "Hola\n\n-- \nAna");
+  assert.equal(swapSignature("Hola\n\n-- \nAna", "Ana", ""), "Hola");
 });

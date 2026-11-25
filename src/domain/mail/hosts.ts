@@ -92,6 +92,8 @@ export function hostListed(host: string, list: readonly string[]): boolean {
 
 export const IMAP_PORTS = [993, 143];
 export const SMTP_PORTS = [465, 587];
+/** HTTPS of a mail server's web side (Zimbra's directory, CalDAV). */
+export const WEB_PORTS = [443, 8443];
 
 export type TargetCheck = { ok: true; address: string } | { ok: false; error: string };
 
@@ -106,12 +108,15 @@ export function checkTarget(input: {
   addresses: readonly string[];
   trusted: boolean;
   /** IMAP (993, 143) by default; SMTP submission (465, 587) for sending. */
-  service?: "imap" | "smtp";
+  service?: "imap" | "smtp" | "web";
 }): TargetCheck {
   const host = input.host.trim().toLowerCase();
   if (!host || !/^[a-z0-9.:[\]-]+$/.test(host))
     return { ok: false, error: "El servidor no es un nombre válido." };
-  if (input.service === "smtp") {
+  if (input.service === "web") {
+    if (!WEB_PORTS.includes(input.port))
+      return { ok: false, error: "El servidor web tiene que usar HTTPS en el puerto 443 u 8443." };
+  } else if (input.service === "smtp") {
     if (!SMTP_PORTS.includes(input.port))
       return { ok: false, error: "El puerto SMTP tiene que ser 465 (TLS) o 587 (STARTTLS)." };
   } else if (!IMAP_PORTS.includes(input.port))

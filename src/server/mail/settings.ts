@@ -88,10 +88,15 @@ export async function resolveSmtpTarget(host: string, port: number): Promise<Tar
   return resolveMailTarget(host, port, "smtp");
 }
 
+/** The same check for a mail server's web side (HTTPS: directory, CalDAV). */
+export async function resolveWebTarget(host: string, port: number): Promise<TargetCheck> {
+  return resolveMailTarget(host, port, "web");
+}
+
 async function resolveMailTarget(
   host: string,
   port: number,
-  service: "imap" | "smtp",
+  service: "imap" | "smtp" | "web",
 ): Promise<TargetCheck> {
   const name = host.trim().toLowerCase().replace(/\.$/, "");
   const trusted = hostTrusted(name);

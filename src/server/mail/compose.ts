@@ -3,8 +3,8 @@ import type { Sql } from "@/lib/db";
 import { safeFileName } from "@/domain/mail/message";
 import { exportPermission } from "@/domain/permissions";
 import type { Document } from "@/domain/vault/types";
-import { readBlob } from "@/server/blobs";
-import { decodeDataUrl } from "@/server/files";
+import { deleteBlob, readBlob } from "@/server/blobs";
+import { decodeDataUrl, ownsKey } from "@/server/files";
 import { vaultSnapshot } from "@/server/mcp/corpus";
 import { allows, type UserProfile } from "@/server/profile";
 import { grantedDocOwner, sharedWith } from "@/server/share";
@@ -12,6 +12,7 @@ import { getDoc, listDocs } from "@/server/vault";
 import { buildConnector, connectorAccount } from "./accounts";
 import { MailError } from "./providers/types";
 import { enqueue } from "./queue";
+import { rememberContacts } from "./store";
 
 /**
  * Writing mail: the documents a person may attach (their Carpeta Personal and what is shared with
@@ -174,6 +175,8 @@ export type SendInput = {
   subject: string;
   text: string;
   attachments: { docId: string; shareId: string | null }[];
+  /** Files dropped from the computer and only attached: uploaded objects of this person. */
+  uploads: { key: string; name: string; mime: string }[];
   /** The message this answers (its id in Grafito), for In-Reply-To and References. */
   replyTo: string | null;
 };
@@ -184,7 +187,7 @@ export async function sendMessage(
   userId: string,
   profile: UserProfile,
   input: SendInput,
-): Promise<{ sentCopy: boolean; attachments: string[]; recipients: number }> {
+): Promise<{ sentCopy: boolean; attachments: string[]; uploads: number; recipients: number }> {
   const owned = await sql<{ id: string }>`
     select id from mail_account where id = ${input.accountId} and user_id = ${userId} limit 1
   `;
@@ -199,7 +202,7 @@ export async function sendMessage(
     throw new MailError("permanent", "Escribe al menos un destinatario.");
   if (recipients.length > MAX_RECIPIENTS)
     throw new MailError("permanent", `Como mucho ${MAX_RECIPIENTS} destinatarios.`);
-  if (input.attachments.length > MAX_SEND_ATTACHMENTS)
+  if (input.attachments.length + input.uploads.length > MAX_SEND_ATTACHMENTS)
     throw new MailError("permanent", `Como mucho ${MAX_SEND_ATTACHMENTS} adjuntos.`);
 
   const files: Attachment[] = [];
@@ -210,6 +213,13 @@ export async function sendMessage(
     if (seen.has(key)) continue;
     seen.add(key);
     const file = await vaultAttachment(sql, userId, profile, ref);
+    total += file.content.byteLength;
+    if (total > MAX_SEND_BYTES)
+      throw new MailError("permanent", "Los adjuntos superan los 20 MB que admite un correo.");
+    files.push(file);
+  }
+  for (const upload of input.uploads) {
+    const file = await uploadedAttachment(sql, userId, upload);
     total += file.content.byteLength;
     if (total > MAX_SEND_BYTES)
       throw new MailError("permanent", "Los adjuntos superan los 20 MB que admite un correo.");
@@ -256,9 +266,62 @@ export async function sendMessage(
   }
   // The copy in Sent arrives with the next sync.
   await enqueue(sql, { userId, accountId: account.id, kind: "sync", priority: 5 });
+  await rememberContacts(
+    sql,
+    userId,
+    recipients.map((item) => ({ name: "", address: item })),
+    Date.now(),
+  );
+  await discardUploads(
+    sql,
+    userId,
+    input.uploads.map((item) => item.key),
+  );
   return {
     sentCopy: result.sentCopy,
-    attachments: files.map((file) => file.docId),
+    attachments: files.filter((file) => file.docId).map((file) => file.docId),
+    uploads: input.uploads.length,
     recipients: recipients.length,
   };
+}
+
+/** A file dropped from the computer: an object this person uploaded that no document holds. */
+async function uploadedAttachment(
+  sql: Sql,
+  userId: string,
+  upload: { key: string; name: string; mime: string },
+): Promise<Attachment> {
+  if (!ownsKey(userId, upload.key) || (await heldByDocument(sql, upload.key)))
+    throw new MailError("permanent", "Uno de los archivos subidos ya no está disponible.");
+  const bytes = await readBlob(sql, upload.key);
+  if (!bytes)
+    throw new MailError("permanent", "Uno de los archivos subidos ya no está disponible.");
+  return {
+    filename: safeFileName(upload.name),
+    contentType: /^[\w.+-]+\/[\w.+-]+$/.test(upload.mime)
+      ? upload.mime
+      : "application/octet-stream",
+    content: Buffer.from(bytes),
+    docId: "",
+  };
+}
+
+async function heldByDocument(sql: Sql, key: string): Promise<boolean> {
+  const rows = await sql<{ id: string }>`
+    select id from vault_doc where file_key = ${key}
+    union all select id from vault_doc_version where file_key = ${key}
+    limit 1
+  `;
+  return rows.length > 0;
+}
+
+/**
+ * Remove uploads that were only attached (sent, or the message was discarded). Objects a
+ * document holds, or of someone else, are never touched.
+ */
+export async function discardUploads(sql: Sql, userId: string, keys: string[]): Promise<void> {
+  for (const key of keys.slice(0, 50)) {
+    if (!ownsKey(userId, key) || (await heldByDocument(sql, key))) continue;
+    await deleteBlob(sql, key).catch(() => undefined);
+  }
 }

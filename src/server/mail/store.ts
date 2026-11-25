@@ -204,7 +204,43 @@ export async function saveMessages(
     }
     saved += 1;
   }
+  await rememberContacts(
+    sql,
+    account.userId,
+    messages.flatMap((message) => [message.from, ...message.to, ...message.cc]),
+    now,
+  );
   return saved;
+}
+
+/**
+ * People seen in mail (senders and recipients), for suggestions while writing: one upsert per
+ * batch, the most recent non-empty name kept.
+ */
+export async function rememberContacts(
+  sql: Sql,
+  userId: string,
+  people: { name: string; address: string }[],
+  at: number,
+): Promise<void> {
+  const merged = new Map<string, string>();
+  for (const person of people) {
+    const address = person.address.trim().toLowerCase();
+    if (!address.includes("@") || address.length > 320) continue;
+    const name = person.name.trim().slice(0, 200);
+    if (!merged.has(address) || name) merged.set(address, name || merged.get(address) || "");
+  }
+  if (merged.size === 0) return;
+  const items = JSON.stringify([...merged].map(([address, name]) => ({ address, name })));
+  await sql`
+    insert into mail_contact (user_id, address, name, uses, last_at)
+    select ${userId}, item.address, item.name, 1, ${at}
+    from jsonb_to_recordset(${items}::jsonb) as item(address text, name text)
+    on conflict (user_id, address) do update set
+      uses = mail_contact.uses + 1,
+      name = case when excluded.name <> '' then excluded.name else mail_contact.name end,
+      last_at = greatest(mail_contact.last_at, excluded.last_at)
+  `;
 }
 
 /** Flags of messages already stored (CONDSTORE changes or a reconciliation). */

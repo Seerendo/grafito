@@ -1,13 +1,36 @@
-import { ChevronRight, FileText, Folder, Paperclip, Send, Users, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronRight,
+  FileText,
+  Folder,
+  HardDriveUpload,
+  Loader2,
+  Paperclip,
+  Send,
+  Users,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useAccountProfile } from "@/app/account-profile";
+import { uploadVaultFile } from "@/app/files";
 import { intl, t } from "@/app/i18n";
+import { usePermissions } from "@/app/permissions";
 import { Modal } from "@/components/ui/Modal";
-import { mailAttachChoices, mailSend } from "@/server/mailbox.functions";
+import { swapSignature, withSignature } from "@/domain/mail/compose";
+import { PERMISSION } from "@/domain/permissions";
+import {
+  mailArchiveTargets,
+  mailAttachChoices,
+  mailDiscardUploads,
+  mailRecipients,
+  mailSend,
+} from "@/server/mailbox.functions";
 
 /**
- * Writing a message: from one of the person's accounts, to people, with documents taken straight
- * from the vault (Carpeta Personal or what is shared with them). Nothing is uploaded from the
- * computer; the server reads the chosen documents and checks the person may take them out.
+ * Writing a message: from one of the person's accounts, to people found by name (contacts and the
+ * server's directory), with the account's signature, and with documents taken straight from the
+ * vault (Carpeta Personal or what is shared) or dropped from the computer. A dropped file is
+ * either only attached, or attached and kept in the vault where the person chooses, like
+ * Outlook asks. Uploads take the vault's own path (limits, antivirus).
  */
 
 export type Draft = {
@@ -19,13 +42,23 @@ export type Draft = {
   replyTo: string | null;
 };
 
-type Account = { id: string; email: string; name: string; hasSecret: boolean };
+type Account = { id: string; email: string; name: string; hasSecret: boolean; signature: string };
 
 export type Picked = {
   docId: string;
   shareId: string | null;
   title: string;
   kind: "markdown" | "file";
+};
+
+/** A file from the computer on its way: only attached (key) or kept in the vault (doc). */
+type Upload = {
+  id: string;
+  name: string;
+  mime: string;
+  status: "uploading" | "ready" | "failed";
+  key?: string;
+  error?: string;
 };
 
 const field = "h-10 w-full rounded-md border border-line bg-inset px-3 text-sm";
@@ -49,18 +82,99 @@ export function Compose({
   onSent: (sentCopy: boolean) => void;
 }) {
   const usable = accounts.filter((account) => account.hasSecret);
-  const [form, setForm] = useState({
+  const first = usable.some((item) => item.id === draft.accountId)
+    ? draft.accountId
+    : (usable[0]?.id ?? "");
+  const signatureOf = (id: string) => usable.find((item) => item.id === id)?.signature ?? "";
+  const [form, setForm] = useState(() => ({
     ...draft,
-    accountId: usable.some((item) => item.id === draft.accountId)
-      ? draft.accountId
-      : (usable[0]?.id ?? ""),
+    accountId: first,
+    text: withSignature(draft.text, signatureOf(first)),
     bcc: "",
-  });
+  }));
   const [copies, setCopies] = useState(Boolean(draft.cc));
   const [files, setFiles] = useState<Picked[]>([]);
+  const [uploads, setUploads] = useState<Upload[]>([]);
+  const [dropped, setDropped] = useState<File[] | null>(null);
+  const [over, setOver] = useState(false);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const chooser = useRef<HTMLInputElement>(null);
+  const can = usePermissions();
+  const profile = useAccountProfile();
+  const mayUpload = can(PERMISSION.filesUpload);
+
+  const changeAccount = (accountId: string) =>
+    setForm({
+      ...form,
+      accountId,
+      text: swapSignature(form.text, signatureOf(form.accountId), signatureOf(accountId)),
+    });
+
+  const close = () => {
+    const keys = uploads.flatMap((item) => (item.key ? [item.key] : []));
+    if (keys.length) void mailDiscardUploads({ data: { keys } }).catch(() => undefined);
+    onClose();
+  };
+
+  const attach = (list: File[], save: { portfolioId: string | null } | null) => {
+    setDropped(null);
+    for (const file of list) {
+      const id = crypto.randomUUID();
+      const entry: Upload = {
+        id,
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        status: "uploading",
+      };
+      setUploads((current) => [...current, entry]);
+      const done = (change: Partial<Upload>) =>
+        setUploads((current) =>
+          current.map((item) => (item.id === id ? { ...item, ...change } : item)),
+        );
+      const work = save
+        ? uploadVaultFile(
+            file,
+            { portfolioId: save.portfolioId },
+            {
+              doc: {
+                id: crypto.randomUUID(),
+                title: file.name.replace(/\.[^.]+$/, "") || file.name,
+                name: file.name,
+                mime: entry.mime,
+                createdAt: Date.now(),
+                actor: profile?.displayName || profile?.loginName || "",
+              },
+            },
+          ).then((stored) => {
+            if (!stored.doc) throw new Error(t("El servidor no guardó el documento del archivo."));
+            // Kept in the vault: it goes out as a vault document.
+            setUploads((current) => current.filter((item) => item.id !== id));
+            setFiles((current) => [
+              ...current,
+              { docId: stored.doc!.id, shareId: null, title: stored.doc!.title, kind: "file" },
+            ]);
+          })
+        : uploadVaultFile(file, {}).then((stored) => done({ status: "ready", key: stored.key }));
+      work.catch((failure: unknown) =>
+        done({
+          status: "failed",
+          error: failure instanceof Error ? failure.message : t("No se pudo subir."),
+        }),
+      );
+    }
+  };
+
+  const onDrop = (event: DragEvent) => {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    setOver(false);
+    const list = [...event.dataTransfer.files];
+    if (list.length && mayUpload) setDropped(list);
+  };
+
+  const pending = uploads.some((item) => item.status === "uploading");
 
   const send = async () => {
     setBusy(true);
@@ -74,6 +188,11 @@ export function Compose({
         subject: form.subject,
         text: form.text,
         attachments: files.map((file) => ({ docId: file.docId, shareId: file.shareId })),
+        uploads: uploads.flatMap((item) =>
+          item.status === "ready" && item.key
+            ? [{ key: item.key, name: item.name, mime: item.mime }]
+            : [],
+        ),
         replyTo: form.replyTo,
       },
     }).catch(() => null);
@@ -83,10 +202,19 @@ export function Compose({
   };
 
   return (
-    <Modal title={t("Nuevo mensaje")} onClose={onClose} wide keepOpen>
+    <Modal title={t("Nuevo mensaje")} onClose={close} wide keepOpen>
       <form
         data-ui="mail-compose"
-        className="flex flex-col gap-3"
+        className={`relative flex flex-col gap-3 ${over ? "rounded-md ring-2 ring-accent" : ""}`}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes("Files") || !mayUpload) return;
+          event.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) setOver(false);
+        }}
+        onDrop={onDrop}
         onSubmit={(event) => {
           event.preventDefault();
           void send();
@@ -97,7 +225,7 @@ export function Compose({
           <select
             aria-label={t("De")}
             value={form.accountId}
-            onChange={(event) => setForm({ ...form, accountId: event.target.value })}
+            onChange={(event) => changeAccount(event.target.value)}
             className={field}
           >
             {usable.map((account) => (
@@ -110,17 +238,12 @@ export function Compose({
           </select>
         </label>
         <div className="flex items-end gap-2">
-          <label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">
-            {t("Para")}
-            <input
-              required
-              aria-label={t("Para")}
-              value={form.to}
-              autoComplete="email"
-              onChange={(event) => setForm({ ...form, to: event.target.value })}
-              className={field}
-            />
-          </label>
+          <Recipients
+            label="Para"
+            required
+            value={form.to}
+            onChange={(to) => setForm((current) => ({ ...current, to }))}
+          />
           {!copies ? (
             <button
               type="button"
@@ -134,24 +257,16 @@ export function Compose({
         </div>
         {copies ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-sm">
-              {t("CC")}
-              <input
-                aria-label={t("CC")}
-                value={form.cc}
-                onChange={(event) => setForm({ ...form, cc: event.target.value })}
-                className={field}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              {t("CCO")}
-              <input
-                aria-label={t("CCO")}
-                value={form.bcc}
-                onChange={(event) => setForm({ ...form, bcc: event.target.value })}
-                className={field}
-              />
-            </label>
+            <Recipients
+              label="CC"
+              value={form.cc}
+              onChange={(cc) => setForm((current) => ({ ...current, cc }))}
+            />
+            <Recipients
+              label="CCO"
+              value={form.bcc}
+              onChange={(bcc) => setForm((current) => ({ ...current, bcc }))}
+            />
           </div>
         ) : null}
         <label className="flex flex-col gap-1 text-sm">
@@ -174,6 +289,7 @@ export function Compose({
           {files.map((file) => (
             <span
               key={`${file.shareId ?? ""}:${file.docId}`}
+              data-attachment={file.title}
               className="inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border border-line bg-inset pr-1 pl-2 text-xs"
             >
               <Paperclip className="size-3.5 shrink-0 text-faint" />
@@ -188,6 +304,35 @@ export function Compose({
               </button>
             </span>
           ))}
+          {uploads.map((item) => (
+            <span
+              key={item.id}
+              data-attachment={item.name}
+              data-status={item.status}
+              title={item.error ? t(item.error) : undefined}
+              className={`inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border bg-inset pr-1 pl-2 text-xs ${item.status === "failed" ? "border-danger text-danger" : "border-line"}`}
+            >
+              {item.status === "uploading" ? (
+                <Loader2 className="size-3.5 shrink-0 animate-spin text-faint" />
+              ) : (
+                <HardDriveUpload className="size-3.5 shrink-0 text-faint" />
+              )}
+              <span className="truncate">{item.name}</span>
+              <button
+                type="button"
+                aria-label={t("Quitar {0}", { 0: item.name })}
+                disabled={item.status === "uploading"}
+                onClick={() => {
+                  if (item.key)
+                    void mailDiscardUploads({ data: { keys: [item.key] } }).catch(() => undefined);
+                  setUploads(uploads.filter((entry) => entry.id !== item.id));
+                }}
+                className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg disabled:opacity-40"
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
           <button
             type="button"
             onClick={() => setPicking(true)}
@@ -196,6 +341,30 @@ export function Compose({
             <Paperclip className="size-4" />
             {t("Adjuntar desde Grafito")}
           </button>
+          {mayUpload ? (
+            <>
+              <button
+                type="button"
+                onClick={() => chooser.current?.click()}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-dashed border-line px-2.5 text-sm text-muted hover:bg-elevated"
+              >
+                <HardDriveUpload className="size-4" />
+                {t("Desde el equipo")}
+              </button>
+              <input
+                ref={chooser}
+                type="file"
+                multiple
+                hidden
+                aria-label={t("Desde el equipo")}
+                onChange={(event) => {
+                  const list = [...(event.target.files ?? [])];
+                  event.target.value = "";
+                  if (list.length) setDropped(list);
+                }}
+              />
+            </>
+          ) : null}
         </div>
         {error ? (
           <p role="alert" className="text-sm text-danger">
@@ -205,14 +374,14 @@ export function Compose({
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={close}
             className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated"
           >
             {t("Descartar")}
           </button>
           <button
             type="submit"
-            disabled={busy || !form.accountId}
+            disabled={busy || pending || !form.accountId}
             className="inline-flex h-10 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
           >
             <Send className="size-4" />
@@ -230,6 +399,234 @@ export function Compose({
           }}
         />
       ) : null}
+      {dropped ? (
+        <DropChoice
+          files={dropped}
+          onCancel={() => setDropped(null)}
+          onChoose={(save) => attach(dropped, save)}
+        />
+      ) : null}
+    </Modal>
+  );
+}
+
+/** Addresses separated by commas, with suggestions by name for the one being typed. */
+export function Recipients({
+  label,
+  value,
+  onChange,
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const [people, setPeople] = useState<{ name: string; address: string; source: string }[]>([]);
+  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  const typed = value.split(/[,;]/).at(-1)?.trim() ?? "";
+
+  useEffect(() => {
+    if (typed.length < 2 || /<.+>/.test(typed)) {
+      setPeople([]);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(
+      () =>
+        void mailRecipients({ data: { query: typed } })
+          .then((answer) => {
+            if (!alive) return;
+            setPeople(answer.people);
+            setActive(0);
+          })
+          .catch(() => undefined),
+      200,
+    );
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [typed]);
+
+  const choose = (person: { name: string; address: string }) => {
+    const parts = value
+      .split(/[,;]/)
+      .slice(0, -1)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const entry = person.name
+      ? `${person.name.replace(/[<>,;"]/g, "")} <${person.address}>`
+      : person.address;
+    onChange(`${[...parts, entry].join(", ")}, `);
+    setPeople([]);
+  };
+  const shown = open && people.length > 0;
+
+  return (
+    <label className="relative flex min-w-0 flex-1 flex-col gap-1 text-sm">
+      {t(label)}
+      <input
+        required={required}
+        aria-label={t(label)}
+        aria-expanded={shown}
+        aria-autocomplete="list"
+        role="combobox"
+        value={value}
+        autoComplete="off"
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(event) => {
+          setOpen(true);
+          onChange(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (!shown) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setActive((index) => Math.min(index + 1, people.length - 1));
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((index) => Math.max(index - 1, 0));
+          } else if (event.key === "Enter" || event.key === "Tab") {
+            const person = people[active];
+            if (person) {
+              event.preventDefault();
+              choose(person);
+            }
+          } else if (event.key === "Escape") setPeople([]);
+        }}
+        className={field}
+      />
+      {shown ? (
+        <ul
+          role="listbox"
+          data-ui="mail-recipients"
+          className="absolute top-full right-0 left-0 z-20 mt-1 max-h-72 overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-2xl"
+        >
+          {people.map((person, index) => (
+            <li
+              key={person.address}
+              role="option"
+              aria-selected={index === active}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                choose(person);
+              }}
+              className={`flex cursor-pointer items-center gap-2 px-3 py-2 ${index === active ? "bg-elevated" : ""}`}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {person.name ? <span className="font-medium">{person.name} </span> : null}
+                <span className="text-muted">{person.address}</span>
+              </span>
+              <span className="text-xs text-faint">
+                {t(person.source === "directorio" ? "Directorio" : "Contactos")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </label>
+  );
+}
+
+/** Like Outlook: only attach the dropped files, or attach them and keep them in the vault. */
+function DropChoice({
+  files,
+  onCancel,
+  onChoose,
+}: {
+  files: File[];
+  onCancel: () => void;
+  onChoose: (save: { portfolioId: string | null } | null) => void;
+}) {
+  const [mode, setMode] = useState<"attach" | "save">("attach");
+  const [where, setWhere] = useState("");
+  const [folders, setFolders] = useState<{ id: string; path: string }[]>([]);
+
+  useEffect(() => {
+    void mailArchiveTargets()
+      .then((answer) => {
+        const byId = new Map(answer.portfolios.map((item) => [item.id, item]));
+        const path = (id: string): string => {
+          const item = byId.get(id);
+          if (!item) return "";
+          const parent = item.parentId ? path(item.parentId) : "";
+          return parent ? `${parent} › ${item.name}` : item.name;
+        };
+        setFolders(
+          answer.portfolios
+            .map((item) => ({ id: item.id, path: path(item.id) }))
+            .sort((a, b) => a.path.localeCompare(b.path, intl())),
+        );
+      })
+      .catch(() => undefined);
+  }, []);
+
+  return (
+    <Modal
+      title={
+        files.length === 1
+          ? t("Adjuntar «{0}»", { 0: files[0]!.name })
+          : t("Adjuntar {0} archivos", { 0: files.length })
+      }
+      onClose={onCancel}
+    >
+      <div data-ui="mail-drop" className="flex flex-col gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="drop"
+            checked={mode === "attach"}
+            onChange={() => setMode("attach")}
+          />
+          {t("Solo adjuntar")}
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="radio"
+            name="drop"
+            checked={mode === "save"}
+            onChange={() => setMode("save")}
+          />
+          {t("Adjuntar y guardar en Grafito")}
+        </label>
+        {mode === "save" ? (
+          <label className="flex flex-col gap-1">
+            {t("Dónde")}
+            <select
+              aria-label={t("Dónde")}
+              value={where}
+              onChange={(event) => setWhere(event.target.value)}
+              className={field}
+            >
+              <option value="">{t("Carpeta Personal")}</option>
+              {folders.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.path}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-10 rounded-md border border-line px-3 hover:bg-elevated"
+          >
+            {t("Cancelar")}
+          </button>
+          <button
+            type="button"
+            onClick={() => onChoose(mode === "save" ? { portfolioId: where || null } : null)}
+            className="h-10 rounded-md bg-accent px-4 font-medium text-accent-fg"
+          >
+            {t("Adjuntar")}
+          </button>
+        </div>
+      </div>
     </Modal>
   );
 }

@@ -20,7 +20,16 @@ import {
   updateAccount,
 } from "@/server/mail/accounts";
 import { archiveAttachments, archiveEml, archiveMessage } from "@/server/mail/archive";
-import { attachmentChoices, sendMessage } from "@/server/mail/compose";
+import { attachmentChoices, discardUploads, sendMessage } from "@/server/mail/compose";
+import {
+  deleteEvent,
+  discoverCalendars,
+  listCalendars,
+  listEvents,
+  saveEvent,
+  showCalendar,
+} from "@/server/mail/calendar";
+import { forgetDirectorySession, suggestRecipients } from "@/server/mail/directory";
 import {
   getMessage,
   listFolders,
@@ -200,6 +209,9 @@ export const mailUpdateAccount = createServerFn({ method: "POST" })
         password: z.string().min(1).max(1000).optional(),
         smtpHost: z.string().max(253).optional(),
         smtpPort: z.number().int().optional(),
+        signature: z.string().max(5000).optional(),
+        webHost: z.string().max(253).optional(),
+        caldavUrl: z.string().max(500).optional(),
       })
       .parse(input),
   )
@@ -208,6 +220,8 @@ export const mailUpdateAccount = createServerFn({ method: "POST" })
     if (!ready) return { ok: false as const, error: "El correo no está disponible." };
     try {
       const { id: accountId, ...changes } = data;
+      if (changes.password !== undefined || changes.webHost !== undefined)
+        forgetDirectorySession(accountId);
       return {
         ok: true as const,
         account: await updateAccount(sql, context.userId, accountId, changes),
@@ -483,6 +497,15 @@ export const mailSend = createServerFn({ method: "POST" })
         subject: z.string().max(500),
         text: z.string().max(500_000),
         attachments: z.array(z.object({ docId: id, shareId: id.nullable() })).max(50),
+        uploads: z
+          .array(
+            z.object({
+              key: z.string().max(300),
+              name: z.string().max(255),
+              mime: z.string().max(120),
+            }),
+          )
+          .max(50),
         replyTo: id.nullable(),
       })
       .parse(input),
@@ -501,7 +524,7 @@ export const mailSend = createServerFn({ method: "POST" })
         target: data.accountId,
         detail: `Envía un correo a ${sent.recipients} destinatarios${
           sent.attachments.length ? `, adjuntos de Grafito: ${sent.attachments.join(", ")}` : ""
-        }`,
+        }${sent.uploads ? `, ${sent.uploads} archivos del equipo` : ""}`,
       });
       return { ok: true as const, sentCopy: sent.sentCopy };
     } catch (error) {
@@ -514,6 +537,131 @@ export const mailSend = createServerFn({ method: "POST" })
         target: data.accountId,
         detail: error instanceof Error ? error.message : "Error",
       }).catch(() => undefined);
+      return failure(error);
+    }
+  });
+
+/** Files dropped from the computer that were only attached, when the message is discarded. */
+export const mailDiscardUploads = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z.object({ keys: z.array(z.string().max(300)).max(50) }).parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const };
+    await discardUploads(sql, context.userId, data.keys);
+    return { ok: true as const };
+  });
+
+/** People to write to: contacts seen in mail and the server's directory (Zimbra). */
+export const mailRecipients = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ query: z.string().max(100) }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: true as const, people: [] };
+    return { ok: true as const, people: await suggestRecipients(sql, context.userId, data.query) };
+  });
+
+// ── Agenda ───────────────────────────────────────────────────────────────────────
+
+export const mailCalendars = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    return { ok: true as const, calendars: await listCalendars(sql, context.userId) };
+  });
+
+/** Look for the calendars of an account on its server (again). */
+export const mailFindCalendars = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ accountId: id }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      return {
+        ok: true as const,
+        calendars: await discoverCalendars(sql, context.userId, data.accountId),
+      };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+export const mailShowCalendar = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ id, shown: z.boolean() }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const };
+    await showCalendar(sql, context.userId, data.id, data.shown);
+    return { ok: true as const };
+  });
+
+export const mailEvents = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({ from: z.number().int(), to: z.number().int() })
+      .refine((value) => value.to > value.from && value.to - value.from <= 62 * 86_400_000)
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      return { ok: true as const, ...(await listEvents(sql, context.userId, data.from, data.to)) };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+const eventInput = z.object({
+  calendarId: id,
+  href: z.string().max(1000).nullable(),
+  etag: z.string().max(300).nullable(),
+  title: z.string().max(500),
+  allDay: z.boolean(),
+  start: z.number().int(),
+  end: z.number().int(),
+  startDate: z.string().max(10),
+  endDate: z.string().max(10),
+  location: z.string().max(500),
+  description: z.string().max(20_000),
+  attendees: z.array(z.string().max(320)).max(100),
+});
+
+export const mailSaveEvent = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => eventInput.parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      await saveEvent(sql, context.userId, data);
+      return { ok: true as const };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+export const mailDeleteEvent = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({ calendarId: id, href: z.string().max(1000), etag: z.string().max(300) })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      await deleteEvent(sql, context.userId, data);
+      return { ok: true as const };
+    } catch (error) {
       return failure(error);
     }
   });

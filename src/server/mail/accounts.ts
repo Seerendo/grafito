@@ -36,6 +36,9 @@ type Row = {
   tls: unknown;
   smtp_host: string;
   smtp_port: number;
+  signature: string;
+  web_host: string;
+  caldav_url: string;
   secret: string;
   is_default: unknown;
   sync_enabled: unknown;
@@ -64,6 +67,9 @@ export type AccountView = {
   port: number;
   smtpHost: string;
   smtpPort: number;
+  signature: string;
+  webHost: string;
+  caldavUrl: string;
   isDefault: boolean;
   syncEnabled: boolean;
   intervalSeconds: number;
@@ -91,6 +97,9 @@ function view(row: Row): AccountView {
     port: Number(row.port),
     smtpHost: row.smtp_host ?? "",
     smtpPort: Number(row.smtp_port ?? 587),
+    signature: row.signature ?? "",
+    webHost: row.web_host ?? "",
+    caldavUrl: row.caldav_url ?? "",
     isDefault: flag(row.is_default),
     syncEnabled: flag(row.sync_enabled),
     intervalSeconds: Number(row.sync_interval_seconds),
@@ -314,6 +323,9 @@ export type AccountChanges = {
   password?: string;
   smtpHost?: string;
   smtpPort?: number;
+  signature?: string;
+  webHost?: string;
+  caldavUrl?: string;
 };
 
 export async function updateAccount(
@@ -357,6 +369,10 @@ export async function updateAccount(
       attachment_policy = coalesce(${changes.attachmentPolicy ?? null}, attachment_policy),
       mcp_access = coalesce(${changes.mcpAccess ?? null}, mcp_access),
       smtp_host = coalesce(${changes.smtpHost?.trim().toLowerCase().slice(0, 253) ?? null}, smtp_host),
+      signature = coalesce(${changes.signature?.slice(0, 5000) ?? null}, signature),
+      web_host = coalesce(${changes.webHost?.trim().toLowerCase().slice(0, 253) ?? null}, web_host),
+      caldav_url = coalesce(${changes.caldavUrl?.trim().slice(0, 500) ?? null}, caldav_url),
+      directory = case when ${changes.webHost !== undefined} then 'auto' else directory end,
       smtp_port = coalesce(${changes.smtpPort === undefined ? null : changes.smtpPort === 465 ? 465 : 587}, smtp_port),
       status = case when ${changes.syncEnabled === false} then 'paused'
         when ${changes.syncEnabled === true} and status = 'paused' then 'connected' else status end,

@@ -148,6 +148,34 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   Each send is audited (`mail.send`: account, number of recipients and the ids
   of the documents sent, never the text). Gmail and Microsoft accounts
   connected before sending existed need **Volver a autorizar**.
+- **Signature:** each account has one (Cuenta → Cuentas de correo → Firma),
+  written below new messages after the usual `-- ` line and above the quoted
+  text of replies and forwards; changing the From account swaps it.
+- **Recipients by name:** To, CC, CCO and the guests of an event suggest
+  people while typing: those seen in the person's mail (`mail_contact`, filled
+  by the sync and by sending) and the directory of the account's server.
+  Zimbra's global address list is searched through its SOAP interface
+  (`AuthRequest`, `AutoCompleteGalRequest`) with the account's own password, at
+  `https://<web server>/service/soap` (the web server is the IMAP host unless
+  set in **Directorio y agenda**). The first try decides whether the server is
+  a Zimbra; a server without that interface is not asked again.
+- **Files from the computer:** dropped on the message, or chosen with **Desde
+  el equipo**. Like Outlook, Grafito asks: **Solo adjuntar** (the file only goes
+  with the message and is removed once sent or discarded) or **Adjuntar y
+  guardar en Grafito** (it is kept as a document where the person chooses: the
+  Carpeta Personal or one of its portfolios). Both take the vault's upload path
+  (size limit, antivirus).
+- **Agenda:** the calendars of the person's IMAP accounts through CalDAV
+  (Zimbra, Nextcloud, Radicale, iCloud…), found at
+  `https://<web server>/.well-known/caldav` or the **Dirección CalDAV** set in
+  **Directorio y agenda**. Month and week views, calendars shown or hidden,
+  events with their repetitions expanded; new events and changes (title, dates,
+  all day, place, guests, description) and deletions go straight to the server,
+  with ETags so a change made elsewhere is not overwritten. Guests are written
+  as ATTENDEE with the account as ORGANIZER; servers that handle scheduling
+  (Zimbra does) send the invitations. Repeating events are shown but changed on
+  the mail server. Nothing of the calendar is copied into Grafito
+  (`mail_calendar` only remembers which calendars exist and which show).
 - **Archiving:** a message as a Markdown note (provenance table, the text in a
   fence), plain text or the original `.eml` (exact source, fetched by the
   worker); attachments as files. Into the Carpeta Personal, one of its
@@ -164,12 +192,12 @@ Extensiones), off until an administrator turns it on, which needs mail-sync
 running. Everything else is in the server's environment (`.env`), passed to
 both `app` and `mail-sync`:
 
-| Variable                                                   | Meaning                                                                                 |
-| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `MAIL_TRUSTED_HOSTS`                                       | IMAP servers on a private network people may use (names or `*.suffix`, comma-separated) |
-| `MAIL_GMAIL_CLIENT_ID`, `MAIL_GMAIL_CLIENT_SECRET`         | Google's OAuth application; without it, no **Conectar Gmail**                           |
-| `MAIL_MICROSOFT_CLIENT_ID`, `MAIL_MICROSOFT_CLIENT_SECRET` | Microsoft's OAuth application; without it, no **Conectar Microsoft 365 / Outlook**      |
-| `MAIL_MICROSOFT_TENANT`                                    | `common` (any account) or one organization's tenant id                                  |
+| Variable                                                   | Meaning                                                                                                                |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `MAIL_TRUSTED_HOSTS`                                       | Mail servers on a private network people may use (IMAP, SMTP, directory, CalDAV; names or `*.suffix`, comma-separated) |
+| `MAIL_GMAIL_CLIENT_ID`, `MAIL_GMAIL_CLIENT_SECRET`         | Google's OAuth application; without it, no **Conectar Gmail**                                                          |
+| `MAIL_MICROSOFT_CLIENT_ID`, `MAIL_MICROSOFT_CLIENT_SECRET` | Microsoft's OAuth application; without it, no **Conectar Microsoft 365 / Outlook**                                     |
+| `MAIL_MICROSOFT_TENANT`                                    | `common` (any account) or one organization's tenant id                                                                 |
 
 The limits (five accounts per person, sync every two minutes at most, a year
 of history, 25 MB per attachment, 2 GB of attachments per person, four jobs per
@@ -244,7 +272,8 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
 - **Isolation:** every query filters by the signed-in person. An attachment
   link is signed for its owner and expires in ten minutes. Administrators
   have no view of anyone's accounts or messages.
-- **SSRF:** the IMAP host, and the SMTP host for sending, are resolved once; loopback, link-local, cloud
+- **SSRF:** the IMAP host, the SMTP host for sending and the web server
+  (directory, CalDAV, HTTPS on 443 or 8443 only) are resolved once; loopback, link-local, cloud
   metadata, multicast and Grafito's own services are refused; a private
   address only when `MAIL_TRUSTED_HOSTS` names the host; ports 993, 143, 587,
   465 (SMTP) and
@@ -264,6 +293,10 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
   server instructions tell clients never to follow instructions found there.
   No MCP tool sends, moves or deletes mail: sending is a person's act in the
   mail screen, so a message's text cannot make an assistant send the vault out.
+- **Directory and calendar** requests use the account's password over HTTPS
+  with the certificate validated; redirects are checked again, stay on https
+  and drop the credentials when they leave the host; answers are capped at
+  8 MB. Event text is shown as plain text.
 - **Sending** takes only documents the person may download or export, read on
   the server (a document id from someone else's vault, or from a share that was
   withdrawn, is refused), with mail-composer's file and URL access off. Bcc is
