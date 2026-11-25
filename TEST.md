@@ -1662,6 +1662,32 @@ Not covered: a real Zimbra (the directory stand-in follows Zimbra's JSON SOAP
 format; the MSP server is to be tried with the person's own account); calendars
 and directories of Gmail and Microsoft 365.
 
+## Round 57: tabs and drafts, meetings and invitations, flags, the whole history
+
+Test stack on its own ports. `tests/e2e/mail.e2e.mjs` (31 tests; `mail-seed.mjs`
+has an `invite` mode that delivers an iCalendar REQUEST) and `tests/e2e/mcp.e2e.mjs`.
+
+| Check                                                                                                                                              | Result                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Whole history by default: the 90-day-old message is copied; custom folders, Drafts and Sent too                                                    | ✅                                                                                |
+| Flag on a row (no menu), «Fichados»                                                                                                                | ✅                                                                                |
+| Right click: Abrir en una nueva pestaña, Abrir, Marcar como no leído, Responder                                                                    | ✅ tabs in the reading pane; the reply opens in a tab, no window                  |
+| Closing an untouched message: no question                                                                                                          | ✅                                                                                |
+| Closing one with changes → «Sí»: in the IMAP server's Drafts with `\Draft`, To, Cc, text, attachment                                               | ✅ and synced back into Borradores                                                |
+| → «No»: nothing in Drafts; the uploaded file deleted from storage (S3 HEAD 404)                                                                    | ✅                                                                                |
+| Programar reunión from a message: subject and people filled; invitation mail with METHOD:REQUEST                                                   | ✅ the event on the CalDAV server                                                 |
+| An invitation received by mail: card with place and answers; Aceptar                                                                               | ✅ REPLY to the organizer with PARTSTAT=ACCEPTED; event in the calendar, accepted |
+| The same event in the Agenda: accepted color; a guest cannot edit; Rechazar                                                                        | ✅ declined look and REPLY with PARTSTAT=DECLINED                                 |
+| The gear: menu with Preferencias and Cuentas de correo; signature saved from Preferencias                                                          | ✅                                                                                |
+| MCP `wait_for_mail` (cursor, waiting), `save_mail_draft` (in Drafts, not sent), `find_recipients`, `list_calendar_events`, `create_calendar_event` | ✅                                                                                |
+| Carpeta Personal folds and unfolds, remembered after a reload                                                                                      | ✅                                                                                |
+| MCP suite; `typecheck`, `lint`, `npm test`, `format:check`                                                                                         | ✅ 9 of 9; 265 tests pass                                                         |
+
+Not covered: invitations and drafts through Gmail and Microsoft 365 (no OAuth
+credentials here; Graph shows invitations as event messages, not text/calendar
+parts); a real Zimbra's scheduling (the CalDAV test server has none, so the
+invitations went by mail).
+
 ## Useful commands
 
 ```bash

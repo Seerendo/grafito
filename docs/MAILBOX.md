@@ -124,6 +124,11 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   (credentials forgotten, messages kept) and **Borrar la copia local**
   (messages and downloaded attachments deleted here, archived documents kept).
   Nothing ever changes on the mail server.
+- **History:** an account copies its whole mailbox by default (every folder:
+  the server's own, Drafts, Sent…), newest first, so Grafito shows what the
+  mail server shows; a shorter window can be chosen per account (Historial).
+  Widening it makes every folder look back again. Accounts left at the old
+  30-day default were moved to the whole history by migration 0052.
 - **Reading:** unified inbox and per account, sent, drafts, archive, spam,
   mail trash, starred and the server's own folders. Search (subject, people,
   attachment names, text) and filters (unread, with attachments, sender,
@@ -133,6 +138,23 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   ClamAV scans them, and PDFs, images, audio, video and text open in Grafito's
   viewers. Office files open once saved into the vault (Collabora edits vault
   documents). Executables and disk images are only downloaded.
+- **Tabs:** like Outlook, the reading pane has tabs: the message chosen in the
+  list, messages opened with **Abrir en una nueva pestaña**, and messages being
+  written. **Redactar**, Responder and Reenviar open a new tab there, not a
+  window. A message being written lives only in its tab: closing a tab with
+  changes asks «¿Desea guardarlo como borrador?». **Sí** keeps it in the
+  account's Drafts on the server (IMAP append with `\Draft`, Gmail drafts,
+  Graph messages), recipients, Bcc and attachments included, so Zimbra shows it
+  too; **No** throws it away and deletes the files uploaded for it. Leaving the
+  page with a message being written asks the browser to confirm.
+- **Flags and the right click:** each message has a flag (**Fichar**, red when
+  set, IMAP `\Flagged`) clicked straight on the list; **Fichados** lists them.
+  A right click on a message offers Abrir, Abrir en una nueva pestaña,
+  Responder, Responder a todos, Reenviar, read or unread, Fichar, Programar
+  reunión, Archivar en Grafito and Ocultar aquí.
+- **Options:** the gear of the mail screen opens a menu: **Preferencias** (the
+  signature of each account, where kept attachments go) and **Cuentas de
+  correo** (the Account section).
 - **Writing:** **Redactar**, and **Responder**, **Responder a todos** and
   **Reenviar** on a message, open a plain-text message with From (one of the
   person's accounts), To, CC, CCO and Subject. **Adjuntar desde Grafito**
@@ -167,10 +189,27 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   discarded). No dialog opens. A dropped folder gives the files inside it.
   **Desde el equipo** only attaches. Both take the vault's upload path (size
   limit, antivirus).
+- **Meetings:** **Programar reunión** on a message (or its right click) opens
+  the event form with its subject, its people as guests and its text. Guests
+  are invited by the calendar server when it schedules (RFC 6638: it has a
+  scheduling outbox, as Zimbra), or otherwise by an invitation mail from the
+  account (iMIP, RFC 6047: text/calendar REQUEST; CANCEL when a guest is taken
+  off or the event is deleted).
+- **Answering invitations:** a message carrying an invitation (text/calendar)
+  shows a card, as Zimbra does: what, when, where, who organizes, every guest's
+  answer, and **Aceptar · Quizás · Rechazar**. Answering puts the event in the
+  account's calendar with that answer (or updates it when the server already
+  put it there) and tells the organizer: the scheduling server does, or a REPLY
+  mail. Events where the account is a guest are answered from the Agenda too;
+  a guest does not edit the organizer's event.
 - **Agenda:** the calendars of the person's IMAP accounts through CalDAV
   (Zimbra, Nextcloud, Radicale, iCloud…), found at
   `https://<web server>/.well-known/caldav` or the **Dirección CalDAV** set in
-  **Directorio y agenda**. Month and week views, calendars shown or hidden,
+  **Directorio y agenda**. Día, Semana (an hour grid, overlapping events side by
+  side), Mes and Lista views. Each event shows this account's answer: accepted
+  or organized solid, «quizás» striped, waiting for an answer outlined,
+  declined struck through; small icons mark repeating events, meetings with
+  guests and the answer. Month and week views, calendars shown or hidden,
   events with their repetitions expanded; new events and changes (title, dates,
   all day, place, guests, description) and deletions go straight to the server,
   with ETags so a change made elsewhere is not overwritten. Guests are written
@@ -290,6 +329,12 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
   or reserved names), executables and double extensions only downloadable,
   ClamAV on every download, and a scanner failure is a refusal, not a clean
   result. Served with `nosniff` and a restrictive CSP.
+- **MCP tools:** `list_mail_accounts`, `search_mail`, `read_mail`,
+  `mark_mail` (read, flagged), `archive_mail`, `save_mail_attachment`,
+  `wait_for_mail` (new mail since a cursor, waiting up to 60 s: how an
+  assistant notices arrivals), `find_recipients`, `save_mail_draft` (kept in
+  Drafts, never sent), `list_calendar_events` and `create_calendar_event`
+  (without guests, as inviting sends mail).
 - **MCP:** only accounts whose owner turned on «Permitir acceso por MCP», only
   for that owner. Mail text comes back under `untrusted_content`, and the
   server instructions tell clients never to follow instructions found there.

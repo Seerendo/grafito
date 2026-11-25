@@ -187,6 +187,7 @@ export async function sendMessage(
   userId: string,
   profile: UserProfile,
   input: SendInput,
+  options: { draft?: boolean } = {},
 ): Promise<{ sentCopy: boolean; attachments: string[]; uploads: number; recipients: number }> {
   const owned = await sql<{ id: string }>`
     select id from mail_account where id = ${input.accountId} and user_id = ${userId} limit 1
@@ -198,7 +199,7 @@ export async function sendMessage(
   const cc = addresses(input.cc);
   const bcc = addresses(input.bcc);
   const recipients = [...new Set([...to, ...cc, ...bcc])];
-  if (recipients.length === 0)
+  if (recipients.length === 0 && !options.draft)
     throw new MailError("permanent", "Escribe al menos un destinatario.");
   if (recipients.length > MAX_RECIPIENTS)
     throw new MailError("permanent", `Como mucho ${MAX_RECIPIENTS} destinatarios.`);
@@ -254,24 +255,29 @@ export async function sendMessage(
   const node = composer.compile();
   // SMTP takes the recipients from the envelope, so Bcc stays out of the copy; the APIs read them
   // from the headers and remove Bcc themselves.
-  node.keepBcc = account.provider !== "imap";
+  // A draft keeps its Bcc, as the person wrote it.
+  node.keepBcc = options.draft || account.provider !== "imap";
   const raw = await node.build();
 
   const connector = await buildConnector(sql, account);
   let result: { sentCopy: boolean };
   try {
-    result = await connector.send({ raw, from: account.email, recipients });
+    if (options.draft) {
+      await connector.saveDraft(raw);
+      result = { sentCopy: true };
+    } else result = await connector.send({ raw, from: account.email, recipients });
   } finally {
     await connector.close();
   }
   // The copy in Sent arrives with the next sync.
   await enqueue(sql, { userId, accountId: account.id, kind: "sync", priority: 5 });
-  await rememberContacts(
-    sql,
-    userId,
-    recipients.map((item) => ({ name: "", address: item })),
-    Date.now(),
-  );
+  if (!options.draft)
+    await rememberContacts(
+      sql,
+      userId,
+      recipients.map((item) => ({ name: "", address: item })),
+      Date.now(),
+    );
   await discardUploads(
     sql,
     userId,

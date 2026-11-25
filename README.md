@@ -841,8 +841,12 @@ keeps answering while mailboxes sync.
   what is shared with you; files dragged from the computer land, as in
   Outlook, on «attach» or «save in Grafito and attach». Each account has its signature,
   and recipients are found by name (your contacts and the Zimbra directory).
-- **Agenda:** your accounts' calendars (CalDAV: Zimbra and others) by month
-  or week; create, change and delete events and invite people.
+- **Agenda:** your accounts' calendars (CalDAV: Zimbra and others) by day,
+  week, month or list; create, change and delete events, invite people, and
+  accept or decline invitations (also from the message that brings them).
+- Messages open and are written in tabs of the reading pane, as in Outlook;
+  closing one being written offers to keep it as a draft on the mail server.
+  A red flag marks messages; the right click has their actions.
 - Grafito never moves or deletes mail on the server. Read, starred and hidden
   are kept in Grafito.
 
@@ -880,18 +884,18 @@ no tools that write. Each call also checks access to the document itself:
 Documents and portfolios are named by id or by title; with several of the same
 title, the tool answers with their ids.
 
-| Area       | Tools                                                                                                                                                                              |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Account    | `whoami`                                                                                                                                                                           |
-| Finding    | `list_portfolios`, `list_notes`, `search_notes`, `read_note`                                                                                                                       |
-| Writing    | `create_note`, `update_note` (also renames), `create_portfolio`                                                                                                                    |
-| Organizing | `move_document`, `update_portfolio` (rename or move), `link_documents`, `link_pdf_phrase`                                                                                          |
-| Trash      | `delete_note`, `delete_file`, `delete_portfolio`, `list_trash`, `restore_from_trash`                                                                                               |
-| History    | `list_versions`, `read_version`                                                                                                                                                    |
-| Comments   | `list_comments`, `add_comment`                                                                                                                                                     |
-| Tables     | `create_table`, `query_table`, `add_table_row`, `set_table_cell`, `delete_table_row`                                                                                               |
-| Graph      | `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` (with the graph on)                                                                                             |
-| Email      | `list_mail_accounts`, `search_mail`, `read_mail`, `mark_mail`, `archive_mail`, `save_mail_attachment` (accounts whose owner allows MCP; mail text comes back as untrusted content) |
+| Area       | Tools                                                                                                                                                                                                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account    | `whoami`                                                                                                                                                                                                                                                                                                            |
+| Finding    | `list_portfolios`, `list_notes`, `search_notes`, `read_note`                                                                                                                                                                                                                                                        |
+| Writing    | `create_note`, `update_note` (also renames), `create_portfolio`                                                                                                                                                                                                                                                     |
+| Organizing | `move_document`, `update_portfolio` (rename or move), `link_documents`, `link_pdf_phrase`                                                                                                                                                                                                                           |
+| Trash      | `delete_note`, `delete_file`, `delete_portfolio`, `list_trash`, `restore_from_trash`                                                                                                                                                                                                                                |
+| History    | `list_versions`, `read_version`                                                                                                                                                                                                                                                                                     |
+| Comments   | `list_comments`, `add_comment`                                                                                                                                                                                                                                                                                      |
+| Tables     | `create_table`, `query_table`, `add_table_row`, `set_table_cell`, `delete_table_row`                                                                                                                                                                                                                                |
+| Graph      | `graph_overview`, `graph_neighbors`, `graph_path`, `graph_related` (with the graph on)                                                                                                                                                                                                                              |
+| Email      | `list_mail_accounts`, `search_mail`, `read_mail`, `mark_mail`, `archive_mail`, `save_mail_attachment`, `wait_for_mail` (new mail), `find_recipients`, `save_mail_draft` (never sends), `list_calendar_events`, `create_calendar_event` (accounts whose owner allows MCP; mail text comes back as untrusted content) |
 
 Deleting is marked as destructive, so clients ask before calling it, and the
 tool itself refuses unless `confirm` repeats the exact name (for a table row,

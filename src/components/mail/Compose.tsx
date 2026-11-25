@@ -17,12 +17,13 @@ import { intl, t } from "@/app/i18n";
 import { usePermissions } from "@/app/permissions";
 import { Modal } from "@/components/ui/Modal";
 import { swapSignature, withSignature } from "@/domain/mail/compose";
+import { readSaveTo, useSaveFolders, writeSaveTo } from "@/app/mail/save-to";
 import { PERMISSION } from "@/domain/permissions";
 import {
-  mailArchiveTargets,
   mailAttachChoices,
   mailDiscardUploads,
   mailRecipients,
+  mailSaveDraft,
   mailSend,
 } from "@/server/mailbox.functions";
 
@@ -71,16 +72,29 @@ function split(value: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The message being written, in its own tab of the reading pane (like Outlook). It lives only in
+ * this tab until it is sent or kept as a draft: closing a tab with changes asks «¿Desea guardarlo
+ * como borrador?»; «No» throws away everything, the files uploaded for it included.
+ */
 export function Compose({
   draft,
   accounts,
-  onClose,
+  closing,
+  onCancelClose,
+  onClosed,
   onSent,
+  onTitle,
 }: {
   draft: Draft;
   accounts: Account[];
-  onClose: () => void;
+  /** The tab's close button was pressed. */
+  closing: boolean;
+  onCancelClose: () => void;
+  /** The tab may go: sent, kept as a draft, or thrown away. */
+  onClosed: (outcome: "discarded" | "draft") => void;
   onSent: (sentCopy: boolean) => void;
+  onTitle: (title: string) => void;
 }) {
   const usable = accounts.filter((account) => account.hasSecret);
   const first = usable.some((item) => item.id === draft.accountId)
@@ -115,11 +129,35 @@ export function Compose({
       text: swapSignature(form.text, signatureOf(form.accountId), signatureOf(accountId)),
     });
 
-  const close = () => {
+  const initial = useRef({ ...form });
+  const dirty =
+    files.length > 0 ||
+    uploads.length > 0 ||
+    (["to", "cc", "bcc", "subject", "text"] as const).some(
+      (name) => form[name] !== initial.current[name],
+    );
+
+  useEffect(() => onTitle(form.subject), [form.subject, onTitle]);
+
+  // Leaving the page with a message being written asks the browser to confirm.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const discard = () => {
     const keys = uploads.flatMap((item) => (item.key ? [item.key] : []));
     if (keys.length) void mailDiscardUploads({ data: { keys } }).catch(() => undefined);
-    onClose();
+    onClosed("discarded");
   };
+
+  // Closing without changes needs no question.
+  useEffect(() => {
+    if (closing && !dirty) discard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closing]);
 
   const attach = (list: File[], save: { portfolioId: string | null } | null) => {
     for (const file of list) {
@@ -184,6 +222,34 @@ export function Compose({
 
   const pending = uploads.some((item) => item.status === "uploading");
 
+  const payload = () => ({
+    accountId: form.accountId,
+    to: split(form.to),
+    cc: split(form.cc),
+    bcc: split(form.bcc),
+    subject: form.subject,
+    text: form.text,
+    attachments: files.map((file) => ({ docId: file.docId, shareId: file.shareId })),
+    uploads: uploads.flatMap((item) =>
+      item.status === "ready" && item.key
+        ? [{ key: item.key, name: item.name, mime: item.mime }]
+        : [],
+    ),
+    replyTo: form.replyTo,
+  });
+
+  const keepDraft = async () => {
+    setBusy(true);
+    setError("");
+    const answer = await mailSaveDraft({ data: payload() }).catch(() => null);
+    setBusy(false);
+    if (answer?.ok) onClosed("draft");
+    else {
+      onCancelClose();
+      setError(answer?.error ?? "No se pudo guardar el borrador.");
+    }
+  };
+
   const send = async () => {
     setBusy(true);
     setError("");
@@ -210,7 +276,40 @@ export function Compose({
   };
 
   return (
-    <Modal title={t("Nuevo mensaje")} onClose={close} wide keepOpen>
+    <div data-ui="mail-compose-pane" className="min-h-0 flex-1 overflow-y-auto p-4">
+      {closing && dirty ? (
+        <div
+          role="alertdialog"
+          data-ui="mail-close-draft"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-accent bg-accent/10 p-3 text-sm"
+        >
+          <span className="min-w-0 flex-1 font-medium">{t("¿Desea guardarlo como borrador?")}</span>
+          <button
+            type="button"
+            disabled={busy || pending}
+            onClick={() => void keepDraft()}
+            className="h-9 rounded-md bg-accent px-3 font-medium text-accent-fg disabled:opacity-50"
+          >
+            {busy ? t("Guardando…") : t("Sí")}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={discard}
+            className="h-9 rounded-md border border-line px-3 hover:bg-elevated"
+          >
+            {t("No")}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onCancelClose}
+            className="h-9 rounded-md px-3 text-muted hover:bg-elevated"
+          >
+            {t("Cancelar")}
+          </button>
+        </div>
+      ) : null}
       <form
         data-ui="mail-compose"
         className="flex flex-col gap-3"
@@ -290,6 +389,66 @@ export function Compose({
             className={field}
           />
         </label>
+        {files.length || uploads.length ? (
+          <div className="flex flex-col gap-1 text-sm">
+            {t("Adjuntos")}
+            <div
+              data-ui="mail-compose-files"
+              className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-inset/40 p-2"
+            >
+              {files.map((file) => (
+                <span
+                  key={`${file.shareId ?? ""}:${file.docId}`}
+                  data-attachment={file.title}
+                  className="inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border border-line bg-inset pr-1 pl-2 text-xs"
+                >
+                  <Paperclip className="size-3.5 shrink-0 text-faint" />
+                  <span className="truncate">{file.title}</span>
+                  <button
+                    type="button"
+                    aria-label={t("Quitar {0}", { 0: file.title })}
+                    onClick={() => setFiles(files.filter((item) => item !== file))}
+                    className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+              {uploads.map((item) => (
+                <span
+                  key={item.id}
+                  data-attachment={item.name}
+                  data-status={item.status}
+                  data-key={item.key}
+                  title={item.error ? t(item.error) : undefined}
+                  className={`inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border bg-inset pr-1 pl-2 text-xs ${item.status === "failed" ? "border-danger text-danger" : "border-line"}`}
+                >
+                  {item.status === "uploading" ? (
+                    <Loader2 className="size-3.5 shrink-0 animate-spin text-faint" />
+                  ) : (
+                    <HardDriveUpload className="size-3.5 shrink-0 text-faint" />
+                  )}
+                  <span className="truncate">{item.name}</span>
+                  <button
+                    type="button"
+                    aria-label={t("Quitar {0}", { 0: item.name })}
+                    disabled={item.status === "uploading"}
+                    onClick={() => {
+                      if (item.key)
+                        void mailDiscardUploads({ data: { keys: [item.key] } }).catch(
+                          () => undefined,
+                        );
+                      setUploads(uploads.filter((entry) => entry.id !== item.id));
+                    }}
+                    className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg disabled:opacity-40"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="relative">
           <textarea
             aria-label={t("Mensaje")}
@@ -339,54 +498,7 @@ export function Compose({
             </div>
           ) : null}
         </div>
-        <div data-ui="mail-compose-files" className="flex flex-wrap items-center gap-2">
-          {files.map((file) => (
-            <span
-              key={`${file.shareId ?? ""}:${file.docId}`}
-              data-attachment={file.title}
-              className="inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border border-line bg-inset pr-1 pl-2 text-xs"
-            >
-              <Paperclip className="size-3.5 shrink-0 text-faint" />
-              <span className="truncate">{file.title}</span>
-              <button
-                type="button"
-                aria-label={t("Quitar {0}", { 0: file.title })}
-                onClick={() => setFiles(files.filter((item) => item !== file))}
-                className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
-              >
-                <X className="size-3.5" />
-              </button>
-            </span>
-          ))}
-          {uploads.map((item) => (
-            <span
-              key={item.id}
-              data-attachment={item.name}
-              data-status={item.status}
-              title={item.error ? t(item.error) : undefined}
-              className={`inline-flex h-8 max-w-72 items-center gap-1.5 rounded-md border bg-inset pr-1 pl-2 text-xs ${item.status === "failed" ? "border-danger text-danger" : "border-line"}`}
-            >
-              {item.status === "uploading" ? (
-                <Loader2 className="size-3.5 shrink-0 animate-spin text-faint" />
-              ) : (
-                <HardDriveUpload className="size-3.5 shrink-0 text-faint" />
-              )}
-              <span className="truncate">{item.name}</span>
-              <button
-                type="button"
-                aria-label={t("Quitar {0}", { 0: item.name })}
-                disabled={item.status === "uploading"}
-                onClick={() => {
-                  if (item.key)
-                    void mailDiscardUploads({ data: { keys: [item.key] } }).catch(() => undefined);
-                  setUploads(uploads.filter((entry) => entry.id !== item.id));
-                }}
-                className="grid size-6 place-items-center rounded text-faint hover:bg-elevated hover:text-fg disabled:opacity-40"
-              >
-                <X className="size-3.5" />
-              </button>
-            </span>
-          ))}
+        <div data-ui="mail-compose-tools" className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setPicking(true)}
@@ -447,7 +559,7 @@ export function Compose({
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={close}
+            onClick={discard}
             className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated"
           >
             {t("Descartar")}
@@ -472,7 +584,7 @@ export function Compose({
           }}
         />
       ) : null}
-    </Modal>
+    </div>
   );
 }
 
@@ -595,49 +707,6 @@ export function Recipients({
       ) : null}
     </label>
   );
-}
-
-const SAVE_KEY = "grafito.mail.save-to";
-
-/** Where files kept from a message go, remembered in this browser (empty: Carpeta Personal). */
-function readSaveTo(): string {
-  try {
-    return window.localStorage.getItem(SAVE_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function writeSaveTo(value: string): void {
-  try {
-    window.localStorage.setItem(SAVE_KEY, value);
-  } catch {
-    /* Only a convenience. */
-  }
-}
-
-/** The person's portfolios with their paths, for «Guardar en». */
-function useSaveFolders(): { id: string; path: string }[] {
-  const [folders, setFolders] = useState<{ id: string; path: string }[]>([]);
-  useEffect(() => {
-    void mailArchiveTargets()
-      .then((answer) => {
-        const byId = new Map(answer.portfolios.map((item) => [item.id, item]));
-        const path = (id: string, seen = 0): string => {
-          const item = byId.get(id);
-          if (!item || seen > 20) return "";
-          const parent = item.parentId ? path(item.parentId, seen + 1) : "";
-          return parent ? `${parent} › ${item.name}` : item.name;
-        };
-        setFolders(
-          answer.portfolios
-            .map((item) => ({ id: item.id, path: path(item.id) }))
-            .sort((a, b) => a.path.localeCompare(b.path, intl())),
-        );
-      })
-      .catch(() => undefined);
-  }, []);
-  return folders;
 }
 
 const MAX_DROPPED = 50;

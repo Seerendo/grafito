@@ -159,6 +159,8 @@ export interface MailConnector {
    * folder; false when that copy could not be saved, the message itself went out).
    */
   send(message: OutgoingMessage): Promise<{ sentCopy: boolean }>;
+  /** Keep a message being written in the account's Drafts (RFC 5322 source). */
+  saveDraft(raw: Buffer): Promise<void>;
   /** Sign in and check the account can be read. */
   test(): Promise<void>;
   /** One bounded pass: folders, new messages, flag changes, deletions. */

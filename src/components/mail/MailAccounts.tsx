@@ -24,7 +24,13 @@ type State = Extract<Awaited<ReturnType<typeof mailState>>, { ok: true }>;
 type Account = State["accounts"][number];
 
 const INTERVALS = [120, 300, 600, 1800, 3600, 21_600];
-const HISTORY = [7, 30, 90, 180, 365, 730, 3650];
+const HISTORY = [0, 7, 30, 90, 180, 365, 730, 3650];
+
+const allowedHistory = (max: number) =>
+  HISTORY.filter((days) => (max === 0 ? true : days > 0 && days <= max));
+
+const historyLabel = (days: number) =>
+  days === 0 ? t("Todo el historial") : t("Últimos {0} días", { 0: days });
 
 const input = "h-10 w-full rounded-md border border-line bg-inset px-3 text-sm";
 
@@ -113,7 +119,7 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
     smtpHost: "",
     smtpPort: 587,
     password: "",
-    historyDays: Math.min(30, state.limits.maxHistoryDays),
+    historyDays: state.limits.maxHistoryDays,
     intervalSeconds: 300,
     attachmentPolicy: "demand" as "demand" | "small",
   });
@@ -266,9 +272,9 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
                 onChange={(event) => setForm({ ...form, historyDays: Number(event.target.value) })}
                 className={input}
               >
-                {HISTORY.filter((days) => days <= state.limits.maxHistoryDays).map((days) => (
+                {allowedHistory(state.limits.maxHistoryDays).map((days) => (
                   <option key={days} value={days}>
-                    {t("Últimos {0} días", { 0: days })}
+                    {historyLabel(days)}
                   </option>
                 ))}
               </select>
@@ -433,6 +439,21 @@ function AccountCard({
             {INTERVALS.filter((seconds) => seconds >= state.limits.minInterval).map((seconds) => (
               <option key={seconds} value={seconds}>
                 {t("Cada {0} min", { 0: seconds / 60 })}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          {t("Historial")}
+          <select
+            aria-label={t("Historial")}
+            value={account.historyDays}
+            onChange={(event) => void update({ historyDays: Number(event.target.value) })}
+            className={input}
+          >
+            {allowedHistory(state.limits.maxHistoryDays).map((days) => (
+              <option key={days} value={days}>
+                {historyLabel(days)}
               </option>
             ))}
           </select>

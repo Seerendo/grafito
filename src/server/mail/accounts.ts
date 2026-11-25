@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Sql } from "@/lib/db";
-import { domainAllowed, historyDays, syncInterval, type MailPolicy } from "@/domain/mail/policy";
+import {
+  domainAllowed,
+  historyDays,
+  syncInterval,
+  widerHistory,
+  type MailPolicy,
+} from "@/domain/mail/policy";
 import { GmailConnector } from "./providers/gmail";
 import { ImapConnector } from "./providers/imap";
 import { MicrosoftConnector } from "./providers/microsoft";
@@ -304,7 +310,7 @@ export async function saveOAuthAccount(
     insert into mail_account (id, user_id, provider, email, display_name, secret, is_default, sync_interval_seconds,
       history_days, status, next_sync_at, created_at, updated_at)
     values (${id}, ${userId}, ${input.provider}, ${input.email}, ${input.email}, ${sealSecret(input.secret)}, ${first},
-      ${policy.defaultIntervalSeconds}, ${Math.min(30, policy.maxHistoryDays)}, 'connected', ${now}, ${now}, ${now})
+      ${policy.defaultIntervalSeconds}, ${historyDays(policy, 0)}, 'connected', ${now}, ${now}, ${now})
   `;
   await enqueue(sql, { userId, accountId: id, kind: "sync", priority: 5 });
   const created = await getAccount(sql, userId, id);
@@ -356,6 +362,18 @@ export async function updateAccount(
       where id = ${id} and user_id = ${userId}
     `;
     await sql`update mail_job set run_after = ${now} where account_id = ${id} and state = 'queued'`;
+    await enqueue(sql, { userId, accountId: id, kind: "sync", priority: 5 });
+  }
+  // A wider window: every folder looks back again for what it did not copy yet.
+  if (
+    changes.historyDays !== undefined &&
+    widerHistory(Number(found.history_days), historyDays(policy, changes.historyDays))
+  ) {
+    await sql`
+      update mail_sync_state set backfill_done = false, backfill_cursor = null,
+        delta_link = case when ${found.provider === "microsoft"} then null else delta_link end
+      where account_id = ${id}
+    `;
     await enqueue(sql, { userId, accountId: id, kind: "sync", priority: 5 });
   }
   if (changes.isDefault)

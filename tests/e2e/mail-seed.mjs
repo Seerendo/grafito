@@ -263,6 +263,55 @@ try {
         console.log(index + 1, Math.round((Date.now() - started) / 1000), "s");
     }
     console.log("bulk seeded", count);
+  } else if (mode === "invite") {
+    // A meeting invitation (iMIP: text/calendar METHOD:REQUEST) from Carlos to this user.
+    const uid = `${extra}@prueba.test`;
+    const day = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10).replace(/-/g, "");
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//prueba//ES",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      `UID:${uid}`,
+      `DTSTAMP:${day}T080000Z`,
+      `DTSTART:${day}T140000Z`,
+      `DTEND:${day}T150000Z`,
+      "SUMMARY:Revisión del proyecto",
+      "LOCATION:Sala 4",
+      "ORGANIZER;CN=Carlos Mena:mailto:carlos.mena@prueba.test",
+      `ATTENDEE;CN=Ana;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${user}`,
+      "SEQUENCE:0",
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "",
+    ].join("\r\n");
+    const boundary = `alt-${Date.now()}`;
+    await c.append(
+      "INBOX",
+      [
+        "From: Carlos Mena <carlos.mena@prueba.test>",
+        `To: ${user}`,
+        "Subject: Invitación: Revisión del proyecto",
+        `Date: ${date(1)}`,
+        `Message-ID: ${mid()}`,
+        "MIME-Version: 1.0",
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        `--${boundary}`,
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        "Te invito a la revisión del proyecto.",
+        `--${boundary}`,
+        "Content-Type: text/calendar; charset=utf-8; method=REQUEST",
+        "Content-Transfer-Encoding: base64",
+        "",
+        b64(Buffer.from(ics, "utf8")),
+        `--${boundary}--`,
+        "",
+      ].join("\r\n"),
+    );
+    console.log("invited", uid);
   } else if (mode === "one") {
     await c.append("INBOX", plain({ subject: extra, text: `Mensaje nuevo: ${extra}` }));
     console.log("appended");

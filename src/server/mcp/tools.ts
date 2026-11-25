@@ -9,7 +9,7 @@ import { noteTools } from "./tools/notes.ts";
 import { organizeTools } from "./tools/organize.ts";
 import { tableTools } from "./tools/tables.ts";
 import { graphTools } from "./tools/graph.ts";
-import { mailTools } from "./tools/mail.ts";
+import { mailMoreTools, mailTools } from "./tools/mail.ts";
 import type { Tool } from "./tools/tool.ts";
 import type { ToolCall, ToolSpec } from "./types.ts";
 
@@ -25,6 +25,7 @@ export const ALL_TOOLS: Tool[] = [
   ...tableTools,
   ...graphTools,
   ...mailTools,
+  ...mailMoreTools,
 ];
 
 function capsFor(profile: UserProfile): VaultCaps {

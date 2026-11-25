@@ -8,17 +8,19 @@ import {
   Forward,
   MailOpen,
   Reply,
+  CalendarPlus,
+  Flag,
   ReplyAll,
   Paperclip,
-  Star,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { intl, t } from "@/app/i18n";
 import { mailFrameDocument, sanitizeMailHtml } from "@/app/mail/sanitize";
 import { useVault } from "@/app/vault/store";
 import { riskyAttachment } from "@/domain/mail/message";
 import { Modal } from "@/components/ui/Modal";
 import type { Draft } from "./Compose";
+import { InvitationCard } from "./Invitation";
 import { PdfView } from "@/components/vault/PdfView";
 import {
   mailArchive,
@@ -72,15 +74,27 @@ async function fetchAttachment(
   }
 }
 
+/** What a right click on the list asked for, done once the message is open. */
+export type Intent = "reply" | "replyAll" | "forward" | "meeting" | "archive";
+
+export type MeetingPrefill = { title: string; attendees: string[]; description: string };
+
 export function MessageView({
   id,
   onChanged,
   onCompose,
+  onSchedule,
+  intent = null,
+  onIntentDone,
 }: {
   id: string;
   onChanged: (change: { seen?: boolean; flagged?: boolean; hidden?: boolean }) => void;
   onCompose: (draft: Draft) => void;
+  onSchedule: (prefill: MeetingPrefill) => void;
+  intent?: Intent | null;
+  onIntentDone?: () => void;
 }) {
+  const perform = useRef<((intent: Intent) => void) | null>(null);
   const [message, setMessage] = useState<Detail | null>(null);
   const [error, setError] = useState("");
   const [remote, setRemote] = useState(false);
@@ -139,6 +153,14 @@ export function MessageView({
     };
   }, [message, remote, cid]);
 
+  useEffect(() => {
+    if (!message || !intent) return;
+    perform.current?.(intent);
+    onIntentDone?.();
+    // Only when a new intent arrives for a loaded message.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [message, intent]);
+
   if (error) return <p className="p-6 text-sm text-danger">{t(error)}</p>;
   if (!message) return <p className="p-6 text-sm text-faint">{t("Cargando…")}</p>;
 
@@ -196,6 +218,18 @@ export function MessageView({
       replyTo: message.id,
     });
   };
+  // A meeting about this message: its subject without Re:/Rv:, its people, its text.
+  const meeting = () => {
+    const own = message.account.email.toLowerCase();
+    const people = [message.from, ...message.to, ...message.cc]
+      .map((item) => item.address.toLowerCase())
+      .filter((item, index, all) => item && item !== own && all.indexOf(item) === index);
+    onSchedule({
+      title: message.subject.replace(/^((re|rv|fw|fwd)\s*:\s*)+/i, "").trim(),
+      attendees: people,
+      description: message.text.slice(0, 4000),
+    });
+  };
   const forward = () =>
     onCompose({
       accountId: message.account.id,
@@ -215,6 +249,14 @@ export function MessageView({
       ].join("\n"),
       replyTo: null,
     });
+
+  perform.current = (wanted) => {
+    if (wanted === "reply") reply(false);
+    else if (wanted === "replyAll") reply(true);
+    else if (wanted === "forward") forward();
+    else if (wanted === "meeting") meeting();
+    else setArchiving({ attachments: [] });
+  };
 
   return (
     <article data-ui="mail-message" className="flex min-h-0 flex-1 flex-col">
@@ -275,12 +317,20 @@ export function MessageView({
           </button>
           <button
             type="button"
+            onClick={meeting}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 hover:bg-elevated"
+          >
+            <CalendarPlus className="size-4" />
+            {t("Programar reunión")}
+          </button>
+          <button
+            type="button"
             onClick={() => void mark({ flagged: !message.flagged })}
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 hover:bg-elevated"
             aria-pressed={message.flagged}
           >
-            <Star className={`size-4 ${message.flagged ? "fill-current text-accent" : ""}`} />
-            {message.flagged ? t("Quitar destacado") : t("Destacar")}
+            <Flag className={`size-4 ${message.flagged ? "fill-current text-danger" : ""}`} />
+            {message.flagged ? t("Quitar ficha") : t("Fichar")}
           </button>
           <button
             type="button"
@@ -314,6 +364,11 @@ export function MessageView({
           </p>
         ) : null}
       </header>
+      {message.attachments.some(
+        (item) => /calendar/i.test(item.contentType) || /\.ics$/i.test(item.filename),
+      ) ? (
+        <InvitationCard messageId={message.id} own={message.account.email} />
+      ) : null}
       {files.length ? (
         <ul data-ui="mail-attachments" className="flex flex-col gap-1 border-b border-line p-3">
           {files.map((attachment) => {

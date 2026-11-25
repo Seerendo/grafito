@@ -124,7 +124,13 @@ export function partsOf(node: MessageStructureObject | undefined): Parts {
     }
     found.attachments.push({
       providerAttachmentId: part,
-      filename: filename || (type === "message/rfc822" ? "mensaje.eml" : ""),
+      filename:
+        filename ||
+        (type === "message/rfc822"
+          ? "mensaje.eml"
+          : type === "text/calendar"
+            ? "invitacion.ics"
+            : ""),
       contentType: type || "application/octet-stream",
       size: item.size ?? 0,
       contentId: (item.id ?? "").replace(/^<|>$/g, ""),
@@ -254,6 +260,17 @@ export class ImapConnector implements MailConnector {
     }
   }
 
+  async saveDraft(raw: Buffer): Promise<void> {
+    const client = await this.open();
+    const drafts = (await this.folders(client)).find((item) => item.specialUse === "drafts");
+    if (!drafts) throw new MailError("permanent", "La cuenta no tiene carpeta de borradores.");
+    try {
+      await client.append(drafts.path, raw, ["\\Draft", "\\Seen"]);
+    } catch (error) {
+      throw classify(error);
+    }
+  }
+
   private async folders(client: ImapFlow): Promise<RemoteFolder[]> {
     const listed = await client.list();
     return listed
@@ -352,9 +369,12 @@ export class ImapConnector implements MailConnector {
     // The initial window, newest first, resuming below the cursor.
     let backfillMore = false;
     if (!state.backfillDone && timeLeft() && budget() > 0) {
-      const since = new Date(Date.now() - this.account.historyDays * 86_400_000);
+      const since =
+        this.account.historyDays > 0
+          ? new Date(Date.now() - this.account.historyDays * 86_400_000)
+          : null;
       const cursor = state.backfillCursor ? Number(state.backfillCursor) : Infinity;
-      const window = ((await client.search({ since }, { uid: true })) || [])
+      const window = ((await client.search(since ? { since } : { all: true }, { uid: true })) || [])
         .filter((uid) => uid <= state.lastUid && uid < cursor)
         .sort((a, b) => b - a);
       while (window.length > 0 && timeLeft() && budget() > 0) {

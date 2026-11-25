@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Plus, RefreshCw, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { intl, t } from "@/app/i18n";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -7,10 +7,13 @@ import {
   mailDeleteEvent,
   mailEvents,
   mailFindCalendars,
+  mailRespondEvent,
   mailSaveEvent,
   mailShowCalendar,
 } from "@/server/mailbox.functions";
 import { Recipients } from "./Compose";
+import { eventStyle, type Answer } from "@/app/mail/meeting-style";
+import { AnswerBadge, AnswerButtons, EventIcons } from "./meeting";
 
 /**
  * Agenda: the calendars of the person's mail accounts (CalDAV: Zimbra and others), month or
@@ -68,6 +71,209 @@ function covers(event: Event, day: Date): boolean {
   );
 }
 
+type Mode = "day" | "week" | "month" | "list";
+
+const MODES: { id: Mode; label: string }[] = [
+  { id: "day", label: "Día" },
+  { id: "week", label: "Semana" },
+  { id: "month", label: "Mes" },
+  { id: "list", label: "Lista" },
+];
+
+/** One event in a day cell or a list: its color and look follow this account's answer. */
+function EventPill({
+  event,
+  color,
+  wide = false,
+  onOpen,
+}: {
+  event: Event;
+  color: string;
+  wide?: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-event={event.title}
+      data-answer={event.mine || undefined}
+      onClick={onOpen}
+      title={event.title}
+      className={`flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-left text-xs hover:brightness-110 ${wide ? "h-9 w-full text-sm" : ""}`}
+      style={eventStyle(event.mine, color)}
+    >
+      {event.allDay ? null : <span className="shrink-0 text-faint">{time(event.start)}</span>}
+      <span
+        className={`min-w-0 flex-1 truncate ${event.mine === "DECLINED" ? "line-through" : ""}`}
+      >
+        {event.title || t("(sin título)")}
+      </span>
+      <EventIcons
+        recurring={event.recurring}
+        meeting={event.attendees.length > 0}
+        mine={event.mine}
+      />
+      {wide && event.location ? (
+        <span className="truncate text-xs text-faint">{event.location}</span>
+      ) : null}
+    </button>
+  );
+}
+
+const HOUR = 44;
+
+/** Day and week views: all-day events on top, the others placed by their hours. */
+function TimeGrid({
+  days,
+  events,
+  today,
+  colorOf,
+  onOpen,
+  onCreate,
+}: {
+  days: Date[];
+  events: Events;
+  today: string;
+  colorOf: (id: string) => string;
+  onOpen: (event: Event) => void;
+  onCreate: (day: Date) => void;
+}) {
+  const hours = Array.from({ length: 24 }, (_, index) => index);
+  const columns = `3.5rem repeat(${days.length}, minmax(0, 1fr))`;
+  // The working day in view first (from 7:00).
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 7 * HOUR });
+  }, []);
+  return (
+    <div
+      ref={scroller}
+      className="min-h-0 flex-1 overflow-y-auto"
+      data-mode={days.length === 1 ? "day" : "week"}
+    >
+      <div
+        className="sticky top-0 z-10 grid border-b border-line bg-surface"
+        style={{ gridTemplateColumns: columns }}
+      >
+        <span />
+        {days.map((day) => {
+          const key = dateKey(day);
+          return (
+            <div key={key} className="flex flex-col gap-1 border-l border-line p-1.5">
+              <span
+                className={`text-xs capitalize ${key === today ? "font-semibold text-accent" : "text-muted"}`}
+              >
+                {day.toLocaleDateString(intl(), { weekday: "short", day: "numeric" })}
+              </span>
+              {events
+                .filter((event) => event.allDay && covers(event, day))
+                .map((event) => (
+                  <EventPill
+                    key={`${event.id}:${key}`}
+                    event={event}
+                    color={colorOf(event.calendarId)}
+                    onOpen={() => onOpen(event)}
+                  />
+                ))}
+            </div>
+          );
+        })}
+      </div>
+      <div className="relative grid" style={{ gridTemplateColumns: columns }}>
+        <div>
+          {hours.map((hour) => (
+            <div
+              key={hour}
+              style={{ height: HOUR }}
+              className="pr-1 text-right text-[0.65rem] text-faint"
+            >
+              {String(hour).padStart(2, "0")}:00
+            </div>
+          ))}
+        </div>
+        {days.map((day) => {
+          const key = dateKey(day);
+          const from = day.getTime();
+          const timed = events
+            .filter((event) => !event.allDay && covers(event, day))
+            .map((event) => ({
+              event,
+              top: Math.max(0, (event.start - from) / 3_600_000),
+              bottom: Math.min(
+                24,
+                (Math.max(event.end, event.start + 1_800_000) - from) / 3_600_000,
+              ),
+            }))
+            .sort((a, b) => a.top - b.top);
+          // Overlapping events share the column side by side.
+          const lanes: number[] = [];
+          const placed = timed.map((item) => {
+            let lane = lanes.findIndex((end) => end <= item.top);
+            if (lane === -1) {
+              lane = lanes.length;
+              lanes.push(item.bottom);
+            } else lanes[lane] = item.bottom;
+            return { ...item, lane };
+          });
+          const width = 100 / Math.max(1, lanes.length);
+          return (
+            <div
+              key={key}
+              data-day={key}
+              onDoubleClick={() => onCreate(day)}
+              className={`relative border-l border-line ${key === today ? "bg-accent/5" : ""}`}
+              style={{ height: HOUR * 24 }}
+            >
+              {hours.map((hour) => (
+                <div
+                  key={hour}
+                  style={{ top: hour * HOUR }}
+                  className="absolute right-0 left-0 border-t border-line/60"
+                />
+              ))}
+              {placed.map(({ event, top, bottom, lane }) => (
+                <button
+                  key={`${event.id}:${key}`}
+                  type="button"
+                  data-event={event.title}
+                  data-answer={event.mine || undefined}
+                  onClick={() => onOpen(event)}
+                  title={event.title}
+                  className="absolute flex flex-col overflow-hidden rounded px-1.5 py-0.5 text-left text-xs hover:brightness-110"
+                  style={{
+                    top: top * HOUR,
+                    height: Math.max(20, (bottom - top) * HOUR - 2),
+                    left: `${lane * width}%`,
+                    width: `calc(${width}% - 2px)`,
+                    ...eventStyle(event.mine, colorOf(event.calendarId)),
+                  }}
+                >
+                  <span className="flex items-center gap-1">
+                    <span
+                      className={`min-w-0 flex-1 truncate font-medium ${event.mine === "DECLINED" ? "line-through" : ""}`}
+                    >
+                      {event.title || t("(sin título)")}
+                    </span>
+                    <EventIcons
+                      recurring={event.recurring}
+                      meeting={event.attendees.length > 0}
+                      mine={event.mine}
+                    />
+                  </span>
+                  <span className="truncate text-faint">
+                    {time(event.start)} – {time(event.end)}
+                    {event.location ? ` · ${event.location}` : ""}
+                  </span>
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function Agenda({
   accounts,
   className,
@@ -79,7 +285,7 @@ export function Agenda({
 }) {
   const [calendars, setCalendars] = useState<Calendars | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
-  const [mode, setMode] = useState<"month" | "week">("month");
+  const [mode, setMode] = useState<Mode>("month");
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [events, setEvents] = useState<Events>([]);
   const [loading, setLoading] = useState(false);
@@ -88,9 +294,10 @@ export function Agenda({
   const [searching, setSearching] = useState(false);
 
   const range = useMemo(() => {
-    if (mode === "week") {
+    if (mode === "day") return { from: anchor, to: addDays(anchor, 1), days: 1 };
+    if (mode === "week" || mode === "list") {
       const from = startOfWeek(anchor);
-      return { from, to: addDays(from, 7), days: 7 };
+      return { from, to: addDays(from, mode === "list" ? 14 : 7), days: mode === "list" ? 14 : 7 };
     }
     const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
     const from = startOfWeek(first);
@@ -156,14 +363,20 @@ export function Agenda({
   };
   const move = (step: number) =>
     setAnchor((current) =>
-      mode === "week"
-        ? addDays(current, step * 7)
-        : new Date(current.getFullYear(), current.getMonth() + step, 1),
+      mode === "day"
+        ? addDays(current, step)
+        : mode === "week"
+          ? addDays(current, step * 7)
+          : mode === "list"
+            ? addDays(current, step * 14)
+            : new Date(current.getFullYear(), current.getMonth() + step, 1),
     );
   const title =
     mode === "month"
       ? anchor.toLocaleDateString(intl(), { month: "long", year: "numeric" })
-      : `${range.from.toLocaleDateString(intl(), { day: "numeric", month: "short" })} – ${addDays(range.to, -1).toLocaleDateString(intl(), { day: "numeric", month: "short", year: "numeric" })}`;
+      : mode === "day"
+        ? anchor.toLocaleDateString(intl(), { dateStyle: "full" })
+        : `${range.from.toLocaleDateString(intl(), { day: "numeric", month: "short" })} – ${addDays(range.to, -1).toLocaleDateString(intl(), { day: "numeric", month: "short", year: "numeric" })}`;
   const days = Array.from({ length: range.days }, (_, index) => addDays(range.from, index));
   const today = dateKey(new Date());
   const writable = (calendars ?? []).filter((item) => item.writable && item.shown);
@@ -212,15 +425,15 @@ export function Agenda({
           {title}
         </h2>
         <div className="flex rounded-md border border-line text-sm">
-          {(["week", "month"] as const).map((item) => (
+          {MODES.map((item) => (
             <button
-              key={item}
+              key={item.id}
               type="button"
-              aria-pressed={mode === item}
-              onClick={() => setMode(item)}
-              className={`h-9 px-3 ${mode === item ? "bg-elevated text-fg" : "text-muted"}`}
+              aria-pressed={mode === item.id}
+              onClick={() => setMode(item.id)}
+              className={`h-9 px-3 first:rounded-l-md last:rounded-r-md ${mode === item.id ? "bg-elevated text-fg" : "text-muted hover:text-fg"}`}
             >
-              {item === "week" ? t("Semana") : t("Mes")}
+              {t(item.label)}
             </button>
           ))}
         </div>
@@ -273,12 +486,15 @@ export function Agenda({
       ) : null}
       {calendars === null ? (
         <p className="p-6 text-sm text-faint">{t("Cargando…")}</p>
-      ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-7 overflow-y-auto" data-mode={mode}>
+      ) : mode === "month" ? (
+        <div
+          className="grid min-h-0 flex-1 auto-rows-fr grid-cols-7 overflow-y-auto"
+          data-mode={mode}
+        >
           {names.map((name) => (
             <p
               key={name}
-              className="sticky top-0 z-10 border-b border-line bg-surface px-2 py-1 text-xs text-faint capitalize"
+              className="sticky top-0 z-10 border-b border-line bg-surface px-2 py-1.5 text-xs font-medium text-faint capitalize"
             >
               {name}
             </p>
@@ -286,40 +502,38 @@ export function Agenda({
           {days.map((day) => {
             const key = dateKey(day);
             const items = events.filter((event) => covers(event, day));
-            const outside = mode === "month" && day.getMonth() !== anchor.getMonth();
-            const limit = mode === "month" ? 3 : 50;
+            const outside = day.getMonth() !== anchor.getMonth();
+            const limit = 3;
             return (
               <div
                 key={key}
                 data-day={key}
                 onDoubleClick={() => writable.length && setCreating(day)}
-                className={`flex flex-col gap-0.5 border-r border-b border-line p-1 ${mode === "month" ? "min-h-24" : "min-h-80"} ${outside ? "bg-inset/40" : ""}`}
+                className={`flex min-h-28 flex-col gap-1 border-r border-b border-line p-1.5 ${outside ? "bg-inset/40" : ""} ${key === today ? "bg-accent/5" : ""}`}
               >
-                <span
-                  className={`self-start rounded-full px-1.5 text-xs ${key === today ? "bg-accent text-accent-fg" : outside ? "text-faint" : "text-muted"}`}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("day");
+                    setAnchor(day);
+                  }}
+                  className={`grid size-6 place-items-center self-start rounded-full text-xs ${key === today ? "bg-accent font-semibold text-accent-fg" : outside ? "text-faint" : "text-muted hover:bg-elevated"}`}
                 >
                   {day.getDate()}
-                </span>
+                </button>
                 {items.slice(0, limit).map((event) => (
-                  <button
+                  <EventPill
                     key={`${event.id}:${key}`}
-                    type="button"
-                    data-event={event.title}
-                    onClick={() => setOpen(event)}
-                    className="flex min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left text-xs hover:bg-elevated"
-                    style={{ borderLeft: `3px solid ${colorOf(event.calendarId)}` }}
-                  >
-                    {event.allDay ? null : (
-                      <span className="shrink-0 text-faint">{time(event.start)}</span>
-                    )}
-                    <span className="truncate">{event.title || t("(sin título)")}</span>
-                  </button>
+                    event={event}
+                    color={colorOf(event.calendarId)}
+                    onOpen={() => setOpen(event)}
+                  />
                 ))}
                 {items.length > limit ? (
                   <button
                     type="button"
                     onClick={() => {
-                      setMode("week");
+                      setMode("day");
                       setAnchor(day);
                     }}
                     className="px-1 text-left text-xs text-faint hover:text-fg"
@@ -331,6 +545,45 @@ export function Agenda({
             );
           })}
         </div>
+      ) : mode === "list" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto" data-mode={mode}>
+          {days
+            .map((day) => ({ day, items: events.filter((event) => covers(event, day)) }))
+            .filter((group) => group.items.length)
+            .map((group) => (
+              <section key={dateKey(group.day)} className="border-b border-line">
+                <h3
+                  className={`sticky top-0 bg-surface px-4 py-2 text-xs font-semibold capitalize ${dateKey(group.day) === today ? "text-accent" : "text-muted"}`}
+                >
+                  {group.day.toLocaleDateString(intl(), { dateStyle: "full" })}
+                </h3>
+                <ul className="flex flex-col gap-1 px-3 pb-3">
+                  {group.items.map((event) => (
+                    <li key={`${event.id}:${dateKey(group.day)}`}>
+                      <EventPill
+                        event={event}
+                        color={colorOf(event.calendarId)}
+                        wide
+                        onOpen={() => setOpen(event)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          {events.length === 0 ? (
+            <p className="p-6 text-center text-sm text-faint">{t("No hay eventos.")}</p>
+          ) : null}
+        </div>
+      ) : (
+        <TimeGrid
+          days={days}
+          events={events}
+          today={today}
+          colorOf={colorOf}
+          onOpen={setOpen}
+          onCreate={(day) => writable.length && setCreating(day)}
+        />
       )}
       {open ? (
         <EventDialog
@@ -338,7 +591,9 @@ export function Agenda({
           calendars={writable}
           calendarName={calendars?.find((item) => item.id === open.calendarId)?.name ?? ""}
           editable={Boolean(
-            calendars?.find((item) => item.id === open.calendarId)?.writable && !open.recurring,
+            calendars?.find((item) => item.id === open.calendarId)?.writable &&
+            !open.recurring &&
+            open.organizerMe,
           )}
           onClose={() => setOpen(null)}
           onSaved={() => {
@@ -380,6 +635,7 @@ function at(day: string, clock: string): number {
 function EventDialog({
   event,
   day,
+  prefill,
   calendars,
   calendarName,
   editable,
@@ -388,11 +644,13 @@ function EventDialog({
 }: {
   event?: Event;
   day?: Date;
+  /** A meeting started from a message: its subject, people and text. */
+  prefill?: { title: string; attendees: string[]; description: string };
   calendars: Calendar[];
   calendarName: string;
   editable: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (invited: number) => void;
 }) {
   const startDay = event
     ? event.allDay
@@ -406,15 +664,17 @@ function EventDialog({
     : startDay;
   const [form, setForm] = useState({
     calendarId: event?.calendarId ?? calendars[0]?.id ?? "",
-    title: event?.title ?? "",
+    title: event?.title ?? prefill?.title ?? "",
     allDay: event?.allDay ?? false,
     startDay,
     endDay,
     startTime: event && !event.allDay ? hhmm(event.start) : "09:00",
     endTime: event && !event.allDay ? hhmm(event.end) : "10:00",
     location: event?.location ?? "",
-    description: event?.description ?? "",
-    attendees: (event?.attendees ?? []).map((item) => item.address).join(", "),
+    description: event?.description ?? prefill?.description ?? "",
+    attendees: event
+      ? event.attendees.map((item) => item.address).join(", ")
+      : (prefill?.attendees ?? []).join(", "),
   });
   const [editing, setEditing] = useState(!event);
   const [busy, setBusy] = useState(false);
@@ -445,8 +705,19 @@ function EventDialog({
       },
     }).catch(() => null);
     setBusy(false);
-    if (answer?.ok) onSaved();
+    if (answer?.ok) onSaved(answer.invited);
     else setError(answer?.error ?? "No se pudo guardar.");
+  };
+  const respond = async (value: Answer) => {
+    if (!event) return;
+    setBusy(true);
+    setError("");
+    const answer = await mailRespondEvent({
+      data: { calendarId: event.calendarId, href: event.href, etag: event.etag, answer: value },
+    }).catch(() => null);
+    setBusy(false);
+    if (answer?.ok) onSaved(0);
+    else setError(answer?.error ?? "No se pudo responder.");
   };
   const remove = async () => {
     if (!event) return;
@@ -455,7 +726,7 @@ function EventDialog({
       data: { calendarId: event.calendarId, href: event.href, etag: event.etag },
     }).catch(() => null);
     setBusy(false);
-    if (answer?.ok) onSaved();
+    if (answer?.ok) onSaved(0);
     else setError(answer?.error ?? "No se pudo borrar.");
   };
   const input = "h-10 w-full rounded-md border border-line bg-inset px-3 text-sm";
@@ -470,7 +741,21 @@ function EventDialog({
       <Modal title={event.title || t("(sin título)")} onClose={onClose}>
         <div data-ui="agenda-event" className="flex flex-col gap-2 text-sm">
           <p>{when}</p>
-          <p className="text-xs text-faint">{calendarName}</p>
+          <p className="flex items-center gap-2 text-xs text-faint">
+            {calendarName}
+            <EventIcons
+              recurring={event.recurring}
+              meeting={event.attendees.length > 0}
+              mine={event.mine}
+            />
+          </p>
+          {event.mine ? (
+            <AnswerButtons
+              mine={event.mine}
+              busy={busy}
+              onAnswer={(value) => void respond(value)}
+            />
+          ) : null}
           {event.location ? (
             <p className="flex items-center gap-1.5">
               <MapPin className="size-4 text-faint" />
@@ -480,19 +765,16 @@ function EventDialog({
           {event.attendees.length ? (
             <div className="flex items-start gap-1.5">
               <Users className="mt-0.5 size-4 shrink-0 text-faint" />
-              <ul>
+              <ul className="flex flex-col gap-0.5">
+                {event.organizer ? (
+                  <li className="text-xs text-faint">
+                    {t("Organiza")}: {event.organizer}
+                  </li>
+                ) : null}
                 {event.attendees.map((item) => (
-                  <li key={item.address}>
-                    {item.name || item.address}{" "}
-                    <span className="text-xs text-faint">
-                      {t(
-                        {
-                          ACCEPTED: "Acepta",
-                          DECLINED: "Rechaza",
-                          TENTATIVE: "Quizás",
-                        }[item.status] ?? "Sin respuesta",
-                      )}
-                    </span>
+                  <li key={item.address} className="flex flex-wrap items-center gap-2">
+                    {item.name || item.address}
+                    <AnswerBadge status={item.status} />
                   </li>
                 ))}
               </ul>
@@ -555,7 +837,11 @@ function EventDialog({
   }
 
   return (
-    <Modal title={event ? t("Editar evento") : t("Nuevo evento")} onClose={onClose} keepOpen>
+    <Modal
+      title={event ? t("Editar evento") : prefill ? t("Programar reunión") : t("Nuevo evento")}
+      onClose={onClose}
+      keepOpen
+    >
       <form
         data-ui="agenda-form"
         className="flex flex-col gap-3 text-sm"
@@ -703,5 +989,70 @@ function EventDialog({
         </div>
       </form>
     </Modal>
+  );
+}
+
+/**
+ * «Programar reunión» from a message: the event form with the message's subject and people,
+ * in a calendar of the person's accounts (looked up first when none is known yet).
+ */
+export function ScheduleMeeting({
+  accounts,
+  prefill,
+  onClose,
+  onDone,
+}: {
+  accounts: Account[];
+  prefill: { title: string; attendees: string[]; description: string };
+  onClose: () => void;
+  onDone: (invited: number) => void;
+}) {
+  const [calendars, setCalendars] = useState<Calendars | null>(null);
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      let listed = await mailCalendars().catch(() => null);
+      if (listed?.ok && listed.calendars.length === 0) {
+        for (const account of accounts.filter(
+          (item) => item.provider === "imap" && item.hasSecret,
+        )) {
+          const found = await mailFindCalendars({ data: { accountId: account.id } }).catch(
+            () => null,
+          );
+          if (!found?.ok && found?.error) setProblem(found.error);
+        }
+        listed = await mailCalendars().catch(() => null);
+      }
+      if (alive) setCalendars(listed?.ok ? listed.calendars.filter((item) => item.writable) : []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [accounts]);
+  if (calendars === null)
+    return (
+      <Modal title={t("Programar reunión")} onClose={onClose}>
+        <p className="text-sm text-faint">{t("Cargando…")}</p>
+      </Modal>
+    );
+  if (calendars.length === 0)
+    return (
+      <Modal title={t("Programar reunión")} onClose={onClose}>
+        <p role="alert" className="text-sm text-danger">
+          {t(problem || "No hay un calendario donde crear la reunión.")}
+        </p>
+      </Modal>
+    );
+  return (
+    <EventDialog
+      day={new Date()}
+      prefill={prefill}
+      calendars={calendars}
+      calendarName=""
+      editable
+      onClose={onClose}
+      onSaved={onDone}
+    />
   );
 }

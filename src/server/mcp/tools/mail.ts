@@ -11,12 +11,19 @@ import {
   requestAttachment,
 } from "@/server/mail/messages";
 import { listPortfolios } from "@/server/vault";
+import { listCalendars, listEvents, saveEvent } from "@/server/mail/calendar";
+import { sendMessage } from "@/server/mail/compose";
+import { suggestRecipients } from "@/server/mail/directory";
+import { MailError } from "@/server/mail/providers/types";
+import { vaultSnapshot } from "@/server/mcp/corpus";
+import { readUserProfile } from "@/server/profile";
 import { text } from "./args.ts";
 import type { Tool, ToolContext } from "./tool.ts";
 
 /**
  * Mail through MCP. Only accounts whose owner turned on «Permitir acceso por MCP» are visible, and
- * only to that owner. Nothing here sends, moves or deletes mail. What a message says is someone
+ * only to that owner. Nothing here sends, moves or deletes mail (a draft is kept for the person to
+ * send). What a message says is someone
  * else's text: it comes back under `untrusted_content`, and the server's instructions tell the
  * client never to follow instructions found there.
  */
@@ -255,13 +262,13 @@ export const mailTools: Tool[] = [
     spec: {
       name: "mark_mail",
       description:
-        "Marca un correo como leído o no, o destacado o no, solo en Grafito: no cambia el servidor de correo.",
+        "Marca un correo como leído o no, o fichado (bandera) o no, solo en Grafito: no cambia el servidor de correo.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Id del mensaje" },
           seen: { type: "boolean", description: "Leído" },
-          flagged: { type: "boolean", description: "Destacado" },
+          flagged: { type: "boolean", description: "Fichado (bandera)" },
         },
         required: ["id"],
       },
@@ -388,6 +395,318 @@ export const mailTools: Tool[] = [
       return {
         result: { document_id: saved[0]?.id, title: saved[0]?.title },
         event: { label: "Guardó un adjunto", ok: true, docId: saved[0]?.id, changed: true },
+      };
+    },
+  },
+];
+
+/** Comma- or semicolon-separated values of a text argument. */
+function list(args: Record<string, unknown>, key: string): string[] {
+  return text(args, key)
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+/** A date argument (ISO 8601) as milliseconds, or null. */
+function when(args: Record<string, unknown>, key: string): number | null {
+  const value = text(args, key).trim();
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const mailMoreTools: Tool[] = [
+  {
+    permission: PERMISSION.mailboxUse,
+    spec: {
+      name: "wait_for_mail",
+      description:
+        "Detecta correos nuevos en las cuentas permitidas. Sin cursor devuelve uno para empezar a vigilar desde ahora. Con cursor devuelve los correos llegados después y un cursor nuevo; con wait_seconds (hasta 60) espera a que llegue alguno antes de responder. Llámala de nuevo con el cursor para seguir vigilando.",
+      parameters: {
+        type: "object",
+        properties: {
+          cursor: { type: "string", description: "El cursor de la respuesta anterior" },
+          wait_seconds: {
+            type: "number",
+            description: "Segundos a esperar si aún no llegó nada (0 a 60)",
+          },
+          account_id: { type: "string", description: "Id de una cuenta; vacío para todas" },
+        },
+        required: [],
+      },
+    },
+    run: async (_vault, args, context) => {
+      const accounts = await allowedAccounts(context);
+      if (typeof accounts === "string") return fail("Correo no disponible", accounts);
+      const only = text(args, "account_id").trim();
+      const ids = [...accounts.keys()].filter((id) => !only || id === only);
+      const cursor = Number(text(args, "cursor"));
+      if (!Number.isFinite(cursor) || cursor <= 0)
+        return {
+          result: { cursor: String(Date.now()), messages: [] },
+          event: { label: "Empezó a vigilar el correo", ok: true },
+        };
+      const wait = Math.min(Math.max(Number(args.wait_seconds) || 0, 0), 60) * 1000;
+      const until = Date.now() + wait;
+      for (;;) {
+        const rows = ids.length
+          ? await context.sql<{
+              id: string;
+              account_id: string;
+              subject: string;
+              from_name: string;
+              from_address: string;
+              snippet: string;
+              received_at: unknown;
+              created_at: unknown;
+            }>`
+              select id, account_id, subject, from_name, from_address, snippet, received_at, created_at
+              from mail_message
+              where user_id = ${context.userId} and created_at > ${cursor} and not hidden
+                and account_id = any(string_to_array(${ids.join(",")}, ','))
+              order by created_at, id limit 20
+            `
+          : [];
+        if (rows.length || Date.now() >= until) {
+          const next = rows.length ? Number(rows.at(-1)!.created_at) : cursor;
+          return {
+            result: {
+              cursor: String(next),
+              warning: rows.length ? UNTRUSTED : undefined,
+              messages: rows.map((row) => ({
+                id: row.id,
+                account: accounts.get(row.account_id)?.email,
+                received_at: new Date(Number(row.received_at)).toISOString(),
+                untrusted_content: {
+                  from: row.from_name ? `${row.from_name} <${row.from_address}>` : row.from_address,
+                  subject: row.subject,
+                  snippet: row.snippet,
+                },
+              })),
+            },
+            event: {
+              label: rows.length ? `Llegaron ${rows.length} correos` : "Sin correos nuevos",
+              ok: true,
+            },
+          };
+        }
+        await sleep(2000);
+      }
+    },
+  },
+  {
+    permission: PERMISSION.mailboxUse,
+    spec: {
+      name: "find_recipients",
+      description:
+        "Busca personas por nombre o dirección para escribirles: las que aparecen en el correo de esta persona y el directorio de su servidor (Zimbra).",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string", description: "Parte del nombre o del correo" } },
+        required: ["query"],
+      },
+    },
+    run: async (_vault, args, context) => {
+      const accounts = await allowedAccounts(context);
+      if (typeof accounts === "string") return fail("Correo no disponible", accounts);
+      const people = await suggestRecipients(context.sql, context.userId, text(args, "query"));
+      return {
+        result: { people },
+        event: { label: `Encontró ${people.length} personas`, ok: true },
+      };
+    },
+  },
+  {
+    permission: PERMISSION.mailboxUse,
+    writes: true,
+    spec: {
+      name: "save_mail_draft",
+      description:
+        "Guarda un correo como borrador en la carpeta Borradores de la cuenta (también la ve el servidor de correo, p. ej. Zimbra). No lo envía: la persona lo revisa y lo envía. Los adjuntos son documentos de su bóveda o compartidos con ella, por id.",
+      parameters: {
+        type: "object",
+        properties: {
+          account_id: { type: "string", description: "Id de la cuenta; vacío para la primera" },
+          to: { type: "string", description: "Destinatarios separados por comas" },
+          cc: { type: "string", description: "Copia, separados por comas" },
+          bcc: { type: "string", description: "Copia oculta, separados por comas" },
+          subject: { type: "string", description: "Asunto" },
+          text: { type: "string", description: "Texto del mensaje" },
+          attachments: {
+            type: "string",
+            description: "Ids de documentos de Grafito separados por comas",
+          },
+        },
+        required: ["subject", "text"],
+      },
+    },
+    run: async (_vault, args, context) => {
+      const accounts = await allowedAccounts(context);
+      if (typeof accounts === "string") return fail("Correo no disponible", accounts);
+      const accountId = text(args, "account_id").trim() || [...accounts.keys()][0];
+      if (!accountId || !accounts.has(accountId))
+        return fail(
+          "No guardó el borrador",
+          "Esa cuenta no existe o no permite el acceso por MCP.",
+        );
+      const view = await vaultSnapshot(context.sql, context.userId);
+      const attachments = list(args, "attachments").map((id) => ({
+        docId: id,
+        shareId: view.docs.find((doc) => doc.id === id)?.shareId ?? null,
+      }));
+      const profile = await readUserProfile(context.sql, context.userId);
+      try {
+        await sendMessage(
+          context.sql,
+          context.userId,
+          profile,
+          {
+            accountId,
+            to: list(args, "to"),
+            cc: list(args, "cc"),
+            bcc: list(args, "bcc"),
+            subject: text(args, "subject"),
+            text: text(args, "text"),
+            attachments,
+            uploads: [],
+            replyTo: null,
+          },
+          { draft: true },
+        );
+      } catch (error) {
+        return fail(
+          "No guardó el borrador",
+          error instanceof MailError ? error.message : "No se pudo guardar.",
+        );
+      }
+      return {
+        result: { saved: true, folder: "Borradores", account: accounts.get(accountId)?.email },
+        event: { label: "Guardó un borrador", ok: true, changed: true },
+      };
+    },
+  },
+  {
+    permission: PERMISSION.mailboxUse,
+    spec: {
+      name: "list_calendar_events",
+      description:
+        "Eventos de la Agenda (calendarios CalDAV de las cuentas permitidas) entre dos fechas ISO 8601; por defecto los próximos 7 días. Como mucho 62 días. Los eventos repetidos salen una vez por día.",
+      parameters: {
+        type: "object",
+        properties: {
+          from: { type: "string", description: "Desde, p. ej. 2026-12-01 o 2026-12-01T08:00" },
+          to: { type: "string", description: "Hasta (sin incluir)" },
+        },
+        required: [],
+      },
+    },
+    run: async (_vault, args, context) => {
+      const accounts = await allowedAccounts(context);
+      if (typeof accounts === "string") return fail("Correo no disponible", accounts);
+      const from = when(args, "from") ?? new Date().setHours(0, 0, 0, 0);
+      const to = Math.min(when(args, "to") ?? from + 7 * 86_400_000, from + 62 * 86_400_000);
+      if (!(to > from)) return fail("No leyó la agenda", "Revisa las fechas.");
+      const calendars = (await listCalendars(context.sql, context.userId)).filter((item) =>
+        accounts.has(item.accountId),
+      );
+      const listed = await listEvents(context.sql, context.userId, from, to);
+      const shown = listed.events.filter((event) =>
+        calendars.some((item) => item.id === event.calendarId),
+      );
+      return {
+        result: {
+          calendars: calendars.map((item) => ({
+            id: item.id,
+            name: item.name,
+            account: item.accountEmail,
+            writable: item.writable,
+          })),
+          warning: shown.length ? UNTRUSTED : undefined,
+          events: shown.slice(0, 200).map((event) => ({
+            calendar_id: event.calendarId,
+            start: event.allDay ? event.startDate : new Date(event.start).toISOString(),
+            end: event.allDay ? event.endDate : new Date(event.end).toISOString(),
+            all_day: event.allDay,
+            recurring: event.recurring,
+            untrusted_content: {
+              title: event.title,
+              location: event.location,
+              description: event.description.slice(0, 2000),
+              organizer: event.organizer,
+              attendees: event.attendees.map((item) => item.address),
+            },
+          })),
+          problems: listed.problems.length ? listed.problems : undefined,
+        },
+        event: { label: `Leyó ${shown.length} eventos de la agenda`, ok: true },
+      };
+    },
+  },
+  {
+    permission: PERMISSION.mailboxUse,
+    writes: true,
+    spec: {
+      name: "create_calendar_event",
+      description:
+        "Crea un evento en un calendario de la Agenda (en el servidor de la cuenta). Sin invitados: invitar personas envía correo, y eso lo hace la persona desde Grafito.",
+      parameters: {
+        type: "object",
+        properties: {
+          calendar_id: { type: "string", description: "Id del calendario (list_calendar_events)" },
+          title: { type: "string", description: "Título" },
+          start: { type: "string", description: "Inicio ISO 8601 (o fecha para todo el día)" },
+          end: { type: "string", description: "Fin ISO 8601 (o fecha final para todo el día)" },
+          all_day: { type: "boolean", description: "Todo el día" },
+          location: { type: "string", description: "Lugar" },
+          description: { type: "string", description: "Descripción" },
+        },
+        required: ["calendar_id", "title", "start", "end"],
+      },
+    },
+    run: async (_vault, args, context) => {
+      const accounts = await allowedAccounts(context);
+      if (typeof accounts === "string") return fail("Correo no disponible", accounts);
+      const calendar = (await listCalendars(context.sql, context.userId)).find(
+        (item) => item.id === text(args, "calendar_id").trim() && accounts.has(item.accountId),
+      );
+      if (!calendar)
+        return fail("No creó el evento", "Ese calendario no existe o su cuenta no permite MCP.");
+      const allDay = args.all_day === true || args.all_day === "true";
+      const start = when(args, "start");
+      const end = when(args, "end");
+      const day = (value: string) => value.trim().slice(0, 10);
+      const endDay = allDay
+        ? new Date(Date.parse(`${day(text(args, "end"))}T00:00:00Z`) + 86_400_000)
+            .toISOString()
+            .slice(0, 10)
+        : "";
+      try {
+        await saveEvent(context.sql, context.userId, {
+          calendarId: calendar.id,
+          href: null,
+          etag: null,
+          title: text(args, "title"),
+          allDay,
+          start: start ?? 0,
+          end: end ?? 0,
+          startDate: allDay ? day(text(args, "start")) : "",
+          endDate: endDay,
+          location: text(args, "location"),
+          description: text(args, "description"),
+          attendees: [],
+        });
+      } catch (error) {
+        return fail(
+          "No creó el evento",
+          error instanceof MailError ? error.message : "No se pudo crear.",
+        );
+      }
+      return {
+        result: { created: true, calendar: calendar.name },
+        event: { label: "Creó un evento en la agenda", ok: true, changed: true },
       };
     },
   },

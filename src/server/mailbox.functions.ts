@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { readBlob } from "@/server/blobs";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import type { Sql } from "@/lib/db";
@@ -24,6 +25,10 @@ import { attachmentChoices, discardUploads, sendMessage } from "@/server/mail/co
 import {
   deleteEvent,
   discoverCalendars,
+  invitationState,
+  readInvitation,
+  respondToEvent,
+  respondToInvitation,
   listCalendars,
   listEvents,
   saveEvent,
@@ -641,8 +646,8 @@ export const mailSaveEvent = createServerFn({ method: "POST" })
     const { sql, ready } = await user(context.userId);
     if (!ready) return { ok: false as const, error: "El correo no está disponible." };
     try {
-      await saveEvent(sql, context.userId, data);
-      return { ok: true as const };
+      const saved = await saveEvent(sql, context.userId, data);
+      return { ok: true as const, invited: saved.invited };
     } catch (error) {
       return failure(error);
     }
@@ -661,6 +666,131 @@ export const mailDeleteEvent = createServerFn({ method: "POST" })
     try {
       await deleteEvent(sql, context.userId, data);
       return { ok: true as const };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+/** Keep a message being written in the account's Drafts, attachments and all. */
+export const mailSaveDraft = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({
+        accountId: id,
+        to: z.array(address).max(100),
+        cc: z.array(address).max(100),
+        bcc: z.array(address).max(100),
+        subject: z.string().max(500),
+        text: z.string().max(500_000),
+        attachments: z.array(z.object({ docId: id, shareId: id.nullable() })).max(50),
+        uploads: z
+          .array(
+            z.object({
+              key: z.string().max(300),
+              name: z.string().max(255),
+              mime: z.string().max(120),
+            }),
+          )
+          .max(50),
+        replyTo: id.nullable(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready, profile } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      await sendMessage(sql, context.userId, profile, data, { draft: true });
+      return { ok: true as const };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+const answer = z.enum(["ACCEPTED", "TENTATIVE", "DECLINED"]);
+
+/** Accept, maybe or decline an event of the Agenda where the account is a guest. */
+export const mailRespondEvent = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({ calendarId: id, href: z.string().max(1000), etag: z.string().max(300), answer })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      await respondToEvent(sql, context.userId, data);
+      return { ok: true as const };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+/** The invitation (text/calendar) a message carries, once its part is downloaded. */
+async function invitationOf(sql: Sql, userId: string, messageId: string) {
+  const rows = await sql<{
+    id: string;
+    account_id: string;
+    download_status: string;
+    storage_key: string | null;
+    email: string;
+  }>`
+    select t.id, t.account_id, t.download_status, t.storage_key, a.email
+    from mail_attachment t join mail_account a on a.id = t.account_id
+    where t.message_id = ${messageId} and t.user_id = ${userId}
+      and (lower(t.content_type) like 'text/calendar%' or lower(t.filename) like '%.ics')
+    order by t.created_at limit 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  if (row.download_status !== "ready" || !row.storage_key) {
+    await requestAttachment(sql, userId, row.id);
+    return { pending: true as const, accountId: row.account_id };
+  }
+  const bytes = await readBlob(sql, row.storage_key);
+  if (!bytes) return null;
+  return {
+    pending: false as const,
+    accountId: row.account_id,
+    email: row.email,
+    ics: Buffer.from(bytes).toString("utf8"),
+  };
+}
+
+export const mailInvitation = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ messageId: id }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const };
+    const found = await invitationOf(sql, context.userId, data.messageId);
+    if (!found) return { ok: true as const, invitation: null };
+    if (found.pending) return { ok: true as const, pending: true, invitation: null };
+    const invitation = readInvitation(found.ics, found.email);
+    if (!invitation) return { ok: true as const, invitation: null };
+    const state = await invitationState(sql, context.userId, found.accountId, invitation);
+    return { ok: true as const, invitation: { ...invitation, ...state } };
+  });
+
+export const mailRespondInvitation = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ messageId: id, answer }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    const found = await invitationOf(sql, context.userId, data.messageId);
+    if (!found || found.pending)
+      return { ok: false as const, error: "La invitación todavía se está descargando." };
+    try {
+      const done = await respondToInvitation(sql, context.userId, {
+        accountId: found.accountId,
+        ics: found.ics,
+        answer: data.answer,
+      });
+      return { ok: true as const, calendar: done.calendar };
     } catch (error) {
       return failure(error);
     }

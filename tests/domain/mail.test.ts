@@ -18,6 +18,7 @@ import {
   domainAllowed,
   historyDays,
   parseMailPolicy,
+  widerHistory,
   syncInterval,
 } from "../../src/domain/mail/policy.ts";
 import { swapSignature, withSignature } from "../../src/domain/mail/compose.ts";
@@ -39,7 +40,12 @@ test("la política se completa y se acota", () => {
   assert.equal(syncInterval(policy, 10), 60);
   assert.equal(syncInterval(parseMailPolicy({}), undefined), 300);
   assert.equal(historyDays(parseMailPolicy({ maxHistoryDays: 10 }), 365), 10);
-  assert.equal(historyDays(parseMailPolicy({}), 0), 30);
+  assert.equal(historyDays(parseMailPolicy({}), 0), 0, "all of it by default");
+  assert.equal(historyDays(parseMailPolicy({}), 90), 90);
+  assert.equal(widerHistory(30, 0), true);
+  assert.equal(widerHistory(30, 90), true);
+  assert.equal(widerHistory(90, 30), false);
+  assert.equal(widerHistory(0, 30), false);
   assert.equal(domainAllowed(policy, "ana@uni.edu"), true);
   assert.equal(domainAllowed(policy, "ana@fac.uni.edu"), true);
   assert.equal(domainAllowed(policy, "ana@otro.org"), false);

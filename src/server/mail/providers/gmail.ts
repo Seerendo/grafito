@@ -98,6 +98,15 @@ export class GmailConnector implements MailConnector {
 
   async close(): Promise<void> {}
 
+  async saveDraft(raw: Buffer): Promise<void> {
+    await providerSend(
+      `${API}/drafts`,
+      await this.token(),
+      JSON.stringify({ message: { raw: raw.toString("base64url") } }),
+      "application/json",
+    );
+  }
+
   async send(message: OutgoingMessage): Promise<{ sentCopy: boolean }> {
     await providerSend(
       `${API}/messages/send`,
@@ -287,7 +296,7 @@ export class GmailConnector implements MailConnector {
     let more = true;
     while (Date.now() < context.deadline && processed < context.maxMessages) {
       const params = new URLSearchParams({
-        q: `after:${after}`,
+        ...(this.account.historyDays > 0 ? { q: `after:${after}` } : {}),
         maxResults: "50",
         includeSpamTrash: "true",
       });

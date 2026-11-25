@@ -1,6 +1,7 @@
 import {
   Archive,
   ArrowLeft,
+  X,
   CalendarDays,
   File as FileIcon,
   FolderClosed,
@@ -12,7 +13,16 @@ import {
   Send,
   Settings,
   ShieldAlert,
-  Star,
+  Flag,
+  CalendarPlus,
+  Eye,
+  EyeOff,
+  Forward,
+  MailOpen,
+  Reply,
+  SquarePlus,
+  ReplyAll,
+  Archive as ArchiveIcon,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,10 +30,11 @@ import { Link } from "@tanstack/react-router";
 import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
-import { mailMessages, mailState } from "@/server/mailbox.functions";
-import { Agenda } from "./Agenda";
+import { mailMark, mailMessages, mailState } from "@/server/mailbox.functions";
+import { Agenda, ScheduleMeeting } from "./Agenda";
+import { MailPreferences } from "./MailPreferences";
 import { Compose, type Draft } from "./Compose";
-import { MessageView } from "./MessageView";
+import { MessageView, type Intent, type MeetingPrefill } from "./MessageView";
 import { statusLabel } from "./status";
 
 /**
@@ -46,6 +57,10 @@ export type View =
   | { kind: "folder"; folderId: string; accountId: string };
 
 const ROW = 76;
+
+type Tab =
+  | { id: string; kind: "message"; messageId: string }
+  | { id: string; kind: "compose"; draft: Draft; title: string; closing: boolean };
 
 const ROLES: {
   role: "inbox" | "sent" | "drafts" | "archive" | "junk" | "trash";
@@ -82,9 +97,16 @@ export function MailScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   // On a phone one pane at a time: folders, the list, or the message.
   const [pane, setPane] = useState<"nav" | "list" | "message">("list");
-  const [draft, setDraft] = useState<Draft | null>(null);
+  // Tabs of the reading pane, like Outlook: «read» shows the message chosen in the list; others
+  // hold a message opened in its own tab or a message being written.
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [active, setActive] = useState<string>("read");
   const [agenda, setAgenda] = useState(false);
   const [notice, setNotice] = useState("");
+  const [intent, setIntent] = useState<Intent | null>(null);
+  const [meeting, setMeeting] = useState<MeetingPrefill | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [settings, setSettings] = useState<"menu" | "preferences" | null>(null);
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(600);
   const listRef = useRef<HTMLDivElement>(null);
@@ -197,6 +219,57 @@ export function MailScreen() {
   const accounts = useMemo(() => state?.accounts ?? [], [state]);
   const folders = useMemo(() => state?.folders ?? [], [state]);
   const multi = accounts.length > 1;
+
+  const compose = (draft: Draft) => {
+    const id = crypto.randomUUID();
+    setTabs((current) => [...current, { id, kind: "compose", draft, title: "", closing: false }]);
+    setActive(id);
+    setAgenda(false);
+    setPane("message");
+  };
+  const openInTab = (messageId: string) => {
+    const id = crypto.randomUUID();
+    setTabs((current) => [...current, { id, kind: "message", messageId }]);
+    setActive(id);
+    setPane("message");
+    setRows((current) =>
+      current.map((item) => (item.id === messageId ? { ...item, seen: true } : item)),
+    );
+  };
+  const closeTab = (id: string) => {
+    setTabs((current) => {
+      const index = current.findIndex((item) => item.id === id);
+      const next = current.filter((item) => item.id !== id);
+      if (active === id) setActive(next[Math.max(0, index - 1)]?.id ?? "read");
+      return next;
+    });
+  };
+  const patchTab = (id: string, change: Partial<Extract<Tab, { kind: "compose" }>>) =>
+    setTabs((current) =>
+      current.map((item) =>
+        item.id === id && item.kind === "compose" ? { ...item, ...change } : item,
+      ),
+    );
+  const open = (id: string) => {
+    setActive("read");
+    setSelected(id);
+    setPane("message");
+    setRows((current) => current.map((item) => (item.id === id ? { ...item, seen: true } : item)));
+  };
+  // Flags and read marks change at once in the list; the server confirms in the background.
+  const mark = async (
+    id: string,
+    change: { seen?: boolean; flagged?: boolean; hidden?: boolean },
+  ) => {
+    setRows((current) =>
+      current
+        .map((item) => (item.id === id ? { ...item, ...change } : item))
+        .filter((item) => !change.hidden || item.id !== id),
+    );
+    if (change.hidden && selected === id) setSelected(null);
+    const answer = await mailMark({ data: { id, ...change } }).catch(() => null);
+    if (!answer?.ok) void loadPage(null);
+  };
   const accountName = (id: string) => accounts.find((item) => item.id === id)?.name ?? "";
 
   if (problem === "permission")
@@ -252,7 +325,7 @@ export function MailScreen() {
         setAgenda(false);
       }}
       aria-current={active ? "page" : undefined}
-      className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
+      className={`flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -270,25 +343,56 @@ export function MailScreen() {
       <div data-ui="mail" className="flex min-h-0 flex-1">
         <nav
           aria-label={t("Correo electrónico")}
-          className={`${pane === "nav" ? "flex" : "hidden"} w-full shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-2 md:flex md:w-64`}
+          className={`${pane === "nav" ? "flex" : "hidden"} w-full shrink-0 flex-col gap-1 overflow-y-auto border-r border-line bg-surface p-3 md:flex md:w-64`}
         >
           <div className="flex items-center gap-2 px-2 py-2">
             <Mail className="size-4 text-accent" />
             <h1 className="flex-1 text-sm font-semibold">{t("Correo electrónico")}</h1>
-            <Link
-              to="/cuenta"
-              search={{ seccion: "buzones" }}
-              aria-label={t("Cuentas de correo")}
-              title={t("Cuentas de correo")}
-              className="grid size-9 place-items-center rounded-md text-muted hover:bg-elevated"
-            >
-              <Settings className="size-4" />
-            </Link>
+            <div className="relative">
+              <button
+                type="button"
+                aria-label={t("Opciones del correo")}
+                title={t("Opciones del correo")}
+                aria-haspopup="menu"
+                aria-expanded={settings === "menu"}
+                onClick={() => setSettings(settings === "menu" ? null : "menu")}
+                className="grid size-9 place-items-center rounded-md text-muted hover:bg-elevated"
+              >
+                <Settings className="size-4" />
+              </button>
+              {settings === "menu" ? (
+                <>
+                  <div className="fixed inset-0 z-30" onMouseDown={() => setSettings(null)} />
+                  <div
+                    role="menu"
+                    data-ui="mail-settings-menu"
+                    className="absolute top-full right-0 z-40 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => setSettings("preferences")}
+                      className="flex h-10 w-full items-center px-3 text-left text-sm hover:bg-elevated"
+                    >
+                      {t("Preferencias")}
+                    </button>
+                    <Link
+                      to="/cuenta"
+                      search={{ seccion: "buzones" }}
+                      role="menuitem"
+                      className="flex h-10 w-full items-center px-3 text-left text-sm hover:bg-elevated"
+                    >
+                      {t("Cuentas de correo")}
+                    </Link>
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
           <button
             type="button"
             onClick={() =>
-              setDraft({
+              compose({
                 accountId:
                   view.accountId ??
                   accounts.find((item) => item.isDefault)?.id ??
@@ -301,7 +405,7 @@ export function MailScreen() {
                 replyTo: null,
               })
             }
-            className="mx-1 mb-2 inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent text-sm font-medium text-accent-fg"
+            className="mx-1 mb-3 inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent text-sm font-medium text-accent-fg"
           >
             <PenSquare className="size-4" />
             {t("Redactar")}
@@ -316,11 +420,12 @@ export function MailScreen() {
               setSelected(null);
               setPane("list");
             }}
-            className={`flex h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm ${agenda ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
+            className={`flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${agenda ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
           >
             <CalendarDays className="size-4" />
             <span className="min-w-0 flex-1 truncate">{t("Agenda")}</span>
           </button>
+          <div className="my-2 border-t border-line" />
           {navItem(
             "unified",
             sameView(view, { kind: "role", role: "inbox" }),
@@ -333,8 +438,8 @@ export function MailScreen() {
             "flagged",
             sameView(view, { kind: "flagged" }),
             () => setView({ kind: "flagged" }),
-            <Star className="size-4" />,
-            t("Destacados"),
+            <Flag className="size-4" />,
+            t("Fichados"),
           )}
           {ROLES.slice(1).map((item) =>
             navItem(
@@ -507,19 +612,19 @@ export function MailScreen() {
             ) : (
               <div style={{ height: rows.length * ROW }} role="list">
                 {rows.slice(first, last).map((row, index) => (
-                  <button
+                  <div
                     key={row.id}
-                    type="button"
                     role="listitem"
+                    tabIndex={0}
                     data-message={row.id}
-                    onClick={() => {
-                      setSelected(row.id);
-                      setPane("message");
-                      setRows((current) =>
-                        current.map((item) =>
-                          item.id === row.id ? { ...item, seen: true } : item,
-                        ),
-                      );
+                    data-flagged={row.flagged ? "" : undefined}
+                    onClick={() => open(row.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") open(row.id);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setMenu({ x: event.clientX, y: event.clientY, id: row.id });
                     }}
                     style={{
                       position: "absolute",
@@ -528,7 +633,7 @@ export function MailScreen() {
                       left: 0,
                       right: 0,
                     }}
-                    className={`flex flex-col gap-0.5 border-b border-line px-3 py-2 text-left ${selected === row.id ? "bg-elevated" : "hover:bg-elevated"}`}
+                    className={`group flex cursor-pointer flex-col gap-0.5 border-b border-line px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent ${selected === row.id ? "bg-elevated" : "hover:bg-elevated"}`}
                   >
                     <span className="flex items-center gap-2 text-sm">
                       {!row.seen ? (
@@ -542,12 +647,20 @@ export function MailScreen() {
                       >
                         {row.from.name || row.from.address || t("(sin remitente)")}
                       </span>
-                      {row.flagged ? (
-                        <Star
-                          aria-label={t("Destacado")}
-                          className="size-3.5 shrink-0 fill-current text-accent"
-                        />
-                      ) : null}
+                      <button
+                        type="button"
+                        data-ui="mail-flag"
+                        aria-label={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                        title={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                        aria-pressed={row.flagged}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void mark(row.id, { flagged: !row.flagged });
+                        }}
+                        className={`grid size-6 shrink-0 place-items-center rounded hover:bg-inset ${row.flagged ? "text-danger" : "text-faint opacity-60 group-hover:opacity-100"}`}
+                      >
+                        <Flag className={`size-3.5 ${row.flagged ? "fill-current" : ""}`} />
+                      </button>
                       {row.hasAttachments ? (
                         <Paperclip
                           aria-label={t("Con adjuntos")}
@@ -568,32 +681,70 @@ export function MailScreen() {
                       {multi ? `${accountName(row.accountId)} · ` : ""}
                       {row.snippet}
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         </section>
         <section
-          className={`${pane === "message" && !agenda ? "flex" : "hidden"} ${agenda ? "md:hidden" : selected ? "md:flex" : "md:hidden lg:flex"} min-w-0 flex-[1.4] flex-col`}
+          className={`${pane === "message" && !agenda ? "flex" : "hidden"} ${agenda ? "md:hidden" : selected || tabs.length ? "md:flex" : "md:hidden lg:flex"} min-w-0 flex-[1.4] flex-col`}
         >
-          {selected ? (
-            <>
+          {selected || tabs.length ? (
+            <div
+              role="tablist"
+              data-ui="mail-tabs"
+              className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 pt-1"
+            >
               <button
                 type="button"
-                onClick={() => {
-                  setSelected(null);
-                  setPane("list");
-                }}
-                className="flex h-10 items-center gap-2 px-3 text-sm text-accent lg:hidden"
+                aria-label={t("Volver a la lista")}
+                onClick={() => setPane("list")}
+                className="grid size-8 shrink-0 place-items-center rounded-md text-accent lg:hidden"
               >
                 <ArrowLeft className="size-4" />
-                {t("Volver a la lista")}
               </button>
+              {selected ? (
+                <TabButton
+                  active={active === "read"}
+                  title={rows.find((item) => item.id === selected)?.subject || t("Mensaje")}
+                  onSelect={() => setActive("read")}
+                  onClose={() => {
+                    setSelected(null);
+                    if (active === "read") setActive(tabs[0]?.id ?? "read");
+                  }}
+                />
+              ) : null}
+              {tabs.map((tab) => (
+                <TabButton
+                  key={tab.id}
+                  active={active === tab.id}
+                  compose={tab.kind === "compose"}
+                  title={
+                    tab.kind === "compose"
+                      ? tab.title || t("Nuevo mensaje")
+                      : rows.find((item) => item.id === tab.messageId)?.subject || t("Mensaje")
+                  }
+                  onSelect={() => setActive(tab.id)}
+                  onClose={() => {
+                    if (tab.kind === "compose") {
+                      setActive(tab.id);
+                      patchTab(tab.id, { closing: true });
+                    } else closeTab(tab.id);
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
+          {selected ? (
+            <div className={`${active === "read" ? "flex" : "hidden"} min-h-0 flex-1 flex-col`}>
               <MessageView
                 key={selected}
                 id={selected}
-                onCompose={setDraft}
+                onCompose={compose}
+                onSchedule={setMeeting}
+                intent={intent}
+                onIntentDone={() => setIntent(null)}
                 onChanged={(change) =>
                   setRows((current) =>
                     current
@@ -602,30 +753,238 @@ export function MailScreen() {
                   )
                 }
               />
-            </>
-          ) : (
+            </div>
+          ) : null}
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              data-tab={tab.kind}
+              className={`${active === tab.id ? "flex" : "hidden"} min-h-0 flex-1 flex-col`}
+            >
+              {tab.kind === "message" ? (
+                <MessageView
+                  id={tab.messageId}
+                  onCompose={compose}
+                  onSchedule={setMeeting}
+                  onChanged={(change) =>
+                    setRows((current) =>
+                      current.map((row) =>
+                        row.id === tab.messageId ? { ...row, ...change } : row,
+                      ),
+                    )
+                  }
+                />
+              ) : (
+                <Compose
+                  draft={tab.draft}
+                  accounts={accounts}
+                  closing={tab.closing}
+                  onCancelClose={() => patchTab(tab.id, { closing: false })}
+                  onTitle={(title) => patchTab(tab.id, { title })}
+                  onClosed={(outcome) => {
+                    closeTab(tab.id);
+                    if (outcome === "draft") {
+                      setNotice("Borrador guardado.");
+                      void loadState();
+                    }
+                  }}
+                  onSent={(sentCopy) => {
+                    closeTab(tab.id);
+                    setNotice(
+                      sentCopy
+                        ? "Mensaje enviado."
+                        : "Mensaje enviado; no se pudo guardar la copia en Enviados.",
+                    );
+                    void loadState();
+                  }}
+                />
+              )}
+            </div>
+          ))}
+          {!selected && tabs.length === 0 ? (
             <p className="grid flex-1 place-items-center text-sm text-faint">
               {t("Elige un mensaje.")}
             </p>
-          )}
+          ) : null}
         </section>
       </div>
-      {draft ? (
-        <Compose
-          draft={draft}
+      {menu ? (
+        <RowMenu
+          x={menu.x}
+          y={menu.y}
+          row={rows.find((item) => item.id === menu.id) ?? null}
+          onClose={() => setMenu(null)}
+          onOpen={(wanted) => {
+            open(menu.id);
+            setIntent(wanted);
+          }}
+          onOpenTab={() => openInTab(menu.id)}
+          onMark={(change) => void mark(menu.id, change)}
+        />
+      ) : null}
+      {meeting ? (
+        <ScheduleMeeting
           accounts={accounts}
-          onClose={() => setDraft(null)}
-          onSent={(sentCopy) => {
-            setDraft(null);
+          prefill={meeting}
+          onClose={() => setMeeting(null)}
+          onDone={(invited) => {
+            setMeeting(null);
             setNotice(
-              sentCopy
-                ? "Mensaje enviado."
-                : "Mensaje enviado; no se pudo guardar la copia en Enviados.",
+              invited ? "Reunión programada; se enviaron las invitaciones." : "Reunión programada.",
             );
-            void loadState();
           }}
         />
       ) : null}
+      {settings === "preferences" ? (
+        <MailPreferences
+          accounts={accounts}
+          onClose={() => setSettings(null)}
+          onSaved={() => void loadState()}
+        />
+      ) : null}
     </AppFrame>
+  );
+}
+
+type ListRow = { id: string; seen: boolean; flagged: boolean };
+
+/** Right click on a message: the actions of the message itself, without opening it first. */
+function RowMenu({
+  x,
+  y,
+  row,
+  onClose,
+  onOpen,
+  onOpenTab,
+  onMark,
+}: {
+  x: number;
+  y: number;
+  row: ListRow | null;
+  onClose: () => void;
+  onOpen: (intent: Intent | null) => void;
+  onOpenTab: () => void;
+  onMark: (change: { seen?: boolean; flagged?: boolean; hidden?: boolean }) => void;
+}) {
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+  if (!row) return null;
+  const item = (label: string, icon: React.ReactNode, run: () => void) => (
+    <button
+      key={label}
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        run();
+        onClose();
+      }}
+      className="flex h-9 w-full items-center gap-2 px-3 text-left text-sm hover:bg-elevated"
+    >
+      {icon}
+      {t(label)}
+    </button>
+  );
+  const width = 240;
+  const height = 380;
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40"
+        onMouseDown={onClose}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onClose();
+        }}
+      />
+      <div
+        role="menu"
+        data-ui="mail-row-menu"
+        style={{
+          left: Math.min(x, window.innerWidth - width - 8),
+          top: Math.min(y, window.innerHeight - height - 8),
+          width,
+        }}
+        className="fixed z-50 rounded-md border border-line bg-surface py-1 shadow-2xl"
+      >
+        {item("Abrir", <Eye className="size-4 text-faint" />, () => onOpen(null))}
+        {item(
+          "Abrir en una nueva pestaña",
+          <SquarePlus className="size-4 text-faint" />,
+          onOpenTab,
+        )}
+        {item("Responder", <Reply className="size-4 text-faint" />, () => onOpen("reply"))}
+        {item("Responder a todos", <ReplyAll className="size-4 text-faint" />, () =>
+          onOpen("replyAll"),
+        )}
+        {item("Reenviar", <Forward className="size-4 text-faint" />, () => onOpen("forward"))}
+        <div className="my-1 border-t border-line" />
+        {row.seen
+          ? item("Marcar como no leído", <MailOpen className="size-4 text-faint" />, () =>
+              onMark({ seen: false }),
+            )
+          : item("Marcar como leído", <MailOpen className="size-4 text-faint" />, () =>
+              onMark({ seen: true }),
+            )}
+        {item(
+          row.flagged ? "Quitar ficha" : "Fichar",
+          <Flag className={`size-4 ${row.flagged ? "fill-current text-danger" : "text-faint"}`} />,
+          () => onMark({ flagged: !row.flagged }),
+        )}
+        <div className="my-1 border-t border-line" />
+        {item("Programar reunión", <CalendarPlus className="size-4 text-faint" />, () =>
+          onOpen("meeting"),
+        )}
+        {item("Archivar en Grafito", <ArchiveIcon className="size-4 text-faint" />, () =>
+          onOpen("archive"),
+        )}
+        {item("Ocultar aquí", <EyeOff className="size-4 text-faint" />, () =>
+          onMark({ hidden: true }),
+        )}
+      </div>
+    </>
+  );
+}
+
+function TabButton({
+  active,
+  title,
+  compose = false,
+  onSelect,
+  onClose,
+}: {
+  active: boolean;
+  title: string;
+  compose?: boolean;
+  onSelect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="tab"
+      aria-selected={active}
+      data-ui="mail-tab"
+      data-compose={compose ? "" : undefined}
+      className={`flex h-9 max-w-56 shrink-0 items-center gap-1 rounded-t-md border border-b-0 pl-3 text-sm ${active ? "border-line bg-elevated text-fg" : "border-transparent text-muted hover:bg-elevated"}`}
+    >
+      <button type="button" onClick={onSelect} className="min-w-0 flex-1 truncate text-left">
+        {compose ? <PenSquare className="mr-1.5 inline size-3.5 align-[-2px] text-accent" /> : null}
+        {title}
+      </button>
+      <button
+        type="button"
+        aria-label={t("Cerrar {0}", { 0: title })}
+        onClick={onClose}
+        className="grid size-7 shrink-0 place-items-center rounded text-faint hover:bg-inset hover:text-fg"
+      >
+        <X className="size-3.5" />
+      </button>
+    </div>
   );
 }

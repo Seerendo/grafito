@@ -49,6 +49,7 @@ import { Link } from "@tanstack/react-router";
 import { VisibilityMark } from "./visibility";
 import { t } from "@/app/i18n";
 
+const PERSONAL_KEY = "grafito.sidebar.personal-open";
 const PAD = ["pl-1", "pl-5", "pl-9", "pl-12"] as const;
 const DOC_MIME = "application/x-grafito-document";
 const PORT_MIME = "application/x-grafito-portfolio";
@@ -147,6 +148,23 @@ export function Sidebar({
   const litId = folderPicked || elsewhere ? null : activeId;
   const trashOpen = useTrashView((state) => state.open);
   const mail = useMailAvailable();
+  // The personal tree folds like «Compartidos conmigo»; open unless the person folded it.
+  const [personalOpen, setPersonalOpen] = useState(() => {
+    try {
+      return localStorage.getItem(PERSONAL_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const togglePersonal = () =>
+    setPersonalOpen((value) => {
+      try {
+        localStorage.setItem(PERSONAL_KEY, value ? "0" : "1");
+      } catch {
+        /* Optional preference. */
+      }
+      return !value;
+    });
   const collapsed = useVault((state) => state.collapsed);
   const setQuery = useVault((state) => state.setQuery);
   const setTag = useVault((state) => state.setTag);
@@ -538,66 +556,105 @@ export function Sidebar({
               onDragOver={(event) => acceptDrop(event, "root")}
               onDrop={(event) => takeDrop(event, null)}
             >
-              <button
-                type="button"
-                onClick={onHome}
-                onContextMenu={(event) =>
-                  openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" })
-                }
-                onDragOver={(event) => acceptDrop(event, "root")}
-                onDrop={(event) => takeDrop(event, null)}
-                className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
-                  dropOver === "root"
-                    ? "bg-accent/15 text-fg ring-1 ring-accent"
-                    : rootLit
-                      ? "bg-inset text-fg"
-                      : "text-muted hover:bg-elevated hover:text-fg"
-                }`}
-              >
-                <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
-                <span className="truncate font-medium">
-                  {dropOver === "root" ? t("Soltar en la Carpeta Personal") : t("Carpeta Personal")}
-                </span>
-              </button>
-              {forest.roots.map((node) => (
-                <PortfolioBranch
-                  key={node.portfolio.id}
-                  node={node}
-                  depth={0}
-                  activeId={litId}
-                  selectedId={folderPicked && !elsewhere ? selectedId : null}
-                  collapsed={collapsed}
-                  dropOver={dropOver}
-                  onOpen={open}
-                  onOpenContent={openContent}
-                  onSelect={holdGraph ? setSelectedPortfolio : onOpenPortfolio}
-                  onToggle={toggleCollapsed}
-                  onDragOver={acceptDrop}
-                  onDrop={takeDrop}
-                  onDragStart={startDrag}
-                  onPortfolioDragStart={startPortfolioDrag}
-                  onDocumentMenu={(event, id) =>
-                    openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
+              <div className="flex shrink-0 items-center">
+                <button
+                  type="button"
+                  onClick={onHome}
+                  onContextMenu={(event) =>
+                    openMenu(event, { x: event.clientX, y: event.clientY, kind: "root" })
                   }
-                  onPortfolioMenu={(event, id) =>
-                    openMenu(event, { x: event.clientX, y: event.clientY, kind: "portfolio", id })
+                  onDragOver={(event) => acceptDrop(event, "root")}
+                  onDrop={(event) => takeDrop(event, null)}
+                  className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm ${
+                    dropOver === "root"
+                      ? "bg-accent/15 text-fg ring-1 ring-accent"
+                      : rootLit
+                        ? "bg-inset text-fg"
+                        : "text-muted hover:bg-elevated hover:text-fg"
+                  }`}
+                >
+                  <House className={`size-4 shrink-0 ${rootLit ? "text-accent" : "text-faint"}`} />
+                  <span className="truncate font-medium">
+                    {dropOver === "root"
+                      ? t("Soltar en la Carpeta Personal")
+                      : t("Carpeta Personal")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-ui="personal-fold"
+                  aria-expanded={personalOpen}
+                  aria-label={
+                    personalOpen
+                      ? t("Plegar la Carpeta Personal")
+                      : t("Desplegar la Carpeta Personal")
                   }
-                />
-              ))}
-              <GroupedDocs
-                documents={forest.loose}
-                scope="root"
-                activeId={litId}
-                depth={0}
-                collapsed={collapsed}
-                onOpen={open}
-                onOpenContent={openContent}
-                onDragStart={startDrag}
-                onToggle={toggleCollapsed}
-                onContextMenu={(event, id) =>
-                  openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
-                }
-              />
+                  title={
+                    personalOpen
+                      ? t("Plegar la Carpeta Personal")
+                      : t("Desplegar la Carpeta Personal")
+                  }
+                  onClick={togglePersonal}
+                  className="ml-auto grid size-8 shrink-0 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
+                >
+                  <ChevronRight
+                    className={`size-3.5 transition-transform ${personalOpen ? "rotate-90" : ""}`}
+                  />
+                </button>
+              </div>
+              {personalOpen || query.trim() ? (
+                <>
+                  {forest.roots.map((node) => (
+                    <PortfolioBranch
+                      key={node.portfolio.id}
+                      node={node}
+                      depth={0}
+                      activeId={litId}
+                      selectedId={folderPicked && !elsewhere ? selectedId : null}
+                      collapsed={collapsed}
+                      dropOver={dropOver}
+                      onOpen={open}
+                      onOpenContent={openContent}
+                      onSelect={holdGraph ? setSelectedPortfolio : onOpenPortfolio}
+                      onToggle={toggleCollapsed}
+                      onDragOver={acceptDrop}
+                      onDrop={takeDrop}
+                      onDragStart={startDrag}
+                      onPortfolioDragStart={startPortfolioDrag}
+                      onDocumentMenu={(event, id) =>
+                        openMenu(event, {
+                          x: event.clientX,
+                          y: event.clientY,
+                          kind: "document",
+                          id,
+                        })
+                      }
+                      onPortfolioMenu={(event, id) =>
+                        openMenu(event, {
+                          x: event.clientX,
+                          y: event.clientY,
+                          kind: "portfolio",
+                          id,
+                        })
+                      }
+                    />
+                  ))}
+                  <GroupedDocs
+                    documents={forest.loose}
+                    scope="root"
+                    activeId={litId}
+                    depth={0}
+                    collapsed={collapsed}
+                    onOpen={open}
+                    onOpenContent={openContent}
+                    onDragStart={startDrag}
+                    onToggle={toggleCollapsed}
+                    onContextMenu={(event, id) =>
+                      openMenu(event, { x: event.clientX, y: event.clientY, kind: "document", id })
+                    }
+                  />
+                </>
+              ) : null}
               <SharedSection workspaces onOpen={onOpenShared} />
               <SharedSection onOpen={onOpenShared} />
               {mail ? (

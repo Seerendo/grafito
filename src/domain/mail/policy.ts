@@ -45,7 +45,8 @@ export const DEFAULT_MAIL_POLICY: MailPolicy = {
   maxAccountsPerUser: 5,
   minIntervalSeconds: 120,
   defaultIntervalSeconds: 300,
-  maxHistoryDays: 365,
+  /** 0: no limit (the whole mailbox, like the mail server shows it). */
+  maxHistoryDays: 0,
   maxAttachmentBytes: 25 * 1024 * 1024,
   prefetchAttachmentBytes: 1024 * 1024,
   attachmentQuotaBytes: 2 * 1024 * 1024 * 1024,
@@ -98,7 +99,7 @@ export function parseMailPolicy(raw: unknown): MailPolicy {
       86_400,
       Math.max(minInterval, d.defaultIntervalSeconds),
     ),
-    maxHistoryDays: clamp(value.maxHistoryDays, 1, 3650, d.maxHistoryDays),
+    maxHistoryDays: clamp(value.maxHistoryDays, 0, 36500, d.maxHistoryDays),
     maxAttachmentBytes: clamp(value.maxAttachmentBytes, 1024, 1024 ** 3, d.maxAttachmentBytes),
     prefetchAttachmentBytes: clamp(
       value.prefetchAttachmentBytes,
@@ -125,10 +126,22 @@ export function syncInterval(policy: MailPolicy, asked: number | null | undefine
 }
 
 /** The history window an account asks for, within the policy. */
+/**
+ * Days of history an account copies; 0 means all of it. Without a choice, as much as the policy
+ * allows (all, by default), so every folder holds what the mail server shows.
+ */
 export function historyDays(policy: MailPolicy, asked: number | null | undefined): number {
+  const max = policy.maxHistoryDays;
   const value = Number(asked);
-  if (!Number.isFinite(value) || value <= 0) return Math.min(30, policy.maxHistoryDays);
-  return Math.min(policy.maxHistoryDays, Math.max(1, Math.round(value)));
+  if (!Number.isFinite(value) || value <= 0) return max;
+  const days = Math.max(1, Math.round(value));
+  return max > 0 ? Math.min(max, days) : days;
+}
+
+/** Whether a new history window reaches further back than the old one. */
+export function widerHistory(before: number, after: number): boolean {
+  if (before === 0) return false;
+  return after === 0 || after > before;
 }
 
 /** Whether an email address's domain is allowed by the policy. */

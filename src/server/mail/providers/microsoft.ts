@@ -84,6 +84,11 @@ export class MicrosoftConnector implements MailConnector {
 
   async close(): Promise<void> {}
 
+  /** A MIME message posted to /messages becomes a draft. */
+  async saveDraft(raw: Buffer): Promise<void> {
+    await providerSend(`${API}/messages`, await this.token(), raw.toString("base64"), "text/plain");
+  }
+
   /** Graph takes the MIME source as base64 text and saves a copy in Sent Items. */
   async send(message: OutgoingMessage): Promise<{ sentCopy: boolean }> {
     await providerSend(
@@ -221,7 +226,7 @@ export class MicrosoftConnector implements MailConnector {
       let url =
         state.backfillCursor ??
         state.deltaLink ??
-        `${API}/mailFolders/${encodeURIComponent(folder.remoteId)}/messages/delta?$select=${SELECT}&$filter=receivedDateTime+ge+${since}`;
+        `${API}/mailFolders/${encodeURIComponent(folder.remoteId)}/messages/delta?$select=${SELECT}${this.account.historyDays > 0 ? `&$filter=receivedDateTime+ge+${since}` : ""}`;
       try {
         while (url && Date.now() < context.deadline && processed < context.maxMessages) {
           const page: {

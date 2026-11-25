@@ -17,6 +17,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
+import { ImapFlow } from "imapflow";
+import { AwsClient } from "aws4fetch";
 
 const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
@@ -85,6 +87,8 @@ async function signIn(browser, who) {
     acceptDownloads: true,
   });
   const page = await context.newPage();
+  // Leaving a message being written asks to confirm; tests leave on purpose.
+  page.on("dialog", (dialog) => void dialog.accept());
   page.setDefaultTimeout(60_000);
   await page.goto(`${base}/login`);
   const token = await page.evaluate(
@@ -139,6 +143,18 @@ async function received(subject) {
   const message = await (await fetch(`${SMTP_API}/api/v1/message/${found.ID}`)).json();
   const headers = await (await fetch(`${SMTP_API}/api/v1/message/${found.ID}/headers`)).json();
   return { message, headers };
+}
+
+/** The text/calendar part of a received message, decoded. */
+async function calendarPart(message) {
+  const unfold = (value) => value.replace(/\r?\n /g, "");
+  for (const part of [...(message.Attachments ?? []), ...(message.Inline ?? [])]) {
+    if (!/calendar/i.test(part.ContentType) && !/\.ics$/i.test(part.FileName ?? "")) continue;
+    return unfold(
+      await (await fetch(`${SMTP_API}/api/v1/message/${message.ID}/part/${part.PartID}`)).text(),
+    );
+  }
+  return unfold(await (await fetch(`${SMTP_API}/api/v1/message/${message.ID}/raw`)).text());
 }
 
 async function smtpCount(subject) {
@@ -371,9 +387,16 @@ describe("email module", () => {
     await page.locator('[data-ui="mail-list"] [data-message]').first().waitFor();
     const subjects = await page.locator('[data-ui="mail-list"] [data-message]').allInnerTexts();
     assert.ok(subjects.some((text) => text.includes("Informe con adjuntos")));
-    assert.ok(
-      !subjects.some((text) => text.includes("Muy antiguo fuera de la ventana")),
-      "outside the 30-day window",
+    // The whole history by default, like the mail server shows it.
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message where account_id = $1 and subject = 'Muy antiguo fuera de la ventana'`,
+            [accountId],
+          )
+        )[0].n === 1,
+      "the 90-day-old message too",
     );
     // Credentials never come back, and they are stored sealed.
     const row = (await query(`select secret from mail_account where id = $1`, [accountId]))[0];
@@ -985,7 +1008,11 @@ describe("email module", () => {
       buffer: Buffer.from("solo para el correo"),
     });
     await form.locator('[data-attachment="solo-adjunto.txt"][data-status="ready"]').waitFor();
-    assert.equal(await page.locator('[data-ui="overlay"]').count(), 1, "no second window");
+    assert.equal(
+      await page.locator('[data-ui="overlay"]').count(),
+      0,
+      "no window: it is written in its tab",
+    );
     // Dragging files over the message turns its body into two drop zones, like Outlook.
     await form.getByLabel("Guardar en").selectOption({ label: "Adjuntos guardados" });
     await form.evaluate((element) => {
@@ -1116,5 +1143,322 @@ describe("email module", () => {
     await agenda.locator(`[data-event="${title} (cambiada)"]`).waitFor({ state: "detached" });
     stored = await davEvents();
     assert.ok(!stored.some((item) => item.includes(title)), "deleted on the server");
+  });
+  /** The account's Drafts folder on the IMAP server itself (what Zimbra shows). */
+  async function serverDraft(subject) {
+    const client = new ImapFlow({
+      host: "127.0.0.1",
+      port: Number(process.env.MAIL_TEST_PORT || 1993),
+      secure: true,
+      servername: "imap-test",
+      tls: { ca: [readFileSync(new URL("../../.data/imap-test/certs/ca.crt", import.meta.url))] },
+      auth: { user: "ana@prueba.test", pass: "Correo-Ana-2026" },
+      logger: false,
+    });
+    await client.connect();
+    try {
+      await client.mailboxOpen("Drafts");
+      const uids = await client.search({ subject }, { uid: true });
+      if (!uids?.length) return null;
+      const message = await client.fetchOne(
+        String(uids.at(-1)),
+        { source: true, flags: true },
+        { uid: true },
+      );
+      return { source: message.source.toString("utf8"), flags: [...message.flags] };
+    } finally {
+      await client.logout();
+    }
+  }
+
+  const s3 = new AwsClient({
+    accessKeyId: "grafito",
+    secretAccessKey: process.env.E2E_S3_SECRET ?? "grafito-secret",
+    service: "s3",
+    region: "us-east-1",
+  });
+  const S3 = (process.env.E2E_S3 ?? "http://127.0.0.1:19000/grafito").replace(/\/+$/, "");
+
+  test("T60: a red flag on every message, «Fichados», and the right-click menu with tabs", async () => {
+    await page.goto(`${base}/correo`);
+    const row = page
+      .locator('[data-ui="mail-list"] [data-message]')
+      .filter({ hasText: "HTML peligroso con imagen embebida" })
+      .first();
+    await row.locator('[data-ui="mail-flag"]').click();
+    await until(
+      async () =>
+        (
+          await query(
+            `select coalesce(local_flagged, remote_flagged) as flagged from mail_message where account_id = $1 and subject = 'HTML peligroso con imagen embebida'`,
+            [accountId],
+          )
+        )[0].flagged === true,
+      "flagged",
+    );
+    assert.equal(await row.getAttribute("data-flagged"), "");
+    assert.equal(await page.locator('[data-ui="overlay"]').count(), 0, "no menu opened to flag");
+    await page.getByRole("button", { name: "Fichados" }).click();
+    await page
+      .locator('[data-ui="mail-list"] [data-message]')
+      .filter({ hasText: "HTML peligroso con imagen embebida" })
+      .waitFor();
+    // Right click: open in a new tab, open, mark unread, reply.
+    await page.goto(`${base}/correo`);
+    const menu = page.locator('[data-ui="mail-row-menu"]');
+    const rows = page.locator('[data-ui="mail-list"] [data-message]');
+    await rows.filter({ hasText: "Informe con adjuntos" }).first().click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Abrir en una nueva pestaña" }).click();
+    await page
+      .locator('[data-ui="mail-tab"]')
+      .filter({ hasText: "Informe con adjuntos" })
+      .waitFor();
+    await rows
+      .filter({ hasText: "HTML peligroso con imagen embebida" })
+      .first()
+      .click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Abrir", exact: true }).click();
+    await page
+      .locator('[data-ui="mail-tab"]')
+      .filter({ hasText: "HTML peligroso con imagen embebida" })
+      .waitFor();
+    assert.equal(await page.locator('[data-ui="mail-tab"]').count(), 2);
+    await rows
+      .filter({ hasText: "HTML peligroso con imagen embebida" })
+      .first()
+      .click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Marcar como no leído" }).click();
+    await until(
+      async () =>
+        (
+          await query(
+            `select coalesce(local_seen, remote_seen) as seen from mail_message where account_id = $1 and subject = 'HTML peligroso con imagen embebida'`,
+            [accountId],
+          )
+        )[0].seen === false,
+      "marked unread",
+    );
+    await rows.filter({ hasText: "Informe con adjuntos" }).first().click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Responder", exact: true }).click();
+    const reply = page.locator('[data-ui="mail-compose"]').last();
+    await reply.waitFor();
+    assert.equal(await reply.getByLabel("Asunto").inputValue(), "Re: Informe con adjuntos");
+    // The message is written in its tab of the reading pane, not in a window.
+    assert.equal(await page.locator('[data-ui="overlay"]').count(), 0);
+    assert.ok((await page.locator('[data-ui="mail-tab"][data-compose]').count()) >= 1);
+  });
+
+  test("T61: closing a message being written asks; «Sí» keeps it in Drafts on the server, «No» throws it away", async () => {
+    await page.goto(`${base}/correo`);
+    // Without changes it closes without asking.
+    await page.getByRole("button", { name: "Redactar" }).click();
+    let tab = page.locator('[data-ui="mail-tab"][data-compose]').last();
+    await tab.getByRole("button", { name: /^Cerrar/ }).click();
+    await tab.waitFor({ state: "detached" });
+    // Kept as a draft, with recipients and attachments.
+    const subject = `Borrador ${stamp}`;
+    await page.getByRole("button", { name: "Redactar" }).click();
+    const form = page.locator('[data-ui="mail-compose"]').last();
+    await form.getByLabel("Para").fill("destino@otro.test");
+    await form.getByRole("button", { name: "CC y CCO" }).click();
+    await form.getByLabel("CC", { exact: true }).fill("copia@otro.test");
+    await form.getByLabel("Asunto").fill(subject);
+    await form.getByLabel("Mensaje").press("Control+Home");
+    await form.getByLabel("Mensaje").type("Texto del borrador.");
+    await form.locator('input[type="file"]').setInputFiles({
+      name: "borrador.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("adjunto del borrador"),
+    });
+    await form.locator('[data-attachment="borrador.txt"][data-status="ready"]').waitFor();
+    tab = page.locator('[data-ui="mail-tab"]').filter({ hasText: subject });
+    await tab.getByRole("button", { name: /^Cerrar/ }).click();
+    const ask = page.locator('[data-ui="mail-close-draft"]');
+    await ask.getByText("¿Desea guardarlo como borrador?").waitFor();
+    await ask.getByRole("button", { name: "Sí" }).click();
+    await tab.waitFor({ state: "detached" });
+    await page.getByText("Borrador guardado.").waitFor();
+    const draft = await serverDraft(subject);
+    assert.ok(draft, "in the server's Drafts");
+    assert.ok(draft.flags.includes("\\Draft"));
+    assert.match(draft.source, /^To: destino@otro\.test/m);
+    assert.match(draft.source, /^Cc: copia@otro\.test/m);
+    assert.match(draft.source, /filename="?borrador\.txt"?/);
+    assert.match(draft.source, /Texto del borrador\./);
+    // Back in Grafito's Borradores after the sync.
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message m
+             join mail_message_location l on l.message_id = m.id
+             join mail_folder f on f.id = l.folder_id
+             where m.account_id = $1 and m.subject = $2 and f.special_use = 'drafts'`,
+            [accountId, subject],
+          )
+        )[0].n === 1,
+      "the draft synced",
+      120_000,
+    );
+    // «No»: the message and the file uploaded for it are gone.
+    await page.getByRole("button", { name: "Redactar" }).click();
+    const other = page.locator('[data-ui="mail-compose"]').last();
+    await other.getByLabel("Asunto").fill(`Descartado ${stamp}`);
+    await other.locator('input[type="file"]').setInputFiles({
+      name: "temporal.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("no debe quedar"),
+    });
+    const chip = other.locator('[data-attachment="temporal.txt"][data-status="ready"]');
+    await chip.waitFor();
+    const key = await chip.getAttribute("data-key");
+    assert.ok(key);
+    assert.equal((await s3.fetch(`${S3}/${key}`, { method: "HEAD" })).status, 200);
+    tab = page.locator('[data-ui="mail-tab"]').filter({ hasText: `Descartado ${stamp}` });
+    await tab.getByRole("button", { name: /^Cerrar/ }).click();
+    await ask.getByRole("button", { name: "No" }).click();
+    await tab.waitFor({ state: "detached" });
+    await until(
+      async () => (await s3.fetch(`${S3}/${key}`, { method: "HEAD" })).status === 404,
+      "the upload removed",
+    );
+    assert.equal(await serverDraft(`Descartado ${stamp}`), null);
+  });
+
+  test("T62: a meeting from a message invites its people by mail", async () => {
+    const view = await openMessage("Informe con adjuntos");
+    await view.getByRole("button", { name: "Programar reunión" }).click();
+    const form = page.locator('[data-ui="agenda-form"]');
+    await form.waitFor();
+    assert.equal(await form.getByLabel("Título").inputValue(), "Informe con adjuntos");
+    assert.match(await form.getByLabel("Invitados").inputValue(), /ana\.r@otro\.test/);
+    await form.getByLabel("Hora de inicio").fill("16:00");
+    await form.getByLabel("Hora de fin").fill("16:30");
+    await form.getByRole("button", { name: "Guardar" }).click();
+    await page.getByText("Reunión programada; se enviaron las invitaciones.").waitFor();
+    const { message } = await received("Invitación: Informe con adjuntos");
+    const raw = await (await fetch(`${SMTP_API}/api/v1/message/${message.ID}/raw`)).text();
+    assert.match(raw, /METHOD:REQUEST/);
+    assert.match(raw.replace(/\r?\n /g, ""), /ATTENDEE[^\n]*mailto:ana\.r@otro\.test/i);
+    assert.ok((await davEvents()).some((item) => item.includes("SUMMARY:Informe con adjuntos")));
+  });
+
+  test("T63: an invitation received by mail is answered from the message and from the Agenda, with its color", async () => {
+    const uid = `inv-${stamp}`;
+    seed("invite", "ana@prueba.test", "Correo-Ana-2026", uid);
+    await syncNow();
+    const view = await openMessage("Invitación: Revisión del proyecto");
+    const card = view.locator('[data-ui="mail-invitation"]');
+    await card.getByText("Revisión del proyecto").first().waitFor({ timeout: 90_000 });
+    assert.match(await card.innerText(), /Sala 4/);
+    await card.getByRole("button", { name: "Aceptar" }).click();
+    await card.getByText(/Respuesta enviada/).waitFor();
+    let { message } = await received("Aceptado: Revisión del proyecto");
+    assert.deepEqual(
+      message.To.map((item) => item.Address),
+      ["carlos.mena@prueba.test"],
+    );
+    let raw = await calendarPart(message);
+    assert.match(raw, /METHOD:REPLY/);
+    assert.match(raw, /PARTSTAT=ACCEPTED/);
+    assert.ok(
+      (await davEvents()).some((item) => item.includes(uid) && /PARTSTAT=ACCEPTED/.test(item)),
+    );
+    // In the Agenda: accepted, then declined from there.
+    await page.goto(`${base}/correo`);
+    await page.locator('[data-ui="mail-agenda-entry"]').click();
+    const agenda = page.locator('[data-ui="mail-agenda"]');
+    await agenda.getByRole("button", { name: "Lista" }).click();
+    const pill = agenda.locator('[data-event="Revisión del proyecto"]').first();
+    await pill.waitFor();
+    assert.equal(await pill.getAttribute("data-answer"), "ACCEPTED");
+    await pill.click();
+    const detail = page.locator('[data-ui="agenda-event"]');
+    assert.equal(
+      await detail.getByRole("button", { name: "Editar" }).count(),
+      0,
+      "a guest does not edit",
+    );
+    await detail.getByRole("button", { name: "Rechazar" }).click();
+    await agenda
+      .locator('[data-event="Revisión del proyecto"][data-answer="DECLINED"]')
+      .first()
+      .waitFor();
+    ({ message } = await received("Rechazado: Revisión del proyecto"));
+    raw = await calendarPart(message);
+    assert.match(raw, /PARTSTAT=DECLINED/);
+  });
+
+  test("T64: the gear opens a menu; Preferencias keeps the signature", async () => {
+    await page.goto(`${base}/correo`);
+    await page.getByRole("button", { name: "Opciones del correo" }).click();
+    const menu = page.locator('[data-ui="mail-settings-menu"]');
+    await menu.getByRole("menuitem", { name: "Cuentas de correo" }).waitFor();
+    await menu.getByRole("menuitem", { name: "Preferencias" }).click();
+    const prefs = page.locator('[data-ui="mail-preferences"]');
+    await prefs.getByLabel("Firma").fill("Ana desde Preferencias");
+    await prefs.getByRole("button", { name: "Guardar" }).click();
+    await until(
+      async () =>
+        (await query(`select signature from mail_account where id = $1`, [accountId]))[0]
+          .signature === "Ana desde Preferencias",
+      "signature from Preferencias",
+    );
+    assert.match(page.url(), /\/correo$/, "stays in the mail screen");
+  });
+
+  test("T65: MCP: new mail is detected, drafts are kept, recipients and the Agenda", async () => {
+    await query(`update mail_account set mcp_access = true where id = $1`, [accountId]);
+    const start = await mcp(ana.token, "wait_for_mail");
+    assert.ok(start.data.cursor);
+    const subject = `Llega por MCP ${stamp}`;
+    seed("one", "ana@prueba.test", "Correo-Ana-2026", subject);
+    await query(`update mail_account set next_sync_at = 0 where id = $1`, [accountId]);
+    let found = null;
+    for (let i = 0; i < 6 && !found; i += 1) {
+      const next = await mcp(ana.token, "wait_for_mail", {
+        cursor: start.data.cursor,
+        wait_seconds: 20,
+      });
+      found = next.data.messages.find((item) => item.untrusted_content.subject === subject) ?? null;
+    }
+    assert.ok(found, "detected by wait_for_mail");
+    const draft = await mcp(ana.token, "save_mail_draft", {
+      to: "destino@otro.test",
+      subject: `Borrador MCP ${stamp}`,
+      text: "Escrito por el asistente.",
+    });
+    assert.equal(draft.error, false, JSON.stringify(draft.data));
+    assert.ok(await serverDraft(`Borrador MCP ${stamp}`), "in the server's Drafts");
+    assert.equal(await smtpCount(`Borrador MCP ${stamp}`), 0, "not sent");
+    const people = await mcp(ana.token, "find_recipients", { query: "rodd" });
+    assert.ok(people.data.people.some((item) => item.address === "roddy.andrade@prueba.test"));
+    const events = await mcp(ana.token, "list_calendar_events");
+    assert.ok(events.data.calendars.length >= 1);
+    const created = await mcp(ana.token, "create_calendar_event", {
+      calendar_id: events.data.calendars[0].id,
+      title: `Evento MCP ${stamp}`,
+      start: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+      end: new Date(Date.now() + 3 * 86_400_000 + 3_600_000).toISOString(),
+    });
+    assert.equal(created.error, false, JSON.stringify(created.data));
+    assert.ok((await davEvents()).some((item) => item.includes(`Evento MCP ${stamp}`)));
+  });
+
+  test("the Carpeta Personal folds and unfolds, remembered, without changing what a click on it does", async () => {
+    await page.goto(`${base}/`);
+    const fold = page.locator('[data-ui="personal-fold"]');
+    await fold.waitFor();
+    const portfolio = page.getByText("Adjuntos guardados", { exact: true }).first();
+    await portfolio.waitFor();
+    await fold.click();
+    await portfolio.waitFor({ state: "detached" });
+    assert.equal(await fold.getAttribute("aria-expanded"), "false");
+    await page.reload();
+    await fold.waitFor();
+    assert.equal(await fold.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.getByText("Adjuntos guardados", { exact: true }).count(), 0);
+    await fold.click();
+    await page.getByText("Adjuntos guardados", { exact: true }).first().waitFor();
   });
 });

@@ -309,6 +309,7 @@ The `vault/` pieces:
 | `0049_mail_personal.sql`      | Email accounts are set up by each person in the Account: drops `mailbox.manage`, clears the administrator pause and profiles of accounts (the `mail_profile` table stays)                                                                                                                                     |
 | `0050_mail_send.sql`          | Sending mail: `mail_account.smtp_host` and `smtp_port` (an IMAP account's SMTP server)                                                                                                                                                                                                                        |
 | `0051_mail_more.sql`          | Signatures, the web server and CalDAV address of an account, `mail_contact` (recipients by name, filled from existing mail), `mail_calendar` (the CalDAV calendars found and which show)                                                                                                                      |
+| `0052_mail_meetings.sql`      | Who sends an account's invitations (`calendar_scheduling`: its CalDAV server or Grafito by mail), arrival index for `wait_for_mail`, the whole history by default (accounts at the old 30 days look back again)                                                                                               |
 
 ## Access flow
 

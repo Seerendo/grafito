@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 import ICAL from "ical.js";
 import type { Sql } from "@/lib/db";
-import { connectorAccount } from "./accounts";
+import MailComposer from "nodemailer/lib/mail-composer";
+import { buildConnector, connectorAccount } from "./accounts";
 import { MailError } from "./providers/types";
 import { webRequest, type WebAnswer } from "./web";
 
@@ -44,6 +45,10 @@ export type EventView = {
   organizer: string;
   attendees: { name: string; address: string; status: string }[];
   recurring: boolean;
+  /** This account's answer when it is a guest (ACCEPTED, TENTATIVE, DECLINED, NEEDS-ACTION). */
+  mine: string;
+  /** The account organizes it (or nobody is invited). */
+  organizerMe: boolean;
 };
 
 const parser = new XMLParser({
@@ -156,14 +161,15 @@ export async function discoverCalendars(
 ): Promise<CalendarView[]> {
   const found = await account(sql, userId, accountId);
   const start = baseUrl(found);
-  const principalAsk = `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:current-user-principal/><c:calendar-home-set/></d:prop></d:propfind>`;
+  const principalAsk = `<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:current-user-principal/><c:calendar-home-set/><c:schedule-outbox-URL/></d:prop></d:propfind>`;
   const first = await dav(found, start, "PROPFIND", principalAsk, { depth: "0" });
   if (first.status !== 207)
     throw new MailError("permanent", "No se encontró una agenda CalDAV en ese servidor.");
   const top = multistatus(first.body)[0];
   let home = hrefOf(top?.props["calendar-home-set"]);
+  let outbox = hrefOf(top?.props["schedule-outbox-URL"]);
   const principal = hrefOf(top?.props["current-user-principal"]);
-  if (!home && principal) {
+  if ((!home || !outbox) && principal) {
     const second = await dav(
       found,
       new URL(principal, start).toString(),
@@ -173,8 +179,15 @@ export async function discoverCalendars(
         depth: "0",
       },
     );
-    home = hrefOf(multistatus(second.body)[0]?.props["calendar-home-set"]);
+    const props = multistatus(second.body)[0]?.props;
+    home ||= hrefOf(props?.["calendar-home-set"]);
+    outbox ||= hrefOf(props?.["schedule-outbox-URL"]);
   }
+  // A server with a scheduling outbox (RFC 6638, as Zimbra) sends the invitations itself;
+  // otherwise Grafito sends them by mail (iTIP over email, RFC 6047).
+  await sql`
+    update mail_account set calendar_scheduling = ${outbox ? "server" : "email"} where id = ${accountId}
+  `;
   const homeUrl = new URL(home || principal || start, start).toString();
   const listing = await dav(
     found,
@@ -281,6 +294,19 @@ function stamp(ms: number): string {
     .replace(/\.\d{3}/, "");
 }
 
+/** The account's own answer to an event, and whether it organizes it. */
+function answerOf(item: ICAL.Event, own: string): { mine: string; organizerMe: boolean } {
+  const me = own.toLowerCase();
+  const organizer = address(String(item.organizer ?? ""));
+  const guest = item.attendees.find(
+    (attendee) => address(String(attendee.getFirstValue() ?? "")) === me,
+  );
+  return {
+    mine: guest ? String(guest.getParameter("partstat") ?? "NEEDS-ACTION").toUpperCase() : "",
+    organizerMe: !organizer || organizer === me,
+  };
+}
+
 function address(value: string): string {
   return value
     .replace(/^mailto:/i, "")
@@ -324,7 +350,17 @@ export async function listEvents(
           const data = text(item.props["calendar-data"]);
           if (!data) continue;
           const href = new URL(item.href, row.href).toString();
-          events.push(...expand(data, calendar.id, href, text(item.props.getetag), from, to));
+          events.push(
+            ...expand(
+              data,
+              calendar.id,
+              href,
+              text(item.props.getetag),
+              from,
+              to,
+              calendar.accountEmail,
+            ),
+          );
         }
       } catch (error) {
         problems.push(
@@ -344,6 +380,7 @@ function expand(
   etag: string,
   from: number,
   to: number,
+  own: string,
 ): EventView[] {
   let root: ICAL.Component;
   try {
@@ -381,6 +418,7 @@ function expand(
       status: String(attendee.getParameter("partstat") ?? "NEEDS-ACTION").toUpperCase(),
     })),
     recurring: event.isRecurring(),
+    ...answerOf(item, own),
   });
   if (!event.isRecurring()) {
     const end = event.endDate ?? event.startDate;
@@ -423,8 +461,15 @@ export type EventInput = {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Create or change an event; the server sends invitations when it handles scheduling. */
-export async function saveEvent(sql: Sql, userId: string, input: EventInput): Promise<void> {
+/**
+ * Create or change an event. Guests are invited by the server when it handles scheduling, or by
+ * an invitation mail from the account (iCalendar REQUEST; CANCEL for guests taken off).
+ */
+export async function saveEvent(
+  sql: Sql,
+  userId: string,
+  input: EventInput,
+): Promise<{ invited: number }> {
   const row = await calendarRow(sql, userId, input.calendarId);
   if (!(row.writable === true || row.writable === "t"))
     throw new MailError("permanent", "Ese calendario es de solo lectura.");
@@ -524,6 +569,83 @@ export async function saveEvent(sql: Sql, userId: string, input: EventInput): Pr
     throw new MailError("permanent", "El evento cambió en el servidor; vuelve a abrirlo.");
   if (answer.status < 200 || answer.status >= 300)
     throw new MailError("temporary", `El servidor de la agenda respondió ${answer.status}.`);
+  if (!(await mailsInvitations(sql, row.account_id))) return { invited: 0 };
+  const organizer = address(String(vevent.getFirstPropertyValue("organizer") ?? ""));
+  if (organizer && organizer !== found.email.toLowerCase()) return { invited: 0 };
+  const removed = [...previous.keys()].filter((item) => !invited.includes(item));
+  if (invited.length) await sendInvitation(sql, found, root, "REQUEST", invited);
+  if (removed.length) await sendInvitation(sql, found, root, "CANCEL", removed);
+  return { invited: invited.length };
+}
+
+async function mailsInvitations(sql: Sql, accountId: string): Promise<boolean> {
+  const rows = await sql<{ calendar_scheduling: string }>`
+    select calendar_scheduling from mail_account where id = ${accountId} limit 1
+  `;
+  return rows[0]?.calendar_scheduling !== "server";
+}
+
+/** An invitation (or a cancellation) by mail from the organizer's account, with the event. */
+async function sendInvitation(
+  sql: Sql,
+  found: Account,
+  root: ICAL.Component,
+  method: "REQUEST" | "CANCEL" | "REPLY",
+  to: string[],
+): Promise<void> {
+  const copy = new ICAL.Component(root.toJSON());
+  copy.updatePropertyWithValue("method", method);
+  const vevent = copy.getFirstSubcomponent("vevent");
+  if (!vevent) return;
+  if (method === "CANCEL") vevent.updatePropertyWithValue("status", "CANCELLED");
+  const event = new ICAL.Event(vevent);
+  const start = event.startDate?.toJSDate();
+  const when = start
+    ? event.startDate.isDate
+      ? start.toLocaleDateString("es", { dateStyle: "full" })
+      : start.toLocaleString("es", { dateStyle: "full", timeStyle: "short", timeZone: "UTC" }) +
+        " (UTC)"
+    : "";
+  const title = event.summary || "Reunión";
+  const answer = String(
+    vevent.getFirstProperty("attendee")?.getParameter("partstat") ?? "",
+  ).toUpperCase();
+  const replied =
+    { ACCEPTED: "Aceptado", TENTATIVE: "Quizás", DECLINED: "Rechazado" }[answer] ?? "Respuesta";
+  const lines = [
+    method === "CANCEL"
+      ? `Se canceló: ${title}`
+      : method === "REPLY"
+        ? `${replied}: ${title}`
+        : `Invitación: ${title}`,
+    when,
+    event.location ? `Lugar: ${event.location}` : "",
+    "",
+    event.description ?? "",
+  ].filter((line, index) => (index < 3 ? Boolean(line) : true));
+  const composer = new MailComposer({
+    from: { name: "", address: found.email },
+    to,
+    subject:
+      method === "CANCEL"
+        ? `Cancelado: ${title}`
+        : method === "REPLY"
+          ? `${replied}: ${title}`
+          : `Invitación: ${title}`,
+    text: lines.join("\n").trim(),
+    icalEvent: { method, filename: "invite.ics", content: copy.toString() },
+    disableFileAccess: true,
+    disableUrlAccess: true,
+  });
+  const node = composer.compile();
+  node.keepBcc = found.provider !== "imap";
+  const raw = await node.build();
+  const connector = await buildConnector(sql, found);
+  try {
+    await connector.send({ raw, from: found.email, recipients: to });
+  } finally {
+    await connector.close();
+  }
 }
 
 export async function deleteEvent(
@@ -535,6 +657,18 @@ export async function deleteEvent(
   if (!inside(input.href, row.href))
     throw new MailError("permanent", "Ese evento no es de este calendario.");
   const found = await account(sql, userId, row.account_id);
+  // The event as it was, to tell its guests it is cancelled.
+  let before: ICAL.Component | null = null;
+  if (await mailsInvitations(sql, row.account_id)) {
+    const current = await webRequest(input.href, { method: "GET", auth: auth(found) });
+    if (current.status === 200) {
+      try {
+        before = new ICAL.Component(ICAL.parse(current.body));
+      } catch {
+        before = null;
+      }
+    }
+  }
   const answer = await webRequest(input.href, {
     method: "DELETE",
     auth: auth(found),
@@ -544,4 +678,255 @@ export async function deleteEvent(
     throw new MailError("permanent", "El evento cambió en el servidor; vuelve a abrirlo.");
   if (answer.status !== 404 && (answer.status < 200 || answer.status >= 300))
     throw new MailError("temporary", `El servidor de la agenda respondió ${answer.status}.`);
+  const vevent = before?.getFirstSubcomponent("vevent");
+  if (before && vevent && !vevent.hasProperty("rrule")) {
+    const organizer = address(String(vevent.getFirstPropertyValue("organizer") ?? ""));
+    const guests = vevent
+      .getAllProperties("attendee")
+      .map((prop) => address(String(prop.getFirstValue())));
+    if (guests.length && (!organizer || organizer === found.email.toLowerCase()))
+      await sendInvitation(sql, found, before, "CANCEL", guests);
+  }
+}
+
+// ── Answering invitations ───────────────────────────────────────────────────────────
+
+export type Answer = "ACCEPTED" | "TENTATIVE" | "DECLINED";
+
+/** Set this account's answer on every part of an event (the series and its exceptions). */
+function setAnswer(root: ICAL.Component, own: string, answer: Answer): boolean {
+  let found = false;
+  for (const vevent of root.getAllSubcomponents("vevent"))
+    for (const attendee of vevent.getAllProperties("attendee"))
+      if (address(String(attendee.getFirstValue() ?? "")) === own.toLowerCase()) {
+        attendee.setParameter("partstat", answer);
+        attendee.removeParameter("rsvp");
+        found = true;
+      }
+  return found;
+}
+
+/** The REPLY the organizer gets: the event with only this guest and its answer. */
+async function replyByMail(sql: Sql, found: Account, root: ICAL.Component): Promise<void> {
+  const copy = new ICAL.Component(root.toJSON());
+  const vevents = copy.getAllSubcomponents("vevent");
+  const master = vevents.find((item) => !item.hasProperty("recurrence-id")) ?? vevents[0];
+  if (!master) return;
+  for (const other of vevents) if (other !== master) copy.removeSubcomponent(other);
+  for (const zone of copy.getAllSubcomponents("vtimezone")) copy.removeSubcomponent(zone);
+  const organizer = address(String(master.getFirstPropertyValue("organizer") ?? ""));
+  if (!organizer || organizer === found.email.toLowerCase()) return;
+  for (const attendee of master.getAllProperties("attendee"))
+    if (address(String(attendee.getFirstValue() ?? "")) !== found.email.toLowerCase())
+      master.removeProperty(attendee);
+  for (const name of ["description", "rrule", "exdate", "alarm"]) master.removeAllProperties(name);
+  for (const alarm of master.getAllSubcomponents("valarm")) master.removeSubcomponent(alarm);
+  master.updatePropertyWithValue("dtstamp", ICAL.Time.fromJSDate(new Date(), true));
+  await sendInvitation(sql, found, copy, "REPLY", [organizer]);
+}
+
+/** Answer an event of the Agenda where this account is a guest. */
+export async function respondToEvent(
+  sql: Sql,
+  userId: string,
+  input: { calendarId: string; href: string; etag: string; answer: Answer },
+): Promise<void> {
+  const row = await calendarRow(sql, userId, input.calendarId);
+  if (!inside(input.href, row.href))
+    throw new MailError("permanent", "Ese evento no es de este calendario.");
+  const found = await account(sql, userId, row.account_id);
+  const current = await webRequest(input.href, { method: "GET", auth: auth(found) });
+  if (current.status !== 200)
+    throw new MailError("permanent", "Ese evento ya no está en el servidor.");
+  const root = new ICAL.Component(ICAL.parse(current.body));
+  if (!setAnswer(root, found.email, input.answer))
+    throw new MailError("permanent", "No estás invitado a ese evento.");
+  const etag = current.headers.etag || input.etag;
+  const answer = await webRequest(input.href, {
+    method: "PUT",
+    auth: auth(found),
+    headers: {
+      "content-type": "text/calendar; charset=utf-8",
+      ...(etag ? { "if-match": etag } : {}),
+    },
+    body: root.toString(),
+  });
+  if (answer.status === 412)
+    throw new MailError("permanent", "El evento cambió en el servidor; vuelve a abrirlo.");
+  if (answer.status < 200 || answer.status >= 300)
+    throw new MailError("temporary", `El servidor de la agenda respondió ${answer.status}.`);
+  // A scheduling server (Zimbra) tells the organizer itself.
+  if (await mailsInvitations(sql, row.account_id)) await replyByMail(sql, found, root);
+}
+
+export type Invitation = {
+  method: string;
+  uid: string;
+  title: string;
+  start: number;
+  end: number;
+  allDay: boolean;
+  startDate: string;
+  endDate: string;
+  location: string;
+  organizer: string;
+  attendees: { name: string; address: string; status: string }[];
+  /** This account's answer in the calendar (or in the invitation when not in a calendar yet). */
+  mine: string;
+  recurring: boolean;
+};
+
+/** What an invitation received by mail (iMIP, text/calendar) says. */
+export function readInvitation(ics: string, own: string): Invitation | null {
+  let root: ICAL.Component;
+  try {
+    root = new ICAL.Component(ICAL.parse(ics));
+  } catch {
+    return null;
+  }
+  const vevent =
+    root.getAllSubcomponents("vevent").find((item) => !item.hasProperty("recurrence-id")) ??
+    root.getFirstSubcomponent("vevent");
+  if (!vevent) return null;
+  for (const zone of root.getAllSubcomponents("vtimezone"))
+    ICAL.TimezoneService.register(new ICAL.Timezone(zone));
+  const event = new ICAL.Event(vevent);
+  const start = event.startDate;
+  const end = event.endDate ?? start;
+  if (!start) return null;
+  return {
+    method: String(root.getFirstPropertyValue("method") ?? "PUBLISH").toUpperCase(),
+    uid: event.uid ?? "",
+    title: (event.summary ?? "").slice(0, 500),
+    start: start.toJSDate().getTime(),
+    end: end.toJSDate().getTime(),
+    allDay: start.isDate,
+    startDate: start.isDate ? dateText(start) : "",
+    endDate: start.isDate ? dateText(end) : "",
+    location: (event.location ?? "").slice(0, 500),
+    organizer: address(String(event.organizer ?? "")),
+    attendees: event.attendees.slice(0, 200).map((attendee) => ({
+      name: String(attendee.getParameter("cn") ?? ""),
+      address: address(String(attendee.getFirstValue() ?? "")),
+      status: String(attendee.getParameter("partstat") ?? "NEEDS-ACTION").toUpperCase(),
+    })),
+    mine: answerOf(event, own).mine,
+    recurring: event.isRecurring(),
+  };
+}
+
+/** Find an event by UID in the account's calendars. */
+async function eventByUid(
+  sql: Sql,
+  userId: string,
+  accountId: string,
+  uid: string,
+): Promise<{ calendarId: string; href: string; etag: string; ics: string } | null> {
+  const found = await account(sql, userId, accountId);
+  const calendars = (await listCalendars(sql, userId)).filter(
+    (item) => item.accountId === accountId,
+  );
+  const safe = uid.replace(/[<>&"']/g, "");
+  for (const calendar of calendars) {
+    const row = await calendarRow(sql, userId, calendar.id);
+    const answer = await dav(
+      found,
+      row.href,
+      "REPORT",
+      `<?xml version="1.0"?><c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT"><c:prop-filter name="UID"><c:text-match collation="i;octet">${safe}</c:text-match></c:prop-filter></c:comp-filter></c:comp-filter></c:filter></c:calendar-query>`,
+      { depth: "1" },
+    );
+    if (answer.status !== 207) continue;
+    for (const item of multistatus(answer.body)) {
+      const data = text(item.props["calendar-data"]);
+      if (data && data.includes(uid))
+        return {
+          calendarId: calendar.id,
+          href: new URL(item.href, row.href).toString(),
+          etag: text(item.props.getetag),
+          ics: data,
+        };
+    }
+  }
+  return null;
+}
+
+/** Where an invitation stands in the Agenda: this account's answer there, if it is there. */
+export async function invitationState(
+  sql: Sql,
+  userId: string,
+  accountId: string,
+  invitation: Invitation,
+): Promise<{ inCalendar: boolean; mine: string }> {
+  try {
+    const existing = await eventByUid(sql, userId, accountId, invitation.uid);
+    if (!existing) return { inCalendar: false, mine: invitation.mine };
+    const email = (await account(sql, userId, accountId)).email;
+    return { inCalendar: true, mine: readInvitation(existing.ics, email)?.mine ?? invitation.mine };
+  } catch {
+    return { inCalendar: false, mine: invitation.mine };
+  }
+}
+
+/**
+ * Answer an invitation received by mail: the event goes into (or is updated in) the account's
+ * calendar with the answer, and the organizer is told (by the server when it schedules, or by
+ * a REPLY mail).
+ */
+export async function respondToInvitation(
+  sql: Sql,
+  userId: string,
+  input: { accountId: string; ics: string; answer: Answer },
+): Promise<{ calendar: string | null }> {
+  const found = await account(sql, userId, input.accountId);
+  const invitation = readInvitation(input.ics, found.email);
+  if (!invitation || !invitation.uid)
+    throw new MailError("permanent", "La invitación no se puede leer.");
+  if (invitation.method === "CANCEL")
+    throw new MailError("permanent", "Esa reunión fue cancelada.");
+  let calendars = (await listCalendars(sql, userId)).filter(
+    (item) => item.accountId === input.accountId && item.writable,
+  );
+  if (calendars.length === 0)
+    calendars = (await discoverCalendars(sql, userId, input.accountId).catch(() => [])).filter(
+      (item) => item.accountId === input.accountId && item.writable,
+    );
+  const existing = calendars.length
+    ? await eventByUid(sql, userId, input.accountId, invitation.uid)
+    : null;
+  if (existing) {
+    await respondToEvent(sql, userId, {
+      calendarId: existing.calendarId,
+      href: existing.href,
+      etag: existing.etag,
+      answer: input.answer,
+    });
+    return { calendar: calendars.find((item) => item.id === existing.calendarId)?.name ?? null };
+  }
+  const root = new ICAL.Component(ICAL.parse(input.ics));
+  root.removeAllProperties("method");
+  if (!setAnswer(root, found.email, input.answer)) {
+    // Invited through a list: add this account as the guest that answers.
+    const vevent = root.getFirstSubcomponent("vevent");
+    const prop = vevent?.addPropertyWithValue("attendee", `mailto:${found.email}`);
+    prop?.setParameter("partstat", input.answer);
+  }
+  let calendarName: string | null = null;
+  const target = calendars[0];
+  if (target && input.answer !== "DECLINED") {
+    const row = await calendarRow(sql, userId, target.id);
+    const href = new URL(
+      `${randomUUID()}.ics`,
+      row.href.endsWith("/") ? row.href : `${row.href}/`,
+    ).toString();
+    const put = await webRequest(href, {
+      method: "PUT",
+      auth: auth(found),
+      headers: { "content-type": "text/calendar; charset=utf-8", "if-none-match": "*" },
+      body: root.toString(),
+    });
+    if (put.status >= 200 && put.status < 300) calendarName = target.name;
+  }
+  await replyByMail(sql, found, root);
+  return { calendar: calendarName };
 }
