@@ -2,7 +2,8 @@
 
 Each person connects their own mail accounts (Zimbra or any IMAP server, Gmail,
 Microsoft 365 / Outlook.com). Grafito copies them in the background and shows
-them in **Correo electrónico** (avatar menu). Messages and attachments can be
+them in **Correo electrónico**, an entry of the vault's sidebar beside the
+Papelera; the accounts themselves are set up in **Cuenta → Cuentas de correo**. Messages and attachments can be
 searched, read and archived into portfolios as ordinary documents. Grafito only
 reads: it never sends, moves or deletes mail on the server.
 
@@ -85,16 +86,19 @@ connections short and their number bounded by the worker's concurrency.
 
 ## Data model (migration 0048)
 
-| Table                                                         | Holds                                                                                                      |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `mail_account`                                                | Owner, provider, address, server, sealed secret, sync settings, status, MCP permission, leases             |
-| `mail_folder`                                                 | Folders or labels of an account, role (special use), whether they sync, counters                           |
-| `mail_sync_state`                                             | Cursor per folder (UIDVALIDITY, last UID, MODSEQ, backfill cursor, delta link) or per account (history id) |
-| `mail_message`                                                | Normalized message: headers, text, HTML, snippet, remote and local flags, search vector                    |
-| `mail_message_location`                                       | Where a message is: folder, UID, UIDVALIDITY, flags; a Gmail message has one per label                     |
-| `mail_attachment`                                             | Attachment metadata; once downloaded, its storage key, checksum and antivirus result                       |
-| `mail_archive_reference`                                      | Which document an archived message or attachment became (the document is independent)                      |
-| `mail_job`, `mail_worker`, `mail_oauth_state`, `mail_profile` | Queue, heartbeats, OAuth sign-ins in progress, institutional profiles                                      |
+| Table                                         | Holds                                                                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `mail_account`                                | Owner, provider, address, server, sealed secret, sync settings, status, MCP permission, leases             |
+| `mail_folder`                                 | Folders or labels of an account, role (special use), whether they sync, counters                           |
+| `mail_sync_state`                             | Cursor per folder (UIDVALIDITY, last UID, MODSEQ, backfill cursor, delta link) or per account (history id) |
+| `mail_message`                                | Normalized message: headers, text, HTML, snippet, remote and local flags, search vector                    |
+| `mail_message_location`                       | Where a message is: folder, UID, UIDVALIDITY, flags; a Gmail message has one per label                     |
+| `mail_attachment`                             | Attachment metadata; once downloaded, its storage key, checksum and antivirus result                       |
+| `mail_archive_reference`                      | Which document an archived message or attachment became (the document is independent)                      |
+| `mail_job`, `mail_worker`, `mail_oauth_state` | Queue, heartbeats, OAuth sign-ins in progress                                                              |
+
+`mail_profile` and `mail_account.admin_paused` (migration 0048) are no longer
+used since 0049 and stay only so no data is dropped.
 
 Every table carries `user_id`, and every query filters by it. Two messages with
 the same Message-ID are not merged. Attachment bytes live in MinIO
@@ -102,13 +106,18 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
 
 ## Using it
 
-- **Connect:** **Correo electrónico** → gear → **Conectar una cuenta**. With
-  an institutional profile, the address and password are enough (the domain
-  of the address picks the profile). Otherwise, the IMAP server and port. The
-  password is tried once before anything is stored. Gmail and Microsoft use
-  their own sign-in page.
+- **Where:** the sidebar's **Correo electrónico** entry shows to everyone with
+  `mailbox.use` (Miembro by default) while the extension is on, also before
+  any account is connected; it then opens an empty screen. Accounts are
+  connected and managed in **Cuenta → Cuentas de correo** (the gear in the mail
+  screen leads there). Each person sets up only their own; there is nothing
+  about mail accounts in Administración.
+- **Connect:** the address, the IMAP server and port (993 TLS or 143
+  STARTTLS), and the password. The password is tried once before anything is
+  stored. Gmail and Microsoft use their own sign-in page, when the server has
+  their OAuth applications.
 - **Per account:** name, default account, automatic sync and its frequency
-  (within the administrator's minimum), folders that sync, new credentials,
+  (two minutes at least), folders that sync, new credentials,
   **Volver a autorizar** (OAuth), **Permitir acceso por MCP**, **Desconectar**
   (credentials forgotten, messages kept) and **Borrar la copia local**
   (messages and downloaded attachments deleted here, archived documents kept).
@@ -131,35 +140,31 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   quota, antivirus, indexing) and stay when the message is deleted on the
   server or the account is disconnected.
 
-## Administration
+## Server setup
 
-**Administración → Cuentas de correo** (permission `mailbox.manage`; using the
-module needs `mailbox.use`, on for Miembro by default). The module is the
-**Correo electrónico** extension (Administración → Extensiones), off until an
-administrator turns it on, which needs mail-sync running.
+The module is the **Correo electrónico** extension (Administración →
+Extensiones), off until an administrator turns it on, which needs mail-sync
+running. Everything else is in the server's environment (`.env`), passed to
+both `app` and `mail-sync`:
 
-- **Figures** for every account (not only the administrator's): people with
-  accounts, accounts by state, messages, stored attachments and space, queued,
-  running and failed jobs, average sync time, queue wait, worker heartbeats,
-  errors by provider. No subject, body, attachment or credential is shown.
-- **Controls** (audited): pause all syncing, a provider or an account; retry
-  failed jobs.
-- **Policy:** providers allowed, email domains, IMAP servers allowed besides
-  the profiles (`*.domain` works), profiles only, accounts per person, minimum
-  and default frequency, history window, largest attachment, attachment space
-  per person, largest stored body, jobs per worker and per provider, whether
-  bodies are searchable.
-- **Institutional profiles:** name, host, port (993 or 143) and the email
-  domains that suggest it. A profile's host may be on a private network.
-- **OAuth applications:** client id, secret (stored encrypted, never shown) and,
-  for Microsoft, the tenant. The page shows the redirect address to register.
+| Variable                                                   | Meaning                                                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `MAIL_TRUSTED_HOSTS`                                       | IMAP servers on a private network people may use (names or `*.suffix`, comma-separated) |
+| `MAIL_GMAIL_CLIENT_ID`, `MAIL_GMAIL_CLIENT_SECRET`         | Google's OAuth application; without it, no **Conectar Gmail**                           |
+| `MAIL_MICROSOFT_CLIENT_ID`, `MAIL_MICROSOFT_CLIENT_SECRET` | Microsoft's OAuth application; without it, no **Conectar Microsoft 365 / Outlook**      |
+| `MAIL_MICROSOFT_TENANT`                                    | `common` (any account) or one organization's tenant id                                  |
+
+The limits (five accounts per person, sync every two minutes at most, a year
+of history, 25 MB per attachment, 2 GB of attachments per person, four jobs per
+worker…) are defaults; an operator can override them with a JSON object in the
+`app_setting` row `mail_policy` (`src/domain/mail/policy.ts` lists the keys and
+clamps them).
 
 ### Zimbra
 
-Add a profile with the Zimbra mail host (for example `mail.universidad.edu`,
-port 993) and the institution's domain. People then connect with their address
-and password. If the server is reachable only inside the network, the profile
-is what allows it. If its certificate comes from the institution's own
+People connect with their address, the Zimbra mail host (for example
+`mail.universidad.edu`, port 993) and their password. If the server is
+reachable only inside the network, add it to `MAIL_TRUSTED_HOSTS`. If its certificate comes from the institution's own
 authority, mount the CA and set `NODE_EXTRA_CA_CERTS` on **both** `app` and
 `mail-sync`.
 
@@ -172,10 +177,11 @@ not supported.
 ### Gmail
 
 1. In Google Cloud: a project, the Gmail API enabled, an OAuth client of type
-   "Web application" with the redirect address shown in administration
-   (`https://your-grafito/api/mail/oauth/callback`), the scope
+   "Web application" with the redirect address
+   `<BETTER_AUTH_URL>/api/mail/oauth/callback`, the scope
    `https://www.googleapis.com/auth/gmail.readonly`, and the consent screen.
-2. Paste the client id and secret in **Aplicaciones OAuth → Google**.
+2. Set `MAIL_GMAIL_CLIENT_ID` and `MAIL_GMAIL_CLIENT_SECRET` and recreate
+   `app` and `mail-sync`.
 
 ### Microsoft 365 / Outlook.com
 
@@ -183,7 +189,8 @@ not supported.
    address, delegated permissions `Mail.Read`, `User.Read`, `offline_access`.
    For Outlook.com and other tenants, supported account types "any directory
    and personal accounts", tenant `common`; for one organization, its tenant id.
-2. Paste the client id, secret and tenant in **Aplicaciones OAuth → Microsoft**.
+2. Set `MAIL_MICROSOFT_CLIENT_ID`, `MAIL_MICROSOFT_CLIENT_SECRET` and
+   `MAIL_MICROSOFT_TENANT`, and recreate `app` and `mail-sync`.
 
 ## Configuration
 
@@ -213,15 +220,16 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
   stay on the server.
 - **OAuth:** authorization code with PKCE (S256), a random single-use `state`
   bound to the person and valid ten minutes, read-only scopes. The provider
-  sends the person back to `/correo`, where their own session finishes the
+  sends the person back to **Cuenta → Cuentas de correo**, where their own
+  session finishes the
   sign-in: a link prepared by someone else cannot attach a mailbox to another
   Grafito account. `invalid_grant` marks the account expired, not retried.
 - **Isolation:** every query filters by the signed-in person. An attachment
-  link is signed for its owner and expires in ten minutes. Administrators see
-  figures, not messages.
+  link is signed for its owner and expires in ten minutes. Administrators
+  have no view of anyone's accounts or messages.
 - **SSRF:** the IMAP host is resolved once; loopback, link-local, cloud
   metadata, multicast and Grafito's own services are refused; a private
-  address only through a profile or the administrator's list; ports 993 and
+  address only when `MAIL_TRUSTED_HOSTS` names the host; ports 993 and
   143 only; the connection goes to the checked address (no DNS rebinding).
   Gmail and Graph addresses are fixed.
 - **HTML:** cleaned in the browser (no scripts, frames, forms, SVG, event
@@ -241,8 +249,8 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
 Residual risks: the worker runs as the same user as the app (it reads the
 installation secrets); an MCP client that ignores the untrusted-content marking
 could still act on what a message says (its own permissions bound the damage,
-and deletions need `confirm`); IMAP to a private server named in a profile
-reaches that server for every person.
+and deletions need `confirm`); a private server in `MAIL_TRUSTED_HOSTS`
+is reachable for every person.
 
 ## Troubleshooting
 
@@ -250,12 +258,12 @@ reaches that server for every person.
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | The extension does not turn on              | `mail-sync` is not running or not reaching Postgres: `docker compose ps mail-sync`, its logs           |
 | «El certificado del servidor no es válido…» | The server's certificate does not match its name or comes from a private CA: `NODE_EXTRA_CA_CERTS`     |
-| «Ese servidor está en una red privada…»     | Add an institutional profile for it (or the administrator's allowed list)                              |
+| «Ese servidor está en una red privada…»     | Add the host to `MAIL_TRUSTED_HOSTS` (app and mail-sync)                                               |
 | «Error de autenticación»                    | Wrong password, or the provider needs an app password; update the credentials                          |
 | «Autorización caducada»                     | The refresh token was revoked or expired: **Volver a autorizar**                                       |
 | «Reintento programado a las …»              | The server did not answer or asked to wait; retried with backoff (with jitter, respecting Retry-After) |
 | An attachment stays «Descargando…»          | Look at the worker's logs; MinIO or ClamAV may be down; it is retried a few times                      |
-| Many failed jobs                            | **Reintentar trabajos fallidos**; wrong credentials are not retried until the owner fixes them         |
+| Many failed jobs                            | Wrong credentials are not retried until the owner fixes them in their Account                          |
 
 ## Recovery
 

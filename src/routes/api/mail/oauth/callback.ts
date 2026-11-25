@@ -2,8 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 
 /**
  * GET /api/mail/oauth/callback: where Google or Microsoft send the person back. Nothing is
- * exchanged here: the code and state go to /correo, where the signed-in session finishes the
- * sign-in and the state must belong to that same person (mailOAuthFinish).
+ * exchanged here: the code and state go to Cuenta → Cuentas de correo, where the signed-in
+ * session finishes the sign-in and the state must belong to that same person (mailOAuthFinish).
  */
 export const Route = createFileRoute("/api/mail/oauth/callback")({
   server: {
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/api/mail/oauth/callback")({
         return new Response(null, {
           status: 303,
           headers: {
-            location: `/correo?${params}`,
+            location: `/cuenta?seccion=buzones&${params}`,
             "cache-control": "no-store",
             "referrer-policy": "no-referrer",
           },

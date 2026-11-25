@@ -1,4 +1,4 @@
-import { File, FileText, LogOut, Mail, Search, Shield, UserRound } from "lucide-react";
+import { File, FileText, LogOut, Search, Shield, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Command } from "cmdk";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -12,7 +12,6 @@ import { useContentSearch } from "@/components/vault/use-content-search";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { Mark } from "@/components/brand/Mark";
 import { t } from "@/app/i18n";
-import { useMailAvailable } from "@/app/mail/available";
 
 export function ChromeHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -94,8 +93,7 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  const mail = useMailAvailable();
-  const go = (to: "/" | "/admin" | "/cuenta" | "/correo") => {
+  const go = (to: "/" | "/admin" | "/cuenta") => {
     setOpen(false);
     void navigate({ to });
   };
@@ -134,17 +132,6 @@ export function AccountMenu() {
             >
               <Shield className="size-4 text-muted" />
               {t("Administración")}
-            </button>
-          ) : null}
-          {mail && pathname !== "/correo" ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => go("/correo")}
-              className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg"
-            >
-              <Mail className="size-4 text-muted" />
-              {t("Correo electrónico")}
             </button>
           ) : null}
           {pathname !== "/cuenta" ? (

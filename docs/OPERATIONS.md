@@ -297,8 +297,11 @@ on the **Correo electrónico** extension. Scale it with
 `docker compose up -d --scale mail-sync=2`; each worker takes
 `MAIL_SYNC_DB_POOL` (6) database connections. It needs outbound access to the
 mail servers (IMAP 993/143, Gmail and Microsoft endpoints). Its state is in
-Postgres (backed up with the rest) and downloaded attachments in MinIO. Setup,
-variables and troubleshooting: [MAILBOX.md](MAILBOX.md).
+Postgres (backed up with the rest) and downloaded attachments in MinIO. Each
+person connects their accounts in their Account; private IMAP servers
+(`MAIL_TRUSTED_HOSTS`) and the Gmail and Microsoft OAuth applications
+(`MAIL_GMAIL_*`, `MAIL_MICROSOFT_*`) go in `.env`. Setup, variables and
+troubleshooting: [MAILBOX.md](MAILBOX.md).
 
 ## LaTeX
 

@@ -1,8 +1,9 @@
-import { Braces, KeyRound, Mail, SlidersHorizontal, UserRound } from "lucide-react";
+import { Braces, Inbox, KeyRound, Mail, SlidersHorizontal, UserRound } from "lucide-react";
 import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { useEffect, useState } from "react";
-import { Navigate } from "@tanstack/react-router";
+import { Navigate, useSearch } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
+import { useMailAvailable } from "@/app/mail/available";
 import { usePermissions } from "@/app/permissions";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SettingsNav, type SettingsItem } from "@/components/chrome/SettingsNav";
@@ -14,6 +15,7 @@ import { accountState } from "@/server/session.functions";
 import { ApiTokens } from "./ApiTokens";
 import { PasswordForm } from "./PasswordForm";
 import { PreferencesForm } from "./PreferencesForm";
+import { MailAccounts } from "@/components/mail/MailAccounts";
 import { MailForm } from "./MailForm";
 import { ProfileForm } from "./ProfileForm";
 import { t } from "@/app/i18n";
@@ -23,7 +25,7 @@ import { t } from "@/app/i18n";
  * cards with back navigation.
  */
 
-type Section = "perfil" | "correo" | "preferencias" | "contrasena" | "api";
+type Section = "perfil" | "correo" | "buzones" | "preferencias" | "contrasena" | "api";
 
 const SECTION_KEY = "grafito.account.section";
 
@@ -32,6 +34,7 @@ type Profile = Awaited<ReturnType<typeof accountState>>;
 const SECTIONS: SettingsItem<Section>[] = [
   { id: "perfil", label: "Datos de la cuenta", icon: UserRound },
   { id: "correo", label: "Correo", icon: Mail },
+  { id: "buzones", label: "Cuentas de correo", icon: Inbox },
   { id: "preferencias", label: "Preferencias de usuario", icon: SlidersHorizontal },
   { id: "contrasena", label: "Contraseña", icon: KeyRound },
   { id: "api", label: "API", icon: Braces },
@@ -40,11 +43,14 @@ const SECTIONS: SettingsItem<Section>[] = [
 export function AccountScreen() {
   const { user, isPending } = useCurrentUserState();
   const can = usePermissions();
+  const mail = useMailAvailable();
+  // ?seccion= opens a section directly (the mail screen and the OAuth return link here).
+  const asked = useSearch({ strict: false }) as { seccion?: string };
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
   // Preserve the section across reload and language remount; reopening Account normally starts fresh.
   const [section, setSection] = useState<Section | null>(() => {
-    const saved = readReloadState<string>(SECTION_KEY);
+    const saved = asked.seccion ?? readReloadState<string>(SECTION_KEY);
     return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
   });
   useSaveOnReload(SECTION_KEY, section);
@@ -90,7 +96,9 @@ export function AccountScreen() {
   }
   if (profile.mustChangePassword) return <Navigate to="/" />;
 
-  const items = SECTIONS.filter((item) => item.id !== "api" || can(PERMISSION.apiUse));
+  const items = SECTIONS.filter(
+    (item) => (item.id !== "api" || can(PERMISSION.apiUse)) && (item.id !== "buzones" || mail),
+  );
   const current = items.find((item) => item.id === section) ?? null;
 
   return (
@@ -132,6 +140,7 @@ export function AccountScreen() {
                 />
               ) : null}
               {current?.id === "correo" ? <MailForm /> : null}
+              {current?.id === "buzones" ? <MailAccounts /> : null}
               {current?.id === "preferencias" ? <PreferencesForm /> : null}
               {current?.id === "contrasena" ? <PasswordForm loginEmail={profile.email} /> : null}
               {current?.id === "api" ? <ApiTokens /> : null}

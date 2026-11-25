@@ -72,7 +72,6 @@ export async function claim(
     join mail_account a on a.id = j.account_id
     where j.state = 'queued' and j.run_after <= ${now}
       and j.kind = any(string_to_array(${kinds}, ','))
-      and not a.admin_paused
       and not (a.provider = any(string_to_array(${paused}, ',')))
       and (select count(*) from mail_job r join mail_account ra on ra.id = r.account_id
            where r.state = 'running' and ra.provider = a.provider) < ${input.providerLimit}

@@ -49,8 +49,8 @@ export async function authorizeUrl(
     hint: string;
   },
 ): Promise<string> {
-  const app = await readOAuthApp(sql, input.provider);
-  if (!app) throw new MailError("permanent", "El administrador no configuró esa conexión.");
+  const app = readOAuthApp(input.provider);
+  if (!app) throw new MailError("permanent", "Esa conexión no está configurada en el servidor.");
   const state = randomBytes(24).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -110,8 +110,8 @@ async function tokenRequest(
   provider: OAuthProvider,
   body: Record<string, string>,
 ): Promise<TokenAnswer> {
-  const app = await readOAuthApp(sql, provider);
-  if (!app) throw new MailError("permanent", "El administrador no configuró esa conexión.");
+  const app = readOAuthApp(provider);
+  if (!app) throw new MailError("permanent", "Esa conexión no está configurada en el servidor.");
   let response: Response;
   try {
     response = await fetch(endpoints(provider, app.tenant).token, {

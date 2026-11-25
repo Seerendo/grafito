@@ -1,9 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
-import { MAIL_PROVIDERS, parseMailPolicy } from "@/domain/mail/policy";
 import type { Sql } from "@/lib/db";
-import { logActivity, recordAudit } from "@/server/audit";
+import { recordAudit } from "@/server/audit";
 import { extensionActive } from "@/server/extensions";
 import { signToken } from "@/server/file-links";
 import { requireLease } from "@/server/lease";
@@ -20,7 +19,6 @@ import {
   syncNow,
   updateAccount,
 } from "@/server/mail/accounts";
-import { mailStats, pauseAccount, retryFailed } from "@/server/mail/admin";
 import { archiveAttachments, archiveEml, archiveMessage } from "@/server/mail/archive";
 import {
   getMessage,
@@ -31,20 +29,11 @@ import {
 } from "@/server/mail/messages";
 import { authorizeUrl, exchangeCode, takeState } from "@/server/mail/oauth";
 import { MailError } from "@/server/mail/providers/types";
-import {
-  deleteProfile,
-  listProfiles,
-  oauthConfigured,
-  readMailPolicy,
-  saveProfile,
-  writeMailPolicy,
-  writeOAuthApp,
-} from "@/server/mail/settings";
+import { oauthConfigured, readMailPolicy } from "@/server/mail/settings";
 
 /**
  * Server functions of the email module. Using it needs mailbox.use and the Correo extension on (and
- * its worker connected); administering it needs mailbox.manage, which shows figures and settings but
- * never anyone's messages. Every call works on the signed-in person's own accounts.
+ * its worker connected). Every call works on the signed-in person's own accounts.
  */
 
 const id = z.string().min(1).max(80);
@@ -98,19 +87,12 @@ export const mailState = createServerFn({ method: "GET" })
       ok: true as const,
       accounts: await listAccounts(sql, context.userId),
       folders: await listFolders(sql, context.userId),
-      profiles: (await listProfiles(sql)).map((item) => ({
-        id: item.id,
-        name: item.name,
-        domains: item.domains,
-      })),
       providers: {
         imap: policy.providers.includes("imap"),
-        gmail: policy.providers.includes("gmail") && (await oauthConfigured(sql, "gmail")),
-        microsoft:
-          policy.providers.includes("microsoft") && (await oauthConfigured(sql, "microsoft")),
+        gmail: policy.providers.includes("gmail") && oauthConfigured("gmail"),
+        microsoft: policy.providers.includes("microsoft") && oauthConfigured("microsoft"),
       },
       limits: {
-        profilesOnly: policy.profilesOnly,
         maxAccounts: policy.maxAccountsPerUser,
         minInterval: policy.minIntervalSeconds,
         maxHistoryDays: policy.maxHistoryDays,
@@ -179,7 +161,6 @@ const imap = z.object({
   host: z.string().max(253),
   port: z.number().int(),
   password: z.string().min(1).max(1000),
-  profileId: id.nullable(),
   historyDays: z.number().int(),
   intervalSeconds: z.number().int(),
   attachmentPolicy: z.enum(["demand", "small"]),
@@ -297,7 +278,7 @@ export const mailOAuthStart = createServerFn({ method: "POST" })
     if (!ready) return { ok: false as const, error: "El correo no está disponible." };
     const policy = await readMailPolicy(sql);
     if (!policy.providers.includes(data.provider))
-      return { ok: false as const, error: "El administrador no permite ese proveedor." };
+      return { ok: false as const, error: "Ese proveedor no está disponible." };
     try {
       return {
         ok: true as const,
@@ -315,7 +296,7 @@ export const mailOAuthStart = createServerFn({ method: "POST" })
   });
 
 /**
- * Finish an OAuth sign-in. The provider sent the person back to /correo with the code; the state
+ * Finish an OAuth sign-in. The provider sent the person back to the Account with the code; the state
  * must be one this same signed-in person started, so a link prepared by someone else cannot
  * attach a mailbox to the wrong Grafito account.
  */
@@ -471,140 +452,3 @@ export const mailArchive = createServerFn({ method: "POST" })
       return failure(error);
     }
   });
-
-// ── Administration (mailbox.manage) ───────────────────────────────────────────────
-
-async function manager(userId: string) {
-  const sql = await requireLease(userId);
-  const profile = await readUserProfile(sql, userId);
-  return { sql, profile, allowed: allows(profile, "mailbox.manage") };
-}
-
-export const mailAdminState = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
-  .handler(async ({ context }) => {
-    const { sql, allowed } = await manager(context.userId);
-    if (!allowed) return { ok: false as const };
-    return {
-      ok: true as const,
-      policy: await readMailPolicy(sql),
-      profiles: await listProfiles(sql),
-      oauth: {
-        gmail: await oauthApp(sql, "gmail"),
-        microsoft: await oauthApp(sql, "microsoft"),
-      },
-      redirectUri: `${await origin()}/api/mail/oauth/callback`,
-      stats: await mailStats(sql),
-    };
-  });
-
-async function oauthApp(sql: Sql, provider: "gmail" | "microsoft") {
-  const rows = await sql<{
-    value: string;
-  }>`select value from app_setting where key = ${`mail_oauth_${provider}`} limit 1`;
-  if (!rows[0]) return { clientId: "", tenant: "common", hasSecret: false };
-  const value = JSON.parse(rows[0].value) as {
-    clientId?: string;
-    tenant?: string;
-    secret?: string;
-  };
-  return {
-    clientId: value.clientId ?? "",
-    tenant: value.tenant ?? "common",
-    hasSecret: Boolean(value.secret),
-  };
-}
-
-export const mailAdminSave = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
-  .validator((input: unknown) =>
-    z
-      .object({
-        policy: z.record(z.string(), z.unknown()).optional(),
-        oauth: z
-          .object({
-            provider: z.enum(["gmail", "microsoft"]),
-            clientId: z.string().max(300),
-            clientSecret: z.string().max(1000),
-            tenant: z.string().max(100),
-          })
-          .optional(),
-        profile: z
-          .object({
-            id: id.optional(),
-            name: z.string().min(1).max(120),
-            host: z.string().min(1).max(253),
-            port: z.number().int(),
-            domains: z.array(z.string().max(253)).max(50),
-          })
-          .optional(),
-        deleteProfile: id.optional(),
-        pauseAccount: z.object({ id, paused: z.boolean() }).optional(),
-        retryFailed: z.boolean().optional(),
-      })
-      .parse(input),
-  )
-  .handler(async ({ context, data }) => {
-    const { sql, profile, allowed } = await manager(context.userId);
-    if (!allowed) return { ok: false as const, error: "Sin permiso." };
-    const actor = {
-      actorId: context.userId,
-      actorName: profile.loginName || profile.displayName,
-      area: "Correo",
-    };
-    if (data.policy) {
-      const before = await readMailPolicy(sql);
-      const next = await writeMailPolicy(sql, parseMailPolicy({ ...before, ...data.policy }));
-      await logActivity(sql, {
-        ...actor,
-        message:
-          next.paused !== before.paused
-            ? next.paused
-              ? "Pausa la sincronización de correo"
-              : "Reanuda la sincronización de correo"
-            : "Cambia la política del correo",
-      });
-    }
-    if (data.oauth) {
-      await writeOAuthApp(sql, data.oauth.provider, data.oauth);
-      await logActivity(sql, {
-        ...actor,
-        message: `Configura la conexión OAuth de ${data.oauth.provider}`,
-      });
-    }
-    if (data.profile) {
-      if (![993, 143].includes(data.profile.port))
-        return { ok: false as const, error: "El puerto tiene que ser 993 o 143." };
-      await saveProfile(sql, {
-        id: data.profile.id ?? crypto.randomUUID(),
-        name: data.profile.name.trim(),
-        provider: "imap",
-        host: data.profile.host,
-        port: data.profile.port,
-        tls: true,
-        domains: data.profile.domains.map((item) => item.trim().toLowerCase()).filter(Boolean),
-      });
-      await logActivity(sql, {
-        ...actor,
-        message: `Guarda el perfil de correo ${data.profile.name.trim()}`,
-      });
-    }
-    if (data.deleteProfile) {
-      await deleteProfile(sql, data.deleteProfile);
-      await logActivity(sql, { ...actor, message: "Borra un perfil de correo" });
-    }
-    if (data.pauseAccount) {
-      await pauseAccount(sql, data.pauseAccount.id, data.pauseAccount.paused);
-      await logActivity(sql, {
-        ...actor,
-        message: `${data.pauseAccount.paused ? "Pausa" : "Reanuda"} una cuenta de correo (${data.pauseAccount.id})`,
-      });
-    }
-    if (data.retryFailed) {
-      const count = await retryFailed(sql);
-      await logActivity(sql, { ...actor, message: `Reintenta ${count} trabajos de correo` });
-    }
-    return { ok: true as const };
-  });
-
-export const MAIL_PROVIDER_IDS = MAIL_PROVIDERS;

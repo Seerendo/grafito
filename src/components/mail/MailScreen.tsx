@@ -14,11 +14,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
-import { mailMessages, mailOAuthFinish, mailState } from "@/server/mailbox.functions";
-import { MailAccounts } from "./MailAccounts";
+import { mailMessages, mailState } from "@/server/mailbox.functions";
 import { MessageView } from "./MessageView";
 import { statusLabel } from "./status";
 
@@ -78,8 +78,6 @@ export function MailScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   // On a phone one pane at a time: folders, the list, or the message.
   const [pane, setPane] = useState<"nav" | "list" | "message">("list");
-  const [settings, setSettings] = useState(false);
-  const [notice, setNotice] = useState("");
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(600);
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,11 +92,7 @@ export function MailScreen() {
       return null;
     }
     setProblem(null);
-    setState((previous) => {
-      // No account yet: the connection form opens by itself the first time.
-      if (!previous && answer.accounts.length === 0) setSettings(true);
-      return answer;
-    });
+    setState(answer);
     return answer;
   }, []);
 
@@ -180,24 +174,6 @@ export function MailScreen() {
     };
   }, [loadState, filter]);
 
-  // Back from Google or Microsoft: the session finishes the authorization.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("oauth_code");
-    const stateParam = params.get("oauth_state");
-    const error = params.get("oauth_error");
-    if (!code && !error) return;
-    window.history.replaceState(null, "", "/correo");
-    if (error || !code || !stateParam) {
-      setNotice(t("El proveedor no autorizó la cuenta."));
-      return;
-    }
-    void mailOAuthFinish({ data: { code, state: stateParam } }).then((answer) => {
-      setNotice(answer.ok ? t("Cuenta conectada. La sincronización empezó.") : t(answer.error));
-      void loadState();
-    });
-  }, [loadState]);
-
   useEffect(() => {
     const element = listRef.current;
     if (!element) return;
@@ -238,6 +214,13 @@ export function MailScreen() {
     return (
       <AppFrame>
         <p className="grid flex-1 place-items-center text-sm text-faint">{t("Cargando…")}</p>
+      </AppFrame>
+    );
+  // No account connected: nothing to show.
+  if (accounts.length === 0)
+    return (
+      <AppFrame>
+        <div data-ui="mail" data-empty className="flex-1" />
       </AppFrame>
     );
 
@@ -284,24 +267,16 @@ export function MailScreen() {
           <div className="flex items-center gap-2 px-2 py-2">
             <Mail className="size-4 text-accent" />
             <h1 className="flex-1 text-sm font-semibold">{t("Correo electrónico")}</h1>
-            <button
-              type="button"
+            <Link
+              to="/cuenta"
+              search={{ seccion: "buzones" }}
               aria-label={t("Cuentas de correo")}
-              onClick={() => setSettings(true)}
+              title={t("Cuentas de correo")}
               className="grid size-9 place-items-center rounded-md text-muted hover:bg-elevated"
             >
               <Settings className="size-4" />
-            </button>
+            </Link>
           </div>
-          {accounts.length === 0 ? (
-            <button
-              type="button"
-              onClick={() => setSettings(true)}
-              className="mx-2 rounded-md border border-dashed border-line p-3 text-left text-sm text-muted hover:bg-elevated"
-            >
-              {t("Conecta tu primera cuenta de correo")}
-            </button>
-          ) : null}
           {navItem(
             "unified",
             sameView(view, { kind: "role", role: "inbox" }),
@@ -463,7 +438,6 @@ export function MailScreen() {
                 ) : null}
               </div>
             </details>
-            {notice ? <p className="text-xs text-accent">{notice}</p> : null}
           </div>
           <div
             ref={listRef}
@@ -584,13 +558,6 @@ export function MailScreen() {
           )}
         </section>
       </div>
-      {settings ? (
-        <MailAccounts
-          state={state}
-          onClose={() => setSettings(false)}
-          onChanged={() => void loadState()}
-        />
-      ) : null}
     </AppFrame>
   );
 }

@@ -122,8 +122,6 @@ async function mcp(token, name, args = {}) {
   return { error: answer.result.isError, data: JSON.parse(answer.result.content[0].text) };
 }
 
-const PROFILE = `e2email-profile-${stamp}`;
-
 describe("email module", () => {
   let browser;
   let ana;
@@ -132,14 +130,9 @@ describe("email module", () => {
   let accountId;
 
   before(async () => {
-    // The module on, a profile for the institutional (private) server, a clean IMAP mailbox.
+    // The module on and a clean IMAP mailbox. imap-test is on the stack's private network and
+    // trusted through MAIL_TRUSTED_HOSTS.
     await query(`update app_plugin set enabled = true where id = 'correo'`);
-    await query(
-      `insert into mail_profile (id, name, provider, host, port, tls, domains, created_at, updated_at)
-       values ($1, 'Zimbra de pruebas', 'imap', 'imap-test', 993, true, 'prueba.test', $2, $2)
-       on conflict (id) do nothing`,
-      [PROFILE, Date.now()],
-    );
     seed("reset", "ana@prueba.test", "Correo-Ana-2026");
     seed("basic", "ana@prueba.test", "Correo-Ana-2026");
     ana = await member("ana");
@@ -149,24 +142,48 @@ describe("email module", () => {
   });
   after(async () => {
     await browser?.close();
-    await query(`delete from mail_profile where id = $1`, [PROFILE]);
+  });
+
+  test("the mail entry shows beside the trash, empty without accounts; setup lives in the Account", async () => {
+    await page.goto(`${base}/`);
+    const entry = page.locator('[data-ui="mail-entry"]');
+    await entry.getByText("Correo electrónico").waitFor();
+    await entry.click();
+    await page.waitForURL(/\/correo$/);
+    await page.locator('[data-ui="mail"][data-empty]').waitFor();
+    assert.equal(await page.locator('[data-ui="mail-add"]').count(), 0);
+    assert.equal(await page.locator('[data-ui="mail-list"]').count(), 0);
+    // No administration of mail accounts any more.
+    assert.equal(
+      (await query(`select count(*)::int n from app_permission where key = 'mailbox.manage'`))[0].n,
+      0,
+    );
+    await page.goto(`${base}/cuenta`);
+    await page.getByRole("button", { name: "Cuentas de correo" }).first().click();
+    await page.locator('[data-ui="mail-add"]').waitFor();
+    // Turned off in Extensions: the entry goes.
+    await query(`update app_plugin set enabled = false where id = 'correo'`);
+    const { context, page: fresh } = await signIn(browser, ana);
+    await fresh.goto(`${base}/`);
+    await fresh.getByText("Papelera", { exact: true }).waitFor();
+    assert.equal(await fresh.locator('[data-ui="mail-entry"]').count(), 0);
+    await context.close();
+    await query(`update app_plugin set enabled = true where id = 'correo'`);
   });
 
   test("T03, T38: a wrong password and an untrusted private server are refused", async () => {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/cuenta?seccion=buzones`);
     const form = page.locator('[data-ui="mail-add"]');
     await form.waitFor();
     await form.getByLabel("Dirección de correo").fill("ana@prueba.test");
+    await form.getByLabel("Servidor IMAP").fill("imap-test");
     await form.getByLabel("Contraseña o contraseña de aplicación").fill("equivocada");
     await form.getByRole("button", { name: "Conectar" }).click();
     await form
       .getByRole("alert")
       .getByText(/rechazó el usuario o la contraseña/)
       .waitFor();
-    // A server on a private network that no profile names: refused before connecting.
-    await form
-      .getByLabel("Servidor", { exact: true })
-      .selectOption({ label: "Otro servidor IMAP" });
+    // A server on a private network the server does not trust: refused before connecting.
     await form.getByLabel("Servidor IMAP").fill("10.20.30.40");
     await form.getByLabel("Contraseña o contraseña de aplicación").fill("Correo-Ana-2026");
     await form.getByRole("button", { name: "Conectar" }).click();
@@ -186,14 +203,13 @@ describe("email module", () => {
     );
   });
 
-  test("T01, T10: the institutional profile connects and messages arrive progressively", async () => {
+  test("T01, T10: the account connects and messages arrive progressively", async () => {
     const form = page.locator('[data-ui="mail-add"]');
-    await form.getByLabel("Servidor", { exact: true }).selectOption({ label: "Zimbra de pruebas" });
+    await form.getByLabel("Servidor IMAP").fill("imap-test");
     await form.getByLabel("Contraseña o contraseña de aplicación").fill("Correo-Ana-2026");
     await form.getByRole("button", { name: "Conectar" }).click();
     await page.locator('[data-ui="mail-account"]').waitFor();
     accountId = (await query(`select id from mail_account where user_id = $1`, [ana.id]))[0].id;
-    await page.keyboard.press("Escape");
     await until(
       async () =>
         (
@@ -201,7 +217,7 @@ describe("email module", () => {
         )[0].n >= 5,
       "messages synced",
     );
-    await page.reload();
+    await page.goto(`${base}/correo`);
     await page.locator('[data-ui="mail-list"] [data-message]').first().waitFor();
     const subjects = await page.locator('[data-ui="mail-list"] [data-message]').allInnerTexts();
     assert.ok(subjects.some((text) => text.includes("Informe con adjuntos")));
@@ -517,8 +533,7 @@ describe("email module", () => {
   });
 
   test("T05, T31, T06: disconnecting forgets credentials and keeps documents; new credentials recover", async () => {
-    await page.goto(`${base}/correo`);
-    await page.getByRole("button", { name: "Cuentas de correo" }).click();
+    await page.goto(`${base}/cuenta?seccion=buzones`);
     const card = page.locator('[data-ui="mail-account"]');
     await card.getByRole("button", { name: "Desconectar" }).click();
     await card.getByRole("button", { name: "Sí" }).click();

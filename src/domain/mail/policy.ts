@@ -1,7 +1,7 @@
 /**
- * Administrator policy for the email module (app_setting key mail_policy). Values out of range
- * are clamped, so a hand-edited setting cannot unbound the worker. Relative imports allow direct
- * Node tests.
+ * Limits of the email module: defaults, or the app_setting key mail_policy set by an operator.
+ * Values out of range are clamped, so a hand-edited setting cannot unbound the worker. Relative
+ * imports allow direct Node tests.
  */
 
 export type MailProviderId = "imap" | "gmail" | "microsoft";
@@ -13,13 +13,6 @@ export type MailPolicy = {
   providers: MailProviderId[];
   /** Email domains allowed for new accounts (empty: any). */
   domains: string[];
-  /**
-   * IMAP hosts allowed besides the profiles' (exact names or *.suffix). Empty: any public host.
-   * A private address is only reachable through a profile or this list.
-   */
-  imapHosts: string[];
-  /** Only the institutional profiles, no free host. */
-  profilesOnly: boolean;
   maxAccountsPerUser: number;
   minIntervalSeconds: number;
   defaultIntervalSeconds: number;
@@ -49,8 +42,6 @@ export type MailPolicy = {
 export const DEFAULT_MAIL_POLICY: MailPolicy = {
   providers: ["imap", "gmail", "microsoft"],
   domains: [],
-  imapHosts: [],
-  profilesOnly: false,
   maxAccountsPerUser: 5,
   minIntervalSeconds: 120,
   defaultIntervalSeconds: 300,
@@ -99,8 +90,6 @@ export function parseMailPolicy(raw: unknown): MailPolicy {
   return {
     providers: providers(value.providers, d.providers),
     domains: list(value.domains),
-    imapHosts: list(value.imapHosts),
-    profilesOnly: value.profilesOnly === true,
     maxAccountsPerUser: clamp(value.maxAccountsPerUser, 1, 50, d.maxAccountsPerUser),
     minIntervalSeconds: minInterval,
     defaultIntervalSeconds: clamp(

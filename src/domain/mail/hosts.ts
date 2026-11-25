@@ -96,7 +96,7 @@ export type TargetCheck = { ok: true; address: string } | { ok: false; error: st
 
 /**
  * Pick the address to connect to. `addresses` is what the name resolved to (or the literal).
- * A private address needs the host to be trusted (a profile or the administrator's list);
+ * A private address needs the host to be trusted (MAIL_TRUSTED_HOSTS on the server);
  * loopback, link-local, metadata and the like are never allowed.
  */
 export function checkTarget(input: {
@@ -120,8 +120,7 @@ export function checkTarget(input: {
     if (kind === "private")
       return {
         ok: false,
-        error:
-          "Ese servidor está en una red privada. Pide al administrador un perfil institucional para él.",
+        error: "Ese servidor está en una red privada que este Grafito no tiene autorizada.",
       };
     return { ok: false, error: "Esa dirección no se puede usar como servidor de correo." };
   }

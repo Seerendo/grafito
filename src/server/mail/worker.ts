@@ -185,7 +185,7 @@ export class MailWorker {
     if (!policy.paused) {
       const due = await this.sql<{ id: string; user_id: string }>`
         select id, user_id from mail_account
-        where sync_enabled and secret <> '' and not admin_paused
+        where sync_enabled and secret <> ''
           and status not in ('auth_error', 'expired', 'disconnected', 'deleting')
           and (next_sync_at is null or next_sync_at <= ${now})
           and not (provider = any(string_to_array(${policy.pausedProviders.join(",")}, ',')))
@@ -380,7 +380,7 @@ export class MailWorker {
       },
       saveTokens: (secret) => storeTokens(this.sql, account.id, secret),
     };
-    const connector = await buildConnector(this.sql, account, policy);
+    const connector = await buildConnector(this.sql, account);
     let result;
     try {
       result = await connector.sync(context);
@@ -487,7 +487,7 @@ export class MailWorker {
         etag: await storage(() => uploadPart(this.sql, key, uploadId, parts.length + 1, bytes)),
       });
     };
-    const connector = await buildConnector(this.sql, account, policy);
+    const connector = await buildConnector(this.sql, account);
     let total = 0;
     try {
       total = await connector.fetchAttachment(
@@ -583,7 +583,7 @@ export class MailWorker {
     if (typeof target === "string") throw new MailError("permanent", target);
     const account = await connectorAccount(this.sql, job.accountId);
     if (!account?.secret) throw new MailError("auth", "La cuenta está desconectada.");
-    const connector = await buildConnector(this.sql, account, policy);
+    const connector = await buildConnector(this.sql, account);
     const chunks: Uint8Array[] = [];
     try {
       await connector.fetchRaw(

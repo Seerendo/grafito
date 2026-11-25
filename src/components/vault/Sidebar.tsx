@@ -11,6 +11,7 @@ import {
   Pin,
   Search,
   Sheet,
+  Mail,
   Trash2,
   X,
 } from "lucide-react";
@@ -43,6 +44,8 @@ import { useRowMenu, type RowMenuTarget } from "./RowMenu";
 import { SharedSection } from "./SharedSection";
 import { useSharedView } from "@/app/shared-view";
 import { useTrashView } from "@/app/trash-view";
+import { useMailAvailable } from "@/app/mail/available";
+import { Link } from "@tanstack/react-router";
 import { VisibilityMark } from "./visibility";
 import { t } from "@/app/i18n";
 
@@ -143,6 +146,7 @@ export function Sidebar({
   // Highlight one row: the last-picked folder or the open document.
   const litId = folderPicked || elsewhere ? null : activeId;
   const trashOpen = useTrashView((state) => state.open);
+  const mail = useMailAvailable();
   const collapsed = useVault((state) => state.collapsed);
   const setQuery = useVault((state) => state.setQuery);
   const setTag = useVault((state) => state.setTag);
@@ -596,6 +600,16 @@ export function Sidebar({
               />
               <SharedSection workspaces onOpen={onOpenShared} />
               <SharedSection onOpen={onOpenShared} />
+              {mail ? (
+                <Link
+                  to="/correo"
+                  data-ui="mail-entry"
+                  className="mt-1 flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg"
+                >
+                  <Mail className="size-4 shrink-0 text-faint" />
+                  <span className="truncate font-medium">{t("Correo electrónico")}</span>
+                </Link>
+              ) : null}
               <button
                 type="button"
                 onClick={onOpenTrash}

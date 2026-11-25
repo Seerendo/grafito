@@ -1601,6 +1601,21 @@ type-checked only. Office attachments show no preview (T22): they open once
 saved to Grafito. Archiving into a workspace (T32) and Grafeno relations
 beyond the manual link (T33) were not tested end to end.
 
+## Round 54: email accounts in the Account
+
+Same stack; `imap-test` trusted through `MAIL_TRUSTED_HOSTS` instead of a
+profile. `tests/e2e/mail.e2e.mjs` (15 tests) and `tests/e2e/mcp.e2e.mjs`.
+
+| Check                                                                                  | Result                                                                      |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Migration 0049: `mailbox.manage` gone, no «Cuentas de correo» in Administración        | ✅                                                                          |
+| Sidebar: «Correo electrónico» between «Compartidos conmigo» and «Papelera», no account | ✅ opens an empty screen, no form, no list                                  |
+| The extension turned off                                                               | ✅ the entry goes                                                           |
+| Cuenta → Cuentas de correo: connect with address, server and password                  | ✅ wrong password, private and internal hosts refused; `imap-test` connects |
+| Sync, reading, attachments, archiving, isolation, MCP, disconnect and new credentials  | ✅ the rest of the suite (T01–T41) unchanged                                |
+| MCP suite                                                                              | ✅ 9 of 9                                                                   |
+| `npm run typecheck`, `lint`, `npm test`, `format:check`                                | ✅ 264 tests pass                                                           |
+
 ## Useful commands
 
 ```bash

@@ -1630,7 +1630,7 @@ export const en: Record<string, string> = {
   "No se pudo completar.": "Couldn't complete.",
   "El correo no está disponible.": "Email isn't available.",
   "Ese mensaje no existe.": "That message doesn't exist.",
-  "El administrador no permite ese proveedor.": "The administrator doesn't allow that provider.",
+  "Ese proveedor no está disponible.": "That provider isn't available.",
   "La autorización caducó o no la iniciaste tú. Vuelve a intentarlo.":
     "The authorization expired or wasn't started by you. Try again.",
   "El proveedor no indicó la dirección de correo.": "The provider didn't give the email address.",
@@ -1649,9 +1649,9 @@ export const en: Record<string, string> = {
     "Only the servers the administrator set up can be used.",
   "Ese servidor no está entre los autorizados.": "That server isn't among the allowed ones.",
   "No se encontró ese servidor.": "That server wasn't found.",
-  "Ese servidor está en una red privada. Pide al administrador un perfil institucional para él.":
-    "That server is on a private network. Ask the administrator for an institutional profile for it.",
-  "El administrador no configuró esa conexión.": "The administrator hasn't set up that connection.",
+  "Ese servidor está en una red privada que este Grafito no tiene autorizada.":
+    "That server is on a private network this Grafito hasn't authorized.",
+  "Esa conexión no está configurada en el servidor.": "That connection isn't set up on the server.",
   "No se pudo contactar con el proveedor.": "Couldn't reach the provider.",
   "El proveedor pidió esperar.": "The provider asked to wait.",
   "La autorización caducó o se revocó. Vuelve a conectar la cuenta.":

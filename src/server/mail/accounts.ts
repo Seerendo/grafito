@@ -7,7 +7,6 @@ import { MicrosoftConnector } from "./providers/microsoft";
 import { MailError, type ConnectorAccount, type MailConnector } from "./providers/types";
 import { enqueue } from "./queue";
 import {
-  listProfiles,
   openSecret,
   readMailPolicy,
   resolveImapTarget,
@@ -35,7 +34,6 @@ type Row = {
   host: string;
   port: number;
   tls: unknown;
-  profile_id: string | null;
   secret: string;
   is_default: unknown;
   sync_enabled: unknown;
@@ -45,7 +43,6 @@ type Row = {
   mcp_access: unknown;
   status: string;
   status_detail: string;
-  admin_paused: unknown;
   sync_phase: string;
   last_sync_at: unknown;
   next_sync_at: unknown;
@@ -63,7 +60,6 @@ export type AccountView = {
   username: string;
   host: string;
   port: number;
-  profileId: string | null;
   isDefault: boolean;
   syncEnabled: boolean;
   intervalSeconds: number;
@@ -72,7 +68,6 @@ export type AccountView = {
   mcpAccess: boolean;
   status: string;
   statusDetail: string;
-  adminPaused: boolean;
   phase: string;
   lastSyncAt: number | null;
   nextSyncAt: number | null;
@@ -90,7 +85,6 @@ function view(row: Row): AccountView {
     username: row.username,
     host: row.host,
     port: Number(row.port),
-    profileId: row.profile_id,
     isDefault: flag(row.is_default),
     syncEnabled: flag(row.sync_enabled),
     intervalSeconds: Number(row.sync_interval_seconds),
@@ -99,7 +93,6 @@ function view(row: Row): AccountView {
     mcpAccess: flag(row.mcp_access),
     status: row.status,
     statusDetail: row.status_detail,
-    adminPaused: flag(row.admin_paused),
     phase: row.sync_phase,
     lastSyncAt: row.last_sync_at == null ? null : Number(row.last_sync_at),
     nextSyncAt: row.next_sync_at == null ? null : Number(row.next_sync_at),
@@ -158,17 +151,13 @@ export async function storeTokens(
   await sql`update mail_account set secret = ${sealSecret(secret)}, updated_at = ${Date.now()} where id = ${accountId}`;
 }
 
-/** A connector for the account, its IMAP host checked against the policy first. */
-export async function buildConnector(
-  sql: Sql,
-  account: ConnectorAccount,
-  policy: MailPolicy,
-): Promise<MailConnector> {
+/** A connector for the account, its IMAP host checked first. */
+export async function buildConnector(sql: Sql, account: ConnectorAccount): Promise<MailConnector> {
   const save = async (secret: NonNullable<ConnectorAccount["secret"]>) =>
     storeTokens(sql, account.id, secret);
   if (account.provider === "gmail") return new GmailConnector(sql, account, save);
   if (account.provider === "microsoft") return new MicrosoftConnector(sql, account, save);
-  const target = await resolveImapTarget(sql, account.host, account.port, policy);
+  const target = await resolveImapTarget(account.host, account.port);
   if (!target.ok) throw new MailError("permanent", target.error);
   return new ImapConnector(account, target.address);
 }
@@ -180,7 +169,6 @@ export type ImapInput = {
   host: string;
   port: number;
   password: string;
-  profileId: string | null;
   historyDays: number;
   intervalSeconds: number;
   attachmentPolicy: "demand" | "small";
@@ -194,7 +182,7 @@ async function checkNew(
   email: string,
 ) {
   if (!policy.providers.includes(provider))
-    throw new MailError("permanent", "El administrador no permite ese proveedor.");
+    throw new MailError("permanent", "Ese proveedor no está disponible.");
   if (email && !domainAllowed(policy, email))
     throw new MailError("permanent", "Ese dominio de correo no está permitido.");
   const count = await sql<{
@@ -208,7 +196,7 @@ async function checkNew(
 }
 
 /**
- * Connect an IMAP account: the server (or profile) is checked, the password is tried once with a
+ * Connect an IMAP account: the server is checked, the password is tried once with a
  * short timeout, and only then is anything stored and the first sync queued.
  */
 export async function createImapAccount(
@@ -221,14 +209,8 @@ export async function createImapAccount(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     throw new MailError("permanent", "Escribe una dirección de correo válida.");
   await checkNew(sql, userId, policy, "imap", email);
-  let host = input.host.trim().toLowerCase();
-  let port = Number(input.port) || 993;
-  if (input.profileId) {
-    const profile = (await listProfiles(sql)).find((item) => item.id === input.profileId);
-    if (!profile) throw new MailError("permanent", "Ese perfil ya no existe.");
-    host = profile.host;
-    port = profile.port;
-  }
+  const host = input.host.trim().toLowerCase();
+  const port = Number(input.port) || 993;
   if (!input.password) throw new MailError("permanent", "Escribe la contraseña.");
   const id = randomUUID();
   const account: ConnectorAccount = {
@@ -243,7 +225,7 @@ export async function createImapAccount(
     historyDays: historyDays(policy, input.historyDays),
     secret: { kind: "password", password: input.password },
   };
-  const connector = await buildConnector(sql, account, policy);
+  const connector = await buildConnector(sql, account);
   try {
     await connector.test();
   } finally {
@@ -252,10 +234,10 @@ export async function createImapAccount(
   const now = Date.now();
   const first = (await listAccounts(sql, userId)).length === 0;
   await sql`
-    insert into mail_account (id, user_id, provider, email, display_name, username, host, port, tls, profile_id, secret,
+    insert into mail_account (id, user_id, provider, email, display_name, username, host, port, tls, secret,
       is_default, sync_interval_seconds, history_days, attachment_policy, status, next_sync_at, created_at, updated_at)
     values (${id}, ${userId}, 'imap', ${email}, ${input.name.trim().slice(0, 120)}, ${account.username}, ${host}, ${port},
-      true, ${input.profileId}, ${sealSecret({ kind: "password", password: input.password })}, ${first},
+      true, ${sealSecret({ kind: "password", password: input.password })}, ${first},
       ${syncInterval(policy, input.intervalSeconds)}, ${account.historyDays},
       ${input.attachmentPolicy === "small" ? "small" : "demand"}, 'connected', ${now}, ${now}, ${now})
   `;
@@ -336,7 +318,7 @@ export async function updateAccount(
     const account = await connectorAccount(sql, id);
     if (!account) throw new MailError("permanent", "Esa cuenta no existe.");
     account.secret = { kind: "password", password: changes.password };
-    const connector = await buildConnector(sql, account, policy);
+    const connector = await buildConnector(sql, account);
     try {
       await connector.test();
     } finally {

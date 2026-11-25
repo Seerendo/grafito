@@ -839,9 +839,10 @@ keeps answering while mailboxes sync.
 - Grafito only reads: it never sends, moves or deletes mail on the server.
   Read, starred and hidden are kept in Grafito.
 
-An administrator turns on the **Correo electrónico** extension and sets
-policies, institutional server profiles (Zimbra) and the Google and Microsoft
-OAuth applications in **Administración → Cuentas de correo**. See
+Each person connects their own accounts in **Cuenta → Cuentas de correo**;
+the sidebar's **Correo electrónico** entry, beside the Papelera, opens them.
+An administrator turns on the **Correo electrónico** extension; private IMAP
+servers and the Google and Microsoft OAuth applications are set in `.env`. See
 [docs/MAILBOX.md](docs/MAILBOX.md).
 
 ## MCP server

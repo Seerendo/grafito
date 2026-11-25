@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { intl, t } from "@/app/i18n";
-import { Modal } from "@/components/ui/Modal";
 import { Switch } from "@/components/ui/Switch";
 import { TextAction } from "@/components/ui/TextAction";
 import {
   mailAccountAction,
   mailAddImap,
   mailFolderSync,
+  mailOAuthFinish,
   mailOAuthStart,
   mailState,
   mailUpdateAccount,
@@ -14,7 +14,7 @@ import {
 import { statusLabel } from "./status";
 
 /**
- * Cuentas de correo: connect (IMAP with a password, or Gmail and Microsoft through their own
+ * Cuenta → Cuentas de correo: connect (IMAP with a password, or Gmail and Microsoft through their own
  * sign-in), and for each account its state, sync settings, folders, the MCP permission, new
  * credentials, disconnecting and deleting the local copy. Passwords are sent once and never shown
  * again.
@@ -28,41 +28,78 @@ const HISTORY = [7, 30, 90, 180, 365, 730, 3650];
 
 const input = "h-10 w-full rounded-md border border-line bg-inset px-3 text-sm";
 
-export function MailAccounts({
-  state,
-  onClose,
-  onChanged,
-}: {
-  state: State;
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const [adding, setAdding] = useState(state.accounts.length === 0);
+export function MailAccounts() {
+  const [state, setState] = useState<State | null>(null);
+  const [problem, setProblem] = useState("");
+  const [notice, setNotice] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const load = useCallback(async () => {
+    const answer = await mailState().catch(() => null);
+    if (!answer) setProblem("No se pudo leer la configuración.");
+    else if (!answer.ok) setProblem("El correo no está disponible.");
+    else {
+      setProblem("");
+      setState(answer);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 15_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  // Back from Google or Microsoft: the session finishes the authorization.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("oauth_code");
+    const stateParam = params.get("oauth_state");
+    const error = params.get("oauth_error");
+    if (!code && !error) return;
+    window.history.replaceState(null, "", "/cuenta?seccion=buzones");
+    if (error || !code || !stateParam) {
+      setNotice("El proveedor no autorizó la cuenta.");
+      return;
+    }
+    void mailOAuthFinish({ data: { code, state: stateParam } }).then((answer) => {
+      setNotice(answer.ok ? "Cuenta conectada. La sincronización empezó." : answer.error);
+      void load();
+    });
+  }, [load]);
+
+  if (problem) return <p className="text-sm text-danger">{t(problem)}</p>;
+  if (!state) return <p className="text-sm text-faint">{t("Cargando…")}</p>;
+  const showForm = adding || state.accounts.length === 0;
   return (
-    <Modal title={t("Cuentas de correo")} onClose={onClose} wide>
-      <div className="flex flex-col gap-4">
-        {state.accounts.map((account) => (
-          <AccountCard key={account.id} account={account} state={state} onChanged={onChanged} />
-        ))}
-        {adding ? (
-          <AddAccount
-            state={state}
-            onDone={() => {
-              setAdding(false);
-              onChanged();
-            }}
-          />
-        ) : state.accounts.length < state.limits.maxAccounts ? (
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="h-10 rounded-md border border-dashed border-line text-sm text-muted hover:bg-elevated"
-          >
-            {t("Añadir otra cuenta")}
-          </button>
-        ) : null}
-      </div>
-    </Modal>
+    <div data-ui="mail-accounts" className="flex max-w-3xl flex-col gap-4">
+      {notice ? <p className="text-sm text-accent">{t(notice)}</p> : null}
+      {state.accounts.map((account) => (
+        <AccountCard
+          key={account.id}
+          account={account}
+          state={state}
+          onChanged={() => void load()}
+        />
+      ))}
+      {showForm ? (
+        <AddAccount
+          state={state}
+          onDone={() => {
+            setAdding(false);
+            void load();
+          }}
+        />
+      ) : state.accounts.length < state.limits.maxAccounts ? (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="h-10 rounded-md border border-dashed border-line text-sm text-muted hover:bg-elevated"
+        >
+          {t("Añadir otra cuenta")}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -74,14 +111,12 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
     host: "",
     port: 993,
     password: "",
-    profileId: state.profiles[0]?.id ?? "",
     historyDays: Math.min(30, state.limits.maxHistoryDays),
     intervalSeconds: 300,
     attachmentPolicy: "demand" as "demand" | "small",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const custom = !form.profileId;
   const oauth = async (provider: "gmail" | "microsoft") => {
     setBusy(true);
     const answer = await mailOAuthStart({
@@ -93,14 +128,6 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
       setError(answer.error);
     }
   };
-  // The domain of the address suggests an institutional profile.
-  const suggest = (email: string) => {
-    const domain = email.split("@")[1]?.toLowerCase() ?? "";
-    const match = state.profiles.find((profile) =>
-      profile.domains.some((item) => domain === item || domain.endsWith(`.${item}`)),
-    );
-    return match?.id;
-  };
   return (
     <form
       data-ui="mail-add"
@@ -109,7 +136,7 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
         event.preventDefault();
         setBusy(true);
         setError("");
-        void mailAddImap({ data: { ...form, profileId: form.profileId || null } })
+        void mailAddImap({ data: form })
           .then((answer) => {
             if (answer.ok) onDone();
             else setError(answer.error);
@@ -153,11 +180,7 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
                 type="email"
                 autoComplete="email"
                 value={form.email}
-                onChange={(event) => {
-                  const email = event.target.value;
-                  const profileId = suggest(email);
-                  setForm({ ...form, email, ...(profileId ? { profileId } : {}) });
-                }}
+                onChange={(event) => setForm({ ...form, email: event.target.value })}
                 className={input}
               />
             </label>
@@ -171,24 +194,6 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              {t("Servidor")}
-              <select
-                aria-label={t("Servidor")}
-                value={form.profileId}
-                onChange={(event) => setForm({ ...form, profileId: event.target.value })}
-                className={input}
-              >
-                {state.profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-                {!state.limits.profilesOnly ? (
-                  <option value="">{t("Otro servidor IMAP")}</option>
-                ) : null}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
               {t("Usuario (si no es la dirección)")}
               <input
                 autoComplete="username"
@@ -197,32 +202,28 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
                 className={input}
               />
             </label>
-            {custom ? (
-              <>
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("Servidor IMAP")}
-                  <input
-                    required
-                    value={form.host}
-                    placeholder="imap.ejemplo.org"
-                    onChange={(event) => setForm({ ...form, host: event.target.value })}
-                    className={input}
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-sm">
-                  {t("Puerto y seguridad")}
-                  <select
-                    aria-label={t("Puerto y seguridad")}
-                    value={form.port}
-                    onChange={(event) => setForm({ ...form, port: Number(event.target.value) })}
-                    className={input}
-                  >
-                    <option value={993}>{t("993 · TLS")}</option>
-                    <option value={143}>{t("143 · STARTTLS")}</option>
-                  </select>
-                </label>
-              </>
-            ) : null}
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Servidor IMAP")}
+              <input
+                required
+                value={form.host}
+                placeholder="imap.ejemplo.org"
+                onChange={(event) => setForm({ ...form, host: event.target.value })}
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Puerto y seguridad")}
+              <select
+                aria-label={t("Puerto y seguridad")}
+                value={form.port}
+                onChange={(event) => setForm({ ...form, port: Number(event.target.value) })}
+                className={input}
+              >
+                <option value={993}>{t("993 · TLS")}</option>
+                <option value={143}>{t("143 · STARTTLS")}</option>
+              </select>
+            </label>
             <label className="flex flex-col gap-1 text-sm">
               {t("Contraseña o contraseña de aplicación")}
               <input

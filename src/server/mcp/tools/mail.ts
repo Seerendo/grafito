@@ -106,7 +106,7 @@ export const mailTools: Tool[] = [
           })),
           note:
             accounts.size === 0
-              ? "Ninguna cuenta permite el acceso por MCP. Se activa en Correo electrónico → Cuentas."
+              ? "Ninguna cuenta permite el acceso por MCP. Se activa en Cuenta → Cuentas de correo."
               : undefined,
         },
         event: { label: `Revisó ${accounts.size} cuentas de correo`, ok: true },

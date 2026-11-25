@@ -6,12 +6,10 @@ export function statusLabel(account: {
   phase: string;
   statusDetail: string;
   lastSyncAt: number | null;
-  adminPaused: boolean;
   syncEnabled: boolean;
 }): { text: string; args?: Record<string, string>; tone: "ok" | "busy" | "danger" | "muted" } {
   const time = (ms: number) =>
     new Date(ms).toLocaleTimeString(intl(), { hour: "2-digit", minute: "2-digit" });
-  if (account.adminPaused) return { text: "Pausada por el administrador", tone: "muted" };
   switch (account.status) {
     case "auth_error":
       return { text: "Error de autenticación: revisa la contraseña", tone: "danger" };

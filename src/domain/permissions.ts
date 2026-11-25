@@ -15,7 +15,6 @@ export const PERMISSION = {
   graphView: "graph.view",
   apiUse: "api.use",
   mailboxUse: "mailbox.use",
-  mailboxManage: "mailbox.manage",
 } as const;
 
 export type PermissionKey = (typeof PERMISSION)[keyof typeof PERMISSION];
