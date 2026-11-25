@@ -1498,3 +1498,16 @@ export function openCorpus(sql: Sql, userId: string, caps: VaultCaps, actor: str
     return write(target.ownerId, target.portfolioId);
   }
 }
+
+/**
+ * Everything the person can open (own vault and what is shared with them), for pickers outside
+ * MCP such as attaching documents to an email.
+ */
+export async function vaultSnapshot(sql: Sql, userId: string): Promise<Assembled> {
+  return load(sql, userId, {
+    readOnly: true,
+    editNotes: false,
+    createNotes: false,
+    managePortfolios: false,
+  });
+}

@@ -2,25 +2,28 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
- * Modal is bottom-aligned on mobile and centered on desktop; outside clicks close it. Portal
- * into body so backdrop-filter panels cannot capture fixed positioning.
+ * Modal is bottom-aligned on mobile and centered on desktop; outside clicks close it unless
+ * keepOpen (a form whose content would be lost). Portal into body so backdrop-filter panels
+ * cannot capture fixed positioning.
  */
 export function Modal({
   title,
   onClose,
   children,
   wide = false,
+  keepOpen = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  keepOpen?: boolean;
 }) {
   const dialog = (
     <div
       data-ui="overlay"
       className="fixed inset-0 z-50 flex items-end justify-center bg-inset/80 p-4 sm:items-center"
-      onMouseDown={onClose}
+      onMouseDown={keepOpen ? undefined : onClose}
     >
       <div
         role="dialog"

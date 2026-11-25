@@ -20,6 +20,7 @@ import {
   updateAccount,
 } from "@/server/mail/accounts";
 import { archiveAttachments, archiveEml, archiveMessage } from "@/server/mail/archive";
+import { attachmentChoices, sendMessage } from "@/server/mail/compose";
 import {
   getMessage,
   listFolders,
@@ -160,6 +161,8 @@ const imap = z.object({
   username: z.string().max(254),
   host: z.string().max(253),
   port: z.number().int(),
+  smtpHost: z.string().max(253),
+  smtpPort: z.number().int(),
   password: z.string().min(1).max(1000),
   historyDays: z.number().int(),
   intervalSeconds: z.number().int(),
@@ -203,6 +206,8 @@ export const mailUpdateAccount = createServerFn({ method: "POST" })
         attachmentPolicy: z.enum(["demand", "small"]).optional(),
         mcpAccess: z.boolean().optional(),
         password: z.string().min(1).max(1000).optional(),
+        smtpHost: z.string().max(253).optional(),
+        smtpPort: z.number().int().optional(),
       })
       .parse(input),
   )
@@ -449,6 +454,74 @@ export const mailArchive = createServerFn({ method: "POST" })
         documentId: saved.id,
       };
     } catch (error) {
+      return failure(error);
+    }
+  });
+
+// ── Writing ──────────────────────────────────────────────────────────────────────
+
+/** Documents of the person's vault and shares that can go out as attachments. */
+export const mailAttachChoices = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ query: z.string().max(200) }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready, profile } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      return {
+        ok: true as const,
+        ...(await attachmentChoices(sql, context.userId, profile, data.query)),
+      };
+    } catch (error) {
+      return failure(error);
+    }
+  });
+
+const address = z.string().max(320);
+
+export const mailSend = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) =>
+    z
+      .object({
+        accountId: id,
+        to: z.array(address).max(100),
+        cc: z.array(address).max(100),
+        bcc: z.array(address).max(100),
+        subject: z.string().max(500),
+        text: z.string().max(500_000),
+        attachments: z.array(z.object({ docId: id, shareId: id.nullable() })).max(50),
+        replyTo: id.nullable(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ context, data }) => {
+    const { sql, ready, profile } = await user(context.userId);
+    if (!ready) return { ok: false as const, error: "El correo no está disponible." };
+    try {
+      const sent = await sendMessage(sql, context.userId, profile, data);
+      await recordAudit(sql, {
+        actorId: context.userId,
+        actorName: profile.loginName,
+        action: "mail.send",
+        outcome: "ok",
+        area: "Correo",
+        target: data.accountId,
+        detail: `Envía un correo a ${sent.recipients} destinatarios${
+          sent.attachments.length ? `, adjuntos de Grafito: ${sent.attachments.join(", ")}` : ""
+        }`,
+      });
+      return { ok: true as const, sentCopy: sent.sentCopy };
+    } catch (error) {
+      await recordAudit(sql, {
+        actorId: context.userId,
+        actorName: profile.loginName,
+        action: "mail.send",
+        outcome: "error",
+        area: "Correo",
+        target: data.accountId,
+        detail: error instanceof Error ? error.message : "Error",
+      }).catch(() => undefined);
       return failure(error);
     }
   });

@@ -13,9 +13,10 @@ import { MailError, retryAfterMs } from "./providers/types";
 export type OAuthProvider = "gmail" | "microsoft";
 
 const SCOPES: Record<OAuthProvider, string> = {
-  gmail: "openid email https://www.googleapis.com/auth/gmail.readonly",
+  gmail:
+    "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
   microsoft:
-    "openid email offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read",
+    "openid email offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read",
 };
 
 const STATE_MS = 10 * 60 * 1000;
@@ -236,5 +237,39 @@ export async function providerJson<T>(
     throw new MailError("auth", "El proveedor no permite leer este buzón.");
   if (response.status === 404 || response.status === 410)
     throw new MailError("cursor", "El proveedor ya no reconoce el punto de sincronización.");
+  throw new MailError("temporary", `El proveedor respondió ${response.status}.`);
+}
+
+/** POST to a provider to send mail. A 403 means the account was authorized before sending existed. */
+export async function providerSend(
+  url: string,
+  token: string,
+  body: string,
+  contentType: string,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": contentType },
+      body,
+      redirect: "error",
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch {
+    throw new MailError("connection", "No se pudo contactar con el proveedor.");
+  }
+  if (response.ok) return;
+  const retry = retryAfterMs(response.headers.get("retry-after"));
+  if (response.status === 429 || response.status === 503)
+    throw new MailError("rate_limited", "El proveedor pidió esperar.", retry);
+  if (response.status === 401) throw new MailError("expired", "La autorización ya no es válida.");
+  if (response.status === 403)
+    throw new MailError(
+      "permanent",
+      "La cuenta no tiene permiso para enviar: vuelve a autorizarla.",
+    );
+  if (response.status === 400 || response.status === 413)
+    throw new MailError("permanent", "El proveedor rechazó el mensaje (¿adjuntos muy grandes?).");
   throw new MailError("temporary", `El proveedor respondió ${response.status}.`);
 }

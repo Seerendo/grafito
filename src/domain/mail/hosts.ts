@@ -91,6 +91,7 @@ export function hostListed(host: string, list: readonly string[]): boolean {
 }
 
 export const IMAP_PORTS = [993, 143];
+export const SMTP_PORTS = [465, 587];
 
 export type TargetCheck = { ok: true; address: string } | { ok: false; error: string };
 
@@ -104,11 +105,16 @@ export function checkTarget(input: {
   port: number;
   addresses: readonly string[];
   trusted: boolean;
+  /** IMAP (993, 143) by default; SMTP submission (465, 587) for sending. */
+  service?: "imap" | "smtp";
 }): TargetCheck {
   const host = input.host.trim().toLowerCase();
   if (!host || !/^[a-z0-9.:[\]-]+$/.test(host))
     return { ok: false, error: "El servidor no es un nombre válido." };
-  if (!IMAP_PORTS.includes(input.port))
+  if (input.service === "smtp") {
+    if (!SMTP_PORTS.includes(input.port))
+      return { ok: false, error: "El puerto SMTP tiene que ser 465 (TLS) o 587 (STARTTLS)." };
+  } else if (!IMAP_PORTS.includes(input.port))
     return { ok: false, error: "El puerto IMAP tiene que ser 993 (TLS) o 143 (STARTTLS)." };
   if (INTERNAL.has(host) || host.endsWith(".localhost"))
     return { ok: false, error: "Ese servidor es un servicio interno." };

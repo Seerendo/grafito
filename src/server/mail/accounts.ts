@@ -34,6 +34,8 @@ type Row = {
   host: string;
   port: number;
   tls: unknown;
+  smtp_host: string;
+  smtp_port: number;
   secret: string;
   is_default: unknown;
   sync_enabled: unknown;
@@ -60,6 +62,8 @@ export type AccountView = {
   username: string;
   host: string;
   port: number;
+  smtpHost: string;
+  smtpPort: number;
   isDefault: boolean;
   syncEnabled: boolean;
   intervalSeconds: number;
@@ -85,6 +89,8 @@ function view(row: Row): AccountView {
     username: row.username,
     host: row.host,
     port: Number(row.port),
+    smtpHost: row.smtp_host ?? "",
+    smtpPort: Number(row.smtp_port ?? 587),
     isDefault: flag(row.is_default),
     syncEnabled: flag(row.sync_enabled),
     intervalSeconds: Number(row.sync_interval_seconds),
@@ -138,6 +144,8 @@ export async function connectorAccount(sql: Sql, id: string): Promise<ConnectorA
     host: found.host,
     port: Number(found.port),
     tls: flag(found.tls),
+    smtpHost: found.smtp_host ?? "",
+    smtpPort: Number(found.smtp_port ?? 587),
     historyDays: Number(found.history_days),
     secret: openSecret(found.secret),
   };
@@ -168,6 +176,8 @@ export type ImapInput = {
   username: string;
   host: string;
   port: number;
+  smtpHost: string;
+  smtpPort: number;
   password: string;
   historyDays: number;
   intervalSeconds: number;
@@ -222,6 +232,8 @@ export async function createImapAccount(
     host,
     port,
     tls: true,
+    smtpHost: input.smtpHost.trim().toLowerCase(),
+    smtpPort: input.smtpPort === 465 ? 465 : 587,
     historyDays: historyDays(policy, input.historyDays),
     secret: { kind: "password", password: input.password },
   };
@@ -234,10 +246,10 @@ export async function createImapAccount(
   const now = Date.now();
   const first = (await listAccounts(sql, userId)).length === 0;
   await sql`
-    insert into mail_account (id, user_id, provider, email, display_name, username, host, port, tls, secret,
+    insert into mail_account (id, user_id, provider, email, display_name, username, host, port, tls, smtp_host, smtp_port, secret,
       is_default, sync_interval_seconds, history_days, attachment_policy, status, next_sync_at, created_at, updated_at)
     values (${id}, ${userId}, 'imap', ${email}, ${input.name.trim().slice(0, 120)}, ${account.username}, ${host}, ${port},
-      true, ${sealSecret({ kind: "password", password: input.password })}, ${first},
+      true, ${account.smtpHost}, ${account.smtpPort}, ${sealSecret({ kind: "password", password: input.password })}, ${first},
       ${syncInterval(policy, input.intervalSeconds)}, ${account.historyDays},
       ${input.attachmentPolicy === "small" ? "small" : "demand"}, 'connected', ${now}, ${now}, ${now})
   `;
@@ -300,6 +312,8 @@ export type AccountChanges = {
   attachmentPolicy?: "demand" | "small";
   mcpAccess?: boolean;
   password?: string;
+  smtpHost?: string;
+  smtpPort?: number;
 };
 
 export async function updateAccount(
@@ -342,6 +356,8 @@ export async function updateAccount(
       history_days = ${changes.historyDays !== undefined ? historyDays(policy, changes.historyDays) : Number(found.history_days)},
       attachment_policy = coalesce(${changes.attachmentPolicy ?? null}, attachment_policy),
       mcp_access = coalesce(${changes.mcpAccess ?? null}, mcp_access),
+      smtp_host = coalesce(${changes.smtpHost?.trim().toLowerCase().slice(0, 253) ?? null}, smtp_host),
+      smtp_port = coalesce(${changes.smtpPort === undefined ? null : changes.smtpPort === 465 ? 465 : 587}, smtp_port),
       status = case when ${changes.syncEnabled === false} then 'paused'
         when ${changes.syncEnabled === true} and status = 'paused' then 'connected' else status end,
       next_sync_at = case when ${changes.syncEnabled === true} then ${now} else next_sync_at end,

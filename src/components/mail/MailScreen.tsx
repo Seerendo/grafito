@@ -6,6 +6,7 @@ import {
   Inbox,
   Mail,
   Paperclip,
+  PenSquare,
   RefreshCw,
   Send,
   Settings,
@@ -19,6 +20,7 @@ import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
 import { mailMessages, mailState } from "@/server/mailbox.functions";
+import { Compose, type Draft } from "./Compose";
 import { MessageView } from "./MessageView";
 import { statusLabel } from "./status";
 
@@ -78,6 +80,8 @@ export function MailScreen() {
   const [selected, setSelected] = useState<string | null>(null);
   // On a phone one pane at a time: folders, the list, or the message.
   const [pane, setPane] = useState<"nav" | "list" | "message">("list");
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [notice, setNotice] = useState("");
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(600);
   const listRef = useRef<HTMLDivElement>(null);
@@ -277,6 +281,28 @@ export function MailScreen() {
               <Settings className="size-4" />
             </Link>
           </div>
+          <button
+            type="button"
+            onClick={() =>
+              setDraft({
+                accountId:
+                  view.accountId ??
+                  accounts.find((item) => item.isDefault)?.id ??
+                  accounts[0]?.id ??
+                  "",
+                to: "",
+                cc: "",
+                subject: "",
+                text: "",
+                replyTo: null,
+              })
+            }
+            className="mx-1 mb-2 inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent text-sm font-medium text-accent-fg"
+          >
+            <PenSquare className="size-4" />
+            {t("Redactar")}
+          </button>
+          {notice ? <p className="px-2 pb-2 text-xs text-accent">{t(notice)}</p> : null}
           {navItem(
             "unified",
             sameView(view, { kind: "role", role: "inbox" }),
@@ -542,6 +568,7 @@ export function MailScreen() {
               <MessageView
                 key={selected}
                 id={selected}
+                onCompose={setDraft}
                 onChanged={(change) =>
                   setRows((current) =>
                     current
@@ -558,6 +585,22 @@ export function MailScreen() {
           )}
         </section>
       </div>
+      {draft ? (
+        <Compose
+          draft={draft}
+          accounts={accounts}
+          onClose={() => setDraft(null)}
+          onSent={(sentCopy) => {
+            setDraft(null);
+            setNotice(
+              sentCopy
+                ? "Mensaje enviado."
+                : "Mensaje enviado; no se pudo guardar la copia en Enviados.",
+            );
+            void loadState();
+          }}
+        />
+      ) : null}
     </AppFrame>
   );
 }

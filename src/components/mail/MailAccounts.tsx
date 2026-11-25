@@ -110,6 +110,8 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
     username: "",
     host: "",
     port: 993,
+    smtpHost: "",
+    smtpPort: 587,
     password: "",
     historyDays: Math.min(30, state.limits.maxHistoryDays),
     intervalSeconds: 300,
@@ -225,6 +227,27 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
               </select>
             </label>
             <label className="flex flex-col gap-1 text-sm">
+              {t("Servidor SMTP (envío)")}
+              <input
+                value={form.smtpHost}
+                placeholder={form.host || "smtp.ejemplo.org"}
+                onChange={(event) => setForm({ ...form, smtpHost: event.target.value })}
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Puerto SMTP")}
+              <select
+                aria-label={t("Puerto SMTP")}
+                value={form.smtpPort}
+                onChange={(event) => setForm({ ...form, smtpPort: Number(event.target.value) })}
+                className={input}
+              >
+                <option value={587}>{t("587 · STARTTLS")}</option>
+                <option value={465}>{t("465 · TLS")}</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
               {t("Contraseña o contraseña de aplicación")}
               <input
                 required
@@ -316,6 +339,7 @@ function AccountCard({
   onChanged: () => void;
 }) {
   const [password, setPassword] = useState("");
+  const [smtp, setSmtp] = useState({ host: account.smtpHost, port: account.smtpPort });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<"disconnect" | "delete" | null>(null);
@@ -451,6 +475,40 @@ function AccountCard({
             ))}
           </div>
         </details>
+      ) : null}
+      {account.provider === "imap" ? (
+        <form
+          data-ui="mail-smtp"
+          className="flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void update({ smtpHost: smtp.host, smtpPort: smtp.port });
+          }}
+        >
+          <input
+            aria-label={t("Servidor SMTP (envío)")}
+            placeholder={account.host}
+            value={smtp.host}
+            onChange={(event) => setSmtp({ ...smtp, host: event.target.value })}
+            className={`${input} min-w-0 flex-1`}
+          />
+          <select
+            aria-label={t("Puerto SMTP")}
+            value={smtp.port}
+            onChange={(event) => setSmtp({ ...smtp, port: Number(event.target.value) })}
+            className={`${input} w-40`}
+          >
+            <option value={587}>{t("587 · STARTTLS")}</option>
+            <option value={465}>{t("465 · TLS")}</option>
+          </select>
+          <button
+            type="submit"
+            disabled={busy || (smtp.host === account.smtpHost && smtp.port === account.smtpPort)}
+            className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+          >
+            {t("Guardar envío")}
+          </button>
+        </form>
       ) : null}
       {account.provider === "imap" ? (
         <form

@@ -4,8 +4,9 @@ Each person connects their own mail accounts (Zimbra or any IMAP server, Gmail,
 Microsoft 365 / Outlook.com). Grafito copies them in the background and shows
 them in **Correo electrónico**, an entry of the vault's sidebar beside the
 Papelera; the accounts themselves are set up in **Cuenta → Cuentas de correo**. Messages and attachments can be
-searched, read and archived into portfolios as ordinary documents. Grafito only
-reads: it never sends, moves or deletes mail on the server.
+searched, read and archived into portfolios as ordinary documents, and people
+write and answer mail with documents taken straight from their vault. Grafito
+never moves or deletes mail on the server.
 
 This is not the SMTP server Grafito uses to send its own notices; that one is in
 [MAIL.md](MAIL.md).
@@ -55,12 +56,12 @@ This is not the SMTP server Grafito uses to send its own notices; that one is in
 pass), `fetchAttachment`, `fetchRaw` (.eml) and `close`. Each keeps its own way
 of syncing.
 
-| Provider                | Integration                           | Sign-in                  | Incremental sync                                                                                                   |
-| ----------------------- | ------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Zimbra, generic IMAP    | IMAP over TLS (993) or STARTTLS (143) | Password or app password | UIDVALIDITY per folder; new UIDs above the last confirmed one; CONDSTORE/MODSEQ for flags; periodic reconciliation |
-| Exchange on premises    | IMAP, when the server enables it      | As the server allows     | As IMAP                                                                                                            |
-| Gmail                   | Gmail API (`gmail.readonly`)          | OAuth 2.0 + PKCE         | History API from the stored history id; labels as folders                                                          |
-| Microsoft 365 / Outlook | Microsoft Graph (`Mail.Read`)         | OAuth 2.0 + PKCE         | Delta query per folder (delta link), immutable ids                                                                 |
+| Provider                | Integration                                | Sign-in                  | Incremental sync                                                                                                   |
+| ----------------------- | ------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Zimbra, generic IMAP    | IMAP over TLS (993) or STARTTLS (143)      | Password or app password | UIDVALIDITY per folder; new UIDs above the last confirmed one; CONDSTORE/MODSEQ for flags; periodic reconciliation |
+| Exchange on premises    | IMAP, when the server enables it           | As the server allows     | As IMAP                                                                                                            |
+| Gmail                   | Gmail API (`gmail.readonly`, `gmail.send`) | OAuth 2.0 + PKCE         | History API from the stored history id; labels as folders                                                          |
+| Microsoft 365 / Outlook | Microsoft Graph (`Mail.Read`, `Mail.Send`) | OAuth 2.0 + PKCE         | Delta query per folder (delta link), immutable ids                                                                 |
 
 **IMAP in detail** (`providers/imap.ts`):
 
@@ -113,11 +114,12 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   screen leads there). Each person sets up only their own; there is nothing
   about mail accounts in Administración.
 - **Connect:** the address, the IMAP server and port (993 TLS or 143
-  STARTTLS), and the password. The password is tried once before anything is
+  STARTTLS), the SMTP server for sending (empty: the IMAP host; 587 STARTTLS
+  or 465 TLS), and the password. The password is tried once before anything is
   stored. Gmail and Microsoft use their own sign-in page, when the server has
   their OAuth applications.
 - **Per account:** name, default account, automatic sync and its frequency
-  (two minutes at least), folders that sync, new credentials,
+  (two minutes at least), folders that sync, the SMTP server, new credentials,
   **Volver a autorizar** (OAuth), **Permitir acceso por MCP**, **Desconectar**
   (credentials forgotten, messages kept) and **Borrar la copia local**
   (messages and downloaded attachments deleted here, archived documents kept).
@@ -131,6 +133,21 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   ClamAV scans them, and PDFs, images, audio, video and text open in Grafito's
   viewers. Office files open once saved into the vault (Collabora edits vault
   documents). Executables and disk images are only downloaded.
+- **Writing:** **Redactar**, and **Responder**, **Responder a todos** and
+  **Reenviar** on a message, open a plain-text message with From (one of the
+  person's accounts), To, CC, CCO and Subject. **Adjuntar desde Grafito**
+  browses the Carpeta Personal and each share, or searches, and ticks
+  documents: files go as they are, notes as `.md`. Nothing is uploaded from the
+  computer: the server reads each document, checks the person may open it and
+  take it out (files need `files.download`, notes `notes.export`, the same as
+  downloading), and refuses more than 20 attachments or 20 MB. Replies carry
+  In-Reply-To and References; forwarding repeats the original header and text,
+  not its attachments. IMAP accounts send through their SMTP server (the
+  password is the account's) and the message is appended to the server's Sent
+  folder; Gmail and Microsoft send through their APIs, which keep it in Sent.
+  Each send is audited (`mail.send`: account, number of recipients and the ids
+  of the documents sent, never the text). Gmail and Microsoft accounts
+  connected before sending existed need **Volver a autorizar**.
 - **Archiving:** a message as a Markdown note (provenance table, the text in a
   fence), plain text or the original `.eml` (exact source, fetched by the
   worker); attachments as files. Into the Carpeta Personal, one of its
@@ -208,8 +225,8 @@ The worker reads `DATABASE_URL`, the S3 settings and the encryption key like the
 app. It takes the installation secrets the app created (read-only volume) and
 never creates them; on a fresh install it waits until the app has started.
 
-**Outbound access** the worker (and the app, to test a connection) needs:
-the IMAP servers on 993/143; `gmail.googleapis.com` and `oauth2.googleapis.com`
+**Outbound access** the worker (and the app, to test a connection and to send)
+needs: the IMAP servers on 993/143 and their SMTP servers on 587/465; `gmail.googleapis.com` and `oauth2.googleapis.com`
 for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
 
 ## Security
@@ -227,9 +244,10 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
 - **Isolation:** every query filters by the signed-in person. An attachment
   link is signed for its owner and expires in ten minutes. Administrators
   have no view of anyone's accounts or messages.
-- **SSRF:** the IMAP host is resolved once; loopback, link-local, cloud
+- **SSRF:** the IMAP host, and the SMTP host for sending, are resolved once; loopback, link-local, cloud
   metadata, multicast and Grafito's own services are refused; a private
-  address only when `MAIL_TRUSTED_HOSTS` names the host; ports 993 and
+  address only when `MAIL_TRUSTED_HOSTS` names the host; ports 993, 143, 587,
+  465 (SMTP) and
   143 only; the connection goes to the checked address (no DNS rebinding).
   Gmail and Graph addresses are fixed.
 - **HTML:** cleaned in the browser (no scripts, frames, forms, SVG, event
@@ -244,7 +262,12 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
 - **MCP:** only accounts whose owner turned on «Permitir acceso por MCP», only
   for that owner. Mail text comes back under `untrusted_content`, and the
   server instructions tell clients never to follow instructions found there.
-  No MCP tool sends, moves or deletes mail.
+  No MCP tool sends, moves or deletes mail: sending is a person's act in the
+  mail screen, so a message's text cannot make an assistant send the vault out.
+- **Sending** takes only documents the person may download or export, read on
+  the server (a document id from someone else's vault, or from a share that was
+  withdrawn, is refused), with mail-composer's file and URL access off. Bcc is
+  kept out of the copy in Sent.
 
 Residual risks: the worker runs as the same user as the app (it reads the
 installation secrets); an MCP client that ignores the untrusted-content marking

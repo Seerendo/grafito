@@ -5,7 +5,10 @@ import {
   EyeOff,
   FileDown,
   ImageOff,
+  Forward,
   MailOpen,
+  Reply,
+  ReplyAll,
   Paperclip,
   Star,
 } from "lucide-react";
@@ -15,6 +18,7 @@ import { mailFrameDocument, sanitizeMailHtml } from "@/app/mail/sanitize";
 import { useVault } from "@/app/vault/store";
 import { riskyAttachment } from "@/domain/mail/message";
 import { Modal } from "@/components/ui/Modal";
+import type { Draft } from "./Compose";
 import { PdfView } from "@/components/vault/PdfView";
 import {
   mailArchive,
@@ -71,9 +75,11 @@ async function fetchAttachment(
 export function MessageView({
   id,
   onChanged,
+  onCompose,
 }: {
   id: string;
   onChanged: (change: { seen?: boolean; flagged?: boolean; hidden?: boolean }) => void;
+  onCompose: (draft: Draft) => void;
 }) {
   const [message, setMessage] = useState<Detail | null>(null);
   const [error, setError] = useState("");
@@ -158,6 +164,58 @@ export function MessageView({
 
   const files = message.attachments.filter((item) => !item.inline || !item.contentId);
 
+  // Replies quote the text; forwarding repeats the header. Neither carries the attachments.
+  const when = new Date(message.sentAt ?? message.receivedAt).toLocaleString(intl(), {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const quoted = message.text
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  const prefixed = (prefix: string) =>
+    new RegExp(`^${prefix}:`, "i").test(message.subject)
+      ? message.subject
+      : `${prefix}: ${message.subject}`;
+  const reply = (all: boolean) => {
+    const own = message.account.email.toLowerCase();
+    const first = message.replyTo.length ? message.replyTo : [message.from];
+    const others = all
+      ? [...message.to, ...message.cc].filter(
+          (item) =>
+            item.address.toLowerCase() !== own &&
+            !first.some((entry) => entry.address.toLowerCase() === item.address.toLowerCase()),
+        )
+      : [];
+    onCompose({
+      accountId: message.account.id,
+      to: first.map((item) => item.address).join(", "),
+      cc: others.map((item) => item.address).join(", "),
+      subject: prefixed("Re"),
+      text: `\n\n${t("El {0}, {1} escribió:", { 0: when, 1: people([message.from]) })}\n${quoted}`,
+      replyTo: message.id,
+    });
+  };
+  const forward = () =>
+    onCompose({
+      accountId: message.account.id,
+      to: "",
+      cc: "",
+      subject: prefixed("Rv"),
+      text: [
+        "",
+        "",
+        `---------- ${t("Mensaje reenviado")} ----------`,
+        `${t("De")}: ${people([message.from])}`,
+        `${t("Fecha")}: ${when}`,
+        `${t("Asunto")}: ${message.subject}`,
+        `${t("Para")}: ${people(message.to)}`,
+        "",
+        message.text,
+      ].join("\n"),
+      replyTo: null,
+    });
+
   return (
     <article data-ui="mail-message" className="flex min-h-0 flex-1 flex-col">
       <header className="flex flex-col gap-1 border-b border-line p-4">
@@ -191,6 +249,30 @@ export function MessageView({
             : ""}
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => reply(false)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 hover:bg-elevated"
+          >
+            <Reply className="size-4" />
+            {t("Responder")}
+          </button>
+          <button
+            type="button"
+            onClick={() => reply(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 hover:bg-elevated"
+          >
+            <ReplyAll className="size-4" />
+            {t("Responder a todos")}
+          </button>
+          <button
+            type="button"
+            onClick={forward}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line px-2.5 hover:bg-elevated"
+          >
+            <Forward className="size-4" />
+            {t("Reenviar")}
+          </button>
           <button
             type="button"
             onClick={() => void mark({ flagged: !message.flagged })}

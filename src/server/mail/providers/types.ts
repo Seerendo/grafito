@@ -97,6 +97,9 @@ export type ConnectorAccount = {
   host: string;
   port: number;
   tls: boolean;
+  /** SMTP submission server of an IMAP account (empty: the IMAP host). */
+  smtpHost: string;
+  smtpPort: number;
   historyDays: number;
   secret:
     | { kind: "password"; password: string }
@@ -147,7 +150,15 @@ export type AttachmentSink = {
   write: (chunk: Uint8Array) => Promise<void>;
 };
 
+/** A composed message (RFC 5322 source) and who it goes to, Bcc included. */
+export type OutgoingMessage = { raw: Buffer; from: string; recipients: string[] };
+
 export interface MailConnector {
+  /**
+   * Send a message as this account. The provider keeps it in Sent (IMAP: appended to the Sent
+   * folder; false when that copy could not be saved, the message itself went out).
+   */
+  send(message: OutgoingMessage): Promise<{ sentCopy: boolean }>;
   /** Sign in and check the account can be read. */
   test(): Promise<void>;
   /** One bounded pass: folders, new messages, flag changes, deletions. */

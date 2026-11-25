@@ -40,6 +40,7 @@ arrive is controlled by holding them (`gate`), never by sleeping. `trash.e2e.mjs
 restarts the test stack's `app` container and `no-ocr.e2e.mjs` reads its
 compose project (`E2E_COMPOSE`). `mcp.e2e.mjs` calls `/api/mcp` with fresh
 `e2emcp-` tokens. `mail.e2e.mjs` (email module, T01–T41) needs the test stack's
-`imap-test` Dovecot and `mail-sync`: `mail-seed.mjs` resets and seeds the
+`imap-test` Dovecot, the `smtp-test` Mailpit (sending, its API on
+`127.0.0.1:18025`) and `mail-sync`: `mail-seed.mjs` resets and seeds the
 synthetic IMAP mailboxes through `127.0.0.1:1993`, with TLS checked against the
 test CA in `.data/imap-test/certs` (not versioned).

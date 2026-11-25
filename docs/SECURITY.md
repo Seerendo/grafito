@@ -125,7 +125,10 @@ without the fixes. It failed there, so it catches each flaw.
   app's origin, with its own CSP; remote images wait for the person.
 - Downloaded attachments pass ClamAV (a scanner failure refuses the file).
 - MCP sees an account only when its owner allows it, and returns mail text
-  as untrusted content. Details: [MAILBOX.md](MAILBOX.md).
+  as untrusted content; no MCP tool sends mail.
+- Sending attaches only documents the person may download or export, read
+  on the server; SMTP hosts pass the same checks as IMAP hosts; every send is
+  audited without its text. Details: [MAILBOX.md](MAILBOX.md).
 
 ## Known limits
 

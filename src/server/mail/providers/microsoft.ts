@@ -1,12 +1,13 @@
 import type { Sql } from "@/lib/db";
 import { htmlToText, specialUseOf, type MailAddress, type SpecialUse } from "@/domain/mail/message";
-import { freshToken, providerJson } from "../oauth";
+import { freshToken, providerJson, providerSend } from "../oauth";
 import {
   MailError,
   retryAfterMs,
   type AttachmentSink,
   type ConnectorAccount,
   type MailConnector,
+  type OutgoingMessage,
   type RemoteFolder,
   type RemoteMessage,
   type SyncContext,
@@ -82,6 +83,17 @@ export class MicrosoftConnector implements MailConnector {
   }
 
   async close(): Promise<void> {}
+
+  /** Graph takes the MIME source as base64 text and saves a copy in Sent Items. */
+  async send(message: OutgoingMessage): Promise<{ sentCopy: boolean }> {
+    await providerSend(
+      `${API}/sendMail`,
+      await this.token(),
+      message.raw.toString("base64"),
+      "text/plain",
+    );
+    return { sentCopy: true };
+  }
 
   private async folders(token: string): Promise<RemoteFolder[]> {
     const special = new Map<string, SpecialUse>();

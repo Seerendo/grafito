@@ -80,6 +80,19 @@ function hostTrusted(host: string): boolean {
  * connection itself (with the name kept for TLS), so a later DNS answer cannot change it.
  */
 export async function resolveImapTarget(host: string, port: number): Promise<TargetCheck> {
+  return resolveMailTarget(host, port, "imap");
+}
+
+/** The same check for the SMTP server an IMAP account sends through. */
+export async function resolveSmtpTarget(host: string, port: number): Promise<TargetCheck> {
+  return resolveMailTarget(host, port, "smtp");
+}
+
+async function resolveMailTarget(
+  host: string,
+  port: number,
+  service: "imap" | "smtp",
+): Promise<TargetCheck> {
   const name = host.trim().toLowerCase().replace(/\.$/, "");
   const trusted = hostTrusted(name);
   let addresses: string[] = [];
@@ -88,5 +101,5 @@ export async function resolveImapTarget(host: string, port: number): Promise<Tar
   } catch {
     return { ok: false, error: "No se encontró ese servidor." };
   }
-  return checkTarget({ host: name, port, addresses, trusted });
+  return checkTarget({ host: name, port, addresses, trusted, service });
 }

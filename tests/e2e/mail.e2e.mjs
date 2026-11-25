@@ -122,6 +122,30 @@ async function mcp(token, name, args = {}) {
   return { error: answer.result.isError, data: JSON.parse(answer.result.content[0].text) };
 }
 
+// What the test SMTP server (smtp-test, Mailpit) received, through its API.
+const SMTP_API = (process.env.E2E_SMTP_API ?? "http://127.0.0.1:18025").replace(/\/+$/, "");
+
+async function received(subject) {
+  let found = null;
+  await until(async () => {
+    const list = await (
+      await fetch(`${SMTP_API}/api/v1/search?query=${encodeURIComponent(`subject:"${subject}"`)}`)
+    ).json();
+    found = list.messages?.[0] ?? null;
+    return Boolean(found);
+  }, `«${subject}» received by smtp-test`);
+  const message = await (await fetch(`${SMTP_API}/api/v1/message/${found.ID}`)).json();
+  const headers = await (await fetch(`${SMTP_API}/api/v1/message/${found.ID}/headers`)).json();
+  return { message, headers };
+}
+
+async function smtpCount(subject) {
+  const list = await (
+    await fetch(`${SMTP_API}/api/v1/search?query=${encodeURIComponent(`subject:"${subject}"`)}`)
+  ).json();
+  return list.messages?.length ?? 0;
+}
+
 describe("email module", () => {
   let browser;
   let ana;
@@ -568,5 +592,182 @@ describe("email module", () => {
       (await query(`select status from mail_account where id = $1`, [accountId]))[0].status,
       "ok",
     );
+  });
+
+  test("T51: SMTP for sending is set per account, with the same server checks", async () => {
+    await page.goto(`${base}/cuenta?seccion=buzones`);
+    const form = page.locator('[data-ui="mail-smtp"]');
+    await form.getByLabel("Servidor SMTP (envío)").fill("smtp-test");
+    await form.getByLabel("Puerto SMTP").selectOption("587");
+    await form.getByRole("button", { name: "Guardar envío" }).click();
+    await until(
+      async () =>
+        (await query(`select smtp_host from mail_account where id = $1`, [accountId]))[0]
+          .smtp_host === "smtp-test",
+      "SMTP saved",
+    );
+  });
+
+  async function compose() {
+    await page.goto(`${base}/correo`);
+    await page.getByRole("button", { name: "Redactar" }).click();
+    return page.locator('[data-ui="mail-compose"]');
+  }
+
+  test("T52, T53: a message goes out with documents from the vault and from a share, and lands in Sent", async () => {
+    // Ana's own note and the PDF saved in T27; a note Beto shares with her (read only).
+    await mcp(ana.token, "create_note", {
+      title: "Nota para enviar",
+      content: "# Acta\n\nContenido de la nota enviada desde Grafito.",
+    });
+    const folder = await mcp(beto.token, "create_portfolio", { name: "Compartida correo" });
+    await mcp(beto.token, "create_note", {
+      title: "Nota compartida correo",
+      content: "Texto que Beto comparte.",
+      portfolio_id: folder.data.id,
+    });
+    const shareId = `e2email-share-${stamp}`;
+    await query(
+      `insert into share_item (id, owner_id, kind, target_id, title, visibility, access)
+       values ($1, $2, 'portfolio', $3, 'Compartida correo', 'shared', 'read')`,
+      [shareId, beto.id, folder.data.id],
+    );
+    await query(`insert into share_grant (share_id, user_id, granted_at) values ($1, $2, $3)`, [
+      shareId,
+      ana.id,
+      Date.now(),
+    ]);
+    const subject = `Envio con adjuntos ${stamp}`;
+    const form = await compose();
+    await form.getByLabel("Para").fill("Destino Uno <destino@otro.test>, copia2@otro.test");
+    await form.getByLabel("Asunto").fill(subject);
+    await form.getByLabel("Mensaje").fill("Hola,\n\nVan los documentos.\n");
+    await form.getByRole("button", { name: "Adjuntar desde Grafito" }).click();
+    const picker = page.locator('[data-ui="mail-vault-picker"]');
+    // Browse the Carpeta Personal: the note at its root.
+    await picker.locator('[data-doc="Nota para enviar"] input').check();
+    // Search reaches the PDF saved inside a portfolio.
+    await picker.getByLabel("Buscar en Grafito").fill("informe-trimestral");
+    await picker.locator('[data-doc*="informe-trimestral"] input').first().check();
+    await picker.getByLabel("Buscar en Grafito").fill("");
+    // The share, opened from its own place.
+    await picker.getByRole("button", { name: /^Compartida correo · / }).click();
+    await picker.getByRole("button", { name: "Compartida correo", exact: true }).click();
+    await picker.locator('[data-doc="Nota compartida correo"] input').check();
+    await picker.getByRole("button", { name: "Adjuntar (3)" }).click();
+    assert.equal(await form.locator('[data-ui="mail-compose-files"] > span').count(), 3);
+    await form.getByRole("button", { name: "Enviar", exact: true }).click();
+    await page.getByText("Mensaje enviado.").waitFor();
+
+    const { message } = await received(subject);
+    const names = message.Attachments.map((item) => item.FileName).sort();
+    assert.deepEqual(names, [
+      "Nota compartida correo.md",
+      "Nota para enviar.md",
+      "informe-trimestral.pdf",
+    ]);
+    assert.deepEqual(message.To.map((item) => item.Address).sort(), [
+      "copia2@otro.test",
+      "destino@otro.test",
+    ]);
+    assert.equal(message.From.Address, "ana@prueba.test");
+    assert.match(message.Text, /Van los documentos/);
+    const pdf = message.Attachments.find((item) => item.FileName === "informe-trimestral.pdf");
+    const bytes = Buffer.from(
+      await (
+        await fetch(`${SMTP_API}/api/v1/message/${message.ID}/part/${pdf.PartID}`)
+      ).arrayBuffer(),
+    );
+    assert.equal(bytes.subarray(0, 4).toString(), "%PDF");
+    // The copy in the server's Sent folder comes back with the next sync.
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message m
+             join mail_message_location l on l.message_id = m.id
+             join mail_folder f on f.id = l.folder_id
+             where m.account_id = $1 and m.subject = $2 and f.special_use = 'sent'`,
+            [accountId, subject],
+          )
+        )[0].n === 1,
+      "the copy in Sent",
+      120_000,
+    );
+    const audit = await query(
+      `select detail from audit_event where action = 'mail.send' and outcome = 'ok' and target = $1 order by at desc limit 1`,
+      [accountId],
+    );
+    assert.match(audit[0].detail, /2 destinatarios, adjuntos de Grafito/);
+  });
+
+  test("T54: a reply keeps the thread and Bcc stays out of the message", async () => {
+    const view = await openMessage("Informe con adjuntos");
+    const original = (
+      await query(
+        `select internet_message_id from mail_message where account_id = $1 and subject = 'Informe con adjuntos'`,
+        [accountId],
+      )
+    )[0].internet_message_id;
+    await view.getByRole("button", { name: "Responder", exact: true }).click();
+    const form = page.locator('[data-ui="mail-compose"]');
+    assert.equal(await form.getByLabel("Para").inputValue(), "ana.r@otro.test");
+    assert.equal(await form.getByLabel("Asunto").inputValue(), "Re: Informe con adjuntos");
+    assert.match(await form.getByLabel("Mensaje").inputValue(), /> Te adjunto el informe/);
+    await form.getByRole("button", { name: "CC y CCO" }).click();
+    await form.getByLabel("CCO").fill("oculto@otro.test");
+    await form.getByRole("button", { name: "Enviar", exact: true }).click();
+    await page.getByText("Mensaje enviado.").waitFor();
+    const { message, headers } = await received("Re: Informe con adjuntos");
+    assert.equal(headers["In-Reply-To"]?.[0], original);
+    // Delivered to the Bcc address (Mailpit lists it from the envelope), but the message itself,
+    // and so the copy kept in Sent, does not name it.
+    assert.ok(
+      message.Bcc.some((item) => item.Address === "oculto@otro.test"),
+      "delivered to Bcc",
+    );
+    await syncNow();
+    const copy = await query(
+      `select bcc_json from mail_message where account_id = $1 and subject = 'Re: Informe con adjuntos'`,
+      [accountId],
+    );
+    assert.equal(copy.length, 1);
+    const bcc = copy[0].bcc_json;
+    assert.deepEqual(typeof bcc === "string" ? JSON.parse(bcc) : bcc, []);
+  });
+
+  test("T55: sending is refused for internal SMTP hosts, other people's documents and a server that does not answer", async () => {
+    const subject = `No debe salir ${stamp}`;
+    const attempt = async () => {
+      const form = await compose();
+      await form.getByLabel("Para").fill("destino@otro.test");
+      await form.getByLabel("Asunto").fill(subject);
+      await form.getByRole("button", { name: "Enviar", exact: true }).click();
+      await form.getByRole("alert").waitFor();
+      return form.getByRole("alert").innerText();
+    };
+    await query(`update mail_account set smtp_host = '169.254.169.254' where id = $1`, [accountId]);
+    assert.match(await attempt(), /no se puede usar/);
+    await query(`update mail_account set smtp_host = 'postgres' where id = $1`, [accountId]);
+    assert.match(await attempt(), /servicio interno|red privada/);
+    await query(`update mail_account set smtp_host = 'smtp-test', smtp_port = 465 where id = $1`, [
+      accountId,
+    ]);
+    assert.match(await attempt(), /rechazó la conexión|no respondió/);
+    await query(`update mail_account set smtp_port = 587 where id = $1`, [accountId]);
+    assert.equal(await smtpCount(subject), 0);
+    // A document that is not Ana's: neither listed nor sendable.
+    const hidden = await mcp(beto.token, "create_note", { title: "Privada de Beto", content: "x" });
+    const form = await compose();
+    await form.getByRole("button", { name: "Adjuntar desde Grafito" }).click();
+    const picker = page.locator('[data-ui="mail-vault-picker"]');
+    await picker.getByLabel("Buscar en Grafito").fill("Privada de Beto");
+    await picker
+      .getByText("Cargando…")
+      .waitFor({ state: "detached" })
+      .catch(() => undefined);
+    await page.waitForTimeout(800);
+    assert.equal(await picker.locator('[data-doc="Privada de Beto"]').count(), 0);
+    assert.ok(hidden.data.id);
   });
 });

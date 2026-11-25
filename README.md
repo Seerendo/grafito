@@ -820,8 +820,8 @@ Right-click anywhere in an administration page gives the actions of its buttons:
 
 ## Email
 
-**Correo electrónico** ("Email", in the avatar menu) is where each person reads
-their own mail accounts: Zimbra or any IMAP server, Gmail and Microsoft 365 /
+**Correo electrónico** ("Email", in the vault's sidebar) is where each person
+reads and writes their own mail accounts: Zimbra or any IMAP server, Gmail and Microsoft 365 /
 Outlook.com. The `mail-sync` service copies them in the background, so Grafito
 keeps answering while mailboxes sync.
 
@@ -836,8 +836,11 @@ keeps answering while mailboxes sync.
   or the original `.eml`, and attachments into files, in any portfolio,
   share or workspace where you can add files. They stay when the message is
   deleted on the server or the account is disconnected.
-- Grafito only reads: it never sends, moves or deletes mail on the server.
-  Read, starred and hidden are kept in Grafito.
+- **Redactar**, **Responder** and **Reenviar** send from your accounts;
+  **Adjuntar desde Grafito** picks documents from your Carpeta Personal or
+  what is shared with you, without uploading anything from the computer.
+- Grafito never moves or deletes mail on the server. Read, starred and hidden
+  are kept in Grafito.
 
 Each person connects their own accounts in **Cuenta → Cuentas de correo**;
 the sidebar's **Correo electrónico** entry, beside the Papelera, opens them.

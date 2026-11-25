@@ -1,10 +1,12 @@
 import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from "imapflow";
+import { resolveSmtpTarget } from "../settings";
 import { folderPlan, specialUseOf, vanished, type MailAddress } from "@/domain/mail/message";
 import {
   MailError,
   type AttachmentSink,
   type ConnectorAccount,
   type MailConnector,
+  type OutgoingMessage,
   type RemoteAttachment,
   type RemoteFolder,
   type RemoteMessage,
@@ -59,6 +61,25 @@ function classify(error: unknown): MailError {
       "El servidor no ofrece STARTTLS: Grafito no envía la contraseña sin cifrar.",
     );
   return new MailError("temporary", "El servidor de correo devolvió un error.");
+}
+
+function classifySmtp(error: unknown): MailError {
+  const value = error as { code?: string; responseCode?: number; message?: string };
+  if (value?.code === "EAUTH")
+    return new MailError("auth", "El servidor de salida rechazó el usuario o la contraseña.");
+  if (value?.code === "EENVELOPE" || (value?.responseCode ?? 0) === 550)
+    return new MailError("permanent", "El servidor de salida rechazó algún destinatario.");
+  if ((value?.responseCode ?? 0) === 552)
+    return new MailError("permanent", "El servidor de salida rechazó el tamaño del mensaje.");
+  if (
+    value?.code === "EMESSAGE" ||
+    ((value?.responseCode ?? 0) >= 500 && value?.code !== "ECONNECTION")
+  )
+    return new MailError("permanent", "El servidor de salida rechazó el mensaje.");
+  const found = classify(error);
+  return found.kind === "temporary"
+    ? new MailError("temporary", "El servidor de salida devolvió un error.")
+    : found;
 }
 
 function address(list: { name?: string; address?: string }[] | undefined): MailAddress[] {
@@ -185,6 +206,52 @@ export class ImapConnector implements MailConnector {
     this.client = null;
     if (!client) return;
     await client.logout().catch(() => client.close());
+  }
+
+  /**
+   * Send through the account's SMTP server (465 TLS or 587 STARTTLS, the same host check as IMAP,
+   * certificate always validated), then keep a copy in the server's Sent folder.
+   */
+  async send(message: OutgoingMessage): Promise<{ sentCopy: boolean }> {
+    const secret = this.account.secret;
+    if (!secret || secret.kind !== "password")
+      throw new MailError("auth", "Falta la contraseña de la cuenta.");
+    const host = (this.account.smtpHost || this.account.host).trim().toLowerCase();
+    const port = this.account.smtpPort || 587;
+    const target = await resolveSmtpTarget(host, port);
+    if (!target.ok) throw new MailError("permanent", target.error);
+    const { createTransport } = await import("nodemailer");
+    const transport = createTransport({
+      host: target.address,
+      port,
+      secure: port === 465,
+      requireTLS: port !== 465,
+      tls: { servername: host, rejectUnauthorized: true, minVersion: "TLSv1.2" },
+      auth: { user: this.account.username || this.account.email, pass: secret.password },
+      name: "grafito",
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 120_000,
+    });
+    try {
+      await transport.sendMail({
+        envelope: { from: message.from, to: message.recipients },
+        raw: message.raw,
+      });
+    } catch (error) {
+      throw classifySmtp(error);
+    } finally {
+      transport.close();
+    }
+    try {
+      const client = await this.open();
+      const sent = (await this.folders(client)).find((item) => item.specialUse === "sent");
+      if (!sent) return { sentCopy: false };
+      await client.append(sent.path, message.raw, ["\\Seen"]);
+      return { sentCopy: true };
+    } catch {
+      return { sentCopy: false };
+    }
   }
 
   private async folders(client: ImapFlow): Promise<RemoteFolder[]> {

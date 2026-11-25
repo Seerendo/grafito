@@ -73,6 +73,16 @@ test("SSRF: loopback, enlace local, metadatos y servicios internos nunca; red pr
   assert.equal(target("postgres", ["172.18.0.2"], true).ok, false);
   assert.equal(target("imap.gmail.com", ["142.250.0.109"], false, 22).ok, false);
   assert.equal(target("imap.gmail.com", ["142.250.0.109"], false, 143).ok, true);
+  // Sending: SMTP submission ports only, the same address rules.
+  const smtp = (host: string, addresses: string[], port: number, trusted = false) =>
+    checkTarget({ host, port, addresses, trusted, service: "smtp" });
+  assert.equal(smtp("smtp.gmail.com", ["142.250.0.108"], 587).ok, true);
+  assert.equal(smtp("smtp.gmail.com", ["142.250.0.108"], 465).ok, true);
+  assert.equal(smtp("smtp.gmail.com", ["142.250.0.108"], 25).ok, false);
+  assert.equal(smtp("smtp.gmail.com", ["142.250.0.108"], 993).ok, false);
+  assert.equal(smtp("relay.uni.edu", ["10.0.0.9"], 587).ok, false);
+  assert.equal(smtp("relay.uni.edu", ["10.0.0.9"], 587, true).ok, true);
+  assert.equal(smtp("relay.uni.edu", ["169.254.169.254"], 587, true).ok, false);
   assert.equal(hostListed("mail.uni.edu", ["*.uni.edu"]), true);
   assert.equal(hostListed("uni.edu", ["*.uni.edu"]), false);
   assert.equal(hostListed("evil-uni.edu", ["*.uni.edu"]), false);

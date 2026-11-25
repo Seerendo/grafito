@@ -1616,6 +1616,28 @@ profile. `tests/e2e/mail.e2e.mjs` (15 tests) and `tests/e2e/mcp.e2e.mjs`.
 | MCP suite                                                                              | ✅ 9 of 9                                                                   |
 | `npm run typecheck`, `lint`, `npm test`, `format:check`                                | ✅ 264 tests pass                                                           |
 
+## Round 55: writing mail with documents from the vault
+
+Same stack plus `smtp-test` (Mailpit on 587 with STARTTLS from the test CA and
+passwords), trusted through `MAIL_TRUSTED_HOSTS`. `tests/e2e/mail.e2e.mjs`
+(19 tests) and `tests/e2e/mcp.e2e.mjs`.
+
+| Check                                                                                | Result                                                                   |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Account card: SMTP server and port saved                                             | ✅                                                                       |
+| Redactar with a note from the Carpeta Personal, a PDF found by search, a shared note | ✅ three attachments received, the PDF intact, «Name <address>» accepted |
+| The copy in the server's Sent folder                                                 | ✅ synced back into Enviados                                             |
+| Audit                                                                                | ✅ `mail.send` with recipients count and document ids, no text           |
+| Responder: To, «Re:», quoted text, In-Reply-To; CCO                                  | ✅ delivered to Bcc, not named in the message or the Sent copy           |
+| SMTP host on metadata, an internal service, a port with nothing listening            | ✅ refused with the reason; nothing sent                                 |
+| Another member's private note in the picker                                          | ✅ not listed                                                            |
+| Unit: SMTP ports 465/587 only, the same address rules                                | ✅                                                                       |
+| MCP suite; `typecheck`, `lint`, `npm test`, `format:check`                           | ✅ 9 of 9; 264 tests pass                                                |
+
+Not covered: sending through Gmail and Microsoft (no OAuth credentials here);
+the role check on attachments (`files.download`, `notes.export`) is in code
+only.
+
 ## Useful commands
 
 ```bash

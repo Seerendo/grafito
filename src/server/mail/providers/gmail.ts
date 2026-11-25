@@ -1,11 +1,12 @@
 import type { Sql } from "@/lib/db";
 import type { MailAddress, SpecialUse } from "@/domain/mail/message";
-import { freshToken, providerJson } from "../oauth";
+import { freshToken, providerJson, providerSend } from "../oauth";
 import {
   MailError,
   type AttachmentSink,
   type ConnectorAccount,
   type MailConnector,
+  type OutgoingMessage,
   type RemoteAttachment,
   type RemoteFolder,
   type RemoteMessage,
@@ -96,6 +97,16 @@ export class GmailConnector implements MailConnector {
   }
 
   async close(): Promise<void> {}
+
+  async send(message: OutgoingMessage): Promise<{ sentCopy: boolean }> {
+    await providerSend(
+      `${API}/messages/send`,
+      await this.token(),
+      JSON.stringify({ raw: message.raw.toString("base64url") }),
+      "application/json",
+    );
+    return { sentCopy: true };
+  }
 
   private async labels(token: string): Promise<RemoteFolder[]> {
     const answer = await providerJson<{ labels?: { id: string; name: string; type: string }[] }>(
