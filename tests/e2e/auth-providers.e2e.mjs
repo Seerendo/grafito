@@ -4,7 +4,7 @@
  * the SSO provider now goes through signIn.social and /callback/sso, and the old
  * /oauth2/callback/sso address still works. Not part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   node --test tests/e2e/auth-providers.e2e.mjs
  *
@@ -14,10 +14,10 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 const WAIT = 60_000;
 
 async function query(text, values = []) {

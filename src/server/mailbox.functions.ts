@@ -68,14 +68,6 @@ async function origin(): Promise<string> {
   return new URL(getRequest().url).origin;
 }
 
-/** Whether to show the mail entry in the menu: the role has it and the extension is on. */
-export const mailAvailable = createServerFn({ method: "GET" })
-  .middleware([authMiddleware])
-  .handler(async ({ context }) => {
-    const { ready } = await user(context.userId);
-    return { ready };
-  });
-
 /** Everything the mail screen needs to start: accounts, folders and what may be configured. */
 export const mailState = createServerFn({ method: "GET" })
   .middleware([authMiddleware])

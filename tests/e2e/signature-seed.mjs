@@ -65,7 +65,7 @@ async function ensureAccount(client, login) {
  */
 export async function seed() {
   const client = new pg.Client({
-    connectionString: env("DATABASE_URL", "postgres://grafito:grafito@127.0.0.1:5432/grafito"),
+    connectionString: env("DATABASE_URL", "postgres://grafito:grafito@127.0.0.1:15432/grafito"),
   });
   await client.connect();
   try {
@@ -95,7 +95,7 @@ export async function seed() {
       region: env("S3_REGION", "us-east-1"),
     });
     const put = await s3.fetch(
-      `${env("S3_ENDPOINT", "http://127.0.0.1:9000")}/${env("S3_BUCKET", "grafito")}/${key}`,
+      `${env("S3_ENDPOINT", "http://127.0.0.1:19000")}/${env("S3_BUCKET", "grafito")}/${key}`,
       { method: "PUT", body: bytes, headers: { "content-type": "application/pdf" } },
     );
     if (!put.ok) throw new Error(`upload: ${put.status}`);

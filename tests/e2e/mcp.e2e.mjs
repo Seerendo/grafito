@@ -3,7 +3,7 @@
  * would call it, and the screens without the AI assistant in a real browser. Not part of
  * `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   node --test tests/e2e/mcp.e2e.mjs
  *
@@ -15,11 +15,11 @@ import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const PASSWORD = "Prueba-Mcp-2026";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 const stamp = Date.now();
 
 async function query(text, values = []) {

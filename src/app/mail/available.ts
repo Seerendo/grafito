@@ -1,20 +1,22 @@
-import { useEffect, useState } from "react";
-import { mailAvailable } from "@/server/mailbox.functions";
+import { useEffect } from "react";
+import { usePermissions } from "@/app/permissions";
+import { refreshPluginFlags, usePluginActive } from "@/app/plugins";
+import { PERMISSION } from "@/domain/permissions";
 
-/** Whether this person has the mail module (role and extension), asked once per page load. */
-let asked: Promise<boolean> | null = null;
-
+/**
+ * Whether this person has the mail module: their role has mailbox.use and the Correo extension is
+ * on with its worker connected. It follows the extension flags the administration screen updates
+ * when the extension is switched, and the vault refreshes every minute and on focus, so turning it
+ * on or off shows without reloading the page.
+ */
 export function useMailAvailable(): boolean {
-  const [ready, setReady] = useState(false);
+  const can = usePermissions();
+  const active = usePluginActive("correo");
   useEffect(() => {
-    asked ??= mailAvailable()
-      .then((answer) => answer.ready)
-      .catch(() => false);
-    let alive = true;
-    void asked.then((value) => alive && setReady(value));
-    return () => {
-      alive = false;
-    };
+    void refreshPluginFlags();
+    const onFocus = () => void refreshPluginFlags();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
-  return ready;
+  return active && can(PERMISSION.mailboxUse);
 }

@@ -3,7 +3,7 @@
  * (TLS from the test CA) and the mail-sync worker. Synthetic accounts and messages only. Not part
  * of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   node --test tests/e2e/mail.e2e.mjs
  *
@@ -17,11 +17,11 @@ import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const PASSWORD = "Prueba-Correo-2026";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 const SEED = new URL("./mail-seed.mjs", import.meta.url);
 const stamp = Date.now();
 
@@ -52,7 +52,7 @@ function seed(...args) {
   });
 }
 
-async function member(name) {
+async function member(name, role = "miembro") {
   const login = `e2email-${name}-${stamp}`;
   const id = `e2email-${randomUUID()}`;
   await query(
@@ -65,10 +65,11 @@ async function member(name) {
      values ($1, $2, 'credential', $2, $3, now(), now())`,
     [randomUUID(), id, await hashPassword(PASSWORD)],
   );
-  await query(
-    `insert into app_user_role (user_id, role_id, login_name) values ($1, 'miembro', $2)`,
-    [id, login],
-  );
+  await query(`insert into app_user_role (user_id, role_id, login_name) values ($1, $3, $2)`, [
+    id,
+    login,
+    role,
+  ]);
   const token = `gft_${randomBytes(32).toString("base64url")}`;
   await query(
     `insert into api_token (id, user_id, name, prefix, token_hash) values ($1, $2, 'e2e', $3, $4)`,
@@ -193,6 +194,44 @@ describe("email module", () => {
     assert.equal(await fresh.locator('[data-ui="mail-entry"]').count(), 0);
     await context.close();
     await query(`update app_plugin set enabled = true where id = 'correo'`);
+  });
+
+  test("switching the extension shows and hides the entry without reloading the page", async () => {
+    const admin = await member("admin", "admin");
+    const { context, page: own } = await signIn(browser, admin);
+    try {
+      await own.goto(`${base}/`);
+      const entry = own.locator('[data-ui="mail-entry"]');
+      await entry.waitFor();
+      // Administración → Extensiones, then back to the vault through the app's own links.
+      await own.goto(`${base}/admin`);
+      await own.getByRole("button", { name: "Extensiones" }).first().click();
+      const toggle = own.locator('[data-extension="correo"]').getByRole("switch");
+      await toggle.click();
+      await own.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-extension="correo"] [role="switch"]')
+            ?.getAttribute("aria-checked") === "false",
+      );
+      await own.locator('[data-ui="topbar"] a[href="/"]').first().click();
+      await own.getByText("Papelera", { exact: true }).waitFor();
+      assert.equal(await entry.count(), 0, "gone without a reload");
+      await own.goto(`${base}/admin`);
+      await own.getByRole("button", { name: "Extensiones" }).first().click();
+      await toggle.click();
+      await own.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-extension="correo"] [role="switch"]')
+            ?.getAttribute("aria-checked") === "true",
+      );
+      await own.locator('[data-ui="topbar"] a[href="/"]').first().click();
+      await entry.waitFor({ timeout: 10_000 });
+    } finally {
+      await context.close();
+      await query(`update app_plugin set enabled = true where id = 'correo'`);
+    }
   });
 
   test("T03, T38: a wrong password and an untrusted private server are refused", async () => {

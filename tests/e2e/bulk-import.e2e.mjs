@@ -3,7 +3,7 @@
  * grafito-e2e). Order of arrival is controlled by holding responses (vault-harness gate), never
  * by sleeping. Not part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   E2E_BROWSERS=chromium,firefox \
  *   node --test tests/e2e/bulk-import.e2e.mjs

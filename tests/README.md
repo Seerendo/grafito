@@ -17,9 +17,11 @@ implementation details. Live provider checks belong in explicitly invoked script
 
 `tests/e2e/` holds browser tests that need the local test stack, a running dev
 server and Playwright (not a project dependency), so `npm test` does not run
-them. `pdf-signatures.e2e.mjs` explains how to start them; it seeds and resets
+them. The test stack publishes its own ports (gateway `127.0.0.1:18080`, Postgres
+`127.0.0.1:15432`), never the 8080 and 5432 of a real installation, so a test
+can run beside one and never writes into it. `pdf-signatures.e2e.mjs` explains how to start them; it seeds and resets
 its own `e2esig-` rows. `admin-tools.e2e.mjs` runs against the test stack's
-gateway (`http://127.0.0.1:8080`), writes only `e2eadm` rows and restores the
+gateway (`http://127.0.0.1:18080`), writes only `e2eadm` rows and restores the
 extension settings it changes. `uploads.e2e.mjs` resets the `e2eup-user` vault and
 drops folders the way a browser hands them over (filesystem entries), so empty
 folders are covered. `vault-pages.e2e.mjs` creates fresh `e2evp-` members

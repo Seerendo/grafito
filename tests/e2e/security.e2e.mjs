@@ -3,7 +3,7 @@
  * the security review (security/, not versioned). Each test shows the attack failing now. Not
  * part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   node --test tests/e2e/security.e2e.mjs
  *
@@ -17,11 +17,11 @@ import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const PASSWORD = process.env.E2E_PASSWORD ?? "Prueba-Seguridad-2026";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 
 function database(url = DATABASE_URL) {
   return new pg.Client({ connectionString: url });
@@ -116,7 +116,7 @@ async function seedShares() {
     service: "s3",
     region: "us-east-1",
   });
-  await s3.fetch(`http://127.0.0.1:9000/grafito/${ids.privateKey}`, {
+  await s3.fetch(`http://127.0.0.1:19000/grafito/${ids.privateKey}`, {
     method: "PUT",
     body: "plano",
   });

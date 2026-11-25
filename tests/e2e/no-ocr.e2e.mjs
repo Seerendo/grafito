@@ -4,7 +4,7 @@
  * a photo are stored, shown and downloaded, and found by name only; indexing finishes with no
  * OCR. Not part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   E2E_COMPOSE="docker compose -p grafito-e2e -f docker-compose.test.yml" \
  *   node --test tests/e2e/no-ocr.e2e.mjs

@@ -11,13 +11,13 @@ import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
-export const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+export const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 export const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 export const engines = (process.env.E2E_BROWSERS ?? "chromium").split(",");
 export const WAIT = 120_000;
 const PASSWORD = process.env.E2E_PASSWORD ?? "Prueba-Carga-2026";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 
 export async function query(text, values = []) {
   const client = new pg.Client({ connectionString: DATABASE_URL });

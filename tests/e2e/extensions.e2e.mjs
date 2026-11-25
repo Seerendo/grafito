@@ -4,7 +4,7 @@
  * be turned on without its service, pauses while the service is down and comes back with it,
  * catching up in the background. Not part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   E2E_COMPOSE="docker compose -p grafito-e2e -f docker-compose.test.yml" \
  *   node --test tests/e2e/extensions.e2e.mjs
@@ -16,13 +16,13 @@ import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const COMPOSE =
   process.env.E2E_COMPOSE ?? "docker compose -p grafito-e2e -f docker-compose.test.yml";
 const PASSWORD = "Prueba-Extension-2026";
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito";
+  process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito";
 
 async function query(text, values = []) {
   const client = new pg.Client({ connectionString: DATABASE_URL });

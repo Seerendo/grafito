@@ -3,7 +3,7 @@
  * grafito-e2e): the user modal (LDAP accounts keep name and email), system log filters, and
  * extensions blocked from upload or from indexing. Not part of `npm test`.
  *
- *   E2E_BASE_URL=http://127.0.0.1:8080 \
+ *   E2E_BASE_URL=http://127.0.0.1:18080 \
  *   E2E_PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
  *   E2E_BROWSERS=chromium,firefox \
  *   node --test tests/e2e/admin-tools.e2e.mjs
@@ -17,7 +17,7 @@ import { after, before, describe, test } from "node:test";
 import { hashPassword } from "better-auth/crypto";
 import pg from "pg";
 
-const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const base = (process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080").replace(/\/+$/, "");
 const playwright = await import(process.env.E2E_PLAYWRIGHT ?? "playwright");
 const engines = (process.env.E2E_BROWSERS ?? "chromium,firefox").split(",");
 const PASSWORD = process.env.E2E_PASSWORD ?? "Prueba-Admin-2026";
@@ -28,7 +28,7 @@ const RULE_KEYS = ["upload_blocked_ext", "index_blocked_ext"];
 function database() {
   return new pg.Client({
     connectionString:
-      process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:5432/grafito",
+      process.env.DATABASE_URL ?? "postgres://grafito:grafito@127.0.0.1:15432/grafito",
   });
 }
 
