@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import {
   Archive,
   ArrowLeft,
@@ -221,14 +222,14 @@ export function MailScreen() {
   const multi = accounts.length > 1;
 
   const compose = (draft: Draft) => {
-    const id = crypto.randomUUID();
+    const id = uuid();
     setTabs((current) => [...current, { id, kind: "compose", draft, title: "", closing: false }]);
     setActive(id);
     setAgenda(false);
     setPane("message");
   };
   const openInTab = (messageId: string) => {
-    const id = crypto.randomUUID();
+    const id = uuid();
     setTabs((current) => [...current, { id, kind: "message", messageId }]);
     setActive(id);
     setPane("message");
@@ -314,6 +315,8 @@ export function MailScreen() {
     icon: React.ReactNode,
     label: string,
     count?: number,
+    /** The account's own folders keep the usual, tighter rows. */
+    compact = false,
   ) => (
     <button
       key={key}
@@ -325,7 +328,7 @@ export function MailScreen() {
         setAgenda(false);
       }}
       aria-current={active ? "page" : undefined}
-      className={`flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
+      className={`flex w-full items-center rounded-md text-left text-sm ${compact ? "h-9 gap-2 px-2" : "h-10 gap-2.5 px-2.5"} ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -405,9 +408,9 @@ export function MailScreen() {
                 replyTo: null,
               })
             }
-            className="mx-1 mb-3 inline-flex h-10 items-center justify-center gap-2 rounded-md bg-accent text-sm font-medium text-accent-fg"
+            className="mx-1 mb-3 inline-flex h-11 items-center justify-center gap-2 rounded-md bg-accent text-[0.95rem] font-medium text-accent-fg"
           >
-            <PenSquare className="size-4" />
+            <PenSquare className="size-[1.125rem]" />
             {t("Redactar")}
           </button>
           {notice ? <p className="px-2 pb-2 text-xs text-accent">{t(notice)}</p> : null}
@@ -474,6 +477,7 @@ export function MailScreen() {
                       <Inbox className="size-4" />,
                       t("Bandeja de entrada"),
                       unreadOf("inbox", account.id),
+                      true,
                     )
                   : null}
                 {custom.map((folder) =>
@@ -484,6 +488,7 @@ export function MailScreen() {
                     <FolderClosed className="size-4" />,
                     folder.path,
                     folder.unread,
+                    true,
                   ),
                 )}
               </section>

@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import {
   ChevronRight,
   FileText,
@@ -161,7 +162,7 @@ export function Compose({
 
   const attach = (list: File[], save: { portfolioId: string | null } | null) => {
     for (const file of list) {
-      const id = crypto.randomUUID();
+      const id = uuid();
       const entry: Upload = {
         id,
         name: file.name,
@@ -179,7 +180,7 @@ export function Compose({
             { portfolioId: save.portfolioId },
             {
               doc: {
-                id: crypto.randomUUID(),
+                id: uuid(),
                 title: file.name.replace(/\.[^.]+$/, "") || file.name,
                 name: file.name,
                 mime: entry.mime,

@@ -1688,6 +1688,22 @@ credentials here; Graph shows invitations as event messages, not text/calendar
 parts); a real Zimbra's scheduling (the CalDAV test server has none, so the
 invitations went by mail).
 
+## Round 58: Grafito opened over plain http by IP or name
+
+Writing, replies, forwards, «Abrir en una nueva pestaña» and the right-click
+actions did nothing when Grafito was opened over http by an address other than
+localhost: they called `crypto.randomUUID`, which browsers only offer in secure
+contexts. They now use `@/lib/uuid`, and a lint rule forbids `crypto.randomUUID`
+in browser code. The test stack trusts `http://grafito.test:18080` (mapped to
+127.0.0.1 in the browser), an insecure origin.
+
+| Check                                                                                                                                                                             | Result                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| The new test against the old image                                                                                                                                                | ❌ Redactar opens nothing (the reported failure) |
+| The same test after the fix: `isSecureContext` false; Redactar, a file, Responder, Reenviar, Abrir en una nueva pestaña, Responder a todos from the right click; no script errors | ✅                                               |
+| Email suite                                                                                                                                                                       | ✅ 32 of 32                                      |
+| `typecheck`, `lint` (with the new rule), `npm test`, `format:check`                                                                                                               | ✅ 265 tests pass                                |
+
 ## Useful commands
 
 ```bash

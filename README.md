@@ -872,6 +872,10 @@ on the vault with your permissions.
      --header "Authorization: Bearer gft_..."
    ```
 
+Claude Code (CLI and desktop), Claude connectors, Gemini CLI, Antigravity,
+Codex, Cursor, VS Code, Windsurf and stdio-only clients each take it a little
+differently: [docs/MCP.md](docs/MCP.md) has the exact settings for each.
+
 Only a personal token signs in, and the role needs the **API y MCP**
 permission. The tools offered follow the role: someone who can only read gets
 no tools that write. Each call also checks access to the document itself:

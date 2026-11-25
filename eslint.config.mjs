@@ -68,6 +68,21 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Browser code: crypto.randomUUID exists only in secure contexts (HTTPS, localhost), so a
+    // Grafito opened by IP or name over http would fail on it; @/lib/uuid works everywhere.
+    files: ["src/components/**/*.{ts,tsx}", "src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "crypto",
+          property: "randomUUID",
+          message: "Use uuid() from @/lib/uuid: randomUUID fails on http outside localhost.",
+        },
+      ],
+    },
+  },
   // Disable rules that conflict with Prettier formatting.
   prettier,
 );

@@ -488,7 +488,7 @@ export function Agenda({
         <p className="p-6 text-sm text-faint">{t("Cargando…")}</p>
       ) : mode === "month" ? (
         <div
-          className="grid min-h-0 flex-1 auto-rows-fr grid-cols-7 overflow-y-auto"
+          className="grid min-h-0 flex-1 grid-cols-7 grid-rows-[auto_repeat(6,minmax(7rem,1fr))] overflow-y-auto"
           data-mode={mode}
         >
           {names.map((name) => (

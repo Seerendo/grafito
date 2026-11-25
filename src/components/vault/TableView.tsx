@@ -1,3 +1,4 @@
+import { uuid } from "@/lib/uuid";
 import {
   ArrowDown,
   ArrowUp,
@@ -492,7 +493,7 @@ export function TableView({
   const addField = () => {
     const position = Math.max(-1, ...fields.map((field) => field.position)) + 1;
     const field: TableField = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       name: t("Columna {n}", { n: fields.length + 1 }),
       type: "text",
       position,
@@ -611,7 +612,7 @@ export function TableView({
         known = [field];
       }
       if (!field) {
-        field = { id: crypto.randomUUID(), name, type: guessType(values), position: position++ };
+        field = { id: uuid(), name, type: guessType(values), position: position++ };
         const saved = await tableSaveField({
           data: {
             ...where,

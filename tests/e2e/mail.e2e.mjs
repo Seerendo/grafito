@@ -1461,4 +1461,88 @@ describe("email module", () => {
     await fold.click();
     await page.getByText("Adjuntos guardados", { exact: true }).first().waitFor();
   });
+  test("over plain http by a name (an insecure origin, as by IP): Redactar, replies, the right click and tabs work", async () => {
+    // Chrome treats http://grafito.test as insecure (no crypto.randomUUID), unlike 127.0.0.1.
+    const insecure = await playwright.chromium.launch({
+      channel: process.env.E2E_CHANNEL ?? "chrome",
+      args: [`--host-resolver-rules=MAP grafito.test 127.0.0.1`],
+    });
+    const origin = base.replace("127.0.0.1", "grafito.test");
+    const context = await insecure.newContext({ viewport: { width: 1500, height: 950 } });
+    const own = await context.newPage();
+    own.on("dialog", (dialog) => void dialog.accept());
+    const errors = [];
+    own.on("pageerror", (error) => errors.push(error.message));
+    own.setDefaultTimeout(30_000);
+    try {
+      await own.goto(`${origin}/login`);
+      assert.equal(await own.evaluate(() => window.isSecureContext), false);
+      const token = await own.evaluate(
+        async ({ email, password }) =>
+          (
+            await fetch("/api/auth/sign-in/email", {
+              method: "POST",
+              credentials: "omit",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ email, password }),
+            })
+          ).headers.get("set-auth-token"),
+        { email: `${ana.login}@grafito.app`, password: PASSWORD },
+      );
+      assert.ok(token, "signed in on the insecure origin");
+      await context.addInitScript((value) => {
+        // Also runs in the sandboxed mail frame, where storage is off.
+        try {
+          localStorage.setItem("grafito-auth.bearer-token", value);
+        } catch {
+          /* not this frame */
+        }
+      }, token);
+      await own.goto(`${origin}/correo`);
+      const rows = own.locator('[data-ui="mail-list"] [data-message]');
+      await rows.first().waitFor();
+      // Redactar.
+      await own.getByRole("button", { name: "Redactar" }).click();
+      const compose = own.locator('[data-ui="mail-compose"]').last();
+      await compose.waitFor();
+      await compose.locator('input[type="file"]').setInputFiles({
+        name: "inseguro.txt",
+        mimeType: "text/plain",
+        buffer: Buffer.from("x"),
+      });
+      await compose.locator('[data-attachment="inseguro.txt"][data-status="ready"]').waitFor();
+      // Responder and Reenviar from the message.
+      await rows.filter({ hasText: "Informe con adjuntos" }).first().click();
+      const view = own
+        .locator('[data-ui="mail-message"]')
+        .filter({ hasText: "Informe con adjuntos" })
+        .first();
+      await view.getByRole("button", { name: "Responder", exact: true }).click();
+      await own
+        .locator('[data-ui="mail-tab"][data-compose]')
+        .filter({ hasText: "Re: Informe con adjuntos" })
+        .waitFor();
+      await rows.filter({ hasText: "Informe con adjuntos" }).first().click();
+      await view.getByRole("button", { name: "Reenviar" }).click();
+      await own
+        .locator('[data-ui="mail-tab"][data-compose]')
+        .filter({ hasText: "Rv: Informe con adjuntos" })
+        .waitFor();
+      // The right click: Abrir en una nueva pestaña, Responder a todos.
+      const menu = own.locator('[data-ui="mail-row-menu"]');
+      await rows.filter({ hasText: "HTML peligroso" }).first().click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Abrir en una nueva pestaña" }).click();
+      await own.locator('[data-ui="mail-tab"]').filter({ hasText: "HTML peligroso" }).waitFor();
+      await rows.filter({ hasText: "Informe con adjuntos" }).first().click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Responder a todos" }).click();
+      await own
+        .locator('[data-ui="mail-tab"][data-compose]')
+        .filter({ hasText: "Re: Informe con adjuntos" })
+        .nth(1)
+        .waitFor();
+      assert.deepEqual(errors, [], "no script errors");
+    } finally {
+      await insecure.close();
+    }
+  });
 });
