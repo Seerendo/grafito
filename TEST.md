@@ -1752,6 +1752,19 @@ stack; its figures are kept out of the repository. Two settings read on every
 request (the session lifetime, whether the email extension is on) are now kept in
 memory for a few seconds.
 
+## Round 61: mail accounts, spam and trash, read both ways
+
+| Check                                                                                        | Result                      |
+| -------------------------------------------------------------------------------------------- | --------------------------- |
+| Cuentas de correo scrolls (its content area, the window 420 px tall)                         | ✅                          |
+| Account cards fold and unfold; no signature there (Preferencias keeps it)                    | ✅                          |
+| **Proveedor** Gmail fills `imap.gmail.com` and `smtp.gmail.com`                              | ✅                          |
+| «De» shows the person's name; a double click shows the address                               | ✅                          |
+| Messages in Junk and Trash on the server show in Spam and Papelera                           | ✅                          |
+| Read and starred in Grafito set `\Seen` and `\Flagged` on the server; unread removes `\Seen` | ✅                          |
+| Read in another client shows as read in Grafito after a sync                                 | ✅                          |
+| Email suite; `typecheck`, `lint`, `npm test`, `format:check`                                 | ✅ 38 of 38; 265 tests pass |
+
 ## Useful commands
 
 ```bash

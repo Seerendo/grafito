@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { intl, t } from "@/app/i18n";
 import { Switch } from "@/components/ui/Switch";
@@ -23,6 +24,45 @@ import { statusLabel } from "./status";
 type State = Extract<Awaited<ReturnType<typeof mailState>>, { ok: true }>;
 type Account = State["accounts"][number];
 
+/**
+ * Known servers: Gmail, Yahoo and iCloud take IMAP and SMTP with an app password (Gmail through
+ * OAuth too when the server has its application). Zimbra and others: the person writes them.
+ */
+const PRESETS = [
+  {
+    id: "imap",
+    label: "Zimbra u otro servidor IMAP",
+    host: "",
+    port: 993,
+    smtpHost: "",
+    smtpPort: 587,
+  },
+  {
+    id: "gmail",
+    label: "Gmail",
+    host: "imap.gmail.com",
+    port: 993,
+    smtpHost: "smtp.gmail.com",
+    smtpPort: 465,
+  },
+  {
+    id: "yahoo",
+    label: "Yahoo",
+    host: "imap.mail.yahoo.com",
+    port: 993,
+    smtpHost: "smtp.mail.yahoo.com",
+    smtpPort: 465,
+  },
+  {
+    id: "icloud",
+    label: "iCloud",
+    host: "imap.mail.me.com",
+    port: 993,
+    smtpHost: "smtp.mail.me.com",
+    smtpPort: 587,
+  },
+];
+
 const INTERVALS = [120, 300, 600, 1800, 3600, 21_600];
 const HISTORY = [0, 7, 30, 90, 180, 365, 730, 3650];
 
@@ -39,6 +79,7 @@ export function MailAccounts() {
   const [problem, setProblem] = useState("");
   const [notice, setNotice] = useState("");
   const [adding, setAdding] = useState(false);
+  const [unfolded, setUnfolded] = useState<Set<string> | null>(null);
 
   const load = useCallback(async () => {
     const answer = await mailState().catch(() => null);
@@ -85,6 +126,17 @@ export function MailAccounts() {
           key={account.id}
           account={account}
           state={state}
+          open={(unfolded ?? new Set(state.accounts.length === 1 ? [account.id] : [])).has(
+            account.id,
+          )}
+          onToggle={() =>
+            setUnfolded((current) => {
+              const next = new Set(current ?? (state.accounts.length === 1 ? [account.id] : []));
+              if (next.has(account.id)) next.delete(account.id);
+              else next.add(account.id);
+              return next;
+            })
+          }
           onChanged={() => void load()}
         />
       ))}
@@ -110,6 +162,7 @@ export function MailAccounts() {
 }
 
 function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
+  const [preset, setPreset] = useState("imap");
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -181,6 +234,32 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
       {state.providers.imap ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm sm:col-span-2">
+              {t("Proveedor")}
+              <select
+                aria-label={t("Proveedor")}
+                value={preset}
+                onChange={(event) => {
+                  const next =
+                    PRESETS.find((item) => item.id === event.target.value) ?? PRESETS[0]!;
+                  setPreset(next.id);
+                  setForm({
+                    ...form,
+                    host: next.host,
+                    port: next.port,
+                    smtpHost: next.smtpHost,
+                    smtpPort: next.smtpPort,
+                  });
+                }}
+                className={input}
+              >
+                {PRESETS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {t(item.label)}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex flex-col gap-1 text-sm">
               {t("Dirección de correo")}
               <input
@@ -338,15 +417,18 @@ function AddAccount({ state, onDone }: { state: State; onDone: () => void }) {
 function AccountCard({
   account,
   state,
+  open,
+  onToggle,
   onChanged,
 }: {
   account: Account;
   state: State;
+  open: boolean;
+  onToggle: () => void;
   onChanged: () => void;
 }) {
   const [password, setPassword] = useState("");
   const [smtp, setSmtp] = useState({ host: account.smtpHost, port: account.smtpPort });
-  const [signature, setSignature] = useState(account.signature);
   const [web, setWeb] = useState({ host: account.webHost, caldav: account.caldavUrl });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -416,254 +498,253 @@ function AccountCard({
         >
           {t("Sincronizar ahora")}
         </TextAction>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">
-          {t("Nombre de la cuenta")}
-          <input
-            defaultValue={account.name}
-            onBlur={(event) =>
-              event.target.value !== account.name && void update({ name: event.target.value })
-            }
-            className={input}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          {t("Frecuencia")}
-          <select
-            aria-label={t("Frecuencia")}
-            value={account.intervalSeconds}
-            onChange={(event) => void update({ intervalSeconds: Number(event.target.value) })}
-            className={input}
-          >
-            {INTERVALS.filter((seconds) => seconds >= state.limits.minInterval).map((seconds) => (
-              <option key={seconds} value={seconds}>
-                {t("Cada {0} min", { 0: seconds / 60 })}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          {t("Historial")}
-          <select
-            aria-label={t("Historial")}
-            value={account.historyDays}
-            onChange={(event) => void update({ historyDays: Number(event.target.value) })}
-            className={input}
-          >
-            {allowedHistory(state.limits.maxHistoryDays).map((days) => (
-              <option key={days} value={days}>
-                {historyLabel(days)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Switch
-          checked={account.syncEnabled}
-          onChange={(value) => void update({ syncEnabled: value })}
-          label={t("Sincronización automática")}
-        />
-        <Switch
-          checked={account.isDefault}
-          disabled={account.isDefault}
-          onChange={() => void update({ isDefault: true })}
-          label={t("Cuenta predeterminada")}
-        />
-        <Switch
-          checked={account.mcpAccess}
-          onChange={(value) => void update({ mcpAccess: value })}
-          label={t("Permitir acceso por MCP")}
-        />
-      </div>
-      {folders.length ? (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted">
-            {t("Carpetas que se sincronizan")}
-          </summary>
-          <div className="mt-2 grid gap-1 sm:grid-cols-2">
-            {folders.map((folder) => (
-              <label key={folder.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  defaultChecked={folder.syncEnabled}
-                  onChange={(event) =>
-                    void mailFolderSync({
-                      data: { id: folder.id, enabled: event.target.checked },
-                    }).then(onChanged)
-                  }
-                />
-                <span className="truncate">{folder.path}</span>
-                <span className="text-xs text-faint">{folder.total}</span>
-              </label>
-            ))}
-          </div>
-        </details>
-      ) : null}
-      <form
-        data-ui="mail-signature"
-        className="flex flex-col gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void update({ signature });
-        }}
-      >
-        <label className="flex flex-col gap-1 text-sm">
-          {t("Firma")}
-          <textarea
-            value={signature}
-            rows={4}
-            onChange={(event) => setSignature(event.target.value)}
-            className="w-full rounded-md border border-line bg-inset p-3 text-sm"
-          />
-        </label>
         <button
-          type="submit"
-          disabled={busy || signature === account.signature}
-          className="h-10 self-end rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+          type="button"
+          data-ui="mail-account-fold"
+          aria-expanded={open}
+          aria-label={
+            open ? t("Plegar {0}", { 0: account.email }) : t("Desplegar {0}", { 0: account.email })
+          }
+          onClick={onToggle}
+          className="grid size-9 place-items-center rounded-md text-faint hover:bg-elevated hover:text-fg"
         >
-          {t("Guardar firma")}
+          <ChevronDown className={`size-4 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
-      </form>
-      {account.provider === "imap" ? (
-        <details data-ui="mail-web" className="text-sm">
-          <summary className="cursor-pointer text-muted">{t("Directorio y agenda")}</summary>
-          <form
-            className="mt-2 grid gap-2 sm:grid-cols-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void update({ webHost: web.host, caldavUrl: web.caldav });
-            }}
-          >
-            <label className="flex flex-col gap-1">
-              {t("Servidor web")}
-              <input
-                value={web.host}
-                placeholder={account.host}
-                onChange={(event) => setWeb({ ...web, host: event.target.value })}
-                className={input}
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              {t("Dirección CalDAV")}
-              <input
-                value={web.caldav}
-                placeholder={`https://${web.host || account.host}/.well-known/caldav`}
-                onChange={(event) => setWeb({ ...web, caldav: event.target.value })}
-                className={input}
-              />
-            </label>
-            <button
-              type="submit"
-              disabled={busy || (web.host === account.webHost && web.caldav === account.caldavUrl)}
-              className="h-10 rounded-md border border-line px-3 hover:bg-elevated disabled:opacity-50 sm:col-span-2 sm:justify-self-end"
-            >
-              {t("Guardar")}
-            </button>
-          </form>
-        </details>
-      ) : null}
-      {account.provider === "imap" ? (
-        <form
-          data-ui="mail-smtp"
-          className="flex flex-wrap gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void update({ smtpHost: smtp.host, smtpPort: smtp.port });
-          }}
-        >
-          <input
-            aria-label={t("Servidor SMTP (envío)")}
-            placeholder={account.host}
-            value={smtp.host}
-            onChange={(event) => setSmtp({ ...smtp, host: event.target.value })}
-            className={`${input} min-w-0 flex-1`}
-          />
-          <select
-            aria-label={t("Puerto SMTP")}
-            value={smtp.port}
-            onChange={(event) => setSmtp({ ...smtp, port: Number(event.target.value) })}
-            className={`${input} w-40`}
-          >
-            <option value={587}>{t("587 · STARTTLS")}</option>
-            <option value={465}>{t("465 · TLS")}</option>
-          </select>
-          <button
-            type="submit"
-            disabled={busy || (smtp.host === account.smtpHost && smtp.port === account.smtpPort)}
-            className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
-          >
-            {t("Guardar envío")}
-          </button>
-        </form>
-      ) : null}
-      {account.provider === "imap" ? (
-        <form
-          className="flex flex-wrap gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void update({ password }).then(() => setPassword(""));
-          }}
-        >
-          <input
-            type="password"
-            autoComplete="new-password"
-            aria-label={t("Nueva contraseña de la cuenta")}
-            placeholder={t("Nueva contraseña de la cuenta")}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className={`${input} min-w-0 flex-1`}
-          />
-          <button
-            type="submit"
-            disabled={busy || !password}
-            className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
-          >
-            {t("Actualizar credenciales")}
-          </button>
-        </form>
-      ) : (
-        <TextAction onClick={() => void reauthorize()}>{t("Volver a autorizar")}</TextAction>
-      )}
-      {error ? (
-        <p role="alert" className="text-sm text-danger">
-          {t(error)}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-3 border-t border-line pt-2 text-sm">
-        {confirm ? (
-          <>
-            <span className="text-muted">
-              {confirm === "disconnect"
-                ? t(
-                    "¿Desconectar? Se olvidan las credenciales; los mensajes siguen aquí y nada cambia en el servidor.",
-                  )
-                : t(
-                    "¿Borrar la copia local de esta cuenta? Los documentos archivados se conservan y nada cambia en el servidor.",
-                  )}
-            </span>
-            <TextAction tone="danger" onClick={() => void action(confirm)}>
-              {t("Sí")}
-            </TextAction>
-            <TextAction onClick={() => setConfirm(null)}>{t("No")}</TextAction>
-          </>
-        ) : (
-          <>
-            {account.status !== "disconnected" ? (
-              <TextAction onClick={() => setConfirm("disconnect")}>{t("Desconectar")}</TextAction>
-            ) : null}
-            <TextAction tone="danger" onClick={() => setConfirm("delete")}>
-              {t("Borrar la copia local")}
-            </TextAction>
-            {account.lastSyncAt ? (
-              <span className="ml-auto text-xs text-faint">
-                {t("Última sincronización: {0}", {
-                  0: new Date(account.lastSyncAt).toLocaleString(intl()),
-                })}
-              </span>
-            ) : null}
-          </>
-        )}
       </div>
+      {open ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Nombre de la cuenta")}
+              <input
+                defaultValue={account.name}
+                onBlur={(event) =>
+                  event.target.value !== account.name && void update({ name: event.target.value })
+                }
+                className={input}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Frecuencia")}
+              <select
+                aria-label={t("Frecuencia")}
+                value={account.intervalSeconds}
+                onChange={(event) => void update({ intervalSeconds: Number(event.target.value) })}
+                className={input}
+              >
+                {INTERVALS.filter((seconds) => seconds >= state.limits.minInterval).map(
+                  (seconds) => (
+                    <option key={seconds} value={seconds}>
+                      {t("Cada {0} min", { 0: seconds / 60 })}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              {t("Historial")}
+              <select
+                aria-label={t("Historial")}
+                value={account.historyDays}
+                onChange={(event) => void update({ historyDays: Number(event.target.value) })}
+                className={input}
+              >
+                {allowedHistory(state.limits.maxHistoryDays).map((days) => (
+                  <option key={days} value={days}>
+                    {historyLabel(days)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Switch
+              checked={account.syncEnabled}
+              onChange={(value) => void update({ syncEnabled: value })}
+              label={t("Sincronización automática")}
+            />
+            <Switch
+              checked={account.isDefault}
+              disabled={account.isDefault}
+              onChange={() => void update({ isDefault: true })}
+              label={t("Cuenta predeterminada")}
+            />
+            <Switch
+              checked={account.mcpAccess}
+              onChange={(value) => void update({ mcpAccess: value })}
+              label={t("Permitir acceso por MCP")}
+            />
+          </div>
+          {folders.length ? (
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted">
+                {t("Carpetas que se sincronizan")}
+              </summary>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                {folders.map((folder) => (
+                  <label key={folder.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      defaultChecked={folder.syncEnabled}
+                      onChange={(event) =>
+                        void mailFolderSync({
+                          data: { id: folder.id, enabled: event.target.checked },
+                        }).then(onChanged)
+                      }
+                    />
+                    <span className="truncate">{folder.path}</span>
+                    <span className="text-xs text-faint">{folder.total}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          ) : null}
+          {account.provider === "imap" ? (
+            <details data-ui="mail-web" className="text-sm">
+              <summary className="cursor-pointer text-muted">{t("Directorio y agenda")}</summary>
+              <form
+                className="mt-2 grid gap-2 sm:grid-cols-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void update({ webHost: web.host, caldavUrl: web.caldav });
+                }}
+              >
+                <label className="flex flex-col gap-1">
+                  {t("Servidor web")}
+                  <input
+                    value={web.host}
+                    placeholder={account.host}
+                    onChange={(event) => setWeb({ ...web, host: event.target.value })}
+                    className={input}
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  {t("Dirección CalDAV")}
+                  <input
+                    value={web.caldav}
+                    placeholder={`https://${web.host || account.host}/.well-known/caldav`}
+                    onChange={(event) => setWeb({ ...web, caldav: event.target.value })}
+                    className={input}
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={
+                    busy || (web.host === account.webHost && web.caldav === account.caldavUrl)
+                  }
+                  className="h-10 rounded-md border border-line px-3 hover:bg-elevated disabled:opacity-50 sm:col-span-2 sm:justify-self-end"
+                >
+                  {t("Guardar")}
+                </button>
+              </form>
+            </details>
+          ) : null}
+          {account.provider === "imap" ? (
+            <form
+              data-ui="mail-smtp"
+              className="flex flex-wrap gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void update({ smtpHost: smtp.host, smtpPort: smtp.port });
+              }}
+            >
+              <input
+                aria-label={t("Servidor SMTP (envío)")}
+                placeholder={account.host}
+                value={smtp.host}
+                onChange={(event) => setSmtp({ ...smtp, host: event.target.value })}
+                className={`${input} min-w-0 flex-1`}
+              />
+              <select
+                aria-label={t("Puerto SMTP")}
+                value={smtp.port}
+                onChange={(event) => setSmtp({ ...smtp, port: Number(event.target.value) })}
+                className={`${input} w-40`}
+              >
+                <option value={587}>{t("587 · STARTTLS")}</option>
+                <option value={465}>{t("465 · TLS")}</option>
+              </select>
+              <button
+                type="submit"
+                disabled={
+                  busy || (smtp.host === account.smtpHost && smtp.port === account.smtpPort)
+                }
+                className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+              >
+                {t("Guardar envío")}
+              </button>
+            </form>
+          ) : null}
+          {account.provider === "imap" ? (
+            <form
+              className="flex flex-wrap gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void update({ password }).then(() => setPassword(""));
+              }}
+            >
+              <input
+                type="password"
+                autoComplete="new-password"
+                aria-label={t("Nueva contraseña de la cuenta")}
+                placeholder={t("Nueva contraseña de la cuenta")}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={`${input} min-w-0 flex-1`}
+              />
+              <button
+                type="submit"
+                disabled={busy || !password}
+                className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated disabled:opacity-50"
+              >
+                {t("Actualizar credenciales")}
+              </button>
+            </form>
+          ) : (
+            <TextAction onClick={() => void reauthorize()}>{t("Volver a autorizar")}</TextAction>
+          )}
+          {error ? (
+            <p role="alert" className="text-sm text-danger">
+              {t(error)}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-3 border-t border-line pt-2 text-sm">
+            {confirm ? (
+              <>
+                <span className="text-muted">
+                  {confirm === "disconnect"
+                    ? t(
+                        "¿Desconectar? Se olvidan las credenciales; los mensajes siguen aquí y nada cambia en el servidor.",
+                      )
+                    : t(
+                        "¿Borrar la copia local de esta cuenta? Los documentos archivados se conservan y nada cambia en el servidor.",
+                      )}
+                </span>
+                <TextAction tone="danger" onClick={() => void action(confirm)}>
+                  {t("Sí")}
+                </TextAction>
+                <TextAction onClick={() => setConfirm(null)}>{t("No")}</TextAction>
+              </>
+            ) : (
+              <>
+                {account.status !== "disconnected" ? (
+                  <TextAction onClick={() => setConfirm("disconnect")}>
+                    {t("Desconectar")}
+                  </TextAction>
+                ) : null}
+                <TextAction tone="danger" onClick={() => setConfirm("delete")}>
+                  {t("Borrar la copia local")}
+                </TextAction>
+                {account.lastSyncAt ? (
+                  <span className="ml-auto text-xs text-faint">
+                    {t("Última sincronización: {0}", {
+                      0: new Date(account.lastSyncAt).toLocaleString(intl()),
+                    })}
+                  </span>
+                ) : null}
+              </>
+            )}
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

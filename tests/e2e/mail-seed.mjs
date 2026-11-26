@@ -312,6 +312,11 @@ try {
       ].join("\r\n"),
     );
     console.log("invited", uid);
+  } else if (mode === "into") {
+    // One message into a given folder: node mail-seed.mjs into <user> <password> "<folder>|<subject>"
+    const [folder, subject] = String(extra).split("|");
+    await c.append(folder, plain({ subject, text: `En ${folder}: ${subject}` }));
+    console.log("appended into", folder);
   } else if (mode === "one") {
     await c.append("INBOX", plain({ subject: extra, text: `Mensaje nuevo: ${extra}` }));
     console.log("appended");

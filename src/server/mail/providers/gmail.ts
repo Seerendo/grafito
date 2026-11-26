@@ -98,6 +98,22 @@ export class GmailConnector implements MailConnector {
 
   async close(): Promise<void> {}
 
+  async setFlags(
+    target: { providerMessageId: string },
+    changes: { seen?: boolean; flagged?: boolean },
+  ): Promise<void> {
+    const add: string[] = [];
+    const remove: string[] = [];
+    if (changes.seen !== undefined) (changes.seen ? remove : add).push("UNREAD");
+    if (changes.flagged !== undefined) (changes.flagged ? add : remove).push("STARRED");
+    await providerSend(
+      `${API}/messages/${encodeURIComponent(target.providerMessageId)}/modify`,
+      await this.token(),
+      JSON.stringify({ addLabelIds: add, removeLabelIds: remove }),
+      "application/json",
+    );
+  }
+
   async saveDraft(raw: Buffer): Promise<void> {
     await providerSend(
       `${API}/drafts`,

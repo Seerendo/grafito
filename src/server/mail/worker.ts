@@ -223,7 +223,7 @@ export class MailWorker {
     while (this.running && this.active.size < limit) {
       const kinds = policy.paused
         ? (["attachment", "eml", "cleanup"] as const)
-        : (["sync", "attachment", "eml", "cleanup"] as const);
+        : (["sync", "attachment", "eml", "cleanup", "flags"] as const);
       const job = await claim(this.sql, {
         worker: this.id,
         providerLimit: policy.providerConcurrency,
@@ -249,6 +249,7 @@ export class MailWorker {
       if (job.kind === "sync") await this.sync(job, policy, started);
       else if (job.kind === "attachment") await this.attachment(job, policy, started);
       else if (job.kind === "eml") await this.eml(job, policy, started);
+      else if (job.kind === "flags") await this.flags(job, started);
       else if (job.kind === "cleanup") await this.cleanup(job, started);
       else await finish(this.sql, job, this.id, { state: "cancelled", durationMs: 0 });
       this.stats.jobs += 1;
@@ -276,7 +277,7 @@ export class MailWorker {
       error: mail.kind,
       attempt: job.attempts,
     });
-    if (job.kind === "eml") {
+    if (job.kind === "eml" || job.kind === "flags") {
       const retry =
         mail.kind === "connection" || mail.kind === "temporary" || mail.kind === "rate_limited";
       if (retry && job.attempts < 4) {
@@ -543,6 +544,73 @@ export class MailWorker {
       ms: now - started,
     });
     await finish(this.sql, job, this.id, { state: "done", durationMs: now - started });
+  }
+
+  /**
+   * Write a message's read and flagged state to the server. The values are read now (the latest
+   * the person chose, even after several clicks); once the server has them they are the
+   * server's, so a later change made in another client shows in Grafito.
+   */
+  private async flags(job: ClaimedJob, started: number): Promise<void> {
+    const messageId = String(job.payload.messageId ?? "");
+    const rows = await this.sql<{
+      provider_message_id: string;
+      local_seen: unknown;
+      local_flagged: unknown;
+      remote_seen: unknown;
+      remote_flagged: unknown;
+    }>`
+      select provider_message_id, local_seen, local_flagged, remote_seen, remote_flagged
+      from mail_message where id = ${messageId} and account_id = ${job.accountId} limit 1
+    `;
+    const message = rows[0];
+    const bool = (value: unknown) => (value == null ? null : value === true || value === "t");
+    const seen = bool(message?.local_seen);
+    const flagged = bool(message?.local_flagged);
+    const changes = {
+      ...(seen !== null && seen !== bool(message?.remote_seen) ? { seen } : {}),
+      ...(flagged !== null && flagged !== bool(message?.remote_flagged) ? { flagged } : {}),
+    };
+    if (!message || Object.keys(changes).length === 0) {
+      if (message)
+        await this
+          .sql`update mail_message set local_seen = null, local_flagged = null where id = ${messageId}
+          and local_seen is not distinct from ${seen} and local_flagged is not distinct from ${flagged}`;
+      await finish(this.sql, job, this.id, { state: "done", durationMs: Date.now() - started });
+      return;
+    }
+    const locations = await this.sql<{ remote_id: string; remote_uid: unknown }>`
+      select f.remote_id, l.remote_uid from mail_message_location l join mail_folder f on f.id = l.folder_id
+      where l.message_id = ${messageId} and l.deleted_at is null and l.remote_uid is not null
+    `;
+    const account = await connectorAccount(this.sql, job.accountId);
+    if (!account?.secret) throw new MailError("auth", "La cuenta está desconectada.");
+    const connector = await buildConnector(this.sql, account);
+    try {
+      await connector.setFlags(
+        {
+          providerMessageId: message.provider_message_id,
+          locations: locations.map((row) => ({
+            folderRemoteId: row.remote_id,
+            uid: Number(row.remote_uid),
+          })),
+        },
+        changes,
+      );
+    } finally {
+      await connector.close();
+    }
+    // The server holds them now; a later click while this ran keeps its own local value.
+    await this.sql`
+      update mail_message set
+        remote_seen = coalesce(${changes.seen ?? null}, remote_seen),
+        remote_flagged = coalesce(${changes.flagged ?? null}, remote_flagged),
+        local_seen = case when local_seen is not distinct from ${seen} then null else local_seen end,
+        local_flagged = case when local_flagged is not distinct from ${flagged} then null else local_flagged end,
+        updated_at = ${Date.now()}
+      where id = ${messageId}
+    `;
+    await finish(this.sql, job, this.id, { state: "done", durationMs: Date.now() - started });
   }
 
   /** Archive a message as .eml: its source as the server holds it, stored as a vault file. */

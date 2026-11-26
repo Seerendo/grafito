@@ -260,6 +260,27 @@ export class ImapConnector implements MailConnector {
     }
   }
 
+  async setFlags(
+    target: { providerMessageId: string; locations: { folderRemoteId: string; uid: number }[] },
+    changes: { seen?: boolean; flagged?: boolean },
+  ): Promise<void> {
+    const client = await this.open();
+    const add: string[] = [];
+    const remove: string[] = [];
+    if (changes.seen !== undefined) (changes.seen ? add : remove).push("\\Seen");
+    if (changes.flagged !== undefined) (changes.flagged ? add : remove).push("\\Flagged");
+    try {
+      for (const location of target.locations) {
+        await client.mailboxOpen(location.folderRemoteId);
+        const uid = String(location.uid);
+        if (add.length) await client.messageFlagsAdd(uid, add, { uid: true });
+        if (remove.length) await client.messageFlagsRemove(uid, remove, { uid: true });
+      }
+    } catch (error) {
+      throw classify(error);
+    }
+  }
+
   async saveDraft(raw: Buffer): Promise<void> {
     const client = await this.open();
     const drafts = (await this.folders(client)).find((item) => item.specialUse === "drafts");

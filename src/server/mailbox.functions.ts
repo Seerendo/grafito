@@ -803,3 +803,29 @@ export const mailRespondInvitation = createServerFn({ method: "POST" })
       return failure(error);
     }
   });
+
+/**
+ * While the mail screen is open: ask for a sync of the person's accounts that have not synced
+ * in the last minute, so what changed in another client (read, moved, new) shows soon.
+ */
+export const mailRefresh = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const };
+    const { enqueue } = await import("@/server/mail/queue");
+    const due = await sql<{ id: string }>`
+      select id from mail_account
+      where user_id = ${context.userId} and sync_enabled and secret <> ''
+        and coalesce(last_sync_at, 0) < ${Date.now() - 60_000}
+        and status not in ('auth_error', 'expired', 'disconnected', 'deleting')
+    `;
+    for (const account of due)
+      await enqueue(sql, {
+        userId: context.userId,
+        accountId: account.id,
+        kind: "sync",
+        priority: 8,
+      });
+    return { ok: true as const, queued: due.length };
+  });

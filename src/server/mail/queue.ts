@@ -9,7 +9,12 @@ import type { Sql } from "@/lib/db";
  * and attachment downloads use a lease of their own so opening one never waits for a sync.
  */
 
-export type MailJobKind = "sync" | "attachment" | "eml" | "cleanup" | "test";
+export type MailJobKind = "sync" | "attachment" | "eml" | "cleanup" | "test" | "flags";
+
+/** Jobs that hold the account's second lease, so they run beside a long sync. */
+export function onFetchLane(kind: MailJobKind | string): boolean {
+  return kind === "attachment" || kind === "eml" || kind === "flags";
+}
 
 export const JOB_LEASE_MS = 3 * 60 * 1000;
 
@@ -80,7 +85,7 @@ export async function claim(
   `;
   for (const candidate of candidates) {
     // The account lease: sync jobs and downloads each hold their own.
-    const download = candidate.kind === "attachment" || candidate.kind === "eml";
+    const download = onFetchLane(candidate.kind);
     const leased = download
       ? await sql<{ id: string }>`
           update mail_account set fetch_lease_owner = ${input.worker}, fetch_lease_until = ${now + JOB_LEASE_MS}
@@ -146,7 +151,7 @@ export async function releaseAccount(
 export async function extendLease(sql: Sql, job: ClaimedJob, worker: string): Promise<void> {
   const until = Date.now() + JOB_LEASE_MS;
   await sql`update mail_job set lease_until = ${until} where id = ${job.id} and lease_owner = ${worker}`;
-  if (job.kind === "attachment" || job.kind === "eml")
+  if (onFetchLane(job.kind))
     await sql`update mail_account set fetch_lease_until = ${until} where id = ${job.accountId} and fetch_lease_owner = ${worker}`;
   else
     await sql`update mail_account set lease_until = ${until} where id = ${job.accountId} and lease_owner = ${worker}`;
@@ -164,7 +169,7 @@ export async function finish(
       finished_at = ${now}, duration_ms = ${outcome.durationMs}, lease_owner = null, lease_until = null, updated_at = ${now}
     where id = ${job.id} and lease_owner = ${worker}
   `;
-  await releaseAccount(sql, job.accountId, worker, job.kind === "attachment" || job.kind === "eml");
+  await releaseAccount(sql, job.accountId, worker, onFetchLane(job.kind));
 }
 
 /** Put a job back for later (a retry after backoff, or the next slice of a long sync). */
@@ -182,7 +187,7 @@ export async function requeue(
       lease_owner = null, lease_until = null, updated_at = ${now}
     where id = ${job.id} and lease_owner = ${worker}
   `;
-  await releaseAccount(sql, job.accountId, worker, job.kind === "attachment" || job.kind === "eml");
+  await releaseAccount(sql, job.accountId, worker, onFetchLane(job.kind));
   await sql`select pg_notify('mail_job', 'requeue')`.catch(() => undefined);
 }
 

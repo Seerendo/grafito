@@ -159,6 +159,14 @@ export interface MailConnector {
    * folder; false when that copy could not be saved, the message itself went out).
    */
   send(message: OutgoingMessage): Promise<{ sentCopy: boolean }>;
+  /**
+   * Write read and flagged back to the server (IMAP \\Seen and \\Flagged, Gmail's UNREAD and
+   * STARRED labels, Graph's isRead and flag), so the mail server shows what Grafito shows.
+   */
+  setFlags(
+    target: { providerMessageId: string; locations: { folderRemoteId: string; uid: number }[] },
+    changes: { seen?: boolean; flagged?: boolean },
+  ): Promise<void>;
   /** Keep a message being written in the account's Drafts (RFC 5322 source). */
   saveDraft(raw: Buffer): Promise<void>;
   /** Sign in and check the account can be read. */

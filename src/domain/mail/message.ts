@@ -31,6 +31,8 @@ const FLAGS: Record<string, SpecialUse> = {
   "\\junk": "junk",
   "\\trash": "trash",
   "\\all": "all",
+  // Gmail's Important is a view over other folders, like All Mail.
+  "\\important": "all",
   "\\flagged": "flagged",
 };
 

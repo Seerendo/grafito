@@ -348,6 +348,17 @@ export async function markMessage(
     returning account_id
   `;
   if (!rows[0]) return false;
+  if (changes.seen !== undefined || changes.flagged !== undefined) {
+    const { enqueue } = await import("./queue");
+    await enqueue(sql, {
+      userId,
+      accountId: rows[0].account_id,
+      kind: "flags",
+      payload: { messageId: id },
+      dedupe: `flags:${id}`,
+      priority: 15,
+    });
+  }
   if (changes.seen !== undefined) {
     // Keep the unread counters right without recounting the whole account.
     await sql`

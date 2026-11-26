@@ -84,6 +84,24 @@ export class MicrosoftConnector implements MailConnector {
 
   async close(): Promise<void> {}
 
+  async setFlags(
+    target: { providerMessageId: string },
+    changes: { seen?: boolean; flagged?: boolean },
+  ): Promise<void> {
+    await providerSend(
+      `${API}/messages/${encodeURIComponent(target.providerMessageId)}`,
+      await this.token(),
+      JSON.stringify({
+        ...(changes.seen !== undefined ? { isRead: changes.seen } : {}),
+        ...(changes.flagged !== undefined
+          ? { flag: { flagStatus: changes.flagged ? "flagged" : "notFlagged" } }
+          : {}),
+      }),
+      "application/json",
+      "PATCH",
+    );
+  }
+
   /** A MIME message posted to /messages becomes a draft. */
   async saveDraft(raw: Buffer): Promise<void> {
     await providerSend(`${API}/messages`, await this.token(), raw.toString("base64"), "text/plain");

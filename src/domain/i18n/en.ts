@@ -575,6 +575,8 @@ export const en: Record<string, string> = {
   "Sin resultados": "No results",
   "Desplegar {0}": "Expand {0}",
   "Plegar {0}": "Collapse {0}",
+  Proveedor: "Provider",
+  "Zimbra u otro servidor IMAP": "Zimbra or another IMAP server",
   "Replegar {0}": "Collapse {0}",
   "Abrir {0}": "Open {0}",
   "Cerrar {0}": "Close {0}",

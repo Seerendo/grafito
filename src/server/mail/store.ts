@@ -30,9 +30,10 @@ export async function upsertFolders(
   for (const folder of remote) {
     const found = byRemote.get(folder.remoteId);
     const id = found?.id ?? randomUUID();
-    // Spam and trash are listed but not synced unless the person turns them on.
-    const defaultEnabled =
-      folder.specialUse !== "junk" && folder.specialUse !== "trash" && folder.specialUse !== "all";
+    // Every folder syncs, spam and trash included, as the mail server shows them. Views that
+    // repeat other folders' messages (Gmail's All Mail, Important, Starred) do not, or every
+    // message would show twice.
+    const defaultEnabled = folder.specialUse !== "all" && folder.specialUse !== "flagged";
     await sql`
       insert into mail_folder (id, user_id, account_id, remote_id, name, path, parent_id, special_use,
         sync_enabled, removed, created_at, updated_at)
@@ -259,7 +260,11 @@ export async function updateFlags(
     if (!rows[0]) continue;
     await sql`
       update mail_message set remote_seen = ${item.flags.includes("\\Seen")},
-        remote_flagged = ${item.flags.includes("\\Flagged")}, updated_at = ${now}
+        remote_flagged = ${item.flags.includes("\\Flagged")},
+        -- The server changed after the mark made in Grafito: the latest change wins.
+        local_seen = case when remote_seen <> ${item.flags.includes("\\Seen")} then null else local_seen end,
+        local_flagged = case when remote_flagged <> ${item.flags.includes("\\Flagged")} then null else local_flagged end,
+        updated_at = ${now}
       where id = ${rows[0].message_id}
         and (remote_seen <> ${item.flags.includes("\\Seen")} or remote_flagged <> ${item.flags.includes("\\Flagged")})
     `;

@@ -949,10 +949,16 @@ describe("email module", () => {
     assert.ok(hidden.data.id);
   });
   test("T56: the account's signature goes below new messages and above quoted replies", async () => {
-    await page.goto(`${base}/account?section=mailboxes`);
-    const card = page.locator('[data-ui="mail-signature"]');
-    await card.getByLabel("Firma").fill("Ana Prueba\nUnidad de pruebas");
-    await card.getByRole("button", { name: "Guardar firma" }).click();
+    // The signature lives in the mail screen's Preferencias.
+    await page.goto(`${base}/mail`);
+    await page.getByRole("button", { name: "Opciones del correo" }).click();
+    await page
+      .locator('[data-ui="mail-settings-menu"]')
+      .getByRole("menuitem", { name: "Preferencias" })
+      .click();
+    const prefs = page.locator('[data-ui="mail-preferences"]');
+    await prefs.getByLabel("Firma").fill("Ana Prueba\nUnidad de pruebas");
+    await prefs.getByRole("button", { name: "Guardar" }).click();
     await until(
       async () =>
         (await query(`select signature from mail_account where id = $1`, [accountId]))[0]
@@ -1680,5 +1686,150 @@ describe("email module", () => {
     } finally {
       await page.setViewportSize({ width: 1500, height: 950 });
     }
+  });
+
+  /** The flags a message has on the IMAP server itself. */
+  async function serverFlags(subject, folder = "INBOX") {
+    const client = new ImapFlow({
+      host: "127.0.0.1",
+      port: Number(process.env.MAIL_TEST_PORT || 1993),
+      secure: true,
+      servername: "imap-test",
+      tls: { ca: [readFileSync(new URL("../../.data/imap-test/certs/ca.crt", import.meta.url))] },
+      auth: { user: "ana@prueba.test", pass: "Correo-Ana-2026" },
+      logger: false,
+    });
+    await client.connect();
+    try {
+      await client.mailboxOpen(folder);
+      const uids = await client.search({ subject }, { uid: true });
+      if (!uids?.length) return null;
+      const message = await client.fetchOne(String(uids.at(-1)), { flags: true }, { uid: true });
+      return [...message.flags];
+    } finally {
+      await client.logout();
+    }
+  }
+
+  test("spam and trash sync like the other folders", async () => {
+    seed("into", "ana@prueba.test", "Correo-Ana-2026", `Junk|En spam ${stamp}`);
+    seed("into", "ana@prueba.test", "Correo-Ana-2026", `Trash|En la papelera ${stamp}`);
+    await syncNow();
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message where account_id = $1 and subject in ($2, $3)`,
+            [accountId, `En spam ${stamp}`, `En la papelera ${stamp}`],
+          )
+        )[0].n === 2,
+      "spam and trash synced",
+      120_000,
+    );
+    await page.goto(`${base}/mail?box=junk`);
+    await page
+      .locator('[data-ui="mail-list"] [data-message]')
+      .filter({ hasText: `En spam ${stamp}` })
+      .waitFor();
+    await page.goto(`${base}/mail?box=trash`);
+    await page
+      .locator('[data-ui="mail-list"] [data-message]')
+      .filter({ hasText: `En la papelera ${stamp}` })
+      .waitFor();
+  });
+
+  test("read and flagged go both ways with the mail server", async () => {
+    const subject = `Banderas ${stamp}`;
+    seed("one", "ana@prueba.test", "Correo-Ana-2026", subject);
+    await syncNow();
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message where account_id = $1 and subject = $2`,
+            [accountId, subject],
+          )
+        )[0].n === 1,
+      "the message synced",
+    );
+    // Opened and flagged in Grafito: the server gets \Seen and \Flagged.
+    await openMessage(subject);
+    const row = page
+      .locator('[data-ui="mail-list"] [data-message]')
+      .filter({ hasText: subject })
+      .first();
+    await row.locator('[data-ui="mail-flag"]').click();
+    await until(async () => {
+      const flags = await serverFlags(subject);
+      return Boolean(flags?.includes("\\Seen") && flags.includes("\\Flagged"));
+    }, "read and flagged on the server");
+    // Marked unread in Grafito: the server loses \Seen.
+    await row.click({ button: "right" });
+    await page
+      .locator('[data-ui="mail-row-menu"]')
+      .getByRole("menuitem", { name: "Marcar como no leído" })
+      .click();
+    await until(
+      async () => !(await serverFlags(subject))?.includes("\\Seen"),
+      "unread on the server",
+    );
+    // Read in another client (the server): Grafito follows after a sync.
+    seed("flag", "ana@prueba.test", "Correo-Ana-2026", subject);
+    await syncNow();
+    await until(
+      async () =>
+        (
+          await query(
+            `select coalesce(local_seen, remote_seen) as seen from mail_message where account_id = $1 and subject = $2`,
+            [accountId, subject],
+          )
+        )[0].seen === true,
+      "read in Grafito after reading elsewhere",
+    );
+  });
+
+  test("Cuentas de correo scrolls, folds its cards, has no signature, offers Gmail; De shows the name", async () => {
+    await page.setViewportSize({ width: 1400, height: 420 });
+    try {
+      await page.goto(`${base}/account?section=mailboxes`);
+      const content = page.locator('[data-ui="account-content"]');
+      await page
+        .locator('[data-ui="mail-account"]')
+        .first()
+        .getByLabel("Nombre de la cuenta")
+        .waitFor();
+      const scroll = await content.evaluate((element) => ({
+        overflow: getComputedStyle(element).overflowY,
+        more: element.scrollHeight > element.clientHeight,
+      }));
+      assert.deepEqual(scroll, { overflow: "auto", more: true });
+      await content.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      assert.ok((await content.evaluate((element) => element.scrollTop)) > 0, "it scrolls");
+      assert.equal(
+        await page.locator('[data-ui="mail-signature"]').count(),
+        0,
+        "no signature here",
+      );
+      const card = page.locator('[data-ui="mail-account"]').first();
+      const fold = card.locator('[data-ui="mail-account-fold"]');
+      await fold.click();
+      await card.getByLabel("Nombre de la cuenta").waitFor({ state: "detached" });
+      await fold.click();
+      await card.getByLabel("Nombre de la cuenta").waitFor();
+      await page.getByRole("button", { name: "Añadir otra cuenta" }).click();
+      const add = page.locator('[data-ui="mail-add"]');
+      await add.getByLabel("Proveedor").selectOption({ label: "Gmail" });
+      assert.equal(await add.getByLabel("Servidor IMAP").inputValue(), "imap.gmail.com");
+      assert.equal(await add.getByLabel("Servidor SMTP (envío)").inputValue(), "smtp.gmail.com");
+    } finally {
+      await page.setViewportSize({ width: 1500, height: 950 });
+    }
+    // De: the person's name, the address on a double click.
+    const form = await compose();
+    const from = form.getByLabel("De", { exact: true });
+    const shown = await from.evaluate((element) => element.selectedOptions[0]?.textContent ?? "");
+    assert.ok(shown && !shown.includes("@"), shown);
+    await from.locator("xpath=..").dblclick({ position: { x: 4, y: 4 } });
+    await form.locator('[data-ui="from-address"]').getByText("ana@prueba.test").waitFor();
   });
 });

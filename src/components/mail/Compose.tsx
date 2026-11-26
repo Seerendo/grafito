@@ -128,6 +128,15 @@ export function Compose({
   const profile = useAccountProfile();
   const mayUpload = can(PERMISSION.filesUpload);
 
+  // «De» shows the person's full name, like the recipients; the address only on a double click.
+  // With several accounts, each one adds its own name (or its domain) to tell them apart.
+  const fromLabel = (account: Account) => {
+    const own = account.name && account.name !== account.email ? account.name : "";
+    const person = profile?.displayName?.trim() || own || account.email;
+    if (usable.length < 2) return person;
+    const tag = own && own !== person ? own : account.email.split("@")[1];
+    return `${person} · ${tag}`;
+  };
   const changeAccount = (accountId: string) =>
     setForm({
       ...form,
@@ -356,7 +365,7 @@ export function Compose({
           >
             {usable.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.name || account.email}
+                {fromLabel(account)}
               </option>
             ))}
           </select>

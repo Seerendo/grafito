@@ -32,7 +32,7 @@ import type { MailSearch } from "@/routes/mail";
 import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
-import { mailMark, mailMessages, mailState } from "@/server/mailbox.functions";
+import { mailMark, mailMessages, mailRefresh, mailState } from "@/server/mailbox.functions";
 import { toast } from "@/app/toast";
 import { Toaster } from "@/components/ui/Toaster";
 import { Agenda, ScheduleMeeting } from "./Agenda";
@@ -212,7 +212,11 @@ export function MailScreen() {
   // Accounts' state every 15 s; new mail refreshes the top of the list.
   useEffect(() => {
     let alive = true;
+    let ticks = 0;
     const tick = async () => {
+      // Every minute while the screen is in view: ask the server for what changed elsewhere.
+      if (ticks++ % 4 === 0 && document.visibilityState === "visible")
+        void mailRefresh().catch(() => undefined);
       const answer = await loadState();
       if (!alive || !answer) return;
       const now =

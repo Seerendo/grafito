@@ -116,14 +116,19 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
 - **Connect:** the address, the IMAP server and port (993 TLS or 143
   STARTTLS), the SMTP server for sending (empty: the IMAP host; 587 STARTTLS
   or 465 TLS), and the password. The password is tried once before anything is
-  stored. Gmail and Microsoft use their own sign-in page, when the server has
-  their OAuth applications.
+  stored. **Proveedor** fills the servers for Gmail, Yahoo and iCloud (by IMAP
+  they need an app password). Gmail and Microsoft use their own sign-in page,
+  when the server has their OAuth applications.
+- **The list:** with several accounts each card folds to its header (address,
+  state, Sincronizar ahora); one account shows open. The page scrolls. The
+  signature is set in the mail screen's **Preferencias**, not here.
 - **Per account:** name, default account, automatic sync and its frequency
   (two minutes at least), folders that sync, the SMTP server, new credentials,
   **Volver a autorizar** (OAuth), **Permitir acceso por MCP**, **Desconectar**
   (credentials forgotten, messages kept) and **Borrar la copia local**
   (messages and downloaded attachments deleted here, archived documents kept).
-  Nothing ever changes on the mail server.
+  Read and starred go back to the mail server (below); nothing else changes
+  there except drafts and sent messages.
 - **History:** an account copies its whole mailbox by default (every folder:
   the server's own, Drafts, Sent…), newest first, so Grafito shows what the
   mail server shows; a shorter window can be chosen per account (Historial).
@@ -133,7 +138,16 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   mail trash, starred and the server's own folders. Search (subject, people,
   attachment names, text) and filters (unread, with attachments, sender,
   dates, account). The list pages with a keyset cursor and draws only the rows
-  on screen. Read, starred and hidden are kept in Grafito only.
+  on screen. Spam and trash sync like the other folders (migration 0053 turned
+  them on for existing accounts); Gmail's All Mail and Important are views
+  over other folders and are not copied. Hidden is kept in Grafito only.
+- **Read and starred, both ways:** marking a message read, unread or starred
+  in Grafito writes it to the server (IMAP `\Seen` and `\Flagged`, Gmail's
+  UNREAD and STARRED labels, Graph's `isRead` and `flag`) through a `flags`
+  job beside any running sync. A change made in another client (Zimbra
+  webmail, a phone) shows in Grafito at the next sync and wins over an older
+  mark made here. While the mail screen is open and visible, it asks for a
+  sync every minute for accounts not synced in the last minute.
 - **Attachments** are downloaded when opened: the worker fetches them,
   ClamAV scans them, and PDFs, images, audio, video and text open in Grafito's
   viewers. Office files open once saved into the vault (Collabora edits vault
@@ -273,14 +287,18 @@ not supported.
 1. In Google Cloud: a project, the Gmail API enabled, an OAuth client of type
    "Web application" with the redirect address
    `<BETTER_AUTH_URL>/api/mail/oauth/callback`, the scope
-   `https://www.googleapis.com/auth/gmail.readonly`, and the consent screen.
+   `https://www.googleapis.com/auth/gmail.modify` (read and starred go back to
+   Gmail) plus `gmail.send`, and the consent screen. Accounts connected with
+   the older read-only scope need **Volver a autorizar**.
 2. Set `MAIL_GMAIL_CLIENT_ID` and `MAIL_GMAIL_CLIENT_SECRET` and recreate
    `app` and `mail-sync`.
 
 ### Microsoft 365 / Outlook.com
 
 1. In Entra ID (Azure): an app registration, platform "Web", the same redirect
-   address, delegated permissions `Mail.Read`, `User.Read`, `offline_access`.
+   address, delegated permissions `Mail.ReadWrite`, `Mail.Send`, `User.Read`,
+   `offline_access` (accounts connected with `Mail.Read` need **Volver a
+   autorizar**).
    For Outlook.com and other tenants, supported account types "any directory
    and personal accounts", tenant `common`; for one organization, its tenant id.
 2. Set `MAIL_MICROSOFT_CLIENT_ID`, `MAIL_MICROSOFT_CLIENT_SECRET` and
@@ -313,7 +331,8 @@ for Gmail; `graph.microsoft.com` and `login.microsoftonline.com` for Microsoft.
   the key works as for the other secrets (OPERATIONS.md). OAuth client secrets
   stay on the server.
 - **OAuth:** authorization code with PKCE (S256), a random single-use `state`
-  bound to the person and valid ten minutes, read-only scopes. The provider
+  bound to the person and valid ten minutes, the narrowest scopes that keep
+  read and starred in step (no deletion, no settings). The provider
   sends the person back to **Cuenta → Cuentas de correo**, where their own
   session finishes the
   sign-in: a link prepared by someone else cannot attach a mailbox to another

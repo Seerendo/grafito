@@ -14,9 +14,9 @@ export type OAuthProvider = "gmail" | "microsoft";
 
 const SCOPES: Record<OAuthProvider, string> = {
   gmail:
-    "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+    "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send",
   microsoft:
-    "openid email offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read",
+    "openid email offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read",
 };
 
 const STATE_MS = 10 * 60 * 1000;
@@ -246,11 +246,12 @@ export async function providerSend(
   token: string,
   body: string,
   contentType: string,
+  method: "POST" | "PATCH" = "POST",
 ): Promise<void> {
   let response: Response;
   try {
     response = await fetch(url, {
-      method: "POST",
+      method,
       headers: { authorization: `Bearer ${token}`, "content-type": contentType },
       body,
       redirect: "error",

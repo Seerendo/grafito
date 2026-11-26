@@ -109,38 +109,41 @@ export function AccountScreen() {
           onSelect={setSection}
           footer={profile.loginName}
         />
-        <div data-ui="workspace" className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          <div className="grafito-in w-full px-4 py-6 sm:px-8">
-            {current ? (
-              <button
-                type="button"
-                onClick={() => setSection(null)}
-                className="mb-3 text-sm text-accent md:hidden"
-              >
-                {t("Atrás")}
-              </button>
-            ) : null}
-            <h1 className="font-serif text-3xl tracking-tight">
-              {current ? t(current.label) : t("Cuenta")}
-            </h1>
-            <div className="mt-6">
-              {!current ? <OptionGrid items={items} onPick={setSection} /> : null}
-              {current?.id === "profile" ? (
-                <ProfileForm
-                  userId={user.id}
-                  initial={{ name: profile.displayName }}
-                  identity={{
-                    loginName: profile.loginName,
-                    isAdmin: profile.isAdmin,
-                    canAdmin: profile.canAdmin,
-                  }}
-                />
+        {/* The floating panel clips its edges (overflow hidden); the content scrolls inside it. */}
+        <div data-ui="workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div data-ui="account-content" className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grafito-in w-full px-4 py-6 sm:px-8">
+              {current ? (
+                <button
+                  type="button"
+                  onClick={() => setSection(null)}
+                  className="mb-3 text-sm text-accent md:hidden"
+                >
+                  {t("Atrás")}
+                </button>
               ) : null}
-              {current?.id === "email" ? <MailForm /> : null}
-              {current?.id === "mailboxes" ? <MailAccounts /> : null}
-              {current?.id === "preferences" ? <PreferencesForm /> : null}
-              {current?.id === "password" ? <PasswordForm loginEmail={profile.email} /> : null}
-              {current?.id === "api" ? <ApiTokens /> : null}
+              <h1 className="font-serif text-3xl tracking-tight">
+                {current ? t(current.label) : t("Cuenta")}
+              </h1>
+              <div className="mt-6">
+                {!current ? <OptionGrid items={items} onPick={setSection} /> : null}
+                {current?.id === "profile" ? (
+                  <ProfileForm
+                    userId={user.id}
+                    initial={{ name: profile.displayName }}
+                    identity={{
+                      loginName: profile.loginName,
+                      isAdmin: profile.isAdmin,
+                      canAdmin: profile.canAdmin,
+                    }}
+                  />
+                ) : null}
+                {current?.id === "email" ? <MailForm /> : null}
+                {current?.id === "mailboxes" ? <MailAccounts /> : null}
+                {current?.id === "preferences" ? <PreferencesForm /> : null}
+                {current?.id === "password" ? <PasswordForm loginEmail={profile.email} /> : null}
+                {current?.id === "api" ? <ApiTokens /> : null}
+              </div>
             </div>
           </div>
         </div>
