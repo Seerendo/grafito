@@ -147,6 +147,14 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   Graph messages), recipients, Bcc and attachments included, so Zimbra shows it
   too; **No** throws it away and deletes the files uploaded for it. Leaving the
   page with a message being written asks the browser to confirm.
+- **Reading and writing like Outlook:** a message scrolls as one (its header,
+  invitation, attachments and body); past the header, a compact bar with the
+  subject and the actions as icons stays on top. While writing, **Enviar** and
+  **Descartar** stay at the top and the message scrolls under them. A reply or
+  a forward shows the original below the text, read only: a block with De,
+  Enviado, Para, CC and Asunto, then the original with its formatting; the
+  message goes out with that block after the text, in its text and HTML parts,
+  as Outlook and Zimbra do.
 - **Flags and the right click:** each message has a flag (**Fichar**, red when
   set, IMAP `\Flagged`) clicked straight on the list; **Fichados** lists them.
   A right click on a message offers Abrir, Abrir en una nueva pestaña,

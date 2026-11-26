@@ -85,11 +85,25 @@ function flag(value: unknown): boolean {
 }
 
 /** Turned on by an administrator (an extension without a row is on). */
+/** Whether an extension is switched on, asked on every request of its module: kept 5 s. */
+const CHOSEN_MS = 5_000;
+const chosen = new Map<string, { at: number; on: boolean }>();
+
 export async function extensionChosen(sql: Sql, id: string): Promise<boolean> {
+  const hit = chosen.get(id);
+  if (hit && Date.now() - hit.at < CHOSEN_MS) return hit.on;
   const rows = await sql<{ enabled: unknown }>`
     select enabled from app_plugin where id = ${id} limit 1
   `;
-  return !rows[0] || flag(rows[0].enabled);
+  const on = !rows[0] || flag(rows[0].enabled);
+  chosen.set(id, { at: Date.now(), on });
+  return on;
+}
+
+/** After an extension is switched, the next request asks again. */
+export function forgetExtensionChoice(id?: string): void {
+  if (id) chosen.delete(id);
+  else chosen.clear();
 }
 
 /** On and its service answering: what the app goes by. */
@@ -150,5 +164,6 @@ export async function setExtension(
       return { ok: false, error: check.detail || "La comprobación falló." };
   }
   await sql`update app_plugin set enabled = ${enabled} where id = ${id}`;
+  forgetExtensionChoice(id);
   return { ok: true };
 }

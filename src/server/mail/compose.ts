@@ -11,6 +11,7 @@ import { grantedDocOwner, sharedWith } from "@/server/share";
 import { getDoc, listDocs } from "@/server/vault";
 import { buildConnector, connectorAccount } from "./accounts";
 import { MailError } from "./providers/types";
+import { getMessage } from "./messages";
 import { enqueue } from "./queue";
 import { rememberContacts } from "./store";
 
@@ -179,6 +180,8 @@ export type SendInput = {
   uploads: { key: string; name: string; mime: string }[];
   /** The message this answers (its id in Grafito), for In-Reply-To and References. */
   replyTo: string | null;
+  /** The message answered or forwarded, added below the text as Outlook and Zimbra do. */
+  quote?: { messageId: string; kind: "reply" | "forward" } | null;
 };
 
 /** Compose and send one message as one of the person's accounts. */
@@ -236,13 +239,15 @@ export async function sendMessage(
     if (id) thread = { inReplyTo: id, references: id };
   }
 
+  const quoted = input.quote ? await quoteOf(sql, userId, input.quote) : null;
   const composer = new MailComposer({
     from: { name: profile.displayName || "", address: account.email },
     to,
     cc,
     bcc,
     subject: input.subject.slice(0, 500),
-    text: input.text,
+    text: quoted ? `${input.text}${quoted.text}` : input.text,
+    ...(quoted ? { html: `${textHtml(input.text)}${quoted.html}` } : {}),
     ...thread,
     attachments: files.map((file) => ({
       filename: file.filename,
@@ -330,4 +335,70 @@ export async function discardUploads(sql: Sql, userId: string, keys: string[]): 
     if (!ownsKey(userId, key) || (await heldByDocument(sql, key))) continue;
     await deleteBlob(sql, key).catch(() => undefined);
   }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Plain text as HTML lines (the person writes text; the HTML part keeps its line breaks). */
+function textHtml(text: string): string {
+  return `<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt;white-space:pre-wrap">${escapeHtml(text)}</div>`;
+}
+
+/**
+ * The message being answered or forwarded, as Outlook and Zimbra add it: a header block (De,
+ * Enviado, Para, CC, Asunto) and the original with its own formatting, in the text and HTML
+ * parts. The original HTML keeps its layout; scripts, frames and event attributes go.
+ */
+async function quoteOf(
+  sql: Sql,
+  userId: string,
+  quote: { messageId: string; kind: "reply" | "forward" },
+): Promise<{ text: string; html: string } | null> {
+  const original = await getMessage(sql, userId, quote.messageId);
+  if (!original) return null;
+  const person = (item: { name: string; address: string }) =>
+    item.name ? `${item.name} <${item.address}>` : item.address;
+  const when = new Date(original.sentAt ?? original.receivedAt).toLocaleString("es", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: process.env.TZ || "UTC",
+  });
+  const rows: [string, string][] = [
+    ["De", person(original.from)],
+    ["Enviado", when],
+    ["Para", original.to.map(person).join("; ")],
+    ...(original.cc.length
+      ? ([["CC", original.cc.map(person).join("; ")]] as [string, string][])
+      : []),
+    ["Asunto", original.subject],
+  ];
+  const rule =
+    quote.kind === "forward"
+      ? "---------- Mensaje reenviado ----------"
+      : "________________________________";
+  const text = [
+    "",
+    "",
+    rule,
+    ...rows.map(([label, value]) => `${label}: ${value}`),
+    "",
+    original.text,
+  ].join("\n");
+  const body = original.html
+    ? original.html
+        .replace(/<(script|iframe|object|embed)[\s\S]*?<\/\1\s*>/gi, "")
+        .replace(/<(script|iframe|object|embed)\b[^>]*>/gi, "")
+        .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+        .replace(/<\/?(html|head|body)\b[^>]*>/gi, "")
+    : `<div style="white-space:pre-wrap">${escapeHtml(original.text)}</div>`;
+  const html = `<br><div style="border:none;border-top:solid #e1e1e1 1pt;padding:3pt 0 0 0;font-family:Calibri,Arial,sans-serif;font-size:11pt">${rows
+    .map(([label, value]) => `<b>${label}:</b> ${escapeHtml(value)}`)
+    .join("<br>")}</div><br><div>${body}</div>`;
+  return { text, html };
 }

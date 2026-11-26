@@ -512,6 +512,10 @@ export const mailSend = createServerFn({ method: "POST" })
           )
           .max(50),
         replyTo: id.nullable(),
+        quote: z
+          .object({ messageId: id, kind: z.enum(["reply", "forward"]) })
+          .nullable()
+          .optional(),
       })
       .parse(input),
   )
@@ -694,6 +698,10 @@ export const mailSaveDraft = createServerFn({ method: "POST" })
           )
           .max(50),
         replyTo: id.nullable(),
+        quote: z
+          .object({ messageId: id, kind: z.enum(["reply", "forward"]) })
+          .nullable()
+          .optional(),
       })
       .parse(input),
   )

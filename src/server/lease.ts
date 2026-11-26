@@ -5,7 +5,18 @@ import { redisDropAllLeases, redisDropLease, redisHasLease, redisSetLease } from
 
 const MAX_TTL = 30 * 24 * 60 * 60;
 
+/** The setting is read on every request; kept for a short while (writeTtl refreshes it). */
+const TTL_CACHE_MS = 30_000;
+let ttlCache: { at: number; value: number } | null = null;
+
 export async function readTtl(sql: Sql): Promise<number> {
+  if (ttlCache && Date.now() - ttlCache.at < TTL_CACHE_MS) return ttlCache.value;
+  const value = await readTtlFresh(sql);
+  ttlCache = { at: Date.now(), value };
+  return value;
+}
+
+async function readTtlFresh(sql: Sql): Promise<number> {
   const rows = await sql<{
     value: string;
   }>`select value from app_setting where key = 'session_ttl_seconds' limit 1`;
@@ -21,6 +32,7 @@ export async function writeTtl(sql: Sql, seconds: number): Promise<void> {
     values ('session_ttl_seconds', ${value})
     on conflict (key) do update set value = ${value}
   `;
+  ttlCache = null;
 }
 
 async function liveSession(sql: Sql, userId: string): Promise<boolean> {

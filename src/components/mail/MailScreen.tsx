@@ -1040,7 +1040,7 @@ function TabButton({
         type="button"
         aria-label={t("Cerrar {0}", { 0: title })}
         onClick={onClose}
-        className="grid size-7 shrink-0 place-items-center rounded text-faint hover:bg-inset hover:text-fg"
+        className="grid size-7 shrink-0 place-items-center rounded text-faint"
       >
         <X className="size-3.5" />
       </button>

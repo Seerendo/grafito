@@ -441,7 +441,7 @@ describe("email module", () => {
     await frame.waitFor();
     assert.equal(
       await frame.getAttribute("sandbox"),
-      "allow-popups allow-popups-to-escape-sandbox",
+      "allow-same-origin allow-popups allow-popups-to-escape-sandbox",
     );
     // The CID image is fetched and the frame redrawn with its signed link.
     await until(
@@ -876,13 +876,28 @@ describe("email module", () => {
     await chip.dblclick();
     await chip.locator('[data-ui="recipient-address"]').getByText("ana.r@otro.test").waitFor();
     assert.equal(await form.getByLabel("Asunto").inputValue(), "Re: Informe con adjuntos");
-    assert.match(await form.getByLabel("Mensaje").inputValue(), /> Te adjunto el informe/);
+    // The original shows below the text, as in Outlook: its header block and its content.
+    const quoted = page.locator('[data-ui="mail-quoted"]').last();
+    await quoted.getByText("Asunto:").waitFor();
+    assert.match(await quoted.innerText(), /De:\s*Ana Remitente <ana\.r@otro\.test>/);
+    assert.doesNotMatch(await form.getByLabel("Mensaje").inputValue(), /^>/m, "no «>» quoting");
     await form.getByRole("button", { name: "CC y CCO" }).click();
     await form.getByLabel("CCO").fill("oculto@otro.test");
     await form.getByRole("button", { name: "Enviar", exact: true }).click();
     await page.getByText("Mensaje enviado.").waitFor();
     const { message, headers } = await received("Re: Informe con adjuntos");
     assert.equal(headers["In-Reply-To"]?.[0], original);
+    // Sent with the original after the text, in the text and HTML parts.
+    assert.match(
+      message.Text,
+      /________________________________\s*\nDe: Ana Remitente <ana\.r@otro\.test>/,
+    );
+    assert.match(
+      message.Text,
+      /Asunto: Informe con adjuntos[\s\S]*Te adjunto el informe trimestral/,
+    );
+    assert.match(message.HTML, /<b>De:<\/b> Ana Remitente &lt;ana\.r@otro\.test&gt;/);
+    assert.match(message.HTML, /informe trimestral/);
     // Delivered to the Bcc address (Mailpit lists it from the envelope), but the message itself,
     // and so the copy kept in Sent, does not name it.
     assert.ok(
@@ -961,12 +976,12 @@ describe("email module", () => {
       message.Text,
       /Texto del mensaje\.\s*\n\s*-- \s*\nAna Prueba\s*\nUnidad de pruebas/,
     );
-    // A reply: the signature sits above the quoted text.
+    // A reply: the signature is in the text, the original below it.
     const view = await openMessage("Informe con adjuntos");
     await view.getByRole("button", { name: "Responder", exact: true }).click();
     const reply = page.locator('[data-ui="mail-compose"]');
-    const text = await reply.getByLabel("Mensaje").inputValue();
-    assert.ok(text.indexOf("Ana Prueba") < text.indexOf("> Te adjunto"), text);
+    assert.match(await reply.getByLabel("Mensaje").inputValue(), /-- \nAna Prueba/);
+    await page.locator('[data-ui="mail-quoted"]').getByText("Asunto:").waitFor();
   });
 
   test("T57: recipients are found by name in contacts and in the Zimbra directory", async () => {
@@ -1624,5 +1639,46 @@ describe("email module", () => {
     const notice = page.locator('[data-ui="toast"]').filter({ hasText: "Mensaje enviado." });
     await notice.waitFor();
     await notice.waitFor({ state: "detached", timeout: 8000 });
+  });
+  test("the whole message scrolls; its header folds into a compact bar; Enviar and Descartar stay on top", async () => {
+    await page.setViewportSize({ width: 1400, height: 560 });
+    try {
+      const view = await openMessage("HTML peligroso con imagen embebida");
+      // One scroller: the body frame takes its content's height, nothing scrolls inside it.
+      const frame = view.locator('[data-ui="mail-body"]');
+      await frame.waitFor();
+      await page.waitForTimeout(500);
+      const sizes = await frame.evaluate((element) => ({
+        frame: element.getBoundingClientRect().height,
+        content: element.contentDocument?.documentElement.scrollHeight ?? 0,
+      }));
+      assert.ok(Math.abs(sizes.frame - sizes.content) <= 4, JSON.stringify(sizes));
+      const bar = view.locator('[data-ui="mail-compact-bar"]');
+      assert.equal(await bar.getAttribute("aria-hidden"), "true");
+      await view.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[data-ui="mail-compact-bar"]')?.getAttribute("aria-hidden") ===
+          "false",
+      );
+      await bar.getByRole("button", { name: "Responder", exact: true }).click();
+      const pane = page.locator('[data-ui="mail-compose-pane"]').last();
+      await pane.waitFor();
+      // Writing: the bar with Enviar and Descartar stays at the top while the rest scrolls.
+      await pane.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      const [top, barTop] = await Promise.all([
+        pane.evaluate((element) => element.getBoundingClientRect().top),
+        pane
+          .locator('[data-ui="mail-compose-bar"]')
+          .evaluate((element) => element.getBoundingClientRect().top),
+      ]);
+      assert.ok(Math.abs(top - barTop) <= 1, `${top} vs ${barTop}`);
+      await pane
+        .locator('[data-ui="mail-compose-bar"]')
+        .getByRole("button", { name: "Enviar", exact: true })
+        .waitFor();
+    } finally {
+      await page.setViewportSize({ width: 1500, height: 950 });
+    }
   });
 });

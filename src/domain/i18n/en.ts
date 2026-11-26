@@ -1498,6 +1498,8 @@ export const en: Record<string, string> = {
   "Servidor IMAP": "IMAP server",
   "Puerto y seguridad": "Port and security",
   "993 · TLS": "993 · TLS",
+  Enviado: "Sent",
+  "Mensaje original": "Original message",
   "Correo ocultado en Grafito.": "Message hidden in Grafito.",
   "No hay eventos.": "No events.",
   Organiza: "Organizer",

@@ -3,7 +3,8 @@
  * markup in the page): no scripts, frames, forms, SVG or event handlers; links only http, https
  * and mailto, opened outside; images only embedded (data:, cid: through a signed link) unless the
  * person chooses to load remote ones, which also blocks tracking pixels. The result is shown in an
- * iframe sandboxed without scripts and without the app's origin, with its own CSP: two layers, so
+ * iframe sandboxed without scripts (same origin only so the page can measure its height; with no
+ * allow-scripts nothing in it runs), with its own CSP forbidding scripts: two layers, so
  * a gap in one is caught by the other.
  */
 

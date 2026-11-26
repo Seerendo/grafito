@@ -1730,6 +1730,28 @@ replaces it), keeps a calendar's events when it fails to answer once, and no
 longer reloads its calendars on every refresh of the accounts: the meetings that
 seemed to vanish until a reload. That timing is not reproduced by a test.
 
+## Round 60: reading and writing like Outlook
+
+| Check                                                                                          | Result                        |
+| ---------------------------------------------------------------------------------------------- | ----------------------------- |
+| A message scrolls as one: the body frame takes its content's height (no inner scroll)          | ✅                            |
+| Past the header, a compact bar (subject and icon actions) stays on top; its Responder works    | ✅                            |
+| A tab not shown never counts as scrolled                                                       | ✅                            |
+| Writing: Enviar and Descartar stay at the top edge while the message scrolls (560 px tall)     | ✅                            |
+| A reply shows the original below the text: De, Enviado, Para, CC, Asunto and its formatting    | ✅ no «>» quoting in the text |
+| Sent: the original after the text in the text part (Outlook rule and header) and the HTML part | ✅                            |
+| The tab's close button has no hover                                                            | ✅                            |
+| Email suite; `typecheck`, `lint`, `npm test`, `format:check`                                   | ✅ 35 of 35; 265 tests pass   |
+
+The body frame is sandboxed with `allow-same-origin` so the page can measure it,
+never with `allow-scripts`: nothing in it runs, and its CSP forbids scripts too.
+
+A concurrency test with hundreds of members using mail at once (sync storm and the
+mail screen's requests replayed with each member's session) was run on the test
+stack; its figures are kept out of the repository. Two settings read on every
+request (the session lifetime, whether the email extension is on) are now kept in
+memory for a few seconds.
+
 ## Useful commands
 
 ```bash

@@ -19,6 +19,7 @@ import { intl, t } from "@/app/i18n";
 import { usePermissions } from "@/app/permissions";
 import { Modal } from "@/components/ui/Modal";
 import { swapSignature, withSignature } from "@/domain/mail/compose";
+import { QuotedOriginal } from "./Quoted";
 import { readSaveTo, useSaveFolders, writeSaveTo } from "@/app/mail/save-to";
 import { PERMISSION } from "@/domain/permissions";
 import {
@@ -44,6 +45,8 @@ export type Draft = {
   subject: string;
   text: string;
   replyTo: string | null;
+  /** The message answered or forwarded: shown below the text and sent after it. */
+  quote?: { messageId: string; kind: "reply" | "forward" } | null;
 };
 
 type Account = { id: string; email: string; name: string; hasSecret: boolean; signature: string };
@@ -239,6 +242,7 @@ export function Compose({
         : [],
     ),
     replyTo: form.replyTo,
+    quote: draft.quote ?? null,
   });
 
   const keepDraft = async () => {
@@ -256,30 +260,14 @@ export function Compose({
   const send = async () => {
     setBusy(true);
     setError("");
-    const answer = await mailSend({
-      data: {
-        accountId: form.accountId,
-        to: split(form.to),
-        cc: split(form.cc),
-        bcc: split(form.bcc),
-        subject: form.subject,
-        text: form.text,
-        attachments: files.map((file) => ({ docId: file.docId, shareId: file.shareId })),
-        uploads: uploads.flatMap((item) =>
-          item.status === "ready" && item.key
-            ? [{ key: item.key, name: item.name, mime: item.mime }]
-            : [],
-        ),
-        replyTo: form.replyTo,
-      },
-    }).catch(() => null);
+    const answer = await mailSend({ data: payload() }).catch(() => null);
     setBusy(false);
     if (answer?.ok) onSent(answer.sentCopy);
     else setError(answer?.error ?? "No se pudo enviar.");
   };
 
   return (
-    <div data-ui="mail-compose-pane" className="min-h-0 flex-1 overflow-y-auto p-4">
+    <div data-ui="mail-compose-pane" className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
       {closing && dirty ? (
         <div
           role="alertdialog"
@@ -334,6 +322,27 @@ export function Compose({
           void send();
         }}
       >
+        {/* Send and discard stay on top while the message scrolls (as in Outlook). */}
+        <div
+          data-ui="mail-compose-bar"
+          className="sticky -top-3 z-10 -mx-3 -mt-3 flex flex-wrap items-center gap-2 border-b border-line bg-surface/95 px-3 py-2 backdrop-blur sm:-top-4 sm:-mx-4 sm:-mt-4 sm:px-4"
+        >
+          <button
+            type="submit"
+            disabled={busy || pending || !form.accountId}
+            className="inline-flex h-10 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
+          >
+            <Send className="size-4" />
+            {busy ? t("Enviando…") : t("Enviar")}
+          </button>
+          <button
+            type="button"
+            onClick={discard}
+            className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated"
+          >
+            {t("Descartar")}
+          </button>
+        </div>
         <label
           className="flex flex-col gap-1 text-sm"
           onDoubleClick={() => setFromShown((value) => !value)}
@@ -514,6 +523,9 @@ export function Compose({
             </div>
           ) : null}
         </div>
+        {draft.quote ? (
+          <QuotedOriginal messageId={draft.quote.messageId} kind={draft.quote.kind} />
+        ) : null}
         <div data-ui="mail-compose-tools" className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -572,23 +584,6 @@ export function Compose({
             {t(error)}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={discard}
-            className="h-10 rounded-md border border-line px-3 text-sm hover:bg-elevated"
-          >
-            {t("Descartar")}
-          </button>
-          <button
-            type="submit"
-            disabled={busy || pending || !form.accountId}
-            className="inline-flex h-10 items-center gap-1.5 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50"
-          >
-            <Send className="size-4" />
-            {busy ? t("Enviando…") : t("Enviar")}
-          </button>
-        </div>
       </form>
       {picking ? (
         <VaultPicker

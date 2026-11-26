@@ -163,6 +163,34 @@ export function MessageView({
     };
   }, [message, remote, cid]);
 
+  const scroller = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [frameHeight, setFrameHeight] = useState(400);
+
+  // The compact bar shows once the message has scrolled past its full header (by position, so a
+  // tab that is not shown never counts as scrolled).
+  const onScroll = () => {
+    const root = scroller.current;
+    const header = headerRef.current;
+    if (!root || !header) return;
+    setCollapsed(root.scrollTop > Math.max(40, header.offsetHeight - 48));
+  };
+
+  // The body grows to its content, so the whole message scrolls as one.
+  const fitFrame = () => {
+    const doc = frame.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    const measure = () =>
+      setFrameHeight(Math.max(120, Math.ceil(doc.documentElement.scrollHeight) + 2));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(doc.documentElement);
+    for (const image of doc.images) image.addEventListener("load", measure, { once: true });
+    frame.current?.addEventListener("load", () => observer.disconnect(), { once: true });
+  };
+
   useEffect(() => {
     if (!message || !intent) return;
     perform.current?.(intent);
@@ -196,15 +224,7 @@ export function MessageView({
 
   const files = message.attachments.filter((item) => !item.inline || !item.contentId);
 
-  // Replies quote the text; forwarding repeats the header. Neither carries the attachments.
-  const when = new Date(message.sentAt ?? message.receivedAt).toLocaleString(intl(), {
-    dateStyle: "long",
-    timeStyle: "short",
-  });
-  const quoted = message.text
-    .split("\n")
-    .map((line) => `> ${line}`)
-    .join("\n");
+  // Replies and forwards carry the original below the text, as Outlook and Zimbra do.
   const prefixed = (prefix: string) =>
     new RegExp(`^${prefix}:`, "i").test(message.subject)
       ? message.subject
@@ -224,8 +244,9 @@ export function MessageView({
       to: chipsOf(first),
       cc: chipsOf(others),
       subject: prefixed("Re"),
-      text: `\n\n${t("El {0}, {1} escribió:", { 0: when, 1: people([message.from]) })}\n${quoted}`,
+      text: "",
       replyTo: message.id,
+      quote: { messageId: message.id, kind: "reply" },
     });
   };
   // A meeting about this message: its subject without Re:/Rv:, its people, its text.
@@ -246,17 +267,8 @@ export function MessageView({
       to: "",
       cc: "",
       subject: prefixed("Rv"),
-      text: [
-        "",
-        "",
-        `---------- ${t("Mensaje reenviado")} ----------`,
-        `${t("De")}: ${people([message.from])}`,
-        `${t("Fecha")}: ${when}`,
-        `${t("Asunto")}: ${message.subject}`,
-        `${t("Para")}: ${people(message.to)}`,
-        "",
-        message.text,
-      ].join("\n"),
+      text: "",
+      quote: { messageId: message.id, kind: "forward" },
       replyTo: null,
     });
 
@@ -269,8 +281,58 @@ export function MessageView({
   };
 
   return (
-    <article data-ui="mail-message" className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-col gap-1 border-b border-line p-4">
+    <article
+      ref={scroller}
+      onScroll={onScroll}
+      data-ui="mail-message"
+      className="relative flex min-h-0 flex-1 flex-col overflow-y-auto"
+    >
+      {/* Like a collapsing app bar: once the full header scrolls away, a compact one stays. */}
+      <div className="sticky top-0 z-10 h-0">
+        <div
+          data-ui="mail-compact-bar"
+          aria-hidden={!collapsed}
+          className={`absolute inset-x-0 top-0 flex items-center gap-1 border-b border-line bg-surface/95 px-3 py-1.5 backdrop-blur transition duration-200 ${collapsed ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-full opacity-0"}`}
+        >
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold">
+            {message.subject || t("(sin asunto)")}
+          </p>
+          {(
+            [
+              ["Responder", <Reply key="r" className="size-4" />, () => reply(false)],
+              ["Responder a todos", <ReplyAll key="a" className="size-4" />, () => reply(true)],
+              ["Reenviar", <Forward key="f" className="size-4" />, forward],
+              ["Programar reunión", <CalendarPlus key="m" className="size-4" />, meeting],
+              [
+                message.flagged ? "Quitar ficha" : "Fichar",
+                <Flag
+                  key="g"
+                  className={`size-4 ${message.flagged ? "fill-current text-danger" : ""}`}
+                />,
+                () => void mark({ flagged: !message.flagged }),
+              ],
+              [
+                "Archivar en Grafito",
+                <Archive key="v" className="size-4" />,
+                () => setArchiving({ attachments: [] }),
+              ],
+            ] as const
+          ).map(([label, icon, run]) => (
+            <button
+              key={label}
+              type="button"
+              tabIndex={collapsed ? 0 : -1}
+              aria-label={t(label)}
+              title={t(label)}
+              onClick={run}
+              className="grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-elevated hover:text-fg"
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+      </div>
+      <header ref={headerRef} className="flex flex-col gap-1 border-b border-line p-4">
         <h2 className="text-lg font-semibold break-words">
           {message.subject || t("(sin asunto)")}
         </h2>
@@ -455,7 +517,7 @@ export function MessageView({
           {t("Imágenes de internet bloqueadas: {0}. Cargarlas", { 0: body.blocked })}
         </button>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="shrink-0">
         {message.bodyState === "too_large" ? (
           <p className="p-4 text-sm text-muted">
             {t(
@@ -466,10 +528,15 @@ export function MessageView({
           <iframe
             title={t("Contenido del mensaje")}
             data-ui="mail-body"
-            sandbox="allow-popups allow-popups-to-escape-sandbox"
+            // Same origin so its height can be measured; never allow-scripts, so nothing in it
+            // runs (its CSP forbids scripts too).
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
             referrerPolicy="no-referrer"
             srcDoc={body.doc}
-            className="h-full min-h-[60vh] w-full border-0 bg-white"
+            ref={frame}
+            onLoad={fitFrame}
+            style={{ height: frameHeight }}
+            className="block w-full border-0 bg-white"
           />
         ) : (
           <pre
