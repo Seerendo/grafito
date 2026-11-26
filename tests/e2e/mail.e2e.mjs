@@ -1174,11 +1174,9 @@ describe("email module", () => {
       .waitFor({ state: "attached" })
       .catch(() => undefined);
     assert.equal(await detail.getByRole("button", { name: "Editar" }).count(), 0);
+    // Escape closes it, as a click outside does.
     await page.keyboard.press("Escape");
-    await page
-      .locator('[data-ui="overlay"]')
-      .first()
-      .click({ position: { x: 5, y: 5 } });
+    await page.locator('[data-ui="overlay"]').waitFor({ state: "detached" });
     // Delete the new one.
     await agenda.locator(`[data-event="${title} (cambiada)"]`).click();
     await detail.getByRole("button", { name: "Borrar" }).click();
@@ -1831,5 +1829,91 @@ describe("email module", () => {
     assert.ok(shown && !shown.includes("@"), shown);
     await from.locator("xpath=..").dblclick({ position: { x: 4, y: 4 } });
     await form.locator('[data-ui="from-address"]').getByText("ana@prueba.test").waitFor();
+  });
+  test("several messages are ticked without selecting text and deleted on the server; from the trash for good", async () => {
+    const subjects = ["A", "B", "C"].map((letter) => `Para borrar ${letter} ${stamp}`);
+    for (const subject of subjects) seed("one", "ana@prueba.test", "Correo-Ana-2026", subject);
+    await syncNow();
+    await until(
+      async () =>
+        (
+          await query(
+            `select count(*)::int n from mail_message where account_id = $1 and subject like $2`,
+            [accountId, `Para borrar % ${stamp}`],
+          )
+        )[0].n === 3,
+      "three messages synced",
+    );
+    await page.goto(`${base}/mail`);
+    const row = (subject) =>
+      page.locator('[data-ui="mail-list"] [data-message]').filter({ hasText: subject }).first();
+    // Only these three in the list, in whatever order they share the same minute.
+    await page.getByPlaceholder("Buscar en el correo").fill(`Para borrar ${stamp}`);
+    const listed = page.locator('[data-ui="mail-list"] [data-message]');
+    await until(async () => (await listed.count()) === 3, "the three in the list");
+    const order = await listed.evaluateAll((items) => items.map((item) => item.textContent ?? ""));
+    const ranked = order.map((text) => subjects.find((subject) => text.includes(subject)));
+    subjects.splice(0, 3, ...ranked);
+    // The open message: an accent bar inside the row, no outline the list would cut.
+    await row(subjects[0]).click();
+    const look = await row(subjects[0]).evaluate((element) => ({
+      shadow: getComputedStyle(element).boxShadow,
+      radius: getComputedStyle(element).borderRadius,
+    }));
+    assert.match(look.shadow, /inset/);
+    // Shift and a click ticks the run from the open one; Ctrl and a click ticks one on or off.
+    await row(subjects[2]).click({ modifiers: ["Shift"] });
+    const bulk = page.locator('[data-ui="mail-bulk"]');
+    await bulk.getByText("3 seleccionados").waitFor();
+    await row(subjects[1]).click({ modifiers: ["Control"] });
+    await bulk.getByText("2 seleccionados").waitFor();
+    await row(subjects[1]).click({ modifiers: ["Control"] });
+    await bulk.getByText("3 seleccionados").waitFor();
+    assert.equal(await page.evaluate(() => String(window.getSelection())), "", "no text selected");
+    assert.equal(await page.locator('[data-ui="mail-list"] [data-checked]').count(), 3);
+    await bulk.getByRole("button", { name: "Eliminar" }).click();
+    await page.getByText("3 mensajes movidos a la papelera.").waitFor();
+    for (const subject of subjects) assert.equal(await row(subject).count(), 0);
+    await until(async () => {
+      for (const subject of subjects) {
+        if ((await serverFlags(subject, "INBOX")) !== null) return false;
+        if ((await serverFlags(subject, "Trash")) === null) return false;
+      }
+      return true;
+    }, "moved to the server's trash");
+    // From the trash: the box on each row, then a confirmation, then gone from the server.
+    await syncNow();
+    await page.goto(`${base}/mail?box=trash`);
+    for (const subject of subjects) {
+      await row(subject).waitFor({ timeout: 120_000 });
+      await row(subject).locator('[data-ui="mail-check"]').check();
+    }
+    await bulk.getByText("3 seleccionados").waitFor();
+    await bulk.getByRole("button", { name: "Eliminar" }).click();
+    await bulk.getByText("¿Eliminar definitivamente 3?").waitFor();
+    await bulk.getByRole("button", { name: "Eliminar" }).click();
+    await page.getByText("3 mensajes eliminados definitivamente.").waitFor();
+    await until(async () => {
+      for (const subject of subjects)
+        if ((await serverFlags(subject, "Trash")) !== null) return false;
+      return true;
+    }, "deleted for good on the server");
+  });
+
+  test("a meeting being scheduled closes with a click outside or Escape", async () => {
+    await page.goto(`${base}/mail`);
+    const first = page.locator('[data-ui="mail-list"] [data-message]').first();
+    for (const close of ["outside", "Escape"]) {
+      await first.click({ button: "right" });
+      await page
+        .locator('[data-ui="mail-row-menu"]')
+        .getByRole("menuitem", { name: "Programar reunión" })
+        .click();
+      const dialog = page.locator('[data-ui="dialog"]');
+      await dialog.getByText("Programar reunión").waitFor();
+      if (close === "outside") await page.mouse.click(8, 8);
+      else await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "detached" });
+    }
   });
 });

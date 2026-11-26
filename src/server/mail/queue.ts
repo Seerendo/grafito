@@ -9,11 +9,11 @@ import type { Sql } from "@/lib/db";
  * and attachment downloads use a lease of their own so opening one never waits for a sync.
  */
 
-export type MailJobKind = "sync" | "attachment" | "eml" | "cleanup" | "test" | "flags";
+export type MailJobKind = "sync" | "attachment" | "eml" | "cleanup" | "test" | "flags" | "delete";
 
 /** Jobs that hold the account's second lease, so they run beside a long sync. */
 export function onFetchLane(kind: MailJobKind | string): boolean {
-  return kind === "attachment" || kind === "eml" || kind === "flags";
+  return kind === "attachment" || kind === "eml" || kind === "flags" || kind === "delete";
 }
 
 export const JOB_LEASE_MS = 3 * 60 * 1000;

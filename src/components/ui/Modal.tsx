@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 /**
  * Modal is bottom-aligned on mobile and centered on desktop; outside clicks close it unless
- * keepOpen (a form whose content would be lost). Portal into body so backdrop-filter panels
+ * keepOpen (a form whose content would be lost); Escape closes it the same way. Portal into body so backdrop-filter panels
  * cannot capture fixed positioning.
  */
 export function Modal({
@@ -19,6 +19,14 @@ export function Modal({
   wide?: boolean;
   keepOpen?: boolean;
 }) {
+  useEffect(() => {
+    if (keepOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [keepOpen, onClose]);
   const dialog = (
     <div
       data-ui="overlay"

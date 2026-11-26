@@ -1023,3 +1023,14 @@ html[data-tone="light"] {
     animation: none;
   }
 }
+
+/* Mail list rows: the open message carries an accent bar; keyboard focus an inset ring, never an
+   outline the scrolling list would clip at its edges. */
+[data-ui="mail-list"] [data-message][aria-current="true"] {
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+:is(html, html[data-design]) [data-ui="mail-list"] [data-message]:focus-visible {
+  outline: none;
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}

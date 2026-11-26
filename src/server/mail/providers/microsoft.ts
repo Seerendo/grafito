@@ -102,6 +102,27 @@ export class MicrosoftConnector implements MailConnector {
     );
   }
 
+  async deleteMessage(
+    target: { providerMessageId: string },
+    options: { permanent: boolean },
+  ): Promise<void> {
+    const id = encodeURIComponent(target.providerMessageId);
+    if (options.permanent)
+      await providerSend(
+        `${API}/messages/${id}/permanentDelete`,
+        await this.token(),
+        "",
+        "application/json",
+      );
+    else
+      await providerSend(
+        `${API}/messages/${id}/move`,
+        await this.token(),
+        JSON.stringify({ destinationId: "deleteditems" }),
+        "application/json",
+      );
+  }
+
   /** A MIME message posted to /messages becomes a draft. */
   async saveDraft(raw: Buffer): Promise<void> {
     await providerSend(`${API}/messages`, await this.token(), raw.toString("base64"), "text/plain");

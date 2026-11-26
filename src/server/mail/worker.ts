@@ -223,7 +223,7 @@ export class MailWorker {
     while (this.running && this.active.size < limit) {
       const kinds = policy.paused
         ? (["attachment", "eml", "cleanup"] as const)
-        : (["sync", "attachment", "eml", "cleanup", "flags"] as const);
+        : (["sync", "attachment", "eml", "cleanup", "flags", "delete"] as const);
       const job = await claim(this.sql, {
         worker: this.id,
         providerLimit: policy.providerConcurrency,
@@ -250,6 +250,7 @@ export class MailWorker {
       else if (job.kind === "attachment") await this.attachment(job, policy, started);
       else if (job.kind === "eml") await this.eml(job, policy, started);
       else if (job.kind === "flags") await this.flags(job, started);
+      else if (job.kind === "delete") await this.remove(job, started);
       else if (job.kind === "cleanup") await this.cleanup(job, started);
       else await finish(this.sql, job, this.id, { state: "cancelled", durationMs: 0 });
       this.stats.jobs += 1;
@@ -277,7 +278,7 @@ export class MailWorker {
       error: mail.kind,
       attempt: job.attempts,
     });
-    if (job.kind === "eml" || job.kind === "flags") {
+    if (job.kind === "eml" || job.kind === "flags" || job.kind === "delete") {
       const retry =
         mail.kind === "connection" || mail.kind === "temporary" || mail.kind === "rate_limited";
       if (retry && job.attempts < 4) {
@@ -287,6 +288,10 @@ export class MailWorker {
         });
         return;
       }
+      // Not deleted on the server: the message shows again where it was.
+      if (job.kind === "delete")
+        await this.sql`update mail_message_location set deleted_at = null
+          where message_id = ${String(job.payload.messageId ?? "")} and deleted_at = ${Number(job.payload.at ?? -1)}`;
       await finish(this.sql, job, this.id, {
         state: "failed",
         error: mail.message,
@@ -610,6 +615,58 @@ export class MailWorker {
         updated_at = ${Date.now()}
       where id = ${messageId}
     `;
+    await finish(this.sql, job, this.id, { state: "done", durationMs: Date.now() - started });
+  }
+
+  /**
+   * Delete a message on the server: into its trash, or for good when it was in the trash. Its
+   * places were marked gone when the person deleted it (deleted_at = the payload's "at"); the
+   * copy in the trash arrives with the sync that follows.
+   */
+  private async remove(job: ClaimedJob, started: number): Promise<void> {
+    const messageId = String(job.payload.messageId ?? "");
+    const at = Number(job.payload.at ?? -1);
+    const rows = await this.sql<{ provider_message_id: string }>`
+      select provider_message_id from mail_message where id = ${messageId} and account_id = ${job.accountId} limit 1
+    `;
+    const locations = await this.sql<{
+      remote_id: string;
+      remote_uid: unknown;
+      special_use: string;
+    }>`
+      select f.remote_id, l.remote_uid, f.special_use from mail_message_location l
+      join mail_folder f on f.id = l.folder_id
+      where l.message_id = ${messageId} and l.deleted_at = ${at}
+    `;
+    if (!rows[0] || locations.length === 0) {
+      await finish(this.sql, job, this.id, { state: "done", durationMs: Date.now() - started });
+      return;
+    }
+    const trash = await this.sql<{ remote_id: string }>`
+      select remote_id from mail_folder where account_id = ${job.accountId} and special_use = 'trash'
+        and not removed order by path limit 1
+    `;
+    const account = await connectorAccount(this.sql, job.accountId);
+    if (!account?.secret) throw new MailError("auth", "La cuenta está desconectada.");
+    const connector = await buildConnector(this.sql, account);
+    try {
+      await connector.deleteMessage(
+        {
+          providerMessageId: rows[0].provider_message_id,
+          locations: locations
+            .filter((row) => row.remote_uid != null)
+            .map((row) => ({ folderRemoteId: row.remote_id, uid: Number(row.remote_uid) })),
+        },
+        {
+          permanent: locations.every((row) => row.special_use === "trash"),
+          trashRemoteId: trash[0]?.remote_id ?? null,
+        },
+      );
+    } finally {
+      await connector.close();
+    }
+    // The trash copy (or nothing, for good) comes with the next sync.
+    await this.sql`update mail_account set next_sync_at = 0 where id = ${job.accountId}`;
     await finish(this.sql, job, this.id, { state: "done", durationMs: Date.now() - started });
   }
 

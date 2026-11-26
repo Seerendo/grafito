@@ -127,8 +127,8 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   **Volver a autorizar** (OAuth), **Permitir acceso por MCP**, **Desconectar**
   (credentials forgotten, messages kept) and **Borrar la copia local**
   (messages and downloaded attachments deleted here, archived documents kept).
-  Read and starred go back to the mail server (below); nothing else changes
-  there except drafts and sent messages.
+  Read, starred and deleted go back to the mail server (below); nothing else
+  changes there except drafts and sent messages.
 - **History:** an account copies its whole mailbox by default (every folder:
   the server's own, Drafts, Sent…), newest first, so Grafito shows what the
   mail server shows; a shorter window can be chosen per account (Historial).
@@ -148,6 +148,13 @@ the same Message-ID are not merged. Attachment bytes live in MinIO
   webmail, a phone) shows in Grafito at the next sync and wins over an older
   mark made here. While the mail screen is open and visible, it asks for a
   sync every minute for accounts not synced in the last minute.
+- **Several at once:** Ctrl (⌘) and a click ticks a message, Shift and a click
+  ticks the run from the last one, and each row has a box. A bar above the list
+  marks the ticked ones read, unread or starred, or deletes them. **Eliminar**
+  (also in the right-click menu and the Delete key) moves messages to the
+  account's trash on the server; in the trash it asks first and deletes them
+  for good. Gmail only moves to its trash, which empties itself after 30 days.
+  If the server refuses, the messages show again.
 - **Attachments** are downloaded when opened: the worker fetches them,
   ClamAV scans them, and PDFs, images, audio, video and text open in Grafito's
   viewers. Office files open once saved into the vault (Collabora edits vault

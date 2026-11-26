@@ -39,6 +39,7 @@ import {
   getMessage,
   listFolders,
   listMessages,
+  deleteMessages,
   markMessage,
   requestAttachment,
 } from "@/server/mail/messages";
@@ -159,6 +160,15 @@ export const mailMark = createServerFn({ method: "POST" })
     const { sql, ready } = await user(context.userId);
     if (!ready) return { ok: false as const };
     return { ok: await markMessage(sql, context.userId, data.id, data) };
+  });
+
+export const mailDelete = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => z.object({ ids: z.array(id).min(1).max(500) }).parse(input))
+  .handler(async ({ context, data }) => {
+    const { sql, ready } = await user(context.userId);
+    if (!ready) return { ok: false as const, deleted: 0 };
+    return { ok: true as const, deleted: await deleteMessages(sql, context.userId, data.ids) };
   });
 
 const imap = z.object({

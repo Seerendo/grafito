@@ -1765,6 +1765,17 @@ memory for a few seconds.
 | Read in another client shows as read in Grafito after a sync                                 | ✅                          |
 | Email suite; `typecheck`, `lint`, `npm test`, `format:check`                                 | ✅ 38 of 38; 265 tests pass |
 
+## Round 62: several messages at once, the selected row, closing a meeting
+
+| Check                                                                                             | Result                      |
+| ------------------------------------------------------------------------------------------------- | --------------------------- |
+| The open message: an accent bar inside the row; keyboard focus an inset ring (no clipped outline) | ✅                          |
+| Shift and a click ticks a run, Ctrl and a click ticks one on or off; no text gets selected        | ✅                          |
+| **Eliminar** on three ticked messages: gone from the list, moved to Trash on the IMAP server      | ✅                          |
+| In Papelera: ticked by their boxes, asks «¿Eliminar definitivamente 3?», gone from the server     | ✅                          |
+| Programar reunión closes with a click outside and with Escape                                     | ✅                          |
+| Email suite; `typecheck`, `lint`, `npm test`, `format:check`                                      | ✅ 40 of 40; 265 tests pass |
+
 ## Useful commands
 
 ```bash

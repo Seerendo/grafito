@@ -32,7 +32,13 @@ import type { MailSearch } from "@/routes/mail";
 import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
-import { mailMark, mailMessages, mailRefresh, mailState } from "@/server/mailbox.functions";
+import {
+  mailDelete,
+  mailMark,
+  mailMessages,
+  mailRefresh,
+  mailState,
+} from "@/server/mailbox.functions";
 import { toast } from "@/app/toast";
 import { Toaster } from "@/components/ui/Toaster";
 import { Agenda, ScheduleMeeting } from "./Agenda";
@@ -133,6 +139,10 @@ export function MailScreen() {
   const [next, setNext] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  // Messages ticked for an action on several at once (Ctrl or Shift and a click, or the box).
+  const [checked, setChecked] = useState<Set<string>>(() => new Set());
+  const anchor = useRef<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // On a phone one pane at a time: folders, the list, or the message.
   const [pane, setPane] = useState<"nav" | "list" | "message">("list");
   // Tabs of the reading pane, like Outlook: «read» shows the message chosen in the list; others
@@ -204,6 +214,8 @@ export function MailScreen() {
   useEffect(() => {
     setRows([]);
     setNext(null);
+    setChecked(new Set());
+    setConfirmDelete(false);
     listRef.current?.scrollTo({ top: 0 });
     const timer = setTimeout(() => void loadPage(null), query ? 250 : 0);
     return () => clearTimeout(timer);
@@ -311,6 +323,77 @@ export function MailScreen() {
     if (change.hidden) toast("Correo ocultado en Grafito.");
     const answer = await mailMark({ data: { id, ...change } }).catch(() => null);
     if (!answer?.ok) void loadPage(null);
+  };
+  /** A click on a row: open it; with Ctrl or ⌘ tick it; with Shift tick the run from the last. */
+  const pick = (event: React.MouseEvent | React.KeyboardEvent, id: string) => {
+    if (event.shiftKey && anchor.current) {
+      const from = rows.findIndex((item) => item.id === anchor.current);
+      const to = rows.findIndex((item) => item.id === id);
+      if (from >= 0 && to >= 0) {
+        const [low, high] = from < to ? [from, to] : [to, from];
+        setChecked(new Set(rows.slice(low, high + 1).map((item) => item.id)));
+        return;
+      }
+    }
+    if (event.ctrlKey || event.metaKey) {
+      toggle(id);
+      return;
+    }
+    anchor.current = id;
+    if (checked.size) setChecked(new Set());
+    open(id);
+  };
+  const toggle = (id: string) => {
+    anchor.current = id;
+    setConfirmDelete(false);
+    setChecked((current) => {
+      const next = new Set(current);
+      // The message being read joins the first tick, as in Outlook.
+      if (next.size === 0 && selected && selected !== id && !current.has(selected))
+        next.add(selected);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const inTrash =
+    (view.kind === "role" && view.role === "trash") ||
+    (view.kind === "folder" &&
+      state?.folders.find((item) => item.id === view.folderId)?.specialUse === "trash");
+  /** Delete messages on their servers: into the trash, or for good from the trash. */
+  const remove = async (ids: string[]) => {
+    if (!ids.length) return;
+    const gone = new Set(ids);
+    setRows((current) => current.filter((item) => !gone.has(item.id)));
+    setChecked(new Set());
+    setConfirmDelete(false);
+    if (selected && gone.has(selected)) setSelected(null);
+    setTabs((current) =>
+      current.filter((item) => item.kind !== "message" || !gone.has(item.messageId)),
+    );
+    const answer = await mailDelete({ data: { ids } }).catch(() => null);
+    if (!answer?.ok) {
+      toast("No se pudo eliminar.");
+      void loadPage(null);
+      return;
+    }
+    toast(
+      t(
+        inTrash
+          ? answer.deleted === 1
+            ? "Mensaje eliminado definitivamente."
+            : "{0} mensajes eliminados definitivamente."
+          : answer.deleted === 1
+            ? "Mensaje movido a la papelera."
+            : "{0} mensajes movidos a la papelera.",
+        { 0: answer.deleted },
+      ),
+    );
+  };
+  /** Mark every ticked message at once. */
+  const markChecked = (change: { seen?: boolean; flagged?: boolean }) => {
+    for (const id of checked) void mark(id, change);
+    setChecked(new Set());
   };
   const accountName = (id: string) => accounts.find((item) => item.id === id)?.name ?? "";
 
@@ -649,11 +732,78 @@ export function MailScreen() {
               </div>
             </details>
           </div>
+          {checked.size ? (
+            <div
+              data-ui="mail-bulk"
+              className="flex flex-wrap items-center gap-1 border-b border-line bg-elevated px-2 py-1.5 text-sm"
+            >
+              <input
+                type="checkbox"
+                aria-label={t("Seleccionar todos")}
+                checked={checked.size === rows.length}
+                onChange={(event) =>
+                  setChecked(
+                    event.target.checked ? new Set(rows.map((item) => item.id)) : new Set(),
+                  )
+                }
+                className="mx-1 size-4 accent-[var(--color-accent)]"
+              />
+              <span className="mr-auto text-muted">
+                {t("{0} seleccionados", { 0: checked.size })}
+              </span>
+              {confirmDelete ? (
+                <>
+                  <span className="text-danger">
+                    {t("¿Eliminar definitivamente {0}?", { 0: checked.size })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void remove([...checked])}
+                    className="h-8 rounded-md bg-danger px-3 text-white"
+                  >
+                    {t("Eliminar")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="h-8 rounded-md border border-line px-3 hover:bg-inset"
+                  >
+                    {t("Cancelar")}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <BulkButton label="Marcar como leído" onClick={() => markChecked({ seen: true })}>
+                    <MailOpen className="size-4" />
+                  </BulkButton>
+                  <BulkButton
+                    label="Marcar como no leído"
+                    onClick={() => markChecked({ seen: false })}
+                  >
+                    <Mail className="size-4" />
+                  </BulkButton>
+                  <BulkButton label="Fichar" onClick={() => markChecked({ flagged: true })}>
+                    <Flag className="size-4" />
+                  </BulkButton>
+                  <BulkButton
+                    label="Eliminar"
+                    danger
+                    onClick={() => (inTrash ? setConfirmDelete(true) : void remove([...checked]))}
+                  >
+                    <Trash2 className="size-4" />
+                  </BulkButton>
+                  <BulkButton label="Quitar la selección" onClick={() => setChecked(new Set())}>
+                    <X className="size-4" />
+                  </BulkButton>
+                </>
+              )}
+            </div>
+          ) : null}
           <div
             ref={listRef}
             data-ui="mail-list"
             onScroll={(event) => setScroll(event.currentTarget.scrollTop)}
-            className="relative min-h-0 flex-1 overflow-y-auto"
+            className="relative min-h-0 flex-1 overflow-y-auto select-none"
           >
             {rows.length === 0 ? (
               <p className="p-6 text-center text-sm text-faint">
@@ -672,9 +822,24 @@ export function MailScreen() {
                     tabIndex={0}
                     data-message={row.id}
                     data-flagged={row.flagged ? "" : undefined}
-                    onClick={() => open(row.id)}
+                    data-checked={checked.has(row.id) ? "" : undefined}
+                    aria-current={selected === row.id ? "true" : undefined}
+                    onMouseDown={(event) => {
+                      // Shift and a click ticks a run; it must not select the rows' text.
+                      if (event.shiftKey) event.preventDefault();
+                    }}
+                    onClick={(event) => pick(event, row.id)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") open(row.id);
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === "Enter") pick(event, row.id);
+                      else if (event.key === " ") {
+                        event.preventDefault();
+                        toggle(row.id);
+                      } else if (event.key === "Delete")
+                        void (inTrash
+                          ? (setChecked(new Set(checked.size ? checked : [row.id])),
+                            setConfirmDelete(true))
+                          : remove(checked.size ? [...checked] : [row.id]));
                     }}
                     onContextMenu={(event) => {
                       event.preventDefault();
@@ -687,61 +852,76 @@ export function MailScreen() {
                       left: 0,
                       right: 0,
                     }}
-                    className={`group flex cursor-pointer flex-col gap-0.5 border-b border-line px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent ${selected === row.id ? "bg-elevated" : "hover:bg-elevated"}`}
+                    className={`group flex cursor-pointer gap-2 border-b border-line py-2 pr-3 pl-2 text-left ${checked.has(row.id) ? "bg-accent/10" : selected === row.id ? "bg-elevated" : "hover:bg-elevated"}`}
                   >
-                    <span className="flex items-center gap-2 text-sm">
-                      {!row.seen ? (
+                    <span className="flex w-5 shrink-0 justify-center pt-0.5">
+                      <input
+                        type="checkbox"
+                        data-ui="mail-check"
+                        aria-label={t("Seleccionar {0}", {
+                          0: row.subject || t("(sin asunto)"),
+                        })}
+                        checked={checked.has(row.id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={() => toggle(row.id)}
+                        className={`size-4 cursor-pointer accent-[var(--color-accent)] ${checked.size ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
+                      />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="flex items-center gap-2 text-sm">
+                        {!row.seen ? (
+                          <span
+                            aria-label={t("Sin leer")}
+                            className="size-2 shrink-0 rounded-full bg-accent"
+                          />
+                        ) : null}
                         <span
-                          aria-label={t("Sin leer")}
-                          className="size-2 shrink-0 rounded-full bg-accent"
-                        />
-                      ) : null}
-                      <span
-                        className={`min-w-0 flex-1 truncate ${row.seen ? "text-muted" : "font-semibold"}`}
-                      >
-                        {row.from.name || row.from.address || t("(sin remitente)")}
-                      </span>
-                      {/* Fixed slots on the right, so every row lines up whatever the sender. */}
-                      <span
-                        data-ui="mail-row-meta"
-                        className="ml-auto flex shrink-0 items-center gap-1"
-                      >
-                        <span className="grid size-4 place-items-center">
-                          {row.hasAttachments ? (
-                            <Paperclip
-                              aria-label={t("Con adjuntos")}
-                              className="size-3.5 text-faint"
-                            />
-                          ) : null}
-                        </span>
-                        <button
-                          type="button"
-                          data-ui="mail-flag"
-                          aria-label={row.flagged ? t("Quitar ficha") : t("Fichar")}
-                          title={row.flagged ? t("Quitar ficha") : t("Fichar")}
-                          aria-pressed={row.flagged}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void mark(row.id, { flagged: !row.flagged });
-                          }}
-                          className={`grid size-6 shrink-0 place-items-center rounded hover:bg-inset ${row.flagged ? "text-danger" : "text-faint opacity-60 group-hover:opacity-100"}`}
+                          className={`min-w-0 flex-1 truncate ${row.seen ? "text-muted" : "font-semibold"}`}
                         >
-                          <Flag className={`size-3.5 ${row.flagged ? "fill-current" : ""}`} />
-                        </button>
-                        <time className="w-[7.5rem] shrink-0 text-right text-xs text-faint tabular-nums">
-                          {new Date(row.receivedAt).toLocaleString(intl(), {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
-                        </time>
+                          {row.from.name || row.from.address || t("(sin remitente)")}
+                        </span>
+                        {/* Fixed slots on the right, so every row lines up whatever the sender. */}
+                        <span
+                          data-ui="mail-row-meta"
+                          className="ml-auto flex shrink-0 items-center gap-1"
+                        >
+                          <span className="grid size-4 place-items-center">
+                            {row.hasAttachments ? (
+                              <Paperclip
+                                aria-label={t("Con adjuntos")}
+                                className="size-3.5 text-faint"
+                              />
+                            ) : null}
+                          </span>
+                          <button
+                            type="button"
+                            data-ui="mail-flag"
+                            aria-label={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                            title={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                            aria-pressed={row.flagged}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void mark(row.id, { flagged: !row.flagged });
+                            }}
+                            className={`grid size-6 shrink-0 place-items-center rounded hover:bg-inset ${row.flagged ? "text-danger" : "text-faint opacity-60 group-hover:opacity-100"}`}
+                          >
+                            <Flag className={`size-3.5 ${row.flagged ? "fill-current" : ""}`} />
+                          </button>
+                          <time className="w-[7.5rem] shrink-0 text-right text-xs text-faint tabular-nums">
+                            {new Date(row.receivedAt).toLocaleString(intl(), {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </time>
+                        </span>
                       </span>
-                    </span>
-                    <span className={`truncate text-sm ${row.seen ? "text-muted" : "text-fg"}`}>
-                      {row.subject || t("(sin asunto)")}
-                    </span>
-                    <span className="truncate text-xs text-faint">
-                      {multi ? `${accountName(row.accountId)} · ` : ""}
-                      {row.snippet}
+                      <span className={`truncate text-sm ${row.seen ? "text-muted" : "text-fg"}`}>
+                        {row.subject || t("(sin asunto)")}
+                      </span>
+                      <span className="truncate text-xs text-faint">
+                        {multi ? `${accountName(row.accountId)} · ` : ""}
+                        {row.snippet}
+                      </span>
                     </span>
                   </div>
                 ))}
@@ -882,6 +1062,13 @@ export function MailScreen() {
           }}
           onOpenTab={() => openInTab(menu.id)}
           onMark={(change) => void mark(menu.id, change)}
+          onDelete={() => {
+            const ids = checked.has(menu.id) ? [...checked] : [menu.id];
+            if (inTrash) {
+              setChecked(new Set(ids));
+              setConfirmDelete(true);
+            } else void remove(ids);
+          }}
         />
       ) : null}
       {meeting ? (
@@ -920,6 +1107,7 @@ function RowMenu({
   onOpen,
   onOpenTab,
   onMark,
+  onDelete,
 }: {
   x: number;
   y: number;
@@ -928,6 +1116,7 @@ function RowMenu({
   onOpen: (intent: Intent | null) => void;
   onOpenTab: () => void;
   onMark: (change: { seen?: boolean; flagged?: boolean; hidden?: boolean }) => void;
+  onDelete: () => void;
 }) {
   useEffect(() => {
     const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
@@ -955,7 +1144,7 @@ function RowMenu({
     </button>
   );
   const width = 240;
-  const height = 380;
+  const height = 416;
   return (
     <>
       <div
@@ -1010,8 +1199,32 @@ function RowMenu({
         {item("Ocultar aquí", <EyeOff className="size-4 text-faint" />, () =>
           onMark({ hidden: true }),
         )}
+        {item("Eliminar", <Trash2 className="size-4 text-danger" />, onDelete)}
       </div>
     </>
+  );
+}
+
+function BulkButton({
+  label,
+  danger = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={t(label)}
+      onClick={onClick}
+      className={`grid size-8 place-items-center rounded-md hover:bg-inset ${danger ? "text-danger" : "text-muted hover:text-fg"}`}
+    >
+      {children}
+    </button>
   );
 }
 

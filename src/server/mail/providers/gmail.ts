@@ -114,6 +114,16 @@ export class GmailConnector implements MailConnector {
     );
   }
 
+  /** Into Gmail's trash, which empties itself after 30 days (for good needs a wider scope). */
+  async deleteMessage(target: { providerMessageId: string }): Promise<void> {
+    await providerSend(
+      `${API}/messages/${encodeURIComponent(target.providerMessageId)}/trash`,
+      await this.token(),
+      "",
+      "application/json",
+    );
+  }
+
   async saveDraft(raw: Buffer): Promise<void> {
     await providerSend(
       `${API}/drafts`,

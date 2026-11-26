@@ -281,6 +281,27 @@ export class ImapConnector implements MailConnector {
     }
   }
 
+  async deleteMessage(
+    target: { providerMessageId: string; locations: { folderRemoteId: string; uid: number }[] },
+    options: { permanent: boolean; trashRemoteId: string | null },
+  ): Promise<void> {
+    const trash = options.trashRemoteId;
+    if (!options.permanent && !trash)
+      throw new MailError("permanent", "La cuenta no tiene papelera en el servidor.");
+    const client = await this.open();
+    try {
+      for (const location of target.locations) {
+        await client.mailboxOpen(location.folderRemoteId);
+        const uid = String(location.uid);
+        if (options.permanent || !trash || location.folderRemoteId === trash)
+          await client.messageDelete(uid, { uid: true });
+        else await client.messageMove(uid, trash, { uid: true });
+      }
+    } catch (error) {
+      throw classify(error);
+    }
+  }
+
   async saveDraft(raw: Buffer): Promise<void> {
     const client = await this.open();
     const drafts = (await this.folders(client)).find((item) => item.specialUse === "drafts");

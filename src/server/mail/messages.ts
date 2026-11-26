@@ -332,6 +332,36 @@ export async function getMessage(
 }
 
 /** Local marks: read, flagged, hidden. They never change the mail server. */
+/**
+ * Delete messages: they leave the list at once and a job deletes each on its server (into the
+ * trash, or for good from the trash). Returns how many were the person's.
+ */
+export async function deleteMessages(sql: Sql, userId: string, ids: string[]): Promise<number> {
+  const at = Date.now();
+  const rows = await sql<{ message_id: string; account_id: string }>`
+    update mail_message_location l set deleted_at = ${at}
+    from mail_message m
+    where m.id = l.message_id and m.user_id = ${userId} and l.deleted_at is null
+      and m.id = any(string_to_array(${ids.join(",")}, ','))
+    returning l.message_id, m.account_id
+  `;
+  const { enqueue } = await import("./queue");
+  const done = new Set<string>();
+  for (const row of rows) {
+    if (done.has(row.message_id)) continue;
+    done.add(row.message_id);
+    await enqueue(sql, {
+      userId,
+      accountId: row.account_id,
+      kind: "delete",
+      payload: { messageId: row.message_id, at },
+      dedupe: `delete:${row.message_id}:${at}`,
+      priority: 15,
+    });
+  }
+  return done.size;
+}
+
 export async function markMessage(
   sql: Sql,
   userId: string,

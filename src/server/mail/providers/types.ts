@@ -167,6 +167,14 @@ export interface MailConnector {
     target: { providerMessageId: string; locations: { folderRemoteId: string; uid: number }[] },
     changes: { seen?: boolean; flagged?: boolean },
   ): Promise<void>;
+  /**
+   * Delete a message on the server: into the account's trash, or for good when it is already
+   * there (permanent). IMAP moves it to trashRemoteId; Gmail and Graph use their own trash.
+   */
+  deleteMessage(
+    target: { providerMessageId: string; locations: { folderRemoteId: string; uid: number }[] },
+    options: { permanent: boolean; trashRemoteId: string | null },
+  ): Promise<void>;
   /** Keep a message being written in the account's Drafts (RFC 5322 source). */
   saveDraft(raw: Buffer): Promise<void>;
   /** Sign in and check the account can be read. */

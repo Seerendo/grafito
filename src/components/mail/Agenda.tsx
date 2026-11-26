@@ -890,7 +890,6 @@ function EventDialog({
     <Modal
       title={event ? t("Editar evento") : prefill ? t("Programar reunión") : t("Nuevo evento")}
       onClose={onClose}
-      keepOpen
     >
       <form
         data-ui="agenda-form"
