@@ -277,7 +277,7 @@ describe("email module", () => {
     const entry = page.locator('[data-ui="mail-entry"]');
     await entry.getByText("Correo electrónico").waitFor();
     await entry.click();
-    await page.waitForURL(/\/correo$/);
+    await page.waitForURL(/\/mail\/?(\?|$)/);
     await page.locator('[data-ui="mail"][data-empty]').waitFor();
     assert.equal(await page.locator('[data-ui="mail-add"]').count(), 0);
     assert.equal(await page.locator('[data-ui="mail-list"]').count(), 0);
@@ -286,7 +286,7 @@ describe("email module", () => {
       (await query(`select count(*)::int n from app_permission where key = 'mailbox.manage'`))[0].n,
       0,
     );
-    await page.goto(`${base}/cuenta`);
+    await page.goto(`${base}/account`);
     await page.getByRole("button", { name: "Cuentas de correo" }).first().click();
     await page.locator('[data-ui="mail-add"]').waitFor();
     // Turned off in Extensions: the entry goes.
@@ -338,7 +338,7 @@ describe("email module", () => {
   });
 
   test("T03, T38: a wrong password and an untrusted private server are refused", async () => {
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const form = page.locator('[data-ui="mail-add"]');
     await form.waitFor();
     await form.getByLabel("Dirección de correo").fill("ana@prueba.test");
@@ -383,7 +383,7 @@ describe("email module", () => {
         )[0].n >= 5,
       "messages synced",
     );
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     await page.locator('[data-ui="mail-list"] [data-message]').first().waitFor();
     const subjects = await page.locator('[data-ui="mail-list"] [data-message]').allInnerTexts();
     assert.ok(subjects.some((text) => text.includes("Informe con adjuntos")));
@@ -404,7 +404,7 @@ describe("email module", () => {
   });
 
   async function openMessage(subject) {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     const row = page
       .locator('[data-ui="mail-list"] [data-message]')
       .filter({ hasText: subject })
@@ -528,7 +528,10 @@ describe("email module", () => {
     const dialog = page.locator('[data-ui="mail-archive"]');
     await dialog.getByLabel("Dónde").selectOption({ label: "Correo archivado" });
     await dialog.getByRole("button", { name: "Guardar" }).click();
-    await view.getByText(/Guardado en Grafito/).waitFor();
+    await page
+      .locator('[data-ui="toast"]')
+      .getByText(/Guardado en Grafito/)
+      .waitFor();
     const file = await query(
       `select portfolio_id from vault_doc where user_id = $1 and file_name = 'notas.txt'`,
       [ana.id],
@@ -558,7 +561,10 @@ describe("email module", () => {
     const dialog = page.locator('[data-ui="mail-archive"]');
     await dialog.getByLabel("Mensaje original (.eml)").check();
     await dialog.getByRole("button", { name: "Guardar" }).click();
-    await view.getByText(/El \.eml se está guardando/).waitFor();
+    await page
+      .locator('[data-ui="toast"]')
+      .getByText(/El \.eml se está guardando/)
+      .waitFor();
     const doc = await until(
       async () =>
         (
@@ -580,7 +586,7 @@ describe("email module", () => {
   });
 
   test("T11, T12, T24: new mail arrives incrementally, once, while the list is open", async () => {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     const before = (
       await query(`select count(*)::int n from mail_message where account_id = $1`, [accountId])
     )[0].n;
@@ -657,7 +663,7 @@ describe("email module", () => {
       )
     )[0].id;
     const { context, page: other } = await signIn(browser, beto);
-    await other.goto(`${base}/correo`);
+    await other.goto(`${base}/mail`);
     const status = await other.evaluate(
       async (id) => (await fetch(`/api/mail/attachments/${id}?t=forjado`)).status,
       attachment,
@@ -706,7 +712,7 @@ describe("email module", () => {
   });
 
   test("T05, T31, T06: disconnecting forgets credentials and keeps documents; new credentials recover", async () => {
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const card = page.locator('[data-ui="mail-account"]');
     await card.getByRole("button", { name: "Desconectar" }).click();
     await card.getByRole("button", { name: "Sí" }).click();
@@ -744,7 +750,7 @@ describe("email module", () => {
   });
 
   test("T51: SMTP for sending is set per account, with the same server checks", async () => {
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const form = page.locator('[data-ui="mail-smtp"]');
     await form.getByLabel("Servidor SMTP (envío)").fill("smtp-test");
     await form.getByLabel("Puerto SMTP").selectOption("587");
@@ -758,7 +764,7 @@ describe("email module", () => {
   });
 
   async function compose() {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     await page.getByRole("button", { name: "Redactar" }).click();
     return page.locator('[data-ui="mail-compose"]');
   }
@@ -860,7 +866,15 @@ describe("email module", () => {
     )[0].internet_message_id;
     await view.getByRole("button", { name: "Responder", exact: true }).click();
     const form = page.locator('[data-ui="mail-compose"]');
-    assert.equal(await form.getByLabel("Para").inputValue(), "ana.r@otro.test");
+    assert.equal(
+      await form.locator('[data-recipients="Para"]').getAttribute("data-value"),
+      "Ana Remitente <ana.r@otro.test>, ",
+    );
+    // The chip shows the name; the address only on a double click.
+    const chip = form.locator('[data-recipients="Para"] [data-ui="recipient"]').first();
+    assert.equal((await chip.innerText()).trim(), "Ana Remitente");
+    await chip.dblclick();
+    await chip.locator('[data-ui="recipient-address"]').getByText("ana.r@otro.test").waitFor();
     assert.equal(await form.getByLabel("Asunto").inputValue(), "Re: Informe con adjuntos");
     assert.match(await form.getByLabel("Mensaje").inputValue(), /> Te adjunto el informe/);
     await form.getByRole("button", { name: "CC y CCO" }).click();
@@ -920,7 +934,7 @@ describe("email module", () => {
     assert.ok(hidden.data.id);
   });
   test("T56: the account's signature goes below new messages and above quoted replies", async () => {
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const card = page.locator('[data-ui="mail-signature"]');
     await card.getByLabel("Firma").fill("Ana Prueba\nUnidad de pruebas");
     await card.getByRole("button", { name: "Guardar firma" }).click();
@@ -956,7 +970,7 @@ describe("email module", () => {
   });
 
   test("T57: recipients are found by name in contacts and in the Zimbra directory", async () => {
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const web = page.locator('[data-ui="mail-web"]');
     await web.locator("summary").click();
     await web.getByLabel("Servidor web").fill("zimbra-test");
@@ -974,14 +988,21 @@ describe("email module", () => {
     await list.getByText("Roddy Andrade").waitFor();
     assert.match(await list.innerText(), /Directorio/);
     await to.press("Enter");
-    assert.equal(await to.inputValue(), "Roddy Andrade <roddy.andrade@prueba.test>, ");
+    const field = form.locator('[data-recipients="Para"]');
+    assert.equal(
+      await field.getAttribute("data-value"),
+      "Roddy Andrade <roddy.andrade@prueba.test>, ",
+    );
+    assert.equal(await to.inputValue(), "");
+    await field.locator('[data-ui="recipient"]').getByText("Roddy Andrade").waitFor();
+    assert.equal(await field.locator('[data-ui="recipient-address"]').count(), 0, "address hidden");
     // Then someone already seen in mail, by part of the address.
     await to.pressSequentially("ana.r");
     await list.getByText("ana.r@otro.test").waitFor();
     assert.match(await list.innerText(), /Contactos/);
     await list.getByText("ana.r@otro.test").click();
     assert.match(
-      await to.inputValue(),
+      await field.getAttribute("data-value"),
       /^Roddy Andrade <roddy\.andrade@prueba\.test>, .*ana\.r@otro\.test>?, $/,
     );
     assert.equal(
@@ -990,6 +1011,7 @@ describe("email module", () => {
     );
     // A person not in the directory or contacts: nothing suggested.
     await to.fill("zzzz");
+    assert.equal(await field.locator('[data-ui="recipient"]').count(), 2, "chips kept");
     await page.waitForTimeout(700);
     assert.equal(await list.count(), 0);
   });
@@ -1074,7 +1096,7 @@ describe("email module", () => {
 
   test("T59: the Agenda reads the CalDAV calendars, expands repetitions, and creates, edits and deletes events", async () => {
     await davSeed();
-    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.goto(`${base}/account?section=mailboxes`);
     const web = page.locator('[data-ui="mail-web"]');
     await web.locator("summary").click();
     await web.getByLabel("Dirección CalDAV").fill("https://caldav-test:8443/.well-known/caldav");
@@ -1085,7 +1107,7 @@ describe("email module", () => {
           .caldav_url !== "",
       "CalDAV address saved",
     );
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     await page.locator('[data-ui="mail-agenda-entry"]').click();
     const agenda = page.locator('[data-ui="mail-agenda"]');
     await agenda.locator("label", { hasText: "Trabajo" }).waitFor();
@@ -1180,7 +1202,7 @@ describe("email module", () => {
   const S3 = (process.env.E2E_S3 ?? "http://127.0.0.1:19000/grafito").replace(/\/+$/, "");
 
   test("T60: a red flag on every message, «Fichados», and the right-click menu with tabs", async () => {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     const row = page
       .locator('[data-ui="mail-list"] [data-message]')
       .filter({ hasText: "HTML peligroso con imagen embebida" })
@@ -1204,7 +1226,7 @@ describe("email module", () => {
       .filter({ hasText: "HTML peligroso con imagen embebida" })
       .waitFor();
     // Right click: open in a new tab, open, mark unread, reply.
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     const menu = page.locator('[data-ui="mail-row-menu"]');
     const rows = page.locator('[data-ui="mail-list"] [data-message]');
     await rows.filter({ hasText: "Informe con adjuntos" }).first().click({ button: "right" });
@@ -1249,7 +1271,7 @@ describe("email module", () => {
   });
 
   test("T61: closing a message being written asks; «Sí» keeps it in Drafts on the server, «No» throws it away", async () => {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     // Without changes it closes without asking.
     await page.getByRole("button", { name: "Redactar" }).click();
     let tab = page.locator('[data-ui="mail-tab"][data-compose]').last();
@@ -1331,7 +1353,10 @@ describe("email module", () => {
     const form = page.locator('[data-ui="agenda-form"]');
     await form.waitFor();
     assert.equal(await form.getByLabel("Título").inputValue(), "Informe con adjuntos");
-    assert.match(await form.getByLabel("Invitados").inputValue(), /ana\.r@otro\.test/);
+    assert.match(
+      await form.locator('[data-recipients="Invitados"]').getAttribute("data-value"),
+      /ana\.r@otro\.test/,
+    );
     await form.getByLabel("Hora de inicio").fill("16:00");
     await form.getByLabel("Hora de fin").fill("16:30");
     await form.getByRole("button", { name: "Guardar" }).click();
@@ -1365,7 +1390,7 @@ describe("email module", () => {
       (await davEvents()).some((item) => item.includes(uid) && /PARTSTAT=ACCEPTED/.test(item)),
     );
     // In the Agenda: accepted, then declined from there.
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     await page.locator('[data-ui="mail-agenda-entry"]').click();
     const agenda = page.locator('[data-ui="mail-agenda"]');
     await agenda.getByRole("button", { name: "Lista" }).click();
@@ -1390,7 +1415,7 @@ describe("email module", () => {
   });
 
   test("T64: the gear opens a menu; Preferencias keeps the signature", async () => {
-    await page.goto(`${base}/correo`);
+    await page.goto(`${base}/mail`);
     await page.getByRole("button", { name: "Opciones del correo" }).click();
     const menu = page.locator('[data-ui="mail-settings-menu"]');
     await menu.getByRole("menuitem", { name: "Cuentas de correo" }).waitFor();
@@ -1404,7 +1429,7 @@ describe("email module", () => {
           .signature === "Ana desde Preferencias",
       "signature from Preferencias",
     );
-    assert.match(page.url(), /\/correo$/, "stays in the mail screen");
+    assert.match(page.url(), /\/mail\/?(\?|$)/, "stays in the mail screen");
   });
 
   test("T65: MCP: new mail is detected, drafts are kept, recipients and the Agenda", async () => {
@@ -1498,7 +1523,7 @@ describe("email module", () => {
           /* not this frame */
         }
       }, token);
-      await own.goto(`${origin}/correo`);
+      await own.goto(`${origin}/mail`);
       const rows = own.locator('[data-ui="mail-list"] [data-message]');
       await rows.first().waitFor();
       // Redactar.
@@ -1544,5 +1569,60 @@ describe("email module", () => {
     } finally {
       await insecure.close();
     }
+  });
+  test("English routes: old ones redirect; the mailbox and the Agenda survive a reload", async () => {
+    await page.goto(`${base}/correo`);
+    await page.waitForURL(/\/mail\/?(\?|$)/);
+    await page.goto(`${base}/cuenta?seccion=buzones`);
+    await page.waitForURL(/\/account\?section=mailboxes$/);
+    await page.locator('[data-ui="mail-accounts"]').waitFor();
+    // A mailbox: in the address, kept on reload.
+    await page.goto(`${base}/mail`);
+    await page.getByRole("button", { name: "Enviados" }).click();
+    await page.waitForURL(/[?&]box=sent/);
+    await page.reload();
+    assert.equal(
+      await page.getByRole("button", { name: "Enviados" }).getAttribute("aria-current"),
+      "page",
+    );
+    // The Agenda and its view.
+    await page.locator('[data-ui="mail-agenda-entry"]').click();
+    await page.waitForURL(/\/mail\/calendar/);
+    await page.locator('[data-ui="mail-agenda"]').getByRole("button", { name: "Semana" }).click();
+    await page.waitForURL(/view=week/);
+    await page.reload();
+    await page.locator('[data-ui="mail-agenda"] [data-mode="week"]').waitFor();
+  });
+
+  test("CC and CCO fold again; the options menu stays inside the window; rows line up; notices fade", async () => {
+    await page.goto(`${base}/mail`);
+    // Rows: the flag, clip and date always end at the same place.
+    await page.locator('[data-ui="mail-list"] [data-message]').first().waitFor();
+    const rights = await page
+      .locator('[data-ui="mail-row-meta"]')
+      .evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().right)));
+    assert.ok(rights.length > 2);
+    assert.equal(new Set(rights).size, 1, `aligned: ${rights.join(",")}`);
+    // The gear's menu, clear of the window's edges.
+    await page.getByRole("button", { name: "Opciones del correo" }).click();
+    const box = await page.locator('[data-ui="mail-settings-menu"]').boundingBox();
+    const width = page.viewportSize().width;
+    assert.ok(box.x >= 8 && box.x + box.width <= width - 8, JSON.stringify(box));
+    await page.keyboard.press("Escape");
+    await page.mouse.click(width - 20, 400);
+    // CC and CCO open and close.
+    const form = await compose();
+    const copies = form.getByRole("button", { name: "CC y CCO" });
+    await copies.click();
+    await form.getByLabel("CC", { exact: true }).waitFor();
+    await copies.click();
+    await form.getByLabel("CC", { exact: true }).waitFor({ state: "detached" });
+    // A notice floats and fades.
+    await form.getByLabel("Para").fill("destino@otro.test");
+    await form.getByLabel("Asunto").fill(`Aviso ${stamp}`);
+    await form.getByRole("button", { name: "Enviar", exact: true }).click();
+    const notice = page.locator('[data-ui="toast"]').filter({ hasText: "Mensaje enviado." });
+    await notice.waitFor();
+    await notice.waitFor({ state: "detached", timeout: 8000 });
   });
 });

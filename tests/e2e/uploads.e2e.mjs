@@ -314,7 +314,7 @@ for (const engine of engines) {
       // Elsewhere in the app the job is still there and resumes.
       await page.getByRole("button", { name: "Cuenta", exact: true }).click();
       await page.getByRole("menuitem", { name: "Cuenta" }).click();
-      await page.waitForURL(/\/cuenta/);
+      await page.waitForURL(/\/account/);
       await page.locator('article[data-job="paused"]').waitFor();
       await page
         .locator('[data-ui="upload-queue"]')

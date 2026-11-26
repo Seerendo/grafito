@@ -19,6 +19,7 @@ import { mailFrameDocument, sanitizeMailHtml } from "@/app/mail/sanitize";
 import { useVault } from "@/app/vault/store";
 import { riskyAttachment } from "@/domain/mail/message";
 import { Modal } from "@/components/ui/Modal";
+import { toast } from "@/app/toast";
 import type { Draft } from "./Compose";
 import { InvitationCard } from "./Invitation";
 import { PdfView } from "@/components/vault/PdfView";
@@ -44,6 +45,16 @@ function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** People as «Name <address>, » so they show as chips with their names. */
+function chipsOf(list: { name: string; address: string }[]): string {
+  return list
+    .map((item) =>
+      item.name ? `${item.name.replace(/[<>,;"]/g, "")} <${item.address}>` : item.address,
+    )
+    .map((item) => `${item}, `)
+    .join("");
 }
 
 function people(list: { name: string; address: string }[]): string {
@@ -102,7 +113,6 @@ export function MessageView({
   const [states, setStates] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ attachment: Attachment; link: Link } | null>(null);
   const [archiving, setArchiving] = useState<{ attachments: string[] } | null>(null);
-  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -211,8 +221,8 @@ export function MessageView({
       : [];
     onCompose({
       accountId: message.account.id,
-      to: first.map((item) => item.address).join(", "),
-      cc: others.map((item) => item.address).join(", "),
+      to: chipsOf(first),
+      cc: chipsOf(others),
       subject: prefixed("Re"),
       text: `\n\n${t("El {0}, {1} escribió:", { 0: when, 1: people([message.from]) })}\n${quoted}`,
       replyTo: message.id,
@@ -357,7 +367,6 @@ export function MessageView({
             {t("Archivar en Grafito")}
           </button>
         </div>
-        {notice ? <p className="text-sm text-accent">{notice}</p> : null}
         {message.archived.length ? (
           <p className="text-xs text-muted">
             {t("Archivado en Grafito: {0}", { 0: message.archived.length })}
@@ -489,7 +498,7 @@ export function MessageView({
           onClose={() => setArchiving(null)}
           onDone={(text) => {
             setArchiving(null);
-            setNotice(text);
+            toast(text);
           }}
         />
       ) : null}

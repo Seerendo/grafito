@@ -1,5 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AccessNoteScreen } from "@/components/access/AccessNote";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** One-time access-email note at /acceso#<token>, bypassing AccessGate. */
-export const Route = createFileRoute("/acceso")({ component: AccessNoteScreen });
+/** Old address of the one-time access note: now /access (the #token travels with it). */
+export const Route = createFileRoute("/acceso")({
+  beforeLoad: ({ location }) => {
+    throw redirect({ to: "/access", hash: location.hash, replace: true });
+  },
+});

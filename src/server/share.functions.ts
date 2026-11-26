@@ -111,7 +111,7 @@ export const setShare = createServerFn({ method: "POST" })
             actorId: context.userId,
             actorName: await personName(sql, context.userId),
             title: data.title,
-            path: `/compartidos/${written.shareId}`,
+            path: `/shared/${written.shareId}`,
             userIds: written.addedUserIds,
             orgIds: written.addedOrgIds,
             kind: "share",

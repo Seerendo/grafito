@@ -324,10 +324,12 @@ export async function listEvents(
   userId: string,
   from: number,
   to: number,
-): Promise<{ events: EventView[]; problems: string[] }> {
+): Promise<{ events: EventView[]; problems: string[]; failed: string[] }> {
   const calendars = (await listCalendars(sql, userId)).filter((item) => item.shown);
   const events: EventView[] = [];
   const problems: string[] = [];
+  /** Calendars that could not be read this time (the screen keeps what it had of them). */
+  const failed: string[] = [];
   const accounts = new Map<string, Account>();
   await Promise.all(
     calendars.map(async (calendar) => {
@@ -363,6 +365,7 @@ export async function listEvents(
           );
         }
       } catch (error) {
+        failed.push(calendar.id);
         problems.push(
           `${calendar.name}: ${error instanceof MailError ? error.message : "no se pudo leer"}`,
         );
@@ -370,7 +373,7 @@ export async function listEvents(
     }),
   );
   events.sort((a, b) => a.start - b.start);
-  return { events: events.slice(0, 2000), problems };
+  return { events: events.slice(0, 2000), problems, failed };
 }
 
 function expand(

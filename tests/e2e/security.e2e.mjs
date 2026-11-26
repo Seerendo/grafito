@@ -386,7 +386,7 @@ describe("security fixes", () => {
       await sign(),
     );
     const page = await context.newPage();
-    await page.goto(`${base}/cuenta`);
+    await page.goto(`${base}/account`);
     await page.getByRole("button", { name: "Contraseña", exact: true }).first().click();
     await page.getByLabel("Contraseña actual").fill(PASSWORD);
     await page.getByLabel("Nueva contraseña").fill("Prueba-Seguridad-2027");

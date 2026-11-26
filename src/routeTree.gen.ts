@@ -11,18 +11,26 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccesoRouteImport } from './routes/acceso'
+import { Route as AccessRouteImport } from './routes/access'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CorreoRouteImport } from './routes/correo'
 import { Route as CuentaRouteImport } from './routes/cuenta'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MailRouteImport } from './routes/mail'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as CompartidosIndexRouteImport } from './routes/compartidos/index'
 import { Route as CompartidosShareIdRouteImport } from './routes/compartidos/$shareId'
 import { Route as DavIndexRouteImport } from './routes/dav/index'
 import { Route as DavSplatRouteImport } from './routes/dav/$'
 import { Route as FTokenRouteImport } from './routes/f/$token'
+import { Route as FormsTokenRouteImport } from './routes/forms/$token'
 import { Route as FormulariosTokenRouteImport } from './routes/formularios/$token'
+import { Route as MailIndexRouteImport } from './routes/mail.index'
+import { Route as MailCalendarRouteImport } from './routes/mail.calendar'
 import { Route as PTokenRouteImport } from './routes/p/$token'
+import { Route as SharedIndexRouteImport } from './routes/shared/index'
+import { Route as SharedShareIdRouteImport } from './routes/shared/$shareId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDrawingsIdRouteImport } from './routes/api/drawings/$id'
 import { Route as ApiFilesIdRouteImport } from './routes/api/files/$id'
@@ -59,6 +67,16 @@ const AccesoRoute = AccesoRouteImport.update({
   path: '/acceso',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccessRoute = AccessRouteImport.update({
+  id: '/access',
+  path: '/access',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -77,6 +95,11 @@ const CuentaRoute = CuentaRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MailRoute = MailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMcpRoute = ApiMcpRouteImport.update({
@@ -109,14 +132,39 @@ const FTokenRoute = FTokenRouteImport.update({
   path: '/f/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FormsTokenRoute = FormsTokenRouteImport.update({
+  id: '/forms/$token',
+  path: '/forms/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FormulariosTokenRoute = FormulariosTokenRouteImport.update({
   id: '/formularios/$token',
   path: '/formularios/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MailIndexRoute = MailIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailCalendarRoute = MailCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => MailRoute,
+} as any)
 const PTokenRoute = PTokenRouteImport.update({
   id: '/p/$token',
   path: '/p/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SharedIndexRoute = SharedIndexRouteImport.update({
+  id: '/shared/',
+  path: '/shared/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SharedShareIdRoute = SharedShareIdRouteImport.update({
+  id: '/shared/$shareId',
+  path: '/shared/$shareId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -249,18 +297,26 @@ const ApiV1TablesIdRowsRowIdHistoryRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
+  '/access': typeof AccessRoute
+  '/account': typeof AccountRoute
   '/admin': typeof AdminRoute
   '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
+  '/forms/$token': typeof FormsTokenRoute
   '/formularios/$token': typeof FormulariosTokenRoute
+  '/mail/calendar': typeof MailCalendarRoute
   '/p/$token': typeof PTokenRoute
+  '/shared/$shareId': typeof SharedShareIdRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/dav/': typeof DavIndexRoute
+  '/mail/': typeof MailIndexRoute
+  '/shared/': typeof SharedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -290,6 +346,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
+  '/access': typeof AccessRoute
+  '/account': typeof AccountRoute
   '/admin': typeof AdminRoute
   '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
@@ -298,10 +356,15 @@ export interface FileRoutesByTo {
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
+  '/forms/$token': typeof FormsTokenRoute
   '/formularios/$token': typeof FormulariosTokenRoute
+  '/mail/calendar': typeof MailCalendarRoute
   '/p/$token': typeof PTokenRoute
+  '/shared/$shareId': typeof SharedShareIdRoute
   '/compartidos': typeof CompartidosIndexRoute
   '/dav': typeof DavIndexRoute
+  '/mail': typeof MailIndexRoute
+  '/shared': typeof SharedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -332,18 +395,26 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/acceso': typeof AccesoRoute
+  '/access': typeof AccessRoute
+  '/account': typeof AccountRoute
   '/admin': typeof AdminRoute
   '/correo': typeof CorreoRoute
   '/cuenta': typeof CuentaRoute
   '/login': typeof LoginRoute
+  '/mail': typeof MailRouteWithChildren
   '/api/mcp': typeof ApiMcpRoute
   '/compartidos/$shareId': typeof CompartidosShareIdRoute
   '/dav/$': typeof DavSplatRoute
   '/f/$token': typeof FTokenRoute
+  '/forms/$token': typeof FormsTokenRoute
   '/formularios/$token': typeof FormulariosTokenRoute
+  '/mail/calendar': typeof MailCalendarRoute
   '/p/$token': typeof PTokenRoute
+  '/shared/$shareId': typeof SharedShareIdRoute
   '/compartidos/': typeof CompartidosIndexRoute
   '/dav/': typeof DavIndexRoute
+  '/mail/': typeof MailIndexRoute
+  '/shared/': typeof SharedIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/drawings/$id': typeof ApiDrawingsIdRoute
   '/api/files/$id': typeof ApiFilesIdRoute
@@ -375,18 +446,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/acceso'
+    | '/access'
+    | '/account'
     | '/admin'
     | '/correo'
     | '/cuenta'
     | '/login'
+    | '/mail'
     | '/api/mcp'
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
+    | '/forms/$token'
     | '/formularios/$token'
+    | '/mail/calendar'
     | '/p/$token'
+    | '/shared/$shareId'
     | '/compartidos/'
     | '/dav/'
+    | '/mail/'
+    | '/shared/'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -416,6 +495,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/acceso'
+    | '/access'
+    | '/account'
     | '/admin'
     | '/correo'
     | '/cuenta'
@@ -424,10 +505,15 @@ export interface FileRouteTypes {
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
+    | '/forms/$token'
     | '/formularios/$token'
+    | '/mail/calendar'
     | '/p/$token'
+    | '/shared/$shareId'
     | '/compartidos'
     | '/dav'
+    | '/mail'
+    | '/shared'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -457,18 +543,26 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/acceso'
+    | '/access'
+    | '/account'
     | '/admin'
     | '/correo'
     | '/cuenta'
     | '/login'
+    | '/mail'
     | '/api/mcp'
     | '/compartidos/$shareId'
     | '/dav/$'
     | '/f/$token'
+    | '/forms/$token'
     | '/formularios/$token'
+    | '/mail/calendar'
     | '/p/$token'
+    | '/shared/$shareId'
     | '/compartidos/'
     | '/dav/'
+    | '/mail/'
+    | '/shared/'
     | '/api/auth/$'
     | '/api/drawings/$id'
     | '/api/files/$id'
@@ -499,18 +593,24 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccesoRoute: typeof AccesoRoute
+  AccessRoute: typeof AccessRoute
+  AccountRoute: typeof AccountRoute
   AdminRoute: typeof AdminRoute
   CorreoRoute: typeof CorreoRoute
   CuentaRoute: typeof CuentaRoute
   LoginRoute: typeof LoginRoute
+  MailRoute: typeof MailRouteWithChildren
   ApiMcpRoute: typeof ApiMcpRoute
   CompartidosShareIdRoute: typeof CompartidosShareIdRoute
   DavSplatRoute: typeof DavSplatRoute
   FTokenRoute: typeof FTokenRoute
+  FormsTokenRoute: typeof FormsTokenRoute
   FormulariosTokenRoute: typeof FormulariosTokenRoute
   PTokenRoute: typeof PTokenRoute
+  SharedShareIdRoute: typeof SharedShareIdRoute
   CompartidosIndexRoute: typeof CompartidosIndexRoute
   DavIndexRoute: typeof DavIndexRoute
+  SharedIndexRoute: typeof SharedIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDrawingsIdRoute: typeof ApiDrawingsIdRoute
   ApiFilesIdRoute: typeof ApiFilesIdRoute
@@ -544,6 +644,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccesoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/access': {
+      id: '/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -570,6 +684,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mail': {
+      id: '/mail'
+      path: '/mail'
+      fullPath: '/mail'
+      preLoaderRoute: typeof MailRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/mcp': {
@@ -614,6 +735,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forms/$token': {
+      id: '/forms/$token'
+      path: '/forms/$token'
+      fullPath: '/forms/$token'
+      preLoaderRoute: typeof FormsTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/formularios/$token': {
       id: '/formularios/$token'
       path: '/formularios/$token'
@@ -621,11 +749,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FormulariosTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mail/': {
+      id: '/mail/'
+      path: '/'
+      fullPath: '/mail/'
+      preLoaderRoute: typeof MailIndexRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/calendar': {
+      id: '/mail/calendar'
+      path: '/calendar'
+      fullPath: '/mail/calendar'
+      preLoaderRoute: typeof MailCalendarRouteImport
+      parentRoute: typeof MailRoute
+    }
     '/p/$token': {
       id: '/p/$token'
       path: '/p/$token'
       fullPath: '/p/$token'
       preLoaderRoute: typeof PTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shared/': {
+      id: '/shared/'
+      path: '/shared'
+      fullPath: '/shared/'
+      preLoaderRoute: typeof SharedIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shared/$shareId': {
+      id: '/shared/$shareId'
+      path: '/shared/$shareId'
+      fullPath: '/shared/$shareId'
+      preLoaderRoute: typeof SharedShareIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -806,6 +962,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface MailRouteChildren {
+  MailCalendarRoute: typeof MailCalendarRoute
+  MailIndexRoute: typeof MailIndexRoute
+}
+
+const MailRouteChildren: MailRouteChildren = {
+  MailCalendarRoute: MailCalendarRoute,
+  MailIndexRoute: MailIndexRoute,
+}
+
+const MailRouteWithChildren = MailRoute._addFileChildren(MailRouteChildren)
+
 interface ApiFilesUploadsRouteChildren {
   ApiFilesUploadsCompleteRoute: typeof ApiFilesUploadsCompleteRoute
   ApiFilesUploadsPartRoute: typeof ApiFilesUploadsPartRoute
@@ -910,18 +1078,24 @@ const WopiFilesIdRouteWithChildren = WopiFilesIdRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccesoRoute: AccesoRoute,
+  AccessRoute: AccessRoute,
+  AccountRoute: AccountRoute,
   AdminRoute: AdminRoute,
   CorreoRoute: CorreoRoute,
   CuentaRoute: CuentaRoute,
   LoginRoute: LoginRoute,
+  MailRoute: MailRouteWithChildren,
   ApiMcpRoute: ApiMcpRoute,
   CompartidosShareIdRoute: CompartidosShareIdRoute,
   DavSplatRoute: DavSplatRoute,
   FTokenRoute: FTokenRoute,
+  FormsTokenRoute: FormsTokenRoute,
   FormulariosTokenRoute: FormulariosTokenRoute,
   PTokenRoute: PTokenRoute,
+  SharedShareIdRoute: SharedShareIdRoute,
   CompartidosIndexRoute: CompartidosIndexRoute,
   DavIndexRoute: DavIndexRoute,
+  SharedIndexRoute: SharedIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDrawingsIdRoute: ApiDrawingsIdRoute,
   ApiFilesIdRoute: ApiFilesIdRoute,

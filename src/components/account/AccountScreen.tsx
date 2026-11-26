@@ -1,7 +1,6 @@
 import { Braces, Inbox, KeyRound, Mail, SlidersHorizontal, UserRound } from "lucide-react";
-import { readReloadState, useSaveOnReload } from "@/app/reload-state";
 import { useEffect, useState } from "react";
-import { Navigate, useSearch } from "@tanstack/react-router";
+import { Navigate, useNavigate, useSearch } from "@tanstack/react-router";
 import { setAccountProfile } from "@/app/account-profile";
 import { useMailAvailable } from "@/app/mail/available";
 import { usePermissions } from "@/app/permissions";
@@ -25,18 +24,16 @@ import { t } from "@/app/i18n";
  * cards with back navigation.
  */
 
-type Section = "perfil" | "correo" | "buzones" | "preferencias" | "contrasena" | "api";
-
-const SECTION_KEY = "grafito.account.section";
+type Section = "profile" | "email" | "mailboxes" | "preferences" | "password" | "api";
 
 type Profile = Awaited<ReturnType<typeof accountState>>;
 
 const SECTIONS: SettingsItem<Section>[] = [
-  { id: "perfil", label: "Datos de la cuenta", icon: UserRound },
-  { id: "correo", label: "Correo", icon: Mail },
-  { id: "buzones", label: "Cuentas de correo", icon: Inbox },
-  { id: "preferencias", label: "Preferencias de usuario", icon: SlidersHorizontal },
-  { id: "contrasena", label: "Contraseña", icon: KeyRound },
+  { id: "profile", label: "Datos de la cuenta", icon: UserRound },
+  { id: "email", label: "Correo", icon: Mail },
+  { id: "mailboxes", label: "Cuentas de correo", icon: Inbox },
+  { id: "preferences", label: "Preferencias de usuario", icon: SlidersHorizontal },
+  { id: "password", label: "Contraseña", icon: KeyRound },
   { id: "api", label: "API", icon: Braces },
 ];
 
@@ -44,16 +41,16 @@ export function AccountScreen() {
   const { user, isPending } = useCurrentUserState();
   const can = usePermissions();
   const mail = useMailAvailable();
-  // ?seccion= opens a section directly (the mail screen and the OAuth return link here).
-  const asked = useSearch({ strict: false }) as { seccion?: string };
+  // The section lives in the address (/account?section=…): a reload or a shared link opens it.
+  const asked = useSearch({ strict: false }) as { section?: string };
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
-  // Preserve the section across reload and language remount; reopening Account normally starts fresh.
-  const [section, setSection] = useState<Section | null>(() => {
-    const saved = asked.seccion ?? readReloadState<string>(SECTION_KEY);
-    return SECTIONS.some((item) => item.id === saved) ? (saved as Section) : null;
-  });
-  useSaveOnReload(SECTION_KEY, section);
+  const section = SECTIONS.some((item) => item.id === asked.section)
+    ? (asked.section as Section)
+    : null;
+  const setSection = (next: Section | null) =>
+    void navigate({ to: "/account", search: next ? { section: next } : {}, replace: false });
 
   useEffect(() => {
     if (!user?.id) return;
@@ -97,7 +94,7 @@ export function AccountScreen() {
   if (profile.mustChangePassword) return <Navigate to="/" />;
 
   const items = SECTIONS.filter(
-    (item) => (item.id !== "api" || can(PERMISSION.apiUse)) && (item.id !== "buzones" || mail),
+    (item) => (item.id !== "api" || can(PERMISSION.apiUse)) && (item.id !== "mailboxes" || mail),
   );
   const current = items.find((item) => item.id === section) ?? null;
 
@@ -128,7 +125,7 @@ export function AccountScreen() {
             </h1>
             <div className="mt-6">
               {!current ? <OptionGrid items={items} onPick={setSection} /> : null}
-              {current?.id === "perfil" ? (
+              {current?.id === "profile" ? (
                 <ProfileForm
                   userId={user.id}
                   initial={{ name: profile.displayName }}
@@ -139,10 +136,10 @@ export function AccountScreen() {
                   }}
                 />
               ) : null}
-              {current?.id === "correo" ? <MailForm /> : null}
-              {current?.id === "buzones" ? <MailAccounts /> : null}
-              {current?.id === "preferencias" ? <PreferencesForm /> : null}
-              {current?.id === "contrasena" ? <PasswordForm loginEmail={profile.email} /> : null}
+              {current?.id === "email" ? <MailForm /> : null}
+              {current?.id === "mailboxes" ? <MailAccounts /> : null}
+              {current?.id === "preferences" ? <PreferencesForm /> : null}
+              {current?.id === "password" ? <PasswordForm loginEmail={profile.email} /> : null}
               {current?.id === "api" ? <ApiTokens /> : null}
             </div>
           </div>

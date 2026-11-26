@@ -223,7 +223,7 @@ export const tableSaveForm = createServerFn({ method: "POST" })
             actorId: context.userId,
             actorName: ctx.actor,
             title: synced.form.title,
-            path: `/formularios/${synced.form.inviteToken}`,
+            path: `/forms/${synced.form.inviteToken}`,
             userIds: synced.addedUserIds,
             orgIds: synced.addedOrgIds,
             kind: "form",

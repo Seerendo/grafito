@@ -1,13 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AccessGate } from "@/components/access/AccessGate";
-import { SharedWithMeScreen } from "@/components/share/ShareScreens";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/compartidos/")({ component: SharedWithMe });
-
-function SharedWithMe() {
-  return (
-    <AccessGate>
-      <SharedWithMeScreen />
-    </AccessGate>
-  );
-}
+/** Old address of «Compartidos conmigo»: now /shared. */
+export const Route = createFileRoute("/compartidos/")({
+  beforeLoad: () => {
+    throw redirect({ to: "/shared", replace: true });
+  },
+});

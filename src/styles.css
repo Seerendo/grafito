@@ -996,3 +996,30 @@ html[data-tone="light"] {
     animation: none;
   }
 }
+
+/* Floating notices (toast): in, stay, fade out within their 4 s. */
+@keyframes grafito-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  8%,
+  80% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.grafito-toast {
+  animation: grafito-toast 4s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grafito-toast {
+    animation: none;
+  }
+}

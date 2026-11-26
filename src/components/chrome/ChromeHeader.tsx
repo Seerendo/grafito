@@ -93,7 +93,7 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  const go = (to: "/" | "/admin" | "/cuenta") => {
+  const go = (to: "/" | "/admin" | "/account") => {
     setOpen(false);
     void navigate({ to });
   };
@@ -134,11 +134,11 @@ export function AccountMenu() {
               {t("Administración")}
             </button>
           ) : null}
-          {pathname !== "/cuenta" ? (
+          {pathname !== "/account" ? (
             <button
               type="button"
               role="menuitem"
-              onClick={() => go("/cuenta")}
+              onClick={() => go("/account")}
               className="flex h-11 w-full items-center gap-2 px-3 text-left text-sm text-fg"
             >
               <UserRound className="size-4 text-muted" />

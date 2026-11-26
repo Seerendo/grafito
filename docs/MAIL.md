@@ -16,7 +16,7 @@ It is used for four things:
   to open it. Updating an expiry does not send another. A public link sends
   none.
 - **A form.** Sending a table's form to users or organizations emails them
-  a link to fill it in (`/formularios/…`). The public form link (`/f/…`)
+  a link to fill it in (`/forms/…`). The public form link (`/f/…`)
   has no recipients, so it sends none.
 
 Share and form mail is best-effort. If SMTP is off, or a person has no

@@ -1,4 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { MailScreen } from "@/components/mail/MailScreen";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/correo")({ component: MailScreen });
+/** Old address of the mail screen: now /mail. */
+export const Route = createFileRoute("/correo")({
+  beforeLoad: () => {
+    throw redirect({ to: "/mail", replace: true });
+  },
+});

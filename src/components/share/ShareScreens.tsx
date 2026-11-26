@@ -11,7 +11,7 @@ import { t } from "@/app/i18n";
 
 type Inbox = Awaited<ReturnType<typeof sharedWithMe>>;
 
-/** /compartidos lists items shared with the current user. */
+/** /shared lists items shared with the current user. */
 export function SharedWithMeScreen() {
   const [items, setItems] = useState<Inbox | null>(null);
   const [error, setError] = useState("");
@@ -41,7 +41,7 @@ export function SharedWithMeScreen() {
                 return (
                   <li key={item.id} className="border-b border-line last:border-b-0">
                     <Link
-                      to="/compartidos/$shareId"
+                      to="/shared/$shareId"
                       params={{ shareId: item.id }}
                       className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-elevated"
                     >
@@ -67,7 +67,7 @@ export function SharedWithMeScreen() {
   );
 }
 
-/** /compartidos/$shareId displays a shared item. */
+/** /shared/$shareId displays a shared item. */
 export function SharedItemScreen({ shareId }: { shareId: string }) {
   const tree = useTree(() => fetchSharedTree(shareId), shareId);
   return (

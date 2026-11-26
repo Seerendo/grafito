@@ -1704,6 +1704,32 @@ in browser code. The test stack trusts `http://grafito.test:18080` (mapped to
 | Email suite                                                                                                                                                                       | ✅ 32 of 32                                      |
 | `typecheck`, `lint` (with the new rule), `npm test`, `format:check`                                                                                                               | ✅ 265 tests pass                                |
 
+## Round 59: English routes, recipients by name, notices, steady Agenda
+
+Routes are in English: `/mail` (the mailbox in `?box=`, `?folder=`,
+`?account=`), `/mail/calendar` (`?view=`, `?date=`), `/account?section=…`,
+`/access`, `/shared`, `/forms`; the old Spanish paths redirect, so links already
+sent keep working. Where the person is lives in the address instead of the
+browser's storage.
+
+| Check                                                                                                      | Result                                                 |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `/correo` → `/mail`; `/cuenta?seccion=buzones` → `/account?section=mailboxes`                              | ✅                                                     |
+| Enviados, then reload                                                                                      | ✅ still Enviados (`?box=sent`)                        |
+| Agenda in week view, then reload                                                                           | ✅ still the Agenda, week (`/mail/calendar?view=week`) |
+| A chosen recipient shows its full name; the address only after a double click; De shows the account's name | ✅                                                     |
+| CC y CCO opens and folds again                                                                             | ✅                                                     |
+| The options menu stays 8 px or more inside the window                                                      | ✅                                                     |
+| Flag, clip and date end at the same place on every row                                                     | ✅                                                     |
+| «Mensaje enviado.», «Guardado en Grafito…»: floating notices that fade                                     | ✅ gone within 8 s                                     |
+| Email suite; MCP; uploads (Chromium)                                                                       | ✅ 34 of 34; 9 of 9; 3 of 3                            |
+| `typecheck`, `lint`, `npm test`, `format:check`                                                            | ✅ 265 tests pass                                      |
+
+The Agenda keeps only the latest answer (an older one arriving late no longer
+replaces it), keeps a calendar's events when it fails to answer once, and no
+longer reloads its calendars on every refresh of the accounts: the meetings that
+seemed to vanish until a reload. That timing is not reproduced by a test.
+
 ## Useful commands
 
 ```bash

@@ -1,14 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AccessGate } from "@/components/access/AccessGate";
-import { SharedItemScreen } from "@/components/share/ShareScreens";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/compartidos/$shareId")({ component: SharedItem });
-
-function SharedItem() {
-  const { shareId } = Route.useParams();
-  return (
-    <AccessGate>
-      <SharedItemScreen shareId={shareId} />
-    </AccessGate>
-  );
-}
+/** Old address of a shared item: now /shared/$shareId. */
+export const Route = createFileRoute("/compartidos/$shareId")({
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/shared/$shareId", params: { shareId: params.shareId }, replace: true });
+  },
+});

@@ -27,11 +27,14 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useSearch } from "@tanstack/react-router";
+import type { MailSearch } from "@/routes/mail";
 import { intl, t } from "@/app/i18n";
 import { AppFrame } from "@/components/chrome/AppFrame";
 import { SearchField } from "@/components/ui/SearchField";
 import { mailMark, mailMessages, mailState } from "@/server/mailbox.functions";
+import { toast } from "@/app/toast";
+import { Toaster } from "@/components/ui/Toaster";
 import { Agenda, ScheduleMeeting } from "./Agenda";
 import { MailPreferences } from "./MailPreferences";
 import { Compose, type Draft } from "./Compose";
@@ -76,6 +79,23 @@ const ROLES: {
   { role: "trash", label: "Papelera del correo", icon: Trash2 },
 ];
 
+const ROLES_IN_URL = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const;
+
+/** The mailbox shown, from the address (/mail?box=sent, ?folder=…&account=…). */
+function viewOf(search: MailSearch): View {
+  const accountId = search.account || undefined;
+  if (search.folder && accountId) return { kind: "folder", folderId: search.folder, accountId };
+  if (search.box === "flagged") return { kind: "flagged", accountId };
+  const role = ROLES_IN_URL.find((item) => item === search.box) ?? "inbox";
+  return { kind: "role", role, accountId };
+}
+
+function searchOf(view: View): MailSearch {
+  if (view.kind === "folder") return { folder: view.folderId, account: view.accountId };
+  if (view.kind === "flagged") return { box: "flagged", account: view.accountId };
+  return { box: view.role === "inbox" ? undefined : view.role, account: view.accountId };
+}
+
 function sameView(a: View, b: View): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -83,7 +103,24 @@ function sameView(a: View, b: View): boolean {
 export function MailScreen() {
   const [state, setState] = useState<State | null>(null);
   const [problem, setProblem] = useState<"permission" | "off" | null>(null);
-  const [view, setView] = useState<View>({ kind: "role", role: "inbox" });
+  // Where the person is lives in the address: /mail (a mailbox) or /mail/calendar (the Agenda),
+  // so a reload or a link opens the same place.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const search = useSearch({ strict: false }) as MailSearch;
+  const agenda = location.pathname.replace(/\/+$/, "") === "/mail/calendar";
+  const view = useMemo(
+    () => viewOf(search),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [search.box, search.folder, search.account],
+  );
+  const setView = (next: View) => void navigate({ to: "/mail", search: searchOf(next) });
+  const setAgenda = (on: boolean) =>
+    void navigate(
+      on
+        ? { to: "/mail/calendar", search: { view: search.view, date: search.date } }
+        : { to: "/mail", search: searchOf(view) },
+    );
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState({
     unread: false,
@@ -102,12 +139,11 @@ export function MailScreen() {
   // hold a message opened in its own tab or a message being written.
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [active, setActive] = useState<string>("read");
-  const [agenda, setAgenda] = useState(false);
-  const [notice, setNotice] = useState("");
   const [intent, setIntent] = useState<Intent | null>(null);
   const [meeting, setMeeting] = useState<MeetingPrefill | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [settings, setSettings] = useState<"menu" | "preferences" | null>(null);
+  const [settingsAt, setSettingsAt] = useState({ top: 0, left: 0 });
   const [scroll, setScroll] = useState(0);
   const [height, setHeight] = useState(600);
   const listRef = useRef<HTMLDivElement>(null);
@@ -268,6 +304,7 @@ export function MailScreen() {
         .filter((item) => !change.hidden || item.id !== id),
     );
     if (change.hidden && selected === id) setSelected(null);
+    if (change.hidden) toast("Correo ocultado en Grafito.");
     const answer = await mailMark({ data: { id, ...change } }).catch(() => null);
     if (!answer?.ok) void loadPage(null);
   };
@@ -325,7 +362,6 @@ export function MailScreen() {
         onClick();
         setSelected(null);
         setPane("list");
-        setAgenda(false);
       }}
       aria-current={active ? "page" : undefined}
       className={`flex w-full items-center rounded-md text-left text-sm ${compact ? "h-9 gap-2 px-2" : "h-10 gap-2.5 px-2.5"} ${active ? "bg-elevated text-fg" : "text-muted hover:bg-elevated"}`}
@@ -358,7 +394,16 @@ export function MailScreen() {
                 title={t("Opciones del correo")}
                 aria-haspopup="menu"
                 aria-expanded={settings === "menu"}
-                onClick={() => setSettings(settings === "menu" ? null : "menu")}
+                onClick={(event) => {
+                  // Over the page (the column would clip it), clear of the window's edges.
+                  const box = event.currentTarget.getBoundingClientRect();
+                  const width = 240;
+                  setSettingsAt({
+                    top: box.bottom + 6,
+                    left: Math.max(12, Math.min(box.left, window.innerWidth - width - 12)),
+                  });
+                  setSettings(settings === "menu" ? null : "menu");
+                }}
                 className="grid size-9 place-items-center rounded-md text-muted hover:bg-elevated"
               >
                 <Settings className="size-4" />
@@ -369,21 +414,22 @@ export function MailScreen() {
                   <div
                     role="menu"
                     data-ui="mail-settings-menu"
-                    className="absolute top-full right-0 z-40 mt-1 w-56 rounded-md border border-line bg-surface py-1 shadow-2xl"
+                    style={{ top: settingsAt.top, left: settingsAt.left }}
+                    className="fixed z-40 w-60 rounded-lg border border-line bg-surface p-1.5 shadow-2xl"
                   >
                     <button
                       type="button"
                       role="menuitem"
                       onClick={() => setSettings("preferences")}
-                      className="flex h-10 w-full items-center px-3 text-left text-sm hover:bg-elevated"
+                      className="flex h-10 w-full items-center rounded-md px-3 text-left text-sm hover:bg-elevated"
                     >
                       {t("Preferencias")}
                     </button>
                     <Link
-                      to="/cuenta"
-                      search={{ seccion: "buzones" }}
+                      to="/account"
+                      search={{ section: "mailboxes" }}
                       role="menuitem"
-                      className="flex h-10 w-full items-center px-3 text-left text-sm hover:bg-elevated"
+                      className="flex h-10 w-full items-center rounded-md px-3 text-left text-sm hover:bg-elevated"
                     >
                       {t("Cuentas de correo")}
                     </Link>
@@ -413,7 +459,6 @@ export function MailScreen() {
             <PenSquare className="size-[1.125rem]" />
             {t("Redactar")}
           </button>
-          {notice ? <p className="px-2 pb-2 text-xs text-accent">{t(notice)}</p> : null}
           <button
             type="button"
             data-ui="mail-agenda-entry"
@@ -652,32 +697,40 @@ export function MailScreen() {
                       >
                         {row.from.name || row.from.address || t("(sin remitente)")}
                       </span>
-                      <button
-                        type="button"
-                        data-ui="mail-flag"
-                        aria-label={row.flagged ? t("Quitar ficha") : t("Fichar")}
-                        title={row.flagged ? t("Quitar ficha") : t("Fichar")}
-                        aria-pressed={row.flagged}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void mark(row.id, { flagged: !row.flagged });
-                        }}
-                        className={`grid size-6 shrink-0 place-items-center rounded hover:bg-inset ${row.flagged ? "text-danger" : "text-faint opacity-60 group-hover:opacity-100"}`}
+                      {/* Fixed slots on the right, so every row lines up whatever the sender. */}
+                      <span
+                        data-ui="mail-row-meta"
+                        className="ml-auto flex shrink-0 items-center gap-1"
                       >
-                        <Flag className={`size-3.5 ${row.flagged ? "fill-current" : ""}`} />
-                      </button>
-                      {row.hasAttachments ? (
-                        <Paperclip
-                          aria-label={t("Con adjuntos")}
-                          className="size-3.5 shrink-0 text-faint"
-                        />
-                      ) : null}
-                      <time className="shrink-0 text-xs text-faint">
-                        {new Date(row.receivedAt).toLocaleString(intl(), {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </time>
+                        <span className="grid size-4 place-items-center">
+                          {row.hasAttachments ? (
+                            <Paperclip
+                              aria-label={t("Con adjuntos")}
+                              className="size-3.5 text-faint"
+                            />
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          data-ui="mail-flag"
+                          aria-label={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                          title={row.flagged ? t("Quitar ficha") : t("Fichar")}
+                          aria-pressed={row.flagged}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void mark(row.id, { flagged: !row.flagged });
+                          }}
+                          className={`grid size-6 shrink-0 place-items-center rounded hover:bg-inset ${row.flagged ? "text-danger" : "text-faint opacity-60 group-hover:opacity-100"}`}
+                        >
+                          <Flag className={`size-3.5 ${row.flagged ? "fill-current" : ""}`} />
+                        </button>
+                        <time className="w-[7.5rem] shrink-0 text-right text-xs text-faint tabular-nums">
+                          {new Date(row.receivedAt).toLocaleString(intl(), {
+                            dateStyle: "short",
+                            timeStyle: "short",
+                          })}
+                        </time>
+                      </span>
                     </span>
                     <span className={`truncate text-sm ${row.seen ? "text-muted" : "text-fg"}`}>
                       {row.subject || t("(sin asunto)")}
@@ -789,13 +842,13 @@ export function MailScreen() {
                   onClosed={(outcome) => {
                     closeTab(tab.id);
                     if (outcome === "draft") {
-                      setNotice("Borrador guardado.");
+                      toast("Borrador guardado.");
                       void loadState();
                     }
                   }}
                   onSent={(sentCopy) => {
                     closeTab(tab.id);
-                    setNotice(
+                    toast(
                       sentCopy
                         ? "Mensaje enviado."
                         : "Mensaje enviado; no se pudo guardar la copia en Enviados.",
@@ -834,7 +887,7 @@ export function MailScreen() {
           onClose={() => setMeeting(null)}
           onDone={(invited) => {
             setMeeting(null);
-            setNotice(
+            toast(
               invited ? "Reunión programada; se enviaron las invitaciones." : "Reunión programada.",
             );
           }}
@@ -847,6 +900,7 @@ export function MailScreen() {
           onSaved={() => void loadState()}
         />
       ) : null}
+      <Toaster />
     </AppFrame>
   );
 }

@@ -430,7 +430,7 @@ describe("MCP server", () => {
     });
 
     test("Account shows the MCP address and no AI connections", async () => {
-      await page.goto(`${base}/cuenta`);
+      await page.goto(`${base}/account`);
       await page.getByRole("button", { name: /API/ }).first().waitFor();
       assert.equal(await page.getByText("Conexiones de IA").count(), 0);
       await page.getByRole("button", { name: /API/ }).first().click();

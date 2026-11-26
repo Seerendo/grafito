@@ -1,17 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AccessGate } from "@/components/access/AccessGate";
-import { InvitedFormScreen } from "@/components/vault/TableForm";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** User or organization invitation form requiring a session. */
+/** Old address of an invitation form: now /forms/$token. */
 export const Route = createFileRoute("/formularios/$token")({
-  component: InvitedForm,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/forms/$token", params: { token: params.token }, replace: true });
+  },
 });
-
-function InvitedForm() {
-  const { token } = Route.useParams();
-  return (
-    <AccessGate>
-      <InvitedFormScreen token={token} />
-    </AccessGate>
-  );
-}

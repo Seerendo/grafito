@@ -81,7 +81,7 @@ export async function issueAccess(
       set expires_at = excluded.expires_at, used_at = null, note_id = excluded.note_id,
         password_hash = excluded.password_hash, created_at = excluded.created_at
   `;
-  const link = `${settings.publicUrl}/acceso#${note.token}`;
+  const link = `${settings.publicUrl}/access#${note.token}`;
   if (!mailReady(settings)) {
     return { ok: true, mailed: false, link, expiresAt, reason: "El correo no está configurado." };
   }

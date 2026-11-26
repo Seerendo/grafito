@@ -63,7 +63,7 @@ export function MailAccounts() {
     const stateParam = params.get("oauth_state");
     const error = params.get("oauth_error");
     if (!code && !error) return;
-    window.history.replaceState(null, "", "/cuenta?seccion=buzones");
+    window.history.replaceState(null, "", "/account?section=mailboxes");
     if (error || !code || !stateParam) {
       setNotice("El proveedor no autorizó la cuenta.");
       return;

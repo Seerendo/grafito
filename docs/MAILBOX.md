@@ -14,7 +14,7 @@ This is not the SMTP server Grafito uses to send its own notices; that one is in
 ## Architecture
 
 ```text
- Browser ── /correo ──► Grafito web (app)                    mail servers
+ Browser ── /mail ───► Grafito web (app)                      mail servers
                          │  server functions, MCP tools        ▲
                          │  enqueue jobs, read messages        │ IMAP (TLS), Gmail API,
                          ▼                                     │ Microsoft Graph

@@ -1,5 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, MapPin, Plus, RefreshCw, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { MailSearch } from "@/routes/mail";
 import { intl, t } from "@/app/i18n";
 import { Modal } from "@/components/ui/Modal";
 import {
@@ -285,8 +287,31 @@ export function Agenda({
 }) {
   const [calendars, setCalendars] = useState<Calendars | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
-  const [mode, setMode] = useState<Mode>("month");
-  const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
+  // The view and the date shown live in the address (/mail/calendar?view=week&date=…).
+  const search = useSearch({ strict: false }) as MailSearch;
+  const navigate = useNavigate();
+  const mode: Mode = MODES.some((item) => item.id === search.view)
+    ? (search.view as Mode)
+    : "month";
+  const anchor = useMemo(
+    () =>
+      search.date && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+        ? fromKey(search.date)
+        : startOfDay(new Date()),
+    [search.date],
+  );
+  const go = (next: { mode?: Mode; anchor?: Date }) =>
+    void navigate({
+      to: "/mail/calendar",
+      search: {
+        view: next.mode ?? mode,
+        date: dateKey(next.anchor ?? anchor),
+      },
+      replace: true,
+    });
+  const setMode = (value: Mode) => go({ mode: value });
+  const setAnchor = (value: Date | ((current: Date) => Date)) =>
+    go({ anchor: typeof value === "function" ? value(anchor) : value });
   const [events, setEvents] = useState<Events>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<Event | null>(null);
@@ -304,6 +329,12 @@ export function Agenda({
     return { from, to: addDays(from, 42), days: 42 };
   }, [mode, anchor]);
 
+  const accountKey = accounts
+    .filter((item) => item.provider === "imap" && item.hasSecret)
+    .map((item) => item.id)
+    .join(",");
+  const request = useRef(0);
+
   const find = useCallback(async () => {
     setSearching(true);
     const found: string[] = [];
@@ -314,18 +345,20 @@ export function Agenda({
     }
     setProblems(found);
     const listed = await mailCalendars().catch(() => null);
-    setCalendars(listed?.ok ? listed.calendars : []);
+    if (listed?.ok) setCalendars(listed.calendars);
     setSearching(false);
-  }, [accounts]);
+    // Only when the accounts themselves change, not on every refresh of their state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountKey]);
 
   useEffect(() => {
     void mailCalendars()
       .then((answer) => {
-        if (!answer.ok) return setCalendars([]);
+        if (!answer.ok) return setCalendars((current) => current ?? []);
         if (answer.calendars.length === 0) void find();
         else setCalendars(answer.calendars);
       })
-      .catch(() => setCalendars([]));
+      .catch(() => setCalendars((current) => current ?? []));
   }, [find]);
 
   const load = useCallback(async () => {
@@ -333,13 +366,25 @@ export function Agenda({
       setEvents([]);
       return;
     }
+    // Only the latest request counts: an older answer arriving late does not replace it.
+    const ticket = ++request.current;
     setLoading(true);
-    const answer = await mailEvents({
-      data: { from: range.from.getTime(), to: range.to.getTime() },
-    }).catch(() => null);
+    const from = range.from.getTime();
+    const to = range.to.getTime();
+    const answer = await mailEvents({ data: { from, to } }).catch(() => null);
+    if (ticket !== request.current) return;
     setLoading(false);
     if (answer?.ok) {
-      setEvents(answer.events);
+      // A calendar that failed this time keeps the events it had on screen in this range.
+      setEvents((current) =>
+        [
+          ...answer.events,
+          ...current.filter(
+            (event) =>
+              answer.failed.includes(event.calendarId) && event.start < to && event.end >= from,
+          ),
+        ].sort((a, b) => a.start - b.start),
+      );
       setProblems(answer.problems);
     } else setProblems([answer?.error ?? "No se pudo leer la agenda."]);
   }, [calendars, range]);
@@ -673,8 +718,13 @@ function EventDialog({
     location: event?.location ?? "",
     description: event?.description ?? prefill?.description ?? "",
     attendees: event
-      ? event.attendees.map((item) => item.address).join(", ")
-      : (prefill?.attendees ?? []).join(", "),
+      ? event.attendees
+          .map(
+            (item) =>
+              `${item.name ? `${item.name.replace(/[<>,;"]/g, "")} <${item.address}>` : item.address}, `,
+          )
+          .join("")
+      : (prefill?.attendees ?? []).map((item) => `${item}, `).join(""),
   });
   const [editing, setEditing] = useState(!event);
   const [busy, setBusy] = useState(false);

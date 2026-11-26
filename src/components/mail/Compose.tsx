@@ -1,5 +1,6 @@
 import { uuid } from "@/lib/uuid";
 import {
+  ChevronDown,
   ChevronRight,
   FileText,
   Folder,
@@ -109,6 +110,7 @@ export function Compose({
     bcc: "",
   }));
   const [copies, setCopies] = useState(Boolean(draft.cc));
+  const [fromShown, setFromShown] = useState(false);
   const [files, setFiles] = useState<Picked[]>([]);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [over, setOver] = useState(false);
@@ -332,7 +334,10 @@ export function Compose({
           void send();
         }}
       >
-        <label className="flex flex-col gap-1 text-sm">
+        <label
+          className="flex flex-col gap-1 text-sm"
+          onDoubleClick={() => setFromShown((value) => !value)}
+        >
           {t("De")}
           <select
             aria-label={t("De")}
@@ -342,12 +347,15 @@ export function Compose({
           >
             {usable.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.name === account.email
-                  ? account.email
-                  : `${account.name} <${account.email}>`}
+                {account.name || account.email}
               </option>
             ))}
           </select>
+          {fromShown ? (
+            <span data-ui="from-address" className="px-1 text-xs text-faint">
+              {usable.find((account) => account.id === form.accountId)?.email}
+            </span>
+          ) : null}
         </label>
         <div className="flex items-end gap-2">
           <Recipients
@@ -356,16 +364,23 @@ export function Compose({
             value={form.to}
             onChange={(to) => setForm((current) => ({ ...current, to }))}
           />
-          {!copies ? (
-            <button
-              type="button"
-              onClick={() => setCopies(true)}
-              className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line px-3 text-sm hover:bg-elevated"
-            >
-              <Users className="size-4" />
-              {t("CC y CCO")}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            aria-expanded={copies}
+            onClick={() => setCopies(!copies)}
+            className={`inline-flex h-10 shrink-0 items-center gap-1.5 self-end rounded-md border px-3 text-sm hover:bg-elevated ${copies ? "border-accent/60 bg-accent/10" : "border-line"}`}
+          >
+            <Users className="size-4" />
+            {t("CC y CCO")}
+            {!copies && split(form.cc).length + split(form.bcc).length ? (
+              <span className="rounded bg-accent/20 px-1 text-xs">
+                {split(form.cc).length + split(form.bcc).length}
+              </span>
+            ) : null}
+            <ChevronDown
+              className={`size-3.5 transition-transform ${copies ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
         {copies ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -589,7 +604,18 @@ export function Compose({
   );
 }
 
-/** Addresses separated by commas, with suggestions by name for the one being typed. */
+/** «Name <address>» or a bare address, as written in a recipients field. */
+function person(entry: string): { name: string; address: string } {
+  const match = /^(.*?)<([^<>]+)>\s*$/.exec(entry.trim());
+  if (match) return { name: match[1]!.trim().replace(/^"|"$/g, ""), address: match[2]!.trim() };
+  return { name: "", address: entry.trim() };
+}
+
+/**
+ * People separated by commas. Each one chosen shows as a chip with the full name; its address
+ * stays hidden and shows below the name on a double click. While typing, suggestions by name
+ * (contacts and the server's directory). The value is kept as «Name <address>, …».
+ */
 export function Recipients({
   label,
   value,
@@ -604,17 +630,26 @@ export function Recipients({
   const [people, setPeople] = useState<{ name: string; address: string; source: string }[]>([]);
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
-  const typed = value.split(/[,;]/).at(-1)?.trim() ?? "";
+  const [shown, setShown] = useState<string | null>(null);
+  const parts = value.split(/[,;]/);
+  const typed = parts.at(-1) ?? "";
+  const chips = parts
+    .slice(0, -1)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const write = (list: string[], text: string) =>
+    onChange(list.length ? `${list.join(", ")}, ${text}` : text);
 
   useEffect(() => {
-    if (typed.length < 2 || /<.+>/.test(typed)) {
+    const term = typed.trim();
+    if (term.length < 2 || /<.+>/.test(term)) {
       setPeople([]);
       return;
     }
     let alive = true;
     const timer = setTimeout(
       () =>
-        void mailRecipients({ data: { query: typed } })
+        void mailRecipients({ data: { query: term } })
           .then((answer) => {
             if (!alive) return;
             setPeople(answer.people);
@@ -629,84 +664,143 @@ export function Recipients({
     };
   }, [typed]);
 
-  const choose = (person: { name: string; address: string }) => {
-    const parts = value
-      .split(/[,;]/)
-      .slice(0, -1)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    const entry = person.name
-      ? `${person.name.replace(/[<>,;"]/g, "")} <${person.address}>`
-      : person.address;
-    onChange(`${[...parts, entry].join(", ")}, `);
+  const choose = (chosen: { name: string; address: string }) => {
+    const entry = chosen.name
+      ? `${chosen.name.replace(/[<>,;"]/g, "")} <${chosen.address}>`
+      : chosen.address;
+    write([...chips, entry], "");
     setPeople([]);
   };
-  const shown = open && people.length > 0;
+  const listing = open && people.length > 0;
 
   return (
-    <label className="relative flex min-w-0 flex-1 flex-col gap-1 text-sm">
-      {t(label)}
-      <input
-        required={required}
-        aria-label={t(label)}
-        aria-expanded={shown}
-        aria-autocomplete="list"
-        role="combobox"
-        value={value}
-        autoComplete="off"
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        onChange={(event) => {
-          setOpen(true);
-          onChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (!shown) return;
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setActive((index) => Math.min(index + 1, people.length - 1));
-          } else if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setActive((index) => Math.max(index - 1, 0));
-          } else if (event.key === "Enter" || event.key === "Tab") {
-            const person = people[active];
-            if (person) {
+    <div className="relative flex min-w-0 flex-1 flex-col gap-1 text-sm">
+      <span>{t(label)}</span>
+      <div
+        data-recipients={label}
+        data-value={value}
+        className="flex min-h-10 flex-wrap items-center gap-1 rounded-md border border-line bg-inset px-1.5 py-1"
+      >
+        {chips.map((entry, index) => {
+          const one = person(entry);
+          const key = `${index}:${one.address}`;
+          return (
+            <span
+              key={key}
+              data-ui="recipient"
+              onDoubleClick={() => setShown(shown === key ? null : key)}
+              className="inline-flex max-w-64 cursor-default items-start gap-1 rounded-md border border-line bg-surface py-0.5 pr-0.5 pl-2 text-xs select-none"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate font-medium">{one.name || one.address}</span>
+                {shown === key && one.name ? (
+                  <span data-ui="recipient-address" className="truncate text-faint">
+                    {one.address}
+                  </span>
+                ) : null}
+              </span>
+              <button
+                type="button"
+                aria-label={t("Quitar {0}", { 0: one.name || one.address })}
+                onClick={() =>
+                  write(
+                    chips.filter((_, other) => other !== index),
+                    typed.trim(),
+                  )
+                }
+                className="grid size-5 shrink-0 place-items-center rounded text-faint hover:bg-elevated hover:text-fg"
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          );
+        })}
+        <input
+          required={required && chips.length === 0}
+          aria-label={t(label)}
+          aria-expanded={listing}
+          aria-autocomplete="list"
+          role="combobox"
+          value={typed.trimStart()}
+          autoComplete="off"
+          onFocus={() => setOpen(true)}
+          onBlur={() => {
+            setTimeout(() => setOpen(false), 150);
+            // A full address left typed becomes a chip.
+            if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(typed.trim()))
+              write([...chips, typed.trim()], "");
+          }}
+          onChange={(event) => {
+            setOpen(true);
+            write(chips, event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Backspace" && !typed && chips.length) {
               event.preventDefault();
-              choose(person);
+              write(chips.slice(0, -1), "");
+              return;
             }
-          } else if (event.key === "Escape") setPeople([]);
-        }}
-        className={field}
-      />
-      {shown ? (
+            if (listing) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActive((index) => Math.min(index + 1, people.length - 1));
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActive((index) => Math.max(index - 1, 0));
+                return;
+              }
+              if (event.key === "Enter" || event.key === "Tab") {
+                const chosen = people[active];
+                if (chosen) {
+                  event.preventDefault();
+                  choose(chosen);
+                }
+                return;
+              }
+              if (event.key === "Escape") {
+                setPeople([]);
+                return;
+              }
+            }
+            if (event.key === "Enter" && typed.trim()) {
+              event.preventDefault();
+              write([...chips, typed.trim()], "");
+            }
+          }}
+          className="h-8 min-w-32 flex-1 bg-transparent px-1.5 text-sm outline-none"
+        />
+      </div>
+      {listing ? (
         <ul
           role="listbox"
           data-ui="mail-recipients"
           className="absolute top-full right-0 left-0 z-20 mt-1 max-h-72 overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-2xl"
         >
-          {people.map((person, index) => (
+          {people.map((item, index) => (
             <li
-              key={person.address}
+              key={item.address}
               role="option"
               aria-selected={index === active}
               onMouseDown={(event) => {
                 event.preventDefault();
-                choose(person);
+                choose(item);
               }}
               className={`flex cursor-pointer items-center gap-2 px-3 py-2 ${index === active ? "bg-elevated" : ""}`}
             >
               <span className="min-w-0 flex-1 truncate">
-                {person.name ? <span className="font-medium">{person.name} </span> : null}
-                <span className="text-muted">{person.address}</span>
+                {item.name ? <span className="font-medium">{item.name} </span> : null}
+                <span className="text-muted">{item.address}</span>
               </span>
               <span className="text-xs text-faint">
-                {t(person.source === "directorio" ? "Directorio" : "Contactos")}
+                {t(item.source === "directorio" ? "Directorio" : "Contactos")}
               </span>
             </li>
           ))}
         </ul>
       ) : null}
-    </label>
+    </div>
   );
 }
 

@@ -659,7 +659,7 @@ export function Sidebar({
               <SharedSection onOpen={onOpenShared} />
               {mail ? (
                 <Link
-                  to="/correo"
+                  to="/mail"
                   data-ui="mail-entry"
                   className="mt-1 flex h-10 w-full shrink-0 items-center gap-2 rounded-md px-2 text-left text-sm text-muted hover:bg-elevated hover:text-fg"
                 >

@@ -298,7 +298,7 @@ for (const engine of engines) {
 
     test("por enlace directo, tras recargar y en una sesión nueva", async () => {
       const first = track(await signIn(browser, SIGNER));
-      await first.page.goto(`${base}/compartidos/${data.shareId}`);
+      await first.page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(first.page);
       assertBoxes(await boxes(first.page), wanted, SIGNER);
       await first.page.reload();
@@ -307,7 +307,7 @@ for (const engine of engines) {
 
       // A second session of the same person, only with the bearer token, while the first is open.
       const second = track(await signIn(browser, SIGNER, { cookies: false }));
-      await second.page.goto(`${base}/compartidos/${data.shareId}`);
+      await second.page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(second.page);
       assertBoxes(await boxes(second.page), wanted, SIGNER);
     });
@@ -319,7 +319,7 @@ for (const engine of engines) {
         (url) => isSignatureState(url.href),
         (route) => (blocked ? route.abort("failed") : route.continue()),
       );
-      await page.goto(`${base}/compartidos/${data.shareId}`);
+      await page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(page, "error");
       await page.getByText("No se pudieron leer las firmas.").first().waitFor();
       assert.equal(await page.locator('[data-ui="pdf-sign"]').count(), 0);
@@ -331,7 +331,7 @@ for (const engine of engines) {
 
     test("al redimensionar y con otra densidad de píxeles siguen en su sitio", async () => {
       const { page } = track(await signIn(browser, SIGNER));
-      await page.goto(`${base}/compartidos/${data.shareId}`);
+      await page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(page);
       for (const size of [
         { width: 1600, height: 1000 },
@@ -354,7 +354,7 @@ for (const engine of engines) {
       }
       for (const deviceScaleFactor of [1.25, 2]) {
         const dense = track(await signIn(browser, SIGNER, { deviceScaleFactor }));
-        await dense.page.goto(`${base}/compartidos/${data.shareId}`);
+        await dense.page.goto(`${base}/shared/${data.shareId}`);
         await pdfReady(dense.page);
         assertBoxes(await boxes(dense.page), wanted, SIGNER);
       }
@@ -362,7 +362,7 @@ for (const engine of engines) {
 
     test("quien no tiene acceso no ve los recuadros ni puede firmar", async () => {
       const { page } = track(await signIn(browser, OUTSIDER));
-      await page.goto(`${base}/compartidos/${data.shareId}`);
+      await page.goto(`${base}/shared/${data.shareId}`);
       await page.getByText("No existe o ya no está compartido contigo.").waitFor();
       assert.equal(await page.locator('[data-ui="pdf-sign"]').count(), 0);
       // The same server functions the viewer uses, called directly with the outsider's session.
@@ -406,7 +406,7 @@ for (const engine of engines) {
 
       // The signer signs the rectangle drawn for them on page 3 with an image.
       const { page } = track(await signIn(browser, SIGNER));
-      await page.goto(`${base}/compartidos/${data.shareId}`);
+      await page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(page);
       const mine = page.locator(
         'div[data-page="3"]:not([data-text-layer]) [data-ui="pdf-sign"][data-status="pending"]',
@@ -436,7 +436,7 @@ for (const engine of engines) {
 
     test("si se retira el acceso, deja de ver los recuadros y lo dice", async () => {
       const { page } = track(await signIn(browser, SIGNER));
-      await page.goto(`${base}/compartidos/${data.shareId}`);
+      await page.goto(`${base}/shared/${data.shareId}`);
       await pdfReady(page);
       assertBoxes(await boxes(page), wanted, SIGNER);
       const client = database();
